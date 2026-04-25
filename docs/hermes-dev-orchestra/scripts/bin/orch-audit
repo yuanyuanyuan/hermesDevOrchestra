@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
+AUDIT_ROOT="${AUDIT_ROOT:-$HOME/.local/share/hermes-orchestra}"
+PROJECT_ID=""
+LEVEL_FILTER=""
+LIMIT="20"
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --level)
+            LEVEL_FILTER="${2:-}"
+            shift 2
+            ;;
+        --limit)
+            LIMIT="${2:-20}"
+            shift 2
+            ;;
+        -*)
+            echo "Usage: orch-audit [project-id] [--level L1|L2|L3|L4] [--limit N]" >&2
+            exit 1
+            ;;
+        *)
+            PROJECT_ID="$1"
+            shift
+            ;;
+    esac
+done
+
+python3 - "$AUDIT_ROOT" "$PROJECT_ID" "$LEVEL_FILTER" "$LIMIT" <<'PY'
+import glob
+import json
+import os
+import sys
+
+audit_root, project_id, level_filter, limit_text = sys.argv[1:]
+try:
+    limit = int(limit_text)
+except ValueError:
+    limit = 20
+
+if project_id:
+    files = [os.path.join(audit_root, project_id, "audit.jsonl")]
+else:
+    files = glob.glob(os.path.join(audit_root, "*", "audit.jsonl"))
+
+records = []
+for path in files:
+    if not os.path.exists(path):
+        continue
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if level_filter and record.get("level") != level_filter:
+                continue
+            records.append(record)
+
+records.sort(key=lambda item: item.get("timestamp", ""), reverse=True)
+print("timestamp\tproject\tlevel\ttype\tdecision\tdetails")
+for record in records[:limit]:
+    print("\t".join(str(record.get(field, "")) for field in ("timestamp", "project", "level", "type", "decision", "details")))
+PY

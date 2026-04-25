@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PACKAGE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
+
+RULES_FILE="$ORCHESTRA_HOME/rules.json"
+if [ ! -f "$RULES_FILE" ]; then
+    RULES_FILE="$PACKAGE_DIR/config/rules.json"
+fi
+
+if [ ! -f "$RULES_FILE" ]; then
+    echo "rules.json not found" >&2
+    exit 1
+fi
+
+if [ "$#" -gt 0 ]; then
+    OPERATION="$*"
+else
+    OPERATION="$(cat)"
+fi
+
+python3 - "$RULES_FILE" "$OPERATION" <<'PY'
+import json
+import sys
+
+rules_path, operation = sys.argv[1:]
+with open(rules_path, encoding="utf-8") as handle:
+    rules = json.load(handle)
+
+rank = {"L0": 0, "L1": 1, "L2": 2, "L3": 3, "L4": 4}
+best = {
+    "level": "L0",
+    "rule_id": "",
+    "description": "No static risk rule matched",
+    "matched_pattern": "",
+}
+operation_folded = operation.casefold()
+
+for rule in rules:
+    level = str(rule.get("level", "L0"))
+    for pattern in rule.get("patterns", []):
+        if str(pattern).casefold() in operation_folded and rank.get(level, 0) > rank.get(best["level"], 0):
+            best = {
+                "level": level,
+                "rule_id": str(rule.get("id", "")),
+                "description": str(rule.get("description", "")),
+                "matched_pattern": str(pattern),
+            }
+
+print(json.dumps(best, ensure_ascii=False, indent=2))
+sys.exit({"L0": 0, "L1": 1, "L2": 1, "L3": 2, "L4": 3}.get(best["level"], 1))
+PY

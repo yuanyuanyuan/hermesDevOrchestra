@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
+
+if [ -f "$ORCHESTRA_HOME/lib/orch-common.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ORCHESTRA_HOME/lib/orch-common.sh"
+else
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/../lib/orch-common.sh"
+fi
+
+if [ "$#" -lt 1 ]; then
+    echo "Usage: orch-approve <approval_id> [rationale]" >&2
+    exit 1
+fi
+
+orch_resolve_pending_decision "$1" "APPROVED" "${2:-approved}"

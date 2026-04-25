@@ -1,0 +1,32 @@
+[
+  {
+    "id": "rule-001",
+    "level": "L3",
+    "patterns": ["rm -rf /", "DROP TABLE", "DELETE FROM", "TRUNCATE"],
+    "description": "Destructive data operations"
+  },
+  {
+    "id": "rule-002",
+    "level": "L3",
+    "patterns": ["sudo", "chmod 777"],
+    "description": "System privilege escalation"
+  },
+  {
+    "id": "rule-003",
+    "level": "L4",
+    "patterns": ["ALTER TABLE DROP", "docker system prune", "kubectl delete"],
+    "description": "System-level destructive commands"
+  },
+  {
+    "id": "rule-004",
+    "level": "L3",
+    "patterns": ["ALTER TABLE", "CREATE TABLE", "DROP TABLE"],
+    "description": "Database schema changes"
+  },
+  {
+    "id": "rule-005",
+    "level": "L4",
+    "patterns": ["修改 .env", "修改密钥", "修改认证", "修改 JWT"],
+    "description": "Authentication and secret modifications"
+  }
+]

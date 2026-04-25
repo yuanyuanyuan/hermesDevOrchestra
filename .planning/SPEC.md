@@ -147,9 +147,9 @@ A `paths.json` manifest written to the State layer on Hermes startup records the
 | `hermes stop <project-id>` | Stop sessions for a project | project-id | termination confirmation | Yes — safe to call multiple times |
 | `hermes status` | Show all projects and their states | none | JSON array of project status rows | Yes |
 | `hermes task <project-id> <task-file>` | Append a task | project-id, task markdown file path | task ID, queued state | Yes — deduplicates by content hash within 5 min |
-| `hermes decisions` | List pending decisions | none | JSON array of pending decisions | Yes |
-| `hermes approve <decision-id>` | Approve a pending decision | decision-id | updated decision state | Yes — safe to call multiple times |
-| `hermes reject <decision-id>` | Reject a pending decision | decision-id | updated decision state | Yes |
+| `orch-decisions` | List pending local fallback decisions | optional project-id | tabular pending decisions | Yes |
+| `orch-approve <approval_id>` | Approve a pending local fallback decision | approval_id | user-authored approved decision envelope | No — approval IDs are one-time use |
+| `orch-reject <approval_id>` | Reject a pending local fallback decision | approval_id | user-authored rejected decision envelope | No — approval IDs are one-time use |
 | `hermes retry <task-id>` | Retry a stalled/failed task | task-id | new task attempt ID | No — creates new attempt |
 | `hermes doctor` | Preflight checks | none | health report JSON | Yes |
 | `hermes archive <project-id>` | Archive project state and audit | project-id | archive path | No — destructive to Runtime state |
@@ -538,7 +538,7 @@ L3 and L4 decisions block the affected project until the user explicitly approve
 
 **Ambiguous approval:**
 - If user response does not match structured choices, Hermes rejects the response, rewrites the request with clearer prompt.
-- If ambiguity persists after 3 attempts, auto-rejects and escalates to manual review via `hermes decisions`.
+- If ambiguity persists after 3 attempts, auto-rejects and escalates to manual review via `orch-decisions`.
 
 ### RISK-05 — Risk rule table (NEW per REQUIREMENTS-REV1)
 
@@ -608,8 +608,8 @@ The remote channel never writes canonical bus decisions directly. Hermes:
 When no remote adapter is configured, Hermes provides a file-based fallback:
 
 - Decision requests written to `${RUNTIME}/decisions/{project-id}/{decision-id}.request.json`
-- User lists pending decisions: `hermes decisions`
-- User responds: `hermes approve <decision-id>` or `hermes reject <decision-id>`
+- User lists pending decisions: `orch-decisions`
+- User responds: `orch-approve <approval_id>` or `orch-reject <approval_id>`
 - Response written to `${RUNTIME}/decisions/{project-id}/{decision-id}.response.json`
 - Hermes polls the decisions directory at configurable interval (default: 5 seconds)
 - On read: validates one-time use, TTL, project/task binding, writes final decision to Audit, deletes response file
@@ -732,7 +732,7 @@ On Hermes restart or crash:
 
 **Scenario 4: L3/L4 block and resolution**
 - Initial: Project blocked on L3 escalation
-- Input: User approves via `hermes approve <decision-id>`
+- Input: User approves via `orch-approve <approval_id>`
 - Expected: Hermes validates approval → writes decision → unblocks project → Codex resumes
 - Pass criteria: Project state `active`; Audit has `escalation_resolved`; task completes
 

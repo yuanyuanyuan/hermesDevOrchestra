@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
+
+if [ -f "$ORCHESTRA_HOME/lib/orch-common.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ORCHESTRA_HOME/lib/orch-common.sh"
+else
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/../lib/orch-common.sh"
+fi
+
+PROJECT_ID="${1:-}"
+
+project_prefix() {
+    printf "[$PROJECT_ID] %s\n" "$1"
+}
+
+session_state() {
+    local session="$1"
+
+    if command -v tmux >/dev/null 2>&1 && orch_tmux_session_running "$session"; then
+        echo "running"
+    else
+        echo "stopped"
+    fi
+}
+
+first_line_120() {
+    local file="$1"
+    python3 - "$file" <<'PY' 2>/dev/null || true
+import re, sys
+try:
+    text = open(sys.argv[1], encoding="utf-8").read()
+except Exception:
+    text = ""
+text = re.sub(r"\s+", " ", text).strip()
+print(text[:120])
+PY
+}
+
+review_decision() {
+    local file="$1"
+    local value
+
+    value="$(orch_json_field "$file" "decision")"
+    if [ -n "$value" ]; then
+        echo "$value"
+    elif grep -q "APPROVED" "$file" 2>/dev/null; then
+        echo "APPROVED"
+    elif grep -q "REJECTED" "$file" 2>/dev/null; then
+        echo "REJECTED"
+    elif grep -q "NEEDS_MODIFICATION" "$file" 2>/dev/null; then
+        echo "NEEDS_MODIFICATION"
+    else
+        echo "unknown"
+    fi
+}
+
+echo "=== Hermes Dev Orchestra Status ==="
+
+if [ -z "$PROJECT_ID" ]; then
+    echo "--- registered projects ---"
+    if [ -f "$STATE_ROOT/projects.json" ]; then
+        python3 - "$STATE_ROOT/projects.json" <<'PY'
+import json, sys
+try:
+    projects = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    projects = []
+if not projects:
+    print("No registered projects")
+for project in projects:
+    print(f"{project.get('project_id')} {project.get('project_dir')}")
+PY
+    else
+        echo "No registered projects"
+    fi
+    echo "--- active orchestra sessions ---"
+    if command -v tmux >/dev/null 2>&1; then
+        tmux ls 2>/dev/null | grep "hermes-" || echo "No active orchestra sessions"
+    else
+        echo "tmux command unavailable"
+    fi
+    exit 0
+fi
+
+orch_validate_project_id "$PROJECT_ID"
+orch_project_dirs "$PROJECT_ID"
+
+project_prefix "Project: $PROJECT_ID"
+project_prefix "Stage: $(orch_stage_for_project "$PROJECT_ID")"
+project_prefix "Claude session: $CLAUDE_SESSION $(session_state "$CLAUDE_SESSION")"
+project_prefix "Codex session: $CODEX_SESSION $(session_state "$CODEX_SESSION")"
+
+if [ -f "$STATE_DIR/watcher.pid" ] && kill -0 "$(cat "$STATE_DIR/watcher.pid")" 2>/dev/null; then
+    project_prefix "Watcher: running pid $(cat "$STATE_DIR/watcher.pid")"
+else
+    project_prefix "Watcher: stopped"
+fi
+
+if [ -f "$STATE_DIR/last-task.hash" ]; then
+    project_prefix "Active task hash: $(cat "$STATE_DIR/last-task.hash")"
+fi
+
+pending_approval_line() {
+    python3 - "$STATE_DIR" <<'PY' 2>/dev/null || true
+import glob
+import json
+import os
+import time
+import sys
+
+state_dir = sys.argv[1]
+now = int(time.time())
+records = []
+for path in glob.glob(os.path.join(state_dir, "pending-decisions", "*.json")):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            record = json.load(handle)
+    except Exception:
+        continue
+    if record.get("used_at"):
+        continue
+    if int(record.get("expires_at_epoch") or 0) < now:
+        continue
+    records.append(record)
+records.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+if records:
+    record = records[0]
+    approval_id = record.get("approval_id", "")
+    level = record.get("level", "")
+    task_id = record.get("task_id", "")
+    expires = record.get("expires_at_epoch", "")
+    print(f"Pending approval: {approval_id} {level} task={task_id} expires_at={expires}")
+    print(f"Decision commands: orch-approve {approval_id} | orch-reject {approval_id}")
+PY
+}
+
+while IFS= read -r pending_line; do
+    [ -n "$pending_line" ] && project_prefix "$pending_line"
+done < <(pending_approval_line)
+
+project_prefix "Runtime: $RUNTIME_DIR"
+project_prefix "State: $STATE_DIR/project.env"
+project_prefix "Audit: $AUDIT_DIR"
+
+for bus_file in task.md codex-question.md claude-decision.md codex-result.md review-result.md escalation.md; do
+    project_prefix "$(orch_print_file_marker "$RUNTIME_DIR/$bus_file")"
+done
+
+if [ -f "$RUNTIME_DIR/codex-result.md" ]; then
+    project_prefix "Last Codex result: $(first_line_120 "$RUNTIME_DIR/codex-result.md")"
+fi
+
+if [ -f "$RUNTIME_DIR/review-result.md" ]; then
+    project_prefix "Last review decision: $(review_decision "$RUNTIME_DIR/review-result.md")"
+fi
+
+if [ -f "$RUNTIME_DIR/escalation.md" ]; then
+    project_prefix "Escalation: present — blocked pending user decision"
+fi

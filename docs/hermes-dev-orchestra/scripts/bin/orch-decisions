@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STATE_ROOT="${STATE_ROOT:-$HOME/.local/state/hermes-orchestra}"
+PROJECT_ID="${1:-}"
+
+python3 - "$STATE_ROOT" "$PROJECT_ID" <<'PY'
+import glob
+import json
+import os
+import sys
+import time
+
+state_root, project_filter = sys.argv[1:]
+now = int(time.time())
+pattern = os.path.join(state_root, project_filter or "*", "pending-decisions", "*.json")
+records = []
+for path in glob.glob(pattern):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            record = json.load(handle)
+    except Exception:
+        continue
+    record["_path"] = path
+    records.append(record)
+
+records.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+# Output header: ID	Project	Level	Task	Age	Status	Summary
+print("ID\tProject\tLevel\tTask\tAge\tStatus\tSummary")
+for record in records:
+    created_at = record.get("created_at", "")
+    status = record.get("status", "PENDING")
+    if record.get("used_at"):
+        status = record.get("decision", "USED")
+    elif int(record.get("expires_at_epoch") or 0) < now:
+        status = "EXPIRED"
+    age = ""
+    try:
+        age = f"{max(0, now - int(record.get('created_at_epoch') or 0))}s"
+    except Exception:
+        age = ""
+    print("\t".join([
+        str(record.get("approval_id", "")),
+        str(record.get("project_id", "")),
+        str(record.get("level", "")),
+        str(record.get("task_id", "")),
+        age,
+        status,
+        str(record.get("details", ""))[:120],
+    ]))
+PY

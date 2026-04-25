@@ -22,7 +22,7 @@ metadata:
 ## Architecture Overview
 
 ```
-User (Windows SSH / Telegram)
+User (Windows SSH / abstract Remote Decision Channel)
     ↓
 Hermes Agent (Ubuntu) —— 顶层编排器
     ├─ todo 管理多项目任务队列
@@ -43,8 +43,8 @@ Project C: [tmux: hermes-C-claude] ← 文件通信 → [tmux: hermes-C-codex]
 
 ## Prerequisites
 
-- Hermes Agent >= v0.10.0
-- Claude Code CLI >= v2.1.110 (with `--channels` support)
+- Hermes Agent >= v0.11.0
+- Claude Code CLI >= v2.1.110
 - Codex CLI >= v0.122.0 (with `exec --full-auto` support)
 - tmux >= 3.0
 - Node.js >= 18
@@ -63,19 +63,33 @@ Project C: [tmux: hermes-C-claude] ← 文件通信 → [tmux: hermes-C-codex]
    terminal(command="cd {project_dir} && git init && git add . && git commit -m 'init' || true")
    ```
 
-2. 创建项目通信总线目录：
+2. 通过 `orch-init <project-id> <project-dir>` 创建四层项目目录：
    ```bash
-   terminal(command="mkdir -p /tmp/hermes-orchestra/{project_name}")
+   terminal(command="orch-init {project_id} {project_dir}")
    ```
 
-3. 写入初始任务文件：
+3. 当用户向项目分配任务时，Hermes 写入 Runtime `task.md`。文件名保留 `.md` 兼容命名，内容必须是 JSON envelope，包含 `schema_version`、`message_id`、`project_id`、`task_id`、`correlation_id`、`status`、`author`、`authority`、`timestamp`、`description`、`requirements`、`constraints`、`priority`：
    ```bash
    terminal(command="cat > /tmp/hermes-orchestra/{project_name}/task.md << 'EOF'
-   # Task: {task_description}
-   # Created: $(date -Iseconds)
-   # Status: pending
+{
+  \"schema_version\": \"1.0\",
+  \"message_id\": \"msg-{uuid}\",
+  \"project_id\": \"{project_id}\",
+  \"task_id\": \"task-{uuid}\",
+  \"correlation_id\": \"corr-{uuid}\",
+  \"status\": \"queued\",
+  \"author\": \"hermes\",
+  \"authority\": \"orchestrator\",
+  \"timestamp\": \"{iso8601}\",
+  \"description\": \"{task_description}\",
+  \"requirements\": [\"{requirement_1}\"],
+  \"constraints\": [\"{constraint_1}\"],
+  \"priority\": \"normal\"
+}
    EOF")
    ```
+
+4. Remote Decision Channel 在 v1 中保持抽象：Hermes 可以通过 SSH/local fallback 或后续适配器通知用户，但不得把 v1 绑定到 Telegram、Discord 或任何具体传输。
 
 ### Phase 2: 启动 Claude Code 监督进程
 
@@ -84,7 +98,7 @@ Claude Code 作为监督者，使用 **tmux + PTY 模式** 保持持久会话，
 ```bash
 # 启动 tmux 会话运行 Claude Code（监督模式）
 terminal(
-    command="tmux new-session -d -s hermes-{project}-claude -x 180 -y 40 'cd {project_dir} && claude --permission-mode auto --channels'",
+    command="tmux new-session -d -s hermes-{project}-claude -x 180 -y 40 'cd {project_dir} && claude --permission-mode auto'",
     background=true,
     pty=true,
     notify_on_complete=false,
@@ -94,7 +108,6 @@ terminal(
 
 **关键配置说明：**
 - `--permission-mode auto`：Claude Code 自动批准低风险操作，高风险操作触发 PermissionRequest Hook
-- `--channels`：Claude Code 的审批提示通过 Telegram/Discord 中继（v2.1.81+）
 - 实际生产中推荐配置 `.claude/settings.json` Hooks（见下方附录）
 
 ### Phase 3: 启动 Codex 执行进程
@@ -121,26 +134,27 @@ terminal(
 #### 4.1 派发编码任务给 Codex
 
 ```bash
-# 将任务写入共享文件，Codex 读取并执行
+# 将 canonical JSON envelope 写入共享文件，watcher 读取并派发给 Codex
 terminal(command="cat > /tmp/hermes-orchestra/{project_name}/task.md << 'EOF'
-## New Task
-Description: {detailed_task}
-Requirements:
-- {requirement_1}
-- {requirement_2}
-
-## Constraints
-- 仅修改 src/ 目录下的文件
-- 不要修改配置文件
-- 执行前运行 npm test 验证
-
-## Communication Rules
-- 如有疑问，写入 /tmp/hermes-orchestra/{project_name}/codex-question.md
-- 完成后写入 /tmp/hermes-orchestra/{project_name}/codex-result.md
+{
+  \"schema_version\": \"1.0\",
+  \"message_id\": \"msg-{uuid}\",
+  \"project_id\": \"{project_id}\",
+  \"task_id\": \"task-{uuid}\",
+  \"correlation_id\": \"corr-{uuid}\",
+  \"status\": \"queued\",
+  \"author\": \"hermes\",
+  \"authority\": \"orchestrator\",
+  \"timestamp\": \"{iso8601}\",
+  \"description\": \"{detailed_task}\",
+  \"requirements\": [\"{requirement_1}\", \"{requirement_2}\"],
+  \"constraints\": [\"仅修改 src/ 目录下的文件\", \"执行前运行 npm test 验证\"],
+  \"priority\": \"normal\"
+}
 EOF")
 
-# 向 Codex tmux 会话发送任务指令
-terminal(command="tmux send-keys -t hermes-{project}-codex 'cat /tmp/hermes-orchestra/{project_name}/task.md | codex exec --full-auto -' Enter")
+# internal watcher 派发 task.md 到 Codex tmux：
+terminal(command="orch-start {project_id} {project_dir}")
 ```
 
 #### 4.2 处理 Codex 疑问（一般决策）
@@ -154,23 +168,8 @@ terminal(command="inotifywait -q -e create,modify /tmp/hermes-orchestra/{project
 # 读取 Codex 的疑问
 read_file(file_path="/tmp/hermes-orchestra/{project_name}/codex-question.md")
 
-# 将疑问转发给 Claude Code 决策
-terminal(command="cat > /tmp/hermes-orchestra/{project_name}/claude-decision.md << 'EOF'
-## Decision Request from Codex
-{question_content}
-
-## Your Role
-作为监督者，请给出明确的决策：
-1. 批准/拒绝该方案
-2. 如果批准，给出具体实施建议
-3. 如果拒绝，说明理由并给出替代方案
-EOF")
-
-# 向 Claude Code tmux 发送决策任务
-terminal(command="tmux send-keys -t hermes-{project}-claude 'cat /tmp/hermes-orchestra/{project_name}/claude-decision.md | claude -p' Enter")
-
-# 等待 Claude 完成决策（轮询或等待文件更新）
-terminal(command="sleep 10 && cat /tmp/hermes-orchestra/{project_name}/claude-decision.md")
+# watcher 转发给 Claude Supervisor，Claude 写入 claude-decision.md JSON envelope
+terminal(command="orch-status {project_id}")
 ```
 
 #### 4.3 危险决策升级（Hermes 介入）
@@ -202,17 +201,17 @@ clarify(
 )
 ```
 
-如果用户配置了 Telegram/Discord，同时发送消息通知：
+如果用户配置了具体 Remote Decision Channel，同时发送消息通知：
 
 ```bash
 send_message(
     action="send",
-    target="telegram",
-    message="【开发警报】项目 {project_name} 需要您的决策：{escalation_summary}\n请在 Telegram 回复或 SSH 到服务器处理。"
+    target="{remote-channel}",
+    message="【开发警报】项目 {project_name} 需要您的决策：{escalation_summary}\n请通过远程通道或 SSH/local fallback 处理。"
 )
 ```
 
-用户决策后，Hermes 将结果写入 `claude-decision.md`，Claude Code 和 Codex 继续执行。
+用户决策后，Hermes 将结果写入 `claude-decision.md`，Claude Code 和 Codex 继续执行。远程通道未配置时使用 `orch-decisions`、`orch-approve <approval_id>`、`orch-reject <approval_id>`；当前里程碑的 `modify` 建模为 `orch-reject <approval_id>` 后提交修订任务。风险与审计 helper 为 `orch-risk-check` 和 `orch-audit`。
 
 ### Phase 5: 多项目并行管理
 
@@ -293,7 +292,7 @@ terminal(command="hermes doctor && claude --version && codex --version && tmux -
 ```
 
 预期输出：
-- `hermes v0.10.0` 或更高
+- `hermes v0.11.0` 或更高
 - `claude` 版本 >= 2.1.110
 - `codex` 版本 >= 0.122.0
 - `tmux` 版本 >= 3.0

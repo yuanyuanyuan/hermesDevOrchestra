@@ -1,0 +1,469 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
+
+if [ -f "$ORCHESTRA_HOME/lib/orch-common.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ORCHESTRA_HOME/lib/orch-common.sh"
+else
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/../lib/orch-common.sh"
+fi
+
+if [ "$#" -lt 2 ]; then
+    echo "Usage: orch-bus-loop <project-id> <project-dir> [--once]" >&2
+    exit 1
+fi
+
+PROJECT_ID="$1"
+PROJECT_DIR_INPUT="$2"
+ONCE="${3:-}"
+
+orch_validate_project_id "$PROJECT_ID"
+orch_require_command python3
+
+PROJECT_DIR="$(cd "$PROJECT_DIR_INPUT" && pwd)"
+orch_project_dirs "$PROJECT_ID"
+mkdir -p "$RUNTIME_DIR" "$STATE_DIR" "$AUDIT_DIR/pending"
+
+log_loop() {
+    printf '[%s] %s\n' "$(orch_now)" "$*" >> "$STATE_DIR/orch-bus-loop.log"
+}
+
+quote() {
+    printf '%q' "$1"
+}
+
+write_runner() {
+    local path="$1"
+    shift
+    {
+        echo '#!/usr/bin/env bash'
+        echo 'set -euo pipefail'
+        printf 'cd %q\n' "$PROJECT_DIR"
+        printf 'export HERMES_ORCHESTRA_PROJECT=%q\n' "$PROJECT_ID"
+        "$@"
+    } > "$path"
+    chmod +x "$path"
+}
+
+send_runner() {
+    local session="$1"
+    local runner="$2"
+
+    tmux send-keys -t "$session" "bash $(quote "$runner")" Enter
+}
+
+task_id_from_bus() {
+    local task_id
+
+    task_id="$(orch_json_field "$RUNTIME_DIR/task.md" "task_id")"
+    if [ -z "$task_id" ] || [ "$task_id" = "null" ]; then
+        task_id="task-$(date +%s)"
+    fi
+    echo "$task_id"
+}
+
+risk_check_command() {
+    if [ -x "$ORCHESTRA_HOME/bin/orch-risk-check" ]; then
+        echo "$ORCHESTRA_HOME/bin/orch-risk-check"
+    else
+        echo "$SCRIPT_DIR/orch-risk-check"
+    fi
+}
+
+level_rank() {
+    case "${1:-L0}" in
+        L4) echo 4 ;;
+        L3) echo 3 ;;
+        L2) echo 2 ;;
+        L1) echo 1 ;;
+        *) echo 0 ;;
+    esac
+}
+
+normalize_level() {
+    case "${1:-}" in
+        L4|l4|CRITICAL|Critical|critical) echo "L4" ;;
+        L3|l3|DANGER|Danger|danger) echo "L3" ;;
+        L2|l2|WARNING|Warning|warning) echo "L2" ;;
+        L1|l1|NOTICE|Notice|notice) echo "L1" ;;
+        *) echo "L0" ;;
+    esac
+}
+
+higher_level() {
+    local left
+    local right
+
+    left="$(normalize_level "$1")"
+    right="$(normalize_level "$2")"
+    if [ "$(level_rank "$right")" -gt "$(level_rank "$left")" ]; then
+        echo "$right"
+    else
+        echo "$left"
+    fi
+}
+
+risk_level_for_text() {
+    local text="$1"
+    local output
+    local command_path
+
+    command_path="$(risk_check_command)"
+    if [ ! -x "$command_path" ]; then
+        echo "L0"
+        return
+    fi
+    set +e
+    output="$(printf '%s' "$text" | "$command_path" 2>/dev/null)"
+    set -e
+    python3 - "$output" <<'PY' 2>/dev/null || echo "L0"
+import json
+import sys
+try:
+    print(json.loads(sys.argv[1]).get("level", "L0"))
+except Exception:
+    print("L0")
+PY
+}
+
+file_text() {
+    local file="$1"
+    [ -f "$file" ] && cat "$file" || true
+}
+
+decision_operation_text() {
+    local file="$1"
+
+    {
+        file_text "$file"
+        for field in operation operation_text details rationale level risk_level assessment.assessed_level authority; do
+            orch_json_field "$file" "$field"
+        done
+        file_text "$RUNTIME_DIR/task.md"
+    } | sed '/^$/d'
+}
+
+explicit_level_from_file() {
+    local file="$1"
+    local level="L0"
+    local value
+
+    for field in level risk_level assessment.assessed_level; do
+        value="$(orch_json_field "$file" "$field")"
+        level="$(higher_level "$level" "$value")"
+    done
+    echo "$level"
+}
+
+ensure_pending_for_hash() {
+    local kind="$1"
+    local hash="$2"
+    local level="$3"
+    local request_type="$4"
+    local details="$5"
+    local task_id="$6"
+    local escalation_id="$7"
+    local agent_source="$8"
+    local hash_file="$STATE_DIR/last-$kind-pending.hash"
+    local id_file="$STATE_DIR/last-$kind-pending.id"
+    local approval_id=""
+
+    if [ -f "$hash_file" ] && [ "$(cat "$hash_file")" = "$hash" ] && [ -f "$id_file" ]; then
+        approval_id="$(cat "$id_file")"
+        if orch_find_pending_decision "$approval_id" >/dev/null 2>&1; then
+            echo "$approval_id"
+            return
+        fi
+    fi
+
+    approval_id="$(orch_create_pending_decision "$level" "$request_type" "$details" "$task_id" "$escalation_id" "$agent_source")"
+    echo "$hash" > "$hash_file"
+    echo "$approval_id" > "$id_file"
+    echo "$approval_id"
+}
+
+review_decision_value() {
+    local value
+
+    value="$(orch_json_field "$RUNTIME_DIR/review-result.md" "decision")"
+    if [ -n "$value" ]; then
+        echo "$value"
+    elif grep -q "APPROVED" "$RUNTIME_DIR/review-result.md" 2>/dev/null; then
+        echo "APPROVED"
+    elif grep -q "REJECTED" "$RUNTIME_DIR/review-result.md" 2>/dev/null; then
+        echo "REJECTED"
+    elif grep -q "NEEDS_MODIFICATION" "$RUNTIME_DIR/review-result.md" 2>/dev/null; then
+        echo "NEEDS_MODIFICATION"
+    else
+        echo "unknown"
+    fi
+}
+
+dispatch_codex_task() {
+    local task_hash="$1"
+    local runner="$STATE_DIR/run-codex-task.sh"
+
+    write_runner "$runner" cat <<EOF
+{
+  printf '%s\n' 'You are Codex Executor for project [$PROJECT_ID]. Read the JSON task envelope below. If blocked or uncertain, write a JSON question envelope to $(quote "$RUNTIME_DIR/codex-question.md") and stop. On completion, produce a JSON result envelope for codex-result.md.'
+  cat $(quote "$RUNTIME_DIR/task.md")
+} | codex exec --full-auto --json --output-last-message $(quote "$RUNTIME_DIR/codex-result.md") - > $(quote "$STATE_DIR/codex-events.jsonl") 2>> $(quote "$STATE_DIR/codex.err")
+touch $(quote "$RUNTIME_DIR/.codex-done")
+EOF
+
+    orch_write_project_state "executing" "$(task_id_from_bus)"
+    echo "$task_hash" > "$STATE_DIR/last-task.hash"
+    send_runner "$CODEX_SESSION" "$runner"
+    log_loop "dispatched task.md to $CODEX_SESSION"
+}
+
+route_question_to_claude() {
+    local question_hash
+    local runner="$STATE_DIR/run-claude-decision.sh"
+
+    orch_project_matches_if_present "$RUNTIME_DIR/codex-question.md" || {
+        log_loop "codex-question.md project_id mismatch; not routing"
+        return 0
+    }
+
+    question_hash="$(sha256sum "$RUNTIME_DIR/codex-question.md" | awk '{print $1}')"
+    if [ -f "$STATE_DIR/last-question.hash" ] && [ "$(cat "$STATE_DIR/last-question.hash")" = "$question_hash" ]; then
+        return 0
+    fi
+
+    write_runner "$runner" cat <<EOF
+cat $(quote "$RUNTIME_DIR/codex-question.md") | claude -p --output-format json --permission-mode auto "You are Claude Supervisor for project [$PROJECT_ID]. Read the Codex question from stdin and write a JSON decision envelope for claude-decision.md. Include schema_version, message_id, project_id, task_id, correlation_id, status, author, authority, timestamp, decision, rationale, and execution.authority_sufficient. Do not approve L3/L4; write escalation guidance instead." > $(quote "$RUNTIME_DIR/claude-decision.md") 2>> $(quote "$STATE_DIR/claude.err")
+EOF
+
+    orch_write_project_state "waiting" "$(task_id_from_bus)"
+    echo "$question_hash" > "$STATE_DIR/last-question.hash"
+    send_runner "$CLAUDE_SESSION" "$runner"
+    log_loop "routed codex-question.md to $CLAUDE_SESSION"
+}
+
+handle_escalation_if_present() {
+    local escalation_hash
+    local task_id
+    local explicit_level
+    local classifier_level
+    local effective_level
+    local details
+    local request_type
+    local escalation_id
+    local approval_id
+
+    [ -f "$RUNTIME_DIR/escalation.md" ] || return 1
+    orch_project_matches_if_present "$RUNTIME_DIR/escalation.md" || {
+        log_loop "escalation.md project_id mismatch; not routing"
+        return 0
+    }
+
+    escalation_hash="$(sha256sum "$RUNTIME_DIR/escalation.md" | awk '{print $1}')"
+    task_id="$(orch_json_field "$RUNTIME_DIR/escalation.md" "task_id")"
+    [ -n "$task_id" ] && [ "$task_id" != "null" ] || task_id="$(task_id_from_bus)"
+    explicit_level="$(explicit_level_from_file "$RUNTIME_DIR/escalation.md")"
+    classifier_level="$(risk_level_for_text "$(file_text "$RUNTIME_DIR/escalation.md")")"
+    effective_level="$(higher_level "$explicit_level" "$classifier_level")"
+    details="$(orch_json_field "$RUNTIME_DIR/escalation.md" "details")"
+    [ -n "$details" ] || details="$(file_text "$RUNTIME_DIR/escalation.md" | head -c 500)"
+    request_type="$(orch_json_field "$RUNTIME_DIR/escalation.md" "type")"
+    [ -n "$request_type" ] || request_type="ESCALATION"
+    escalation_id="$(orch_json_field "$RUNTIME_DIR/escalation.md" "escalation_id")"
+    [ -n "$escalation_id" ] || escalation_id="$escalation_hash"
+
+    if [ "$(level_rank "$effective_level")" -ge 3 ]; then
+        approval_id="$(ensure_pending_for_hash "escalation" "$escalation_hash" "$effective_level" "$request_type" "$details" "$task_id" "$escalation_id" "escalation-handler")"
+        orch_write_project_state "blocked" "$task_id"
+        log_loop "pending approval $approval_id for escalation.md effective_level=$effective_level"
+        return 0
+    fi
+
+    orch_write_project_state "waiting" "$task_id"
+    log_loop "escalation.md below L3; waiting for supervisor handling"
+    return 0
+}
+
+continue_codex_after_decision() {
+    local sufficient
+    local decision_hash
+    local runner="$STATE_DIR/run-codex-decision.sh"
+    local author
+    local authority
+    local explicit_level
+    local classifier_level
+    local effective_level
+    local approval_id
+    local decision
+    local task_id
+    local details
+    local approval_pending_id
+
+    orch_project_matches_if_present "$RUNTIME_DIR/claude-decision.md" || {
+        log_loop "claude-decision.md project_id mismatch; not routing"
+        return 0
+    }
+
+    author="$(orch_json_field "$RUNTIME_DIR/claude-decision.md" "author")"
+    if [ "$author" != "user" ]; then
+        orch_correlation_compatible "$RUNTIME_DIR/task.md" "$RUNTIME_DIR/codex-question.md" "$RUNTIME_DIR/claude-decision.md" || {
+            log_loop "correlation_id mismatch; not continuing Codex"
+            return 0
+        }
+    fi
+
+    task_id="$(orch_json_field "$RUNTIME_DIR/claude-decision.md" "task_id")"
+    [ -n "$task_id" ] && [ "$task_id" != "null" ] || task_id="$(task_id_from_bus)"
+    decision="$(orch_json_field "$RUNTIME_DIR/claude-decision.md" "decision")"
+    sufficient="$(orch_json_field "$RUNTIME_DIR/claude-decision.md" "execution.authority_sufficient")"
+    authority="$(normalize_level "$(orch_json_field "$RUNTIME_DIR/claude-decision.md" "authority")")"
+    explicit_level="$(explicit_level_from_file "$RUNTIME_DIR/claude-decision.md")"
+    classifier_level="$(risk_level_for_text "$(decision_operation_text "$RUNTIME_DIR/claude-decision.md")")"
+    effective_level="$(higher_level "$explicit_level" "$classifier_level")"
+    if [ "$(level_rank "$effective_level")" -gt "$(level_rank "$authority")" ]; then
+        sufficient="false"
+    fi
+
+    if [ "$author" = "user" ] && [ "$decision" = "REJECTED" ]; then
+        orch_write_project_state "failed" "$task_id"
+        orch_append_audit "decision_rejected" "$PROJECT_ID" "$effective_level" "REJECTED" "$(orch_json_field "$RUNTIME_DIR/claude-decision.md" "rationale")" "User rejected pending decision" "$(orch_json_field "$RUNTIME_DIR/claude-decision.md" "approval_id")" "" "$task_id" "" "orch-bus-loop" ""
+        log_loop "user rejected decision; project failed"
+        return 0
+    fi
+
+    approval_id="$(orch_json_field "$RUNTIME_DIR/claude-decision.md" "approval_id")"
+    if [ "$(level_rank "$effective_level")" -ge 3 ] || [ -n "$approval_id" ]; then
+        if [ "$author" != "user" ] || [ "$decision" != "APPROVED" ] || [ -z "$approval_id" ] || ! orch_pending_decision_approved "$approval_id" "$PROJECT_ID" "$task_id"; then
+            decision_hash="$(sha256sum "$RUNTIME_DIR/claude-decision.md" | awk '{print $1}')"
+            details="$(decision_operation_text "$RUNTIME_DIR/claude-decision.md" | head -c 500)"
+            approval_pending_id="$(ensure_pending_for_hash "decision" "$decision_hash" "$effective_level" "DECISION" "rulebook_override: $details" "$task_id" "$decision_hash" "orch-bus-loop")"
+            orch_write_project_state "blocked" "$task_id"
+            log_loop "pending approval $approval_pending_id for claude-decision.md effective_level=$effective_level"
+            return 0
+        fi
+    fi
+
+    if [ "$sufficient" != "true" ]; then
+        orch_write_project_state "blocked" "$task_id"
+        log_loop "authority insufficient; project blocked"
+        return 0
+    fi
+
+    decision_hash="$(sha256sum "$RUNTIME_DIR/claude-decision.md" | awk '{print $1}')"
+    if [ -f "$STATE_DIR/last-decision.hash" ] && [ "$(cat "$STATE_DIR/last-decision.hash")" = "$decision_hash" ]; then
+        return 0
+    fi
+
+    write_runner "$runner" cat <<EOF
+{
+  printf '%s\n' 'You are Codex Executor for project [$PROJECT_ID]. Continue the task using the JSON task and Claude decision envelopes below. Use a fresh one-shot execution with injected context.'
+  cat $(quote "$RUNTIME_DIR/task.md") $(quote "$RUNTIME_DIR/claude-decision.md")
+} | codex exec --full-auto --json --output-last-message $(quote "$RUNTIME_DIR/codex-result.md") - >> $(quote "$STATE_DIR/codex-events.jsonl") 2>> $(quote "$STATE_DIR/codex.err")
+touch $(quote "$RUNTIME_DIR/.codex-done")
+EOF
+
+    orch_write_project_state "executing" "$task_id"
+    echo "$decision_hash" > "$STATE_DIR/last-decision.hash"
+    send_runner "$CODEX_SESSION" "$runner"
+    log_loop "continued Codex after claude-decision.md"
+}
+
+route_result_to_review() {
+    local result_hash
+    local runner="$STATE_DIR/run-claude-review.sh"
+
+    result_hash="$(sha256sum "$RUNTIME_DIR/codex-result.md" | awk '{print $1}')"
+    if [ -f "$STATE_DIR/last-result.hash" ] && [ "$(cat "$STATE_DIR/last-result.hash")" = "$result_hash" ]; then
+        return 0
+    fi
+
+    write_runner "$runner" cat <<EOF
+cat $(quote "$RUNTIME_DIR/codex-result.md") | claude -p --output-format json --permission-mode auto "You are Claude Supervisor for project [$PROJECT_ID]. Review the Codex result from stdin and write a JSON review envelope for review-result.md with decision APPROVED, REJECTED, or NEEDS_MODIFICATION." > $(quote "$RUNTIME_DIR/review-result.md") 2>> $(quote "$STATE_DIR/claude.err")
+EOF
+
+    orch_write_project_state "reviewing" "$(task_id_from_bus)"
+    echo "$result_hash" > "$STATE_DIR/last-result.hash"
+    send_runner "$CLAUDE_SESSION" "$runner"
+    log_loop "routed codex-result.md to $CLAUDE_SESSION for review"
+}
+
+finalize_review_if_ready() {
+    local decision
+    local archived_question
+
+    decision="$(review_decision_value)"
+    case "$decision" in
+        APPROVED)
+            orch_archive_task_artifacts "$(task_id_from_bus)"
+            orch_write_project_state "completed" "$(task_id_from_bus)"
+            log_loop "review approved; archived task artifacts"
+            if [ -f "$RUNTIME_DIR/codex-question.md" ]; then
+                archived_question="$AUDIT_DIR/pending/codex-question.$(date +%s).md"
+                mv "$RUNTIME_DIR/codex-question.md" "$archived_question"
+            fi
+            ;;
+        REJECTED)
+            orch_write_project_state "failed" "$(task_id_from_bus)"
+            ;;
+        NEEDS_MODIFICATION)
+            orch_write_project_state "waiting" "$(task_id_from_bus)"
+            ;;
+    esac
+}
+
+process_once() {
+    local task_hash
+
+    if handle_escalation_if_present; then
+        return 0
+    fi
+
+    if [ -f "$RUNTIME_DIR/.codex-done" ] || [ -f "$RUNTIME_DIR/.codex-signal" ]; then
+        rm -f "$RUNTIME_DIR/.codex-done" "$RUNTIME_DIR/.codex-signal"
+        log_loop "codex signal consumed"
+    fi
+
+    if [ -f "$RUNTIME_DIR/review-result.md" ]; then
+        finalize_review_if_ready
+        return 0
+    fi
+
+    if [ -f "$RUNTIME_DIR/codex-result.md" ]; then
+        route_result_to_review
+        return 0
+    fi
+
+    if [ -f "$RUNTIME_DIR/claude-decision.md" ] && [ -f "$RUNTIME_DIR/codex-question.md" ]; then
+        continue_codex_after_decision
+        return 0
+    fi
+
+    if [ -f "$RUNTIME_DIR/codex-question.md" ]; then
+        route_question_to_claude
+        return 0
+    fi
+
+    if [ -f "$RUNTIME_DIR/task.md" ]; then
+        task_hash="$(orch_current_task_hash)"
+        if [ -n "$task_hash" ] && { [ ! -f "$STATE_DIR/last-task.hash" ] || [ "$(cat "$STATE_DIR/last-task.hash")" != "$task_hash" ]; }; then
+            dispatch_codex_task "$task_hash"
+        fi
+    fi
+}
+
+if [ "$ONCE" = "--once" ]; then
+    process_once
+    exit 0
+fi
+
+while true; do
+    process_once
+    if command -v inotifywait >/dev/null 2>&1; then
+        inotifywait -q -e create,modify,move "$RUNTIME_DIR" >/dev/null 2>&1 || sleep 2
+    else
+        sleep 2
+    fi
+done

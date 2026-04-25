@@ -1,58 +1,52 @@
 # Requirements: Hermes Dev Orchestra
 
 **Defined:** 2026-04-25  
-**Milestone:** v1.1 — Hermes CLI Prototype  
+**Milestone:** v1.1 — Upstream Hermes Agent Integration  
 **Core Value:** 用户可以通过 SSH/Hermes CLI 随时追加开发任务，让 Hermes 自动调度 Claude 与 Codex 推进多个项目，只在高风险或产品级决策时打断用户。
 
 ## v1.1 Requirements
 
-This milestone turns the v1.0 specification package into a local Hermes CLI prototype. Scope is a minimal, testable vertical slice: command shell, path/state/bus foundations, project/task/status operations, doctor/preflight, local decision fallback, and prototype verification.
+This milestone turns the v1.0 specification package into an upstream-first implementation based on `https://github.com/NousResearch/hermes-agent`. Scope is a minimal, testable vertical slice: install/probe upstream Hermes Agent, load the orchestra SOUL/skills package, bootstrap per-project tmux Claude/Codex sessions, coordinate through the file bus, enforce local L3/L4 decisions, and document the integration boundary.
 
-### CLI Shell & Installation
+### Upstream Hermes Agent Baseline
 
-- [x] **CLI-01**: 用户可以在仓库内运行本地 Hermes CLI 原型并看到 hermes --help、hermes --version 和命令列表。
-- [x] **CLI-02**: 用户可以通过无 sudo 的本地安装/开发入口运行 CLI；不要求全局系统安装或 root 权限。
-- [x] **CLI-03**: CLI 每个命令都支持机器可读 JSON 输出，并在失败时返回结构化错误对象。
+- [x] **UP-01**: 用户可以在无 sudo Ubuntu 环境安装或更新社区 `NousResearch/hermes-agent`，并看到真实上游 `hermes --version` / help 输出。
+- [x] **UP-02**: 项目固定并记录上游 Hermes Agent 的版本或 commit、安装方式、能力探测结果和不兼容项。
+- [x] **UP-03**: 本仓库不得继续独立重写 Hermes Agent runtime；本地代码只能作为上游适配层、配置、skills、tmux/file-bus glue 或验证脚本。
+- [x] **UP-04**: 现有独立 Node CLI scaffolding 必须删除；后续命令入口保留上游 `hermes` 原样，本项目只提供 `orch-*` helper/adapter。
 
-### Path, State & File Bus
+### Orchestra Package Installation
 
-- [ ] **BUS-01**: CLI 启动时解析 Runtime、State、Audit、Cache 四层路径并写入 State 层 paths.json manifest。
-- [ ] **BUS-02**: CLI 使用 JSON/JSONL 作为 canonical 文件总线格式，并为 task、event、decision、state 记录提供 schema-ready envelope。
-- [ ] **BUS-03**: CLI 写入总线和状态文件时使用同文件系统临时文件加 rename 的原子写入策略。
-- [ ] **BUS-04**: CLI 将 Runtime bus、State snapshot 和 Audit evidence 物理分离，Runtime 文件不得作为最终证据。
+- [x] **PKG-01**: 安装脚本将 `docs/hermes-dev-orchestra/hermes/SOUL.md` 安装到上游 Hermes Agent 可读取的位置。
+- [x] **PKG-02**: 安装脚本将 `dev-orchestra`、`claude-supervisor`、`codex-executor`、`escalation-handler` 四个 skills 安装到上游 Hermes Agent skill layout。
+- [x] **PKG-03**: 安装脚本创建 `~/.hermes-orchestra/`、`/tmp/hermes-orchestra/` 和 per-project bus 目录，且不需要 sudo。
+- [x] **PKG-04**: `orch-init`、`orch-start`、`orch-stop`、`orch-status` helper 明确调用上游 Hermes Agent、tmux、Claude Code CLI 和 Codex CLI，而不是调用自研 Agent runtime。
 
-### Project Registry, Tasks & Status
+### Project Bootstrap, File Bus & Runtime Integration
 
-- [ ] **PROJ-01**: 用户可以通过 hermes init <project-id> <project-dir> 注册项目，并获得可重复执行的项目配置结果。
-- [ ] **PROJ-02**: CLI 校验 project-id、canonical path、Git 仓库状态和 per-project 目录，并拒绝不安全或无效输入。
-- [ ] **TASK-01**: 用户可以通过 hermes task <project-id> <task-file> 追加任务，并获得 task ID、queue 状态和 audit/event 记录。
-- [ ] **TASK-02**: CLI 对短时间重复提交的同内容 task 提供可验证的去重或明确的新任务创建行为。
-- [ ] **STAT-01**: 用户可以通过 hermes status 查看项目、任务、cwd、heartbeat age、risk wait、last event 和 next action。
+- [x] **RUN-01**: `orch-init <project-id> <project-dir>` 校验 Git 仓库、创建 per-project bus、复制 Claude hooks 配置，并记录项目状态。
+- [x] **RUN-02**: `orch-start` 为每个项目启动或复用 `hermes-{project}-claude` 和 `hermes-{project}-codex` tmux 会话。
+- [x] **RUN-03**: Hermes Agent 将用户任务写入 `task.md`，通知 Codex Executor，并轮询或订阅 Codex 输出。
+- [x] **RUN-04**: Codex 问题写入 `codex-question.md` 后，Hermes Agent 转发给 Claude Supervisor；Claude 决策写入 `claude-decision.md` 并恢复 Codex。
+- [x] **RUN-05**: Claude review、Codex result、escalation 和 audit 记录可被 Hermes Agent 汇总给用户，且带项目名前缀。
 
-### Doctor, Safety & Local Decisions
+### Safety & Local Decisions
 
-- [ ] **DOC-01**: hermes doctor 可以探测 Node、Git、tmux、Claude Code CLI、Codex CLI、认证提示、sandbox/JSON 能力并输出 JSON health report。
-- [ ] **SAFE-01**: CLI 原型加载静态 risk rulebook，并能对匹配规则计算最低风险等级。
-- [ ] **SAFE-02**: L3/L4 决策在 CLI 原型中默认阻塞，不能通过 timeout、Claude、Codex 或 fallback 自动批准。
-- [ ] **DEC-01**: 本地文件 fallback 可以创建 decision request，并支持 hermes decisions 列出待处理决策。
-- [ ] **DEC-02**: 用户可以通过 hermes approve <decision-id> 或 hermes reject <decision-id> 写入一次性 decision reply，CLI 校验 TTL、项目、任务和 approval ID。
+- [ ] **SAFE-01**: 静态风险 rulebook 对 L1-L4 决策给出最低风险等级，Claude 只能升级不能降低规则下限。
+- [ ] **SAFE-02**: L3/L4 决策必须阻塞对应项目，不能被 Hermes、Claude、Codex、timeout 或 fallback 自动批准。
+- [ ] **DEC-01**: 当远程通道未配置时，Hermes Agent 使用 SSH/local file fallback，通过 `orch-decisions`、`orch-approve <approval_id>`、`orch-reject <approval_id>` 请求并记录用户 approve/reject；modify 在当前里程碑中建模为 reject 后提交修订任务。
+- [ ] **DEC-02**: 用户决策写入审计记录，并以一次性 approval_id、TTL、project_id、task_id 绑定防止重放。
 
-### Prototype Verification & Handoff
+### Verification & Handoff
 
-- [ ] **VER-01**: 原型包含覆盖 init、task、status、doctor、decision fallback、路径解析和错误输出的自动化 smoke/fixture 检查。
-- [ ] **VER-02**: 原型文档说明支持命令、环境变量、路径布局、已实现范围、未实现范围和手工验证步骤。
-- [ ] **VER-03**: 交付物明确标注哪些 v1.0 规格已由原型实现、哪些仍是 stub/dry-run、哪些进入下一里程碑。
-- [ ] **VER-04**: 实现 handoff 列出下一阶段需要接入的 tmux session lifecycle、Claude/Codex runner、review loop 和 remote adapter 工作。
+- [ ] **VER-01**: smoke/fixture 覆盖上游安装探测、skills 加载、`orch-init`、`orch-start`、文件总线问题转发、风险阻塞和状态查看。
+- [ ] **VER-02**: 文档说明上游 Hermes Agent 版本、安装命令、目录布局、helper 命令、已实现范围、未实现范围和手工验证步骤。
+- [ ] **VER-03**: 覆盖矩阵标注哪些 v1.0 规格由上游 Hermes Agent 原生提供、哪些由本仓库适配层提供、哪些仍待实现。
+- [ ] **VER-04**: handoff 列出后续 remote adapter、生产化审计、容器隔离、gbrain 集成或 dashboard 的边界。
 
 ## Future Requirements
 
 Deferred to later milestones. Tracked but not in v1.1 scope.
-
-### Agent Runtime Integration
-
-- **RUN-01**: Hermes starts, monitors, and stops real Claude Supervisor and Codex Executor tmux sessions.
-- **RUN-02**: Hermes routes Codex questions to Claude and routes Claude decisions back to Codex through real process I/O.
-- **RUN-03**: Hermes captures agent outputs, review results, command evidence, and final archives from live executions.
 
 ### Remote Adapters
 
@@ -69,34 +63,34 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 
 | Feature | Reason |
 |---------|--------|
-| Full autonomous Claude/Codex execution loop | Prototype first proves CLI, bus, state, safety, and local fallback before live agent orchestration. |
-| Concrete Telegram/Discord/webhook adapter | v1.0 requires Remote Decision Channel abstraction; concrete adapters need a separate identity/replay design pass. |
+| Reimplementing Hermes Agent core runtime | User direction requires building on community `NousResearch/hermes-agent`. |
+| Concrete Telegram/Discord/webhook adapter as the mandatory channel | v1.0 keeps Remote Decision Channel abstract; concrete adapters need a separate identity/replay design pass. |
 | Team collaboration or multi-user approvals | Project remains focused on a single developer. |
-| gbrain integration | Standalone Hermes prototype first; integration remains optional future work. |
+| gbrain integration | Upstream Hermes Agent integration first; integration remains optional future work. |
 | Unrestricted unattended execution | Safety budgets and no-go operations are future work. |
-| Production deployment or package publishing | This milestone targets a local prototype and verification fixtures. |
+| Production deployment or package publishing | This milestone targets a local upstream integration slice and verification fixtures. |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CLI-01 | Phase 8 | Complete |
-| CLI-02 | Phase 8 | Complete |
-| CLI-03 | Phase 8 | Complete |
-| BUS-01 | Phase 9 | Pending |
-| BUS-02 | Phase 9 | Pending |
-| BUS-03 | Phase 9 | Pending |
-| BUS-04 | Phase 9 | Pending |
-| PROJ-01 | Phase 10 | Pending |
-| PROJ-02 | Phase 10 | Pending |
-| TASK-01 | Phase 10 | Pending |
-| TASK-02 | Phase 10 | Pending |
-| STAT-01 | Phase 10 | Pending |
-| DOC-01 | Phase 11 | Pending |
-| SAFE-01 | Phase 11 | Pending |
-| SAFE-02 | Phase 11 | Pending |
-| DEC-01 | Phase 11 | Pending |
-| DEC-02 | Phase 11 | Pending |
+| UP-01 | Phase 9 | Completed |
+| UP-02 | Phase 9 | Completed |
+| UP-03 | Phase 9 | Completed |
+| UP-04 | Phase 9 | Completed |
+| PKG-01 | Phase 10 | Completed |
+| PKG-02 | Phase 10 | Completed |
+| PKG-03 | Phase 10 | Completed |
+| PKG-04 | Phase 10 | Completed |
+| RUN-01 | Phase 11 | Completed |
+| RUN-02 | Phase 11 | Completed |
+| RUN-03 | Phase 11 | Completed |
+| RUN-04 | Phase 11 | Completed |
+| RUN-05 | Phase 11 | Completed |
+| SAFE-01 | Phase 12 | Pending |
+| SAFE-02 | Phase 12 | Pending |
+| DEC-01 | Phase 12 | Pending |
+| DEC-02 | Phase 12 | Pending |
 | VER-01 | Phase 12 | Pending |
 | VER-02 | Phase 12 | Pending |
 | VER-03 | Phase 12 | Pending |
@@ -109,4 +103,4 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 
 ---
 *Requirements defined: 2026-04-25*
-*Last updated: 2026-04-25 after starting v1.1 milestone*
+*Last updated: 2026-04-25 after Phase 11 project bootstrap, tmux runtime, and file bus execution*

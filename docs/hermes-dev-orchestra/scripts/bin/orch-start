@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
+
+if [ -f "$ORCHESTRA_HOME/lib/orch-common.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ORCHESTRA_HOME/lib/orch-common.sh"
+else
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/../lib/orch-common.sh"
+fi
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: orch-start <project-id> <project-dir>" >&2
+    exit 1
+fi
+
+PROJECT_ID="$1"
+PROJECT_DIR_INPUT="$2"
+
+orch_validate_project_id "$PROJECT_ID"
+for command_name in hermes tmux claude codex git; do
+    orch_require_command "$command_name"
+done
+
+if [ ! -d "$PROJECT_DIR_INPUT" ]; then
+    echo "Project directory not found: $PROJECT_DIR_INPUT" >&2
+    exit 1
+fi
+
+PROJECT_DIR="$(cd "$PROJECT_DIR_INPUT" && pwd)"
+
+if ! git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Project directory must already be a Git repository: $PROJECT_DIR" >&2
+    exit 1
+fi
+
+orch_project_dirs "$PROJECT_ID"
+
+EXPECTED_CLAUDE_SESSION="hermes-${PROJECT_ID}-claude"
+EXPECTED_CODEX_SESSION="hermes-${PROJECT_ID}-codex"
+if [ "$CLAUDE_SESSION" != "$EXPECTED_CLAUDE_SESSION" ] || [ "$CODEX_SESSION" != "$EXPECTED_CODEX_SESSION" ]; then
+    echo "Derived tmux session names do not match project naming contract" >&2
+    exit 1
+fi
+
+if [ ! -f "$STATE_DIR/project.env" ]; then
+    if [ -x "$ORCHESTRA_HOME/bin/orch-init" ]; then
+        "$ORCHESTRA_HOME/bin/orch-init" "$PROJECT_ID" "$PROJECT_DIR"
+    else
+        "$SCRIPT_DIR/orch-init" "$PROJECT_ID" "$PROJECT_DIR"
+    fi
+fi
+
+start_or_reuse_session() {
+    local label="$1"
+    local session="$2"
+
+    if orch_tmux_session_healthy "$session"; then
+        if [ "$label" = "Claude" ]; then
+            echo "Reusing Claude session: $session"
+        elif [ "$label" = "Codex" ]; then
+            echo "Reusing Codex session: $session"
+        else
+            echo "Reusing $label session: $session"
+        fi
+        return
+    fi
+
+    if orch_tmux_session_running "$session"; then
+        tmux kill-session -t "$session" 2>/dev/null || true
+        echo "Recreated stale $label session: $session"
+    fi
+
+    tmux new-session -d -s "$session" -x 180 -y 40 -c "$PROJECT_DIR" \
+        "env HERMES_ORCHESTRA_PROJECT='$PROJECT_ID' bash"
+    echo "Started $label session: $session"
+}
+
+start_or_reuse_session "Claude" "$CLAUDE_SESSION"
+start_or_reuse_session "Codex" "$CODEX_SESSION"
+
+BUS_LOOP="$ORCHESTRA_HOME/bin/orch-bus-loop"
+if [ ! -x "$BUS_LOOP" ]; then
+    BUS_LOOP="$SCRIPT_DIR/orch-bus-loop"
+fi
+if [ ! -x "$BUS_LOOP" ]; then
+    echo "Required helper not found: orch-bus-loop" >&2
+    exit 1
+fi
+
+if [ -f "$STATE_DIR/watcher.pid" ] && kill -0 "$(cat "$STATE_DIR/watcher.pid")" 2>/dev/null; then
+    echo "Watcher: running pid $(cat "$STATE_DIR/watcher.pid")"
+else
+    nohup "$BUS_LOOP" "$PROJECT_ID" "$PROJECT_DIR" >> "$STATE_DIR/orch-bus-loop.log" 2>&1 &
+    echo "$!" > "$STATE_DIR/watcher.pid"
+    echo "Watcher: running pid $(cat "$STATE_DIR/watcher.pid")"
+fi
+
+orch_append_audit "session_start" "$PROJECT_ID" "L1" "RECORDED" "" "Claude=$CLAUDE_SESSION Codex=$CODEX_SESSION" "" "" "" "" "orch-start" ""
+
+echo "Hermes upstream: $(hermes --version 2>/dev/null || echo installed)"
+echo "Attach Claude: tmux attach -t $CLAUDE_SESSION"
+echo "Attach Codex:  tmux attach -t $CODEX_SESSION"
