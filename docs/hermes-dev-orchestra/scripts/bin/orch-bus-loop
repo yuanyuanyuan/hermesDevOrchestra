@@ -437,7 +437,7 @@ route_result_to_review() {
     fi
 
     write_runner "$runner" cat <<EOF
-cat $(quote "$RUNTIME_DIR/codex-result.md") | claude -p --output-format json --permission-mode auto "You are Claude Supervisor for project [$PROJECT_ID]. Review the Codex result from stdin and write a JSON review envelope for review-result.md with decision APPROVED, REJECTED, or NEEDS_MODIFICATION." > $(quote "$STATE_DIR/review-result.raw.json") 2>> $(quote "$STATE_DIR/claude.err")
+cat $(quote "$RUNTIME_DIR/codex-result.md") | claude -p --output-format json --permission-mode auto "You are Claude Supervisor for project [$PROJECT_ID]. Review the Codex result from stdin and write a JSON review envelope for review-result.md. Preserve project_id, task_id, and correlation_id when present. Include decision APPROVED, REJECTED, or NEEDS_MODIFICATION." > $(quote "$STATE_DIR/review-result.raw.json") 2>> $(quote "$STATE_DIR/claude.err")
 python3 - $(quote "$STATE_DIR/review-result.raw.json") $(quote "$RUNTIME_DIR/review-result.md") <<'PY'
 import json
 import sys
@@ -469,10 +469,10 @@ finalize_review_if_ready() {
 
     task_id="$(task_id_from_bus)"
     review_task_id="$(orch_json_field "$RUNTIME_DIR/review-result.md" "task_id")"
-    if [ -n "$review_task_id" ] && [ "$review_task_id" != "null" ] && [ "$review_task_id" != "$task_id" ]; then
+    if [ -z "$review_task_id" ] || [ "$review_task_id" = "null" ] || [ "$review_task_id" != "$task_id" ]; then
         mkdir -p "$AUDIT_DIR/pending"
         mv "$RUNTIME_DIR/review-result.md" "$AUDIT_DIR/pending/review-result.$(date +%s).md"
-        log_loop "review-result.md task_id mismatch; archived stale review"
+        log_loop "review-result.md missing or mismatched task_id; archived stale review"
         return 0
     fi
 
