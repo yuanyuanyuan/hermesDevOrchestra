@@ -1,0 +1,51 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "0",
+    "CLAUDE_CODE_CONTEXT_LENGTH": "200000"
+  },
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "type": "command",
+        "command": ["bash", "-c", "echo '{\\\"event\\\":\\\"PermissionRequest\\\",\\\"ts\\\":\\\"'$(date -Iseconds)'\\\",\\\"session\\\":\\\"'${CLAUAD_SESSION_NAME:-unknown}'\\\",\\\"project\\\":\\\"'$(basename $PWD)'\\\"}' >> /tmp/hermes-orchestra/claude-events.jsonl && exit 0"],
+        "matchers": ["Bash", "Edit", "Write"],
+        "async": true,
+        "timeout": 5000
+      }
+    ],
+    "Notification": [
+      {
+        "type": "command",
+        "command": ["bash", "-c", "echo '{\\\"event\\\":\\\"Notification\\\",\\\"ts\\\":\\\"'$(date -Iseconds)'\\\",\\\"session\\\":\\\"'${CLAUAD_SESSION_NAME:-unknown}'\\\",\\\"project\\\":\\\"'$(basename $PWD)'\\\"}' >> /tmp/hermes-orchestra/claude-events.jsonl"],
+        "async": true,
+        "timeout": 3000
+      }
+    ],
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": ["bash", "-c", "mkdir -p /tmp/hermes-orchestra/$(basename $PWD) && echo '{\\\"event\\\":\\\"SessionStart\\\",\\\"ts\\\":\\\"'$(date -Iseconds)'\\\",\\\"session\\\":\\\"'${CLAUAD_SESSION_NAME:-unknown}'\\\"}' >> /tmp/hermes-orchestra/claude-events.jsonl"],
+        "async": true,
+        "timeout": 3000
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": ["bash", "-c", "echo '{\\\"event\\\":\\\"Stop\\\",\\\"ts\\\":\\\"'$(date -Iseconds)'\\\",\\\"session\\\":\\\"'${CLAUAD_SESSION_NAME:-unknown}'\\\"}' >> /tmp/hermes-orchestra/claude-events.jsonl"],
+        "async": true,
+        "timeout": 3000
+      }
+    ]
+  },
+  "permissionMode": "autoEdit",
+  "allowedTools": ["Bash", "Edit", "Read", "Write", "Glob", "Grep", "Task"],
+  "memory": {
+    "enabled": true,
+    "maxItems": 50
+  },
+  "subagents": {
+    "enabled": true,
+    "maxConcurrent": 3
+  }
+}
