@@ -10,9 +10,9 @@ This milestone turns the v1.0 specification package into a local Hermes CLI prot
 
 ### CLI Shell & Installation
 
-- [ ] **CLI-01**: 用户可以在仓库内运行本地 Hermes CLI 原型并看到 hermes --help、hermes --version 和命令列表。
-- [ ] **CLI-02**: 用户可以通过无 sudo 的本地安装/开发入口运行 CLI；不要求全局系统安装或 root 权限。
-- [ ] **CLI-03**: CLI 每个命令都支持机器可读 JSON 输出，并在失败时返回结构化错误对象。
+- [x] **CLI-01**: 用户可以在仓库内运行本地 Hermes CLI 原型并看到 hermes --help、hermes --version 和命令列表。
+- [x] **CLI-02**: 用户可以通过无 sudo 的本地安装/开发入口运行 CLI；不要求全局系统安装或 root 权限。
+- [x] **CLI-03**: CLI 每个命令都支持机器可读 JSON 输出，并在失败时返回结构化错误对象。
 
 ### Path, State & File Bus
 
@@ -80,9 +80,9 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CLI-01 | Phase 8 | Pending |
-| CLI-02 | Phase 8 | Pending |
-| CLI-03 | Phase 8 | Pending |
+| CLI-01 | Phase 8 | Complete |
+| CLI-02 | Phase 8 | Complete |
+| CLI-03 | Phase 8 | Complete |
 | BUS-01 | Phase 9 | Pending |
 | BUS-02 | Phase 9 | Pending |
 | BUS-03 | Phase 9 | Pending |

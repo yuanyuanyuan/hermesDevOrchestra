@@ -24,7 +24,7 @@
 
 **Goal:** 实现一个本地可运行的 Hermes CLI 原型，把 v1.0 规格中的核心路径、项目注册、任务追加、状态查看、doctor/preflight、文件总线和本地决策 fallback 落成可验证的最小纵向切片。
 
-- [ ] **Phase 8: CLI Shell, Packaging & Command Envelope** - Establishes the runnable local hermes command, no-sudo dev/install entry, help/version output, and structured command result envelope.
+- [x] **Phase 8: CLI Shell, Packaging & Command Envelope** - Establishes the runnable local hermes command, no-sudo dev/install entry, help/version output, and structured command result envelope. (completed 2026-04-25)
 - [ ] **Phase 9: Path Resolver, State Store & File Bus Foundation** - Implements the four-layer path resolver, paths.json, canonical JSON/JSONL envelope helpers, atomic writes, and state/audit separation.
 - [ ] **Phase 10: Project Registry, Task Queue & Status Read Model** - Implements project init, project validation, task append/deduplication, durable queue state, and status output.
 - [ ] **Phase 11: Doctor, Risk Rulebook & Local Decision Fallback** - Implements doctor/preflight probes, static risk rule matching, local decision request/list/approve/reject, and L3/L4 blocking invariants.
@@ -96,7 +96,7 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 8. CLI Shell, Packaging & Command Envelope | v1.1 | 0/TBD | Not started | - |
+| 8. CLI Shell, Packaging & Command Envelope | v1.1 | 1/1 | Complete    | 2026-04-25 |
 | 9. Path Resolver, State Store & File Bus Foundation | v1.1 | 0/TBD | Not started | - |
 | 10. Project Registry, Task Queue & Status Read Model | v1.1 | 0/TBD | Not started | - |
 | 11. Doctor, Risk Rulebook & Local Decision Fallback | v1.1 | 0/TBD | Not started | - |
