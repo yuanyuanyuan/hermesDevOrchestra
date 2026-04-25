@@ -5,21 +5,21 @@
 See: .planning/PROJECT.md (updated 2026-04-25)
 
 **Core value:** 用户可以通过 SSH/Hermes CLI 随时追加开发任务，让 Hermes 自动调度 Claude 与 Codex 推进多个项目，只在高风险或产品级决策时打断用户。  
-**Current focus:** v1.0 shipped — ready to start next milestone.
+**Current focus:** v1.1 Hermes CLI Prototype — defining and executing the Hermes CLI prototype.
 
 ## Current Position
 
-Phase: 7 of 7 (Recovery, Observability, Verification & Handoff)
-Plan: 7 of 7 complete
-Status: Milestone archived
-Last activity: 2026-04-25 — Archived v1.0 milestone and prepared for next milestone.
+Phase: 8 of 12 (CLI Shell, Packaging & Command Envelope)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-04-25 — Started v1.1 Hermes CLI Prototype; requirements and roadmap created.
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
+- Total plans completed: 0
 - Average duration: N/A
 - Total execution time: 0.0 hours
 
@@ -27,17 +27,11 @@ Progress: [██████████] 100%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1 | 1 | - | - |
-| 2 | 1 | - | - |
-| 3 | 1 | - | - |
-| 4 | 1 | - | - |
-| 5 | 1 | - | - |
-| 6 | 1 | - | - |
-| 7 | 1 | - | - |
+| - | - | - | - |
 
 **Recent Trend:**
-- Last 5 plans: 3, 4, 5, 6, 7 complete
-- Trend: Completed milestone
+- Last 5 plans: N/A
+- Trend: New milestone started
 
 *Updated after each plan completion*
 
@@ -47,13 +41,12 @@ Progress: [██████████] 100%
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
-- v1 is a specification package, not a runnable orchestrator implementation.
-- Primary persona is a single developer managing multiple projects through SSH/Hermes CLI.
-- Append-anytime task intake is the priority workflow.
-- Remote Decision Channel remains abstract; v1 includes a file-based local fallback.
+- v1.0 shipped as a specification package; v1.1 starts implementation via CLI prototype.
+- SSH/Hermes CLI remains the required user entry point.
+- Runtime Bus, State, Audit, and Cache must remain physically separated.
+- JSON/JSONL is canonical; Markdown is projection/documentation.
 - L3/L4 decisions never auto-approve.
-- JSON/JSONL is canonical for the file bus; Markdown is human-readable projection only.
-- Runtime Bus, State, Audit, and Cache are physically separated.
+- Concrete remote adapters and live agent orchestration are deferred beyond the prototype slice.
 
 ### Pending Todos
 
@@ -65,16 +58,14 @@ None yet.
 
 ## Deferred Items
 
-Items acknowledged and carried forward from previous milestone close:
-
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Implementation | Build runnable Hermes CLI/tooling from the accepted v1 contracts | Deferred to implementation roadmap | Phase 7 |
-| Remote adapters | Choose and implement concrete transport adapters for Remote Decision Channel | Deferred to v2 adapter work | Phase 6 |
-| Product extensions | `gbrain` integration, dashboards, team workflows, unattended budgets | Deferred to v2+ | Phase 1 |
+| Runtime integration | Real Claude/Codex tmux lifecycle and review loop | Deferred to post-prototype milestone | v1.1 planning |
+| Remote adapters | Concrete Remote Decision Channel adapter | Deferred to adapter milestone | v1.0 / v1.1 planning |
+| Product extensions | gbrain integration, dashboards, team workflows, unattended budgets | Deferred to v2+ | v1.0 |
 
 ## Session Continuity
 
 Last session: 2026-04-25
-Stopped at: v1.0 archived; next action is `$gsd-new-milestone`.
+Stopped at: v1.1 roadmap initialized; next action is $gsd-plan-phase 8.
 Resume file: None
