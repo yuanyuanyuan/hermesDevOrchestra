@@ -1,13 +1,35 @@
 # Hermes Dev Orchestra — v1 Specification
 
-**Version:** 1.0.0-draft  
+**Version:** 1.0.0  
 **Date:** 2026-04-25  
-**Applies to:** REQUIREMENTS.md v1 (55 requirements) + REQUIREMENTS-REV1 (5 revised + 5 new)  
-**Status:** DRAFT — pending adversarial review  
+**Applies to:** REQUIREMENTS.md v1 (60 requirements)  
+**Status:** COMPLETE — v1 specification package verified by GSD phases 1-7  
 
 This document specifies the Hermes Dev Orchestra system: a single-developer, multi-project AI development orchestration layer that coordinates Claude Code CLI (supervision/decision) and Codex CLI (execution) through a per-project file bus, with three-layer risk authority and remote decision support.
 
 ---
+
+## 0. Specification Package Coverage
+
+### SPEC-01 — Unified specification map
+
+This `SPEC.md` is the unified v1 specification package. Appendix C maps every v1 requirement from `.planning/REQUIREMENTS.md` to a concrete section in this document.
+
+### SPEC-02 — Inline implementable contracts
+
+This document restates the implementable contracts inline. Source materials such as README files, role skills, setup scripts, and design notes are treated as inputs only; no v1 requirement depends on an external document without an equivalent contract in this specification.
+
+### SPEC-03 — Decision envelope schema readiness
+
+The decision envelope is specified in §3 and Appendix B as a schema-ready contract with `rulebook`, `assessment`, `execution`, and `history` fields.
+
+### SPEC-04 — Risk rule table artifact
+
+The v1 static risk rule table is specified in §6 and Appendix A with 10 concrete rules covering database schema, auth, secrets, CI/CD, public API, system commands, dependency updates, file deletion, network config, and cost-sensitive operations.
+
+### SPEC-05 — Acceptance and traceability
+
+Acceptance scenarios are specified in §8, and Appendix C proves requirement-to-section coverage for the complete v1 package.
 
 ## 1. Scope and Authority
 
@@ -979,6 +1001,11 @@ For JSON Schema validation, use draft-07 with the structural constraints above. 
 
 | Requirement | Section | Status |
 |-------------|---------|--------|
+| SPEC-01 | §0, Appendix C | Specified |
+| SPEC-02 | §0 | Specified |
+| SPEC-03 | §0, §3, Appendix B | Specified |
+| SPEC-04 | §0, §6, Appendix A | Specified |
+| SPEC-05 | §0, §8, Appendix C | Specified |
 | SCOPE-01 | §1 | Specified |
 | SCOPE-02 | §1 | Specified |
 | SCOPE-03 | §1, §9 | Specified |
@@ -1035,11 +1062,11 @@ For JSON Schema validation, use draft-07 with the structural constraints above. 
 | HANDOFF-01 | §8 | Specified |
 | HANDOFF-02 | §8 | Specified |
 
-**Coverage:** 55/55 v1 requirements specified.
+**Coverage:** 60/60 v1 requirements specified.
 
 ---
 
 *Specification generated: 2026-04-25*  
-*Based on: REQUIREMENTS.md v1 (55 requirements) + REQUIREMENTS-REV1*  
+*Based on: REQUIREMENTS.md v1 (60 requirements)*  
 *Input materials: README.md, SOUL.md, dev-orchestra/SKILL.md, claude-supervisor/SKILL.md, codex-executor/SKILL.md, escalation-handler/SKILL.md, setup.sh, settings.json*  
 *Design doc: ~/.gstack/projects/hermes/stark-main-design-20260425.md*
