@@ -63,9 +63,9 @@ assert_eq "1" "$pending_count" "escalation should create one pending decision"
 [ ! -f "$CODEX_RESUME_LOG" ] || fail "no Codex resume before approval" "no Codex" "resumed"
 approval_id="$(find "$STATE_ROOT/test-proj/pending-decisions" -name '*.json' -printf '%f\n' | sed 's/\.json$//')"
 "$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-approve" "$approval_id" "approved fixture" >/tmp/orch-risk-approved.out
-rm -f "$RUNTIME_DIR/escalation.md"
 "$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
 assert_file_exists "$CODEX_RESUME_LOG" "Codex should resume after user approval"
+[ ! -f "$RUNTIME_DIR/escalation.md" ] || fail "approved escalation.md should be archived automatically" "archived" "still present"
 
 rm -f "$CODEX_RESUME_LOG" "$RUNTIME_DIR/codex-result.md" "$RUNTIME_DIR/claude-decision.md"
 rm -rf "$STATE_ROOT/test-proj/pending-decisions"

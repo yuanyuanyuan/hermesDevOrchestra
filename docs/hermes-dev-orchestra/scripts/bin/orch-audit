@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
 AUDIT_ROOT="${AUDIT_ROOT:-$HOME/.local/share/hermes-orchestra}"
+
+if [ -f "$ORCHESTRA_HOME/lib/orch-common.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ORCHESTRA_HOME/lib/orch-common.sh"
+else
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/../lib/orch-common.sh"
+fi
+
 PROJECT_ID=""
 LEVEL_FILTER=""
 LIMIT="20"
@@ -28,6 +38,8 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+[ -z "$PROJECT_ID" ] || orch_validate_project_id "$PROJECT_ID"
+
 python3 - "$AUDIT_ROOT" "$PROJECT_ID" "$LEVEL_FILTER" "$LIMIT" <<'PY'
 import glob
 import json
@@ -40,10 +52,14 @@ try:
 except ValueError:
     limit = 20
 
+root = os.path.realpath(audit_root)
 if project_id:
-    files = [os.path.join(audit_root, project_id, "audit.jsonl")]
+    path = os.path.realpath(os.path.join(root, project_id, "audit.jsonl"))
+    if not path.startswith(root + os.sep):
+        sys.exit("project path escapes audit root")
+    files = [path]
 else:
-    files = glob.glob(os.path.join(audit_root, "*", "audit.jsonl"))
+    files = glob.glob(os.path.join(root, "*", "audit.jsonl"))
 
 records = []
 for path in files:

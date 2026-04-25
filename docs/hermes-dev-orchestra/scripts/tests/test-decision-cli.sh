@@ -31,4 +31,13 @@ assert_contains "APPROVED $id_approve" /tmp/orch-decision-cli-approve.out "appro
 "$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-reject" "$id_reject" "REJECTED fixture" >/tmp/orch-decision-cli-reject.out
 assert_contains "REJECTED $id_reject" /tmp/orch-decision-cli-reject.out "rejection output missing"
 
+set +e
+"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-decisions" "../outside" >/tmp/orch-decision-cli-traversal.out 2>&1
+decisions_traversal=$?
+"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-audit" "../outside" >/tmp/orch-audit-traversal.out 2>&1
+audit_traversal=$?
+set -e
+[ "$decisions_traversal" -ne 0 ] || fail "orch-decisions must reject project path traversal" "non-zero" "$decisions_traversal"
+[ "$audit_traversal" -ne 0 ] || fail "orch-audit must reject project path traversal" "non-zero" "$audit_traversal"
+
 test_done

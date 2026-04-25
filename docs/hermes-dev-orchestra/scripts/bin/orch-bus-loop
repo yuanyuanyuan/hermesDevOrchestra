@@ -174,7 +174,7 @@ ensure_pending_for_hash() {
 
     if [ -f "$hash_file" ] && [ "$(cat "$hash_file")" = "$hash" ] && [ -f "$id_file" ]; then
         approval_id="$(cat "$id_file")"
-        if orch_find_pending_decision "$approval_id" >/dev/null 2>&1; then
+        if pending_file="$(orch_find_pending_decision "$approval_id" 2>/dev/null)" && pending_decision_is_active "$pending_file"; then
             echo "$approval_id"
             return
         fi
@@ -184,6 +184,25 @@ ensure_pending_for_hash() {
     echo "$hash" > "$hash_file"
     echo "$approval_id" > "$id_file"
     echo "$approval_id"
+}
+
+pending_decision_is_active() {
+    local pending_file="$1"
+
+    python3 - "$pending_file" "$(date +%s)" <<'PY'
+import json
+import sys
+
+path, now = sys.argv[1:]
+with open(path, encoding="utf-8") as handle:
+    record = json.load(handle)
+if record.get("status") != "PENDING":
+    sys.exit(1)
+if record.get("used_at"):
+    sys.exit(1)
+if int(record.get("expires_at_epoch") or 0) < int(now):
+    sys.exit(1)
+PY
 }
 
 review_decision_value() {
@@ -236,7 +255,22 @@ route_question_to_claude() {
     fi
 
     write_runner "$runner" cat <<EOF
-cat $(quote "$RUNTIME_DIR/codex-question.md") | claude -p --output-format json --permission-mode auto "You are Claude Supervisor for project [$PROJECT_ID]. Read the Codex question from stdin and write a JSON decision envelope for claude-decision.md. Include schema_version, message_id, project_id, task_id, correlation_id, status, author, authority, timestamp, decision, rationale, and execution.authority_sufficient. Do not approve L3/L4; write escalation guidance instead." > $(quote "$RUNTIME_DIR/claude-decision.md") 2>> $(quote "$STATE_DIR/claude.err")
+cat $(quote "$RUNTIME_DIR/codex-question.md") | claude -p --output-format json --permission-mode auto "You are Claude Supervisor for project [$PROJECT_ID]. Read the Codex question from stdin and write a JSON decision envelope for claude-decision.md. Include schema_version, message_id, project_id, task_id, correlation_id, status, author, authority, timestamp, decision, rationale, and execution.authority_sufficient. Do not approve L3/L4; write escalation guidance instead." > $(quote "$STATE_DIR/claude-decision.raw.json") 2>> $(quote "$STATE_DIR/claude.err")
+python3 - $(quote "$STATE_DIR/claude-decision.raw.json") $(quote "$RUNTIME_DIR/claude-decision.md") <<'PY'
+import json
+import sys
+
+source, target = sys.argv[1:]
+with open(source, encoding="utf-8") as handle:
+    wrapper = json.load(handle)
+payload = wrapper.get("result", wrapper) if isinstance(wrapper, dict) else wrapper
+if isinstance(payload, str):
+    payload = json.loads(payload)
+with open(target, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+PY
+rm -f $(quote "$STATE_DIR/claude-decision.raw.json")
 EOF
 
     orch_write_project_state "waiting" "$(task_id_from_bus)"
@@ -255,6 +289,7 @@ handle_escalation_if_present() {
     local request_type
     local escalation_id
     local approval_id
+    local pending_file
 
     [ -f "$RUNTIME_DIR/escalation.md" ] || return 1
     orch_project_matches_if_present "$RUNTIME_DIR/escalation.md" || {
@@ -274,6 +309,27 @@ handle_escalation_if_present() {
     [ -n "$request_type" ] || request_type="ESCALATION"
     escalation_id="$(orch_json_field "$RUNTIME_DIR/escalation.md" "escalation_id")"
     [ -n "$escalation_id" ] || escalation_id="$escalation_hash"
+
+    if [ -f "$STATE_DIR/last-escalation-pending.hash" ] && [ "$(cat "$STATE_DIR/last-escalation-pending.hash")" = "$escalation_hash" ] && [ -f "$STATE_DIR/last-escalation-pending.id" ]; then
+        approval_id="$(cat "$STATE_DIR/last-escalation-pending.id")"
+        pending_file="$(orch_find_pending_decision "$approval_id" 2>/dev/null || true)"
+        if [ -n "$pending_file" ] && [ "$(orch_json_field "$pending_file" "status")" = "RESOLVED" ]; then
+            mkdir -p "$AUDIT_DIR/pending"
+            case "$(orch_json_field "$pending_file" "decision")" in
+                APPROVED)
+                    mv "$RUNTIME_DIR/escalation.md" "$AUDIT_DIR/pending/escalation.$(date +%s).md"
+                    log_loop "approved escalation $approval_id; archived escalation.md and continuing"
+                    return 1
+                    ;;
+                REJECTED)
+                    mv "$RUNTIME_DIR/escalation.md" "$AUDIT_DIR/pending/escalation.$(date +%s).md"
+                    orch_write_project_state "failed" "$task_id"
+                    log_loop "rejected escalation $approval_id; project failed"
+                    return 0
+                    ;;
+            esac
+        fi
+    fi
 
     if [ "$(level_rank "$effective_level")" -ge 3 ]; then
         approval_id="$(ensure_pending_for_hash "escalation" "$escalation_hash" "$effective_level" "$request_type" "$details" "$task_id" "$escalation_id" "escalation-handler")"
@@ -381,7 +437,22 @@ route_result_to_review() {
     fi
 
     write_runner "$runner" cat <<EOF
-cat $(quote "$RUNTIME_DIR/codex-result.md") | claude -p --output-format json --permission-mode auto "You are Claude Supervisor for project [$PROJECT_ID]. Review the Codex result from stdin and write a JSON review envelope for review-result.md with decision APPROVED, REJECTED, or NEEDS_MODIFICATION." > $(quote "$RUNTIME_DIR/review-result.md") 2>> $(quote "$STATE_DIR/claude.err")
+cat $(quote "$RUNTIME_DIR/codex-result.md") | claude -p --output-format json --permission-mode auto "You are Claude Supervisor for project [$PROJECT_ID]. Review the Codex result from stdin and write a JSON review envelope for review-result.md with decision APPROVED, REJECTED, or NEEDS_MODIFICATION." > $(quote "$STATE_DIR/review-result.raw.json") 2>> $(quote "$STATE_DIR/claude.err")
+python3 - $(quote "$STATE_DIR/review-result.raw.json") $(quote "$RUNTIME_DIR/review-result.md") <<'PY'
+import json
+import sys
+
+source, target = sys.argv[1:]
+with open(source, encoding="utf-8") as handle:
+    wrapper = json.load(handle)
+payload = wrapper.get("result", wrapper) if isinstance(wrapper, dict) else wrapper
+if isinstance(payload, str):
+    payload = json.loads(payload)
+with open(target, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+PY
+rm -f $(quote "$STATE_DIR/review-result.raw.json")
 EOF
 
     orch_write_project_state "reviewing" "$(task_id_from_bus)"
@@ -393,23 +464,36 @@ EOF
 finalize_review_if_ready() {
     local decision
     local archived_question
+    local task_id
+    local review_task_id
+
+    task_id="$(task_id_from_bus)"
+    review_task_id="$(orch_json_field "$RUNTIME_DIR/review-result.md" "task_id")"
+    if [ -n "$review_task_id" ] && [ "$review_task_id" != "null" ] && [ "$review_task_id" != "$task_id" ]; then
+        mkdir -p "$AUDIT_DIR/pending"
+        mv "$RUNTIME_DIR/review-result.md" "$AUDIT_DIR/pending/review-result.$(date +%s).md"
+        log_loop "review-result.md task_id mismatch; archived stale review"
+        return 0
+    fi
 
     decision="$(review_decision_value)"
     case "$decision" in
         APPROVED)
-            orch_archive_task_artifacts "$(task_id_from_bus)"
-            orch_write_project_state "completed" "$(task_id_from_bus)"
+            orch_archive_task_artifacts "$task_id"
+            orch_write_project_state "completed" "$task_id"
             log_loop "review approved; archived task artifacts"
             if [ -f "$RUNTIME_DIR/codex-question.md" ]; then
                 archived_question="$AUDIT_DIR/pending/codex-question.$(date +%s).md"
                 mv "$RUNTIME_DIR/codex-question.md" "$archived_question"
             fi
+            rm -f "$RUNTIME_DIR/task.md" "$RUNTIME_DIR/claude-decision.md" "$RUNTIME_DIR/codex-result.md" "$RUNTIME_DIR/review-result.md" "$RUNTIME_DIR/escalation.md"
+            rm -f "$STATE_DIR/last-task.hash" "$STATE_DIR/last-question.hash" "$STATE_DIR/last-decision.hash" "$STATE_DIR/last-result.hash"
             ;;
         REJECTED)
-            orch_write_project_state "failed" "$(task_id_from_bus)"
+            orch_write_project_state "failed" "$task_id"
             ;;
         NEEDS_MODIFICATION)
-            orch_write_project_state "waiting" "$(task_id_from_bus)"
+            orch_write_project_state "waiting" "$task_id"
             ;;
     esac
 }

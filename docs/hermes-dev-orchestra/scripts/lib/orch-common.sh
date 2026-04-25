@@ -447,8 +447,6 @@ orch_resolve_pending_decision() {
     local decision="$2"
     local user_decision="$3"
     local pending_file
-    local now_epoch
-    local validation
     local project_id
     local task_id
     local level
@@ -456,56 +454,43 @@ orch_resolve_pending_decision() {
     local escalation_id
     local runtime_dir
     local decision_file
+    local resolution_status
+    local lock_output
 
     pending_file="$(orch_find_pending_decision "$approval_id")" || {
         echo "Pending decision not found: $approval_id" >&2
         exit 2
     }
 
-    now_epoch="$(date +%s)"
-    validation="$(python3 - "$pending_file" "$now_epoch" <<'PY'
+    set +e
+    lock_output="$(
+        {
+            flock -x 9
+            python3 - "$pending_file" "$RUNTIME_ROOT" "$approval_id" "$decision" "$user_decision" "$(orch_now)" "$(date +%s)" <<'PY'
 import json
-import sys
-
-path, now = sys.argv[1:]
-with open(path, encoding="utf-8") as handle:
-    record = json.load(handle)
-if record.get("used_at"):
-    print("used")
-    sys.exit(0)
-if int(record.get("expires_at_epoch") or 0) < int(now):
-    print("expired")
-    sys.exit(0)
-if not record.get("project_id") or not record.get("task_id"):
-    print("missing-binding")
-    sys.exit(0)
-if record.get("binding_project_id") != record.get("project_id") or record.get("binding_task_id") != record.get("task_id"):
-    print("missing-binding")
-    sys.exit(0)
-print("ok")
-PY
-)"
-    case "$validation" in
-        expired) echo "Pending decision expired: $approval_id" >&2; exit 3 ;;
-        used) echo "Pending decision already used: $approval_id" >&2; exit 4 ;;
-        missing-binding) echo "Pending decision binding mismatch: $approval_id" >&2; exit 5 ;;
-    esac
-
-    project_id="$(orch_json_field "$pending_file" "project_id")"
-    task_id="$(orch_json_field "$pending_file" "task_id")"
-    level="$(orch_json_field "$pending_file" "level")"
-    details="$(orch_json_field "$pending_file" "details")"
-    escalation_id="$(orch_json_field "$pending_file" "escalation_id")"
-    runtime_dir="$RUNTIME_ROOT/$project_id"
-    decision_file="$runtime_dir/claude-decision.md"
-    mkdir -p "$runtime_dir"
-
-    python3 - "$decision_file" "$approval_id" "$project_id" "$task_id" "$level" "$decision" "$user_decision" "$(orch_now)" <<'PY'
-import json
+import os
 import sys
 import uuid
 
-path, approval_id, project_id, task_id, level, decision, rationale, timestamp = sys.argv[1:]
+pending_path, runtime_root, approval_id, decision, rationale, timestamp, now = sys.argv[1:]
+with open(pending_path, encoding="utf-8") as handle:
+    pending = json.load(handle)
+
+if pending.get("used_at"):
+    sys.exit(4)
+if int(pending.get("expires_at_epoch") or 0) < int(now):
+    sys.exit(3)
+if not pending.get("project_id") or not pending.get("task_id"):
+    sys.exit(5)
+if pending.get("binding_project_id") != pending.get("project_id") or pending.get("binding_task_id") != pending.get("task_id"):
+    sys.exit(5)
+
+project_id = pending["project_id"]
+task_id = pending["task_id"]
+level = pending.get("level", "")
+runtime_dir = os.path.join(runtime_root, project_id)
+os.makedirs(runtime_dir, exist_ok=True)
+decision_path = os.path.join(runtime_dir, "claude-decision.md")
 approved = decision == "APPROVED"
 record = {
     "schema_version": "1.0",
@@ -524,29 +509,42 @@ record = {
     "assessment": {"assessed_level": level},
     "execution": {"authority_sufficient": approved},
 }
-with open(path, "w", encoding="utf-8") as handle:
+tmp_decision = f"{decision_path}.tmp"
+with open(tmp_decision, "w", encoding="utf-8") as handle:
     json.dump(record, handle, ensure_ascii=False, indent=2)
     handle.write("\n")
-PY
+os.replace(tmp_decision, decision_path)
 
-    python3 - "$pending_file" "$decision" "$user_decision" "$(orch_now)" <<'PY'
-import json
-import os
-import sys
-
-path, decision, user_decision, used_at = sys.argv[1:]
-with open(path, encoding="utf-8") as handle:
-    record = json.load(handle)
-record["used_at"] = used_at
-record["status"] = "RESOLVED"
-record["decision"] = decision
-record["user_decision"] = user_decision
-tmp = f"{path}.tmp"
-with open(tmp, "w", encoding="utf-8") as handle:
-    json.dump(record, handle, ensure_ascii=False, indent=2)
+pending["used_at"] = timestamp
+pending["status"] = "RESOLVED"
+pending["decision"] = decision
+pending["user_decision"] = rationale
+tmp_pending = f"{pending_path}.tmp"
+with open(tmp_pending, "w", encoding="utf-8") as handle:
+    json.dump(pending, handle, ensure_ascii=False, indent=2)
     handle.write("\n")
-os.replace(tmp, path)
+os.replace(tmp_pending, pending_path)
 PY
+        } 9>"$pending_file.lock"
+    )"
+    resolution_status=$?
+    set -e
+
+    case "$resolution_status" in
+        0) ;;
+        3) echo "Pending decision expired: $approval_id" >&2; exit 3 ;;
+        4) echo "Pending decision already used: $approval_id" >&2; exit 4 ;;
+        5) echo "Pending decision binding mismatch: $approval_id" >&2; exit 5 ;;
+        *) echo "Pending decision resolution failed: $approval_id" >&2; [ -n "$lock_output" ] && echo "$lock_output" >&2; exit "$resolution_status" ;;
+    esac
+
+    project_id="$(orch_json_field "$pending_file" "project_id")"
+    task_id="$(orch_json_field "$pending_file" "task_id")"
+    level="$(orch_json_field "$pending_file" "level")"
+    details="$(orch_json_field "$pending_file" "details")"
+    escalation_id="$(orch_json_field "$pending_file" "escalation_id")"
+    runtime_dir="$RUNTIME_ROOT/$project_id"
+    decision_file="$runtime_dir/claude-decision.md"
 
     if [ "$decision" = "APPROVED" ]; then
         orch_append_audit "decision_approved" "$project_id" "$level" "APPROVED" "$user_decision" "$details" "$approval_id" "3600" "$task_id" "$escalation_id" "orch-approve" ""
