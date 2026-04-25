@@ -140,72 +140,72 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SPEC-01 | TBD | Pending |
-| SPEC-02 | TBD | Pending |
-| SPEC-03 | TBD | Pending |
-| SPEC-04 | TBD | Pending |
-| SPEC-05 | TBD | Pending |
-| SCOPE-01 | TBD | Pending |
-| SCOPE-02 | TBD | Pending |
-| SCOPE-03 | TBD | Pending |
-| AUTH-01 | TBD | Pending |
-| AUTH-02 | TBD | Pending |
-| AUTH-03 | TBD | Pending |
-| RUNT-01 | TBD | Pending |
-| RUNT-02 | TBD | Pending |
-| RUNT-03 | TBD | Pending |
-| CMD-01 | TBD | Pending |
-| CMD-02 | TBD | Pending |
-| CMD-03 | TBD | Pending |
-| BUS-01 | TBD | Pending |
-| BUS-02 | TBD | Pending |
-| BUS-03 | TBD | Pending |
-| BUS-04 | TBD | Pending |
-| BUS-05 | TBD | Pending |
-| BUS-06 | TBD | Pending |
-| STATE-01 | TBD | Pending |
-| STATE-02 | TBD | Pending |
-| AUDIT-01 | TBD | Pending |
-| MULTI-01 | TBD | Pending |
-| MULTI-02 | TBD | Pending |
-| MULTI-03 | TBD | Pending |
-| MULTI-04 | TBD | Pending |
-| MULTI-05 | TBD | Pending |
-| MULTI-06 | TBD | Pending |
-| AGENT-01 | TBD | Pending |
-| AGENT-02 | TBD | Pending |
-| AGENT-03 | TBD | Pending |
-| AGENT-04 | TBD | Pending |
-| AGENT-05 | TBD | Pending |
-| AGENT-06 | TBD | Pending |
-| AGENT-07 | TBD | Pending |
-| EVID-01 | TBD | Pending |
-| EVID-02 | TBD | Pending |
-| RISK-01 | TBD | Pending |
-| RISK-02 | TBD | Pending |
-| RISK-05 | TBD | Pending |
-| RISK-03 | TBD | Pending |
-| RISK-04 | TBD | Pending |
-| REMOTE-01 | TBD | Pending |
-| REMOTE-02 | TBD | Pending |
-| REMOTE-03 | TBD | Pending |
-| REMOTE-04 | TBD | Pending |
-| REMOTE-05 | TBD | Pending |
-| OBS-01 | TBD | Pending |
-| OBS-02 | TBD | Pending |
-| REC-01 | TBD | Pending |
-| REC-02 | TBD | Pending |
-| REC-03 | TBD | Pending |
-| VERIFY-01 | TBD | Pending |
-| VERIFY-02 | TBD | Pending |
-| HANDOFF-01 | TBD | Pending |
-| HANDOFF-02 | TBD | Pending |
+| SPEC-01 | Phase 1 | Pending |
+| SPEC-02 | Phase 1 | Pending |
+| SPEC-03 | Phase 3 | Pending |
+| SPEC-04 | Phase 6 | Pending |
+| SPEC-05 | Phase 7 | Pending |
+| SCOPE-01 | Phase 1 | Pending |
+| SCOPE-02 | Phase 1 | Pending |
+| SCOPE-03 | Phase 1 | Pending |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| RUNT-01 | Phase 2 | Pending |
+| RUNT-02 | Phase 2 | Pending |
+| RUNT-03 | Phase 2 | Pending |
+| CMD-01 | Phase 2 | Pending |
+| CMD-02 | Phase 2 | Pending |
+| CMD-03 | Phase 2 | Pending |
+| BUS-01 | Phase 3 | Pending |
+| BUS-02 | Phase 3 | Pending |
+| BUS-03 | Phase 3 | Pending |
+| BUS-04 | Phase 3 | Pending |
+| BUS-05 | Phase 3 | Pending |
+| BUS-06 | Phase 3 | Pending |
+| STATE-01 | Phase 3 | Pending |
+| STATE-02 | Phase 3 | Pending |
+| AUDIT-01 | Phase 3 | Pending |
+| MULTI-01 | Phase 4 | Pending |
+| MULTI-02 | Phase 4 | Pending |
+| MULTI-03 | Phase 4 | Pending |
+| MULTI-04 | Phase 4 | Pending |
+| MULTI-05 | Phase 4 | Pending |
+| MULTI-06 | Phase 4 | Pending |
+| AGENT-01 | Phase 5 | Pending |
+| AGENT-02 | Phase 5 | Pending |
+| AGENT-03 | Phase 5 | Pending |
+| AGENT-04 | Phase 5 | Pending |
+| AGENT-05 | Phase 5 | Pending |
+| AGENT-06 | Phase 5 | Pending |
+| AGENT-07 | Phase 5 | Pending |
+| EVID-01 | Phase 5 | Pending |
+| EVID-02 | Phase 5 | Pending |
+| RISK-01 | Phase 6 | Pending |
+| RISK-02 | Phase 6 | Pending |
+| RISK-05 | Phase 6 | Pending |
+| RISK-03 | Phase 6 | Pending |
+| RISK-04 | Phase 6 | Pending |
+| REMOTE-01 | Phase 6 | Pending |
+| REMOTE-02 | Phase 6 | Pending |
+| REMOTE-03 | Phase 6 | Pending |
+| REMOTE-04 | Phase 6 | Pending |
+| REMOTE-05 | Phase 6 | Pending |
+| OBS-01 | Phase 7 | Pending |
+| OBS-02 | Phase 7 | Pending |
+| REC-01 | Phase 7 | Pending |
+| REC-02 | Phase 7 | Pending |
+| REC-03 | Phase 7 | Pending |
+| VERIFY-01 | Phase 7 | Pending |
+| VERIFY-02 | Phase 7 | Pending |
+| HANDOFF-01 | Phase 7 | Pending |
+| HANDOFF-02 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 60 total (55 prior + 5 from SPEC/design review)
-- Mapped to phases: 0
-- Unmapped: 60 ⚠️
+- Mapped to phases: 60
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-25*
-*Last updated: 2026-04-25 after SPEC/design review (added specification deliverable requirements and aligned risk/challenge semantics)*
+*Last updated: 2026-04-25 after roadmap creation (60/60 v1 requirements mapped to phases)*
