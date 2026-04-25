@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Specification Package** — Phases 1-7 (shipped 2026-04-25)
-- 🚧 **v1.1 Hermes CLI Prototype** — Phases 8-12 (planned)
+- 🚧 **v1.1 Upstream Hermes Agent Integration** — Phases 8-12 (replanned from Phase 9)
 
 ## Phases
 
@@ -20,74 +20,80 @@
 
 </details>
 
-## v1.1 Hermes CLI Prototype
+## v1.1 Upstream Hermes Agent Integration
 
-**Goal:** 实现一个本地可运行的 Hermes CLI 原型，把 v1.0 规格中的核心路径、项目注册、任务追加、状态查看、doctor/preflight、文件总线和本地决策 fallback 落成可验证的最小纵向切片。
+**Goal:** 基于社区 `NousResearch/hermes-agent` 实现本地 Hermes Dev Orchestra 适配包，而不是独立重写新的 Hermes Agent。v1.1 要验证上游安装、SOUL/skills 加载、`orch-*` helper、Claude/Codex tmux 会话、文件总线、风险阻塞和本地决策 fallback。
 
-- [x] **Phase 8: CLI Shell, Packaging & Command Envelope** - Establishes the runnable local hermes command, no-sudo dev/install entry, help/version output, and structured command result envelope. (completed 2026-04-25)
-- [ ] **Phase 9: Path Resolver, State Store & File Bus Foundation** - Implements the four-layer path resolver, paths.json, canonical JSON/JSONL envelope helpers, atomic writes, and state/audit separation.
-- [ ] **Phase 10: Project Registry, Task Queue & Status Read Model** - Implements project init, project validation, task append/deduplication, durable queue state, and status output.
-- [ ] **Phase 11: Doctor, Risk Rulebook & Local Decision Fallback** - Implements doctor/preflight probes, static risk rule matching, local decision request/list/approve/reject, and L3/L4 blocking invariants.
-- [ ] **Phase 12: Prototype Verification, Docs & Implementation Handoff** - Adds smoke fixtures, user docs, prototype coverage matrix, and next-milestone handoff for live agent orchestration.
+- [x] **Phase 8: Legacy CLI Shell Baseline** - Created a local Node CLI shell before direction correction; now treated as superseded scaffolding to delete. (completed 2026-04-25; superseded by upstream-first direction)
+- [x] **Phase 9: Upstream Hermes Agent Baseline** - Installed/probed `NousResearch/hermes-agent`, pinned commit, documented capabilities, and deleted standalone local Node CLI scaffolding. (completed 2026-04-25)
+- [x] **Phase 10: Orchestra Package Installer & Skills Layout** - Installed SOUL.md, four orchestra skills, directory layout, Claude hooks templates, and `orch-*` helpers into the upstream Hermes Agent environment. (completed 2026-04-25)
+- [x] **Phase 11: Project Bootstrap, tmux Runtime & File Bus** - Implements project bootstrap, Claude/Codex tmux session lifecycle, task dispatch, Codex question routing, Claude decision routing, review/result capture, and status readout. (completed 2026-04-25)
+- [x] **Phase 12: Risk Decisions, Verification & Handoff** - Enforces L3/L4 blocking, local decision fallback, audit records, smoke fixtures, coverage matrix, docs, and handoff for remote adapters/production hardening. (completed 2026-04-25)
 
 ## Phase Details
 
-### Phase 8: CLI Shell, Packaging & Command Envelope
-**Goal**: User can run a local no-sudo hermes CLI prototype, inspect help/version output, and receive structured JSON success/error envelopes for supported commands.
+### Phase 8: Legacy CLI Shell Baseline
+**Goal**: Capture the already-created local Node CLI shell as provisional scaffolding only; it is not the target Hermes Agent runtime.
 **Depends on**: v1.0 specification package
-**Requirements**: CLI-01, CLI-02, CLI-03
+**Requirements**: Historical Phase 8 only; superseded by UP-03/UP-04
 **Success Criteria** (what must be TRUE):
-  1. hermes --help lists prototype commands and exits successfully.
-  2. hermes --version reports a prototype version.
-  3. Supported commands can emit JSON success/error objects with stable fields.
-  4. The prototype can run without sudo or global system installation.
-**Plans**: TBD
+  1. Existing Node CLI files are identified as provisional.
+  2. Phase 9 deletes the scaffolding instead of migrating or wrapping it.
+  3. No new feature work treats the local Node CLI as the core Agent runtime.
+**Plans**: 08-01 complete before direction correction
 
-### Phase 9: Path Resolver, State Store & File Bus Foundation
-**Goal**: User can trust the prototype's resolved Runtime, State, Audit, and Cache locations and inspect canonical bus/state/audit files written with safe file semantics.
+### Phase 9: Upstream Hermes Agent Baseline
+**Goal**: User can install/probe the real community Hermes Agent and understand exactly which capabilities the orchestra adapter can rely on.
 **Depends on**: Phase 8
-**Requirements**: BUS-01, BUS-02, BUS-03, BUS-04
+**Requirements**: UP-01, UP-02, UP-03, UP-04
 **Success Criteria** (what must be TRUE):
-  1. CLI startup writes a State-layer paths.json manifest with resolved absolute paths.
-  2. Runtime, State, Audit, and Cache files are physically separated.
-  3. Bus/state/audit records use JSON/JSONL envelopes with schema-ready fields.
-  4. Atomic write helper uses temp-file plus rename in the target filesystem.
-**Plans**: TBD
+  1. Upstream `hermes` can be installed or located without sudo.
+  2. Upstream version/commit and observed commands/capabilities are recorded.
+  3. Gaps between README assumptions and upstream behavior are documented.
+  4. Existing local Node CLI scaffolding is deleted so upstream `hermes` remains the only `hermes` command.
+**Plans**: 09-01
 
-### Phase 10: Project Registry, Task Queue & Status Read Model
-**Goal**: User can register a project, append tasks, and inspect current project/task status through durable state rather than terminal scrollback.
+### Phase 10: Orchestra Package Installer & Skills Layout
+**Goal**: User can install the Hermes Dev Orchestra SOUL, skills, hooks templates, directories, and helper commands into the upstream Hermes Agent environment.
 **Depends on**: Phase 9
-**Requirements**: PROJ-01, PROJ-02, TASK-01, TASK-02, STAT-01
+**Requirements**: PKG-01, PKG-02, PKG-03, PKG-04
 **Success Criteria** (what must be TRUE):
-  1. hermes init <project-id> <project-dir> creates or updates a project registry entry idempotently.
-  2. Invalid project IDs, unsafe paths, and non-Git project directories are rejected with structured errors.
-  3. hermes task <project-id> <task-file> writes a durable task record, queue state, event, and audit evidence.
-  4. Duplicate task behavior is deterministic and documented.
-  5. hermes status shows project, task, cwd, heartbeat age, risk wait, last event, and next action.
-**Plans**: TBD
+  1. SOUL.md is installed where upstream Hermes Agent loads it.
+  2. Four custom skills are installed with names and triggers matching the README.
+  3. No-sudo directories and project bus paths are created idempotently.
+  4. `orch-*` helpers invoke upstream Hermes Agent and tmux, not a reimplemented core.
+**Plans**: 10-01
 
-### Phase 11: Doctor, Risk Rulebook & Local Decision Fallback
-**Goal**: User can run preflight checks, see risk floors applied, and resolve local decision requests without any remote transport.
+### Phase 11: Project Bootstrap, tmux Runtime & File Bus
+**Goal**: User can initialize a project, start Claude/Codex tmux sessions, dispatch a task, route Codex questions to Claude, and collect results through the per-project file bus.
 **Depends on**: Phase 10
-**Requirements**: DOC-01, SAFE-01, SAFE-02, DEC-01, DEC-02
+**Requirements**: RUN-01, RUN-02, RUN-03, RUN-04, RUN-05
 **Success Criteria** (what must be TRUE):
-  1. hermes doctor reports Node, Git, tmux, Claude Code CLI, Codex CLI, auth hints, sandbox capability, and JSON behavior checks.
-  2. Static rulebook matching produces minimum risk levels for representative operations.
-  3. L3/L4 decisions remain blocked unless an explicit user approve/reject command validates successfully.
-  4. hermes decisions lists pending local fallback decisions.
-  5. hermes approve and hermes reject enforce one-time use, TTL, project ID, task ID, and approval ID binding.
-**Plans**: TBD
+  1. `orch-init` validates Git project directories and writes bus/config files.
+  2. `orch-start` starts or reuses `hermes-{project}-claude` and `hermes-{project}-codex`.
+  3. User tasks reach Codex through `task.md`.
+  4. `codex-question.md` flows to Claude and `claude-decision.md` flows back to Codex.
+  5. `codex-result.md`, `review-result.md`, and status output are project-prefixed.
+**Plans**: 11-01, 11-02, 11-03
 
-### Phase 12: Prototype Verification, Docs & Implementation Handoff
-**Goal**: Reviewer can verify the CLI prototype against the v1.1 requirements and understand exactly what remains for live agent orchestration.
+### Phase 12: Risk Decisions, Verification & Handoff
+**Goal**: Reviewer can verify the upstream-based orchestra slice against safety requirements and understand exactly what remains for remote adapters or production hardening.
 **Depends on**: Phase 11
-**Requirements**: VER-01, VER-02, VER-03, VER-04
+**Requirements**: SAFE-01, SAFE-02, DEC-01, DEC-02, VER-01, VER-02, VER-03, VER-04
 **Success Criteria** (what must be TRUE):
-  1. Smoke/fixture checks cover init, task, status, doctor, decisions, path resolution, and structured errors.
-  2. Documentation describes commands, environment variables, path layout, manual verification, implemented scope, and limits.
-  3. Coverage matrix maps v1.0 specification contracts to implemented, stub/dry-run, or deferred status.
-  4. Handoff orders next work for tmux lifecycle, Claude/Codex runners, review loop, and remote adapters.
-**Plans**: TBD
+  1. L3/L4 decisions block until explicit user approval or rejection.
+  2. Local decision fallback records one-time, TTL-bound, project/task-bound decisions.
+  3. Smoke fixtures cover upstream install/probe, skill load, helpers, file bus, risk block, and status.
+  4. Coverage matrix separates upstream-native, adapter-provided, and deferred capabilities.
+  5. Handoff orders remote adapter, audit hardening, isolation, and optional product extension work.
+**Plans**: 5 plans
+
+Plans:
+- [x] 12-01-PLAN.md — Safety rulebook and durable audit foundation
+- [x] 12-02-PLAN.md — Local decision fallback and L3/L4 blocking integration
+- [x] 12-03-PLAN.md — Smoke runner infrastructure, `orch-verify`, and docs fixture
+- [x] 12-04-PLAN.md — Documentation, coverage matrix, and handoff alignment
+- [x] 12-05-PLAN.md — Functional smoke fixtures for safety and file-bus behavior
 
 ## Progress
 
@@ -96,11 +102,11 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 8. CLI Shell, Packaging & Command Envelope | v1.1 | 1/1 | Complete    | 2026-04-25 |
-| 9. Path Resolver, State Store & File Bus Foundation | v1.1 | 0/TBD | Not started | - |
-| 10. Project Registry, Task Queue & Status Read Model | v1.1 | 0/TBD | Not started | - |
-| 11. Doctor, Risk Rulebook & Local Decision Fallback | v1.1 | 0/TBD | Not started | - |
-| 12. Prototype Verification, Docs & Implementation Handoff | v1.1 | 0/TBD | Not started | - |
+| 8. Legacy CLI Shell Baseline | v1.1 | 1/1 | Complete / superseded | 2026-04-25 |
+| 9. Upstream Hermes Agent Baseline | v1.1 | 1/1 | Complete | 2026-04-25 |
+| 10. Orchestra Package Installer & Skills Layout | v1.1 | 1/1 | Complete | 2026-04-25 |
+| 11. Project Bootstrap, tmux Runtime & File Bus | v1.1 | 3/3 | Complete | 2026-04-25 |
+| 12. Risk Decisions, Verification & Handoff | v1.1 | 5/5 | Complete    | 2026-04-25 |
 
 ## Archives
 

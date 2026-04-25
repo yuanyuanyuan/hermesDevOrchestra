@@ -32,17 +32,17 @@ This milestone turns the v1.0 specification package into an upstream-first imple
 
 ### Safety & Local Decisions
 
-- [ ] **SAFE-01**: 静态风险 rulebook 对 L1-L4 决策给出最低风险等级，Claude 只能升级不能降低规则下限。
-- [ ] **SAFE-02**: L3/L4 决策必须阻塞对应项目，不能被 Hermes、Claude、Codex、timeout 或 fallback 自动批准。
-- [ ] **DEC-01**: 当远程通道未配置时，Hermes Agent 使用 SSH/local file fallback，通过 `orch-decisions`、`orch-approve <approval_id>`、`orch-reject <approval_id>` 请求并记录用户 approve/reject；modify 在当前里程碑中建模为 reject 后提交修订任务。
-- [ ] **DEC-02**: 用户决策写入审计记录，并以一次性 approval_id、TTL、project_id、task_id 绑定防止重放。
+- [x] **SAFE-01**: 静态风险 rulebook 对 L1-L4 决策给出最低风险等级，Claude 只能升级不能降低规则下限。
+- [x] **SAFE-02**: L3/L4 决策必须阻塞对应项目，不能被 Hermes、Claude、Codex、timeout 或 fallback 自动批准。
+- [x] **DEC-01**: 当远程通道未配置时，Hermes Agent 使用 SSH/local file fallback，通过 `orch-decisions`、`orch-approve <approval_id>`、`orch-reject <approval_id>` 请求并记录用户 approve/reject；modify 在当前里程碑中建模为 reject 后提交修订任务。
+- [x] **DEC-02**: 用户决策写入审计记录，并以一次性 approval_id、TTL、project_id、task_id 绑定防止重放。
 
 ### Verification & Handoff
 
-- [ ] **VER-01**: smoke/fixture 覆盖上游安装探测、skills 加载、`orch-init`、`orch-start`、文件总线问题转发、风险阻塞和状态查看。
-- [ ] **VER-02**: 文档说明上游 Hermes Agent 版本、安装命令、目录布局、helper 命令、已实现范围、未实现范围和手工验证步骤。
-- [ ] **VER-03**: 覆盖矩阵标注哪些 v1.0 规格由上游 Hermes Agent 原生提供、哪些由本仓库适配层提供、哪些仍待实现。
-- [ ] **VER-04**: handoff 列出后续 remote adapter、生产化审计、容器隔离、gbrain 集成或 dashboard 的边界。
+- [x] **VER-01**: smoke/fixture 覆盖上游安装探测、skills 加载、`orch-init`、`orch-start`、文件总线问题转发、风险阻塞和状态查看。
+- [x] **VER-02**: 文档说明上游 Hermes Agent 版本、安装命令、目录布局、helper 命令、已实现范围、未实现范围和手工验证步骤。
+- [x] **VER-03**: 覆盖矩阵标注哪些 v1.0 规格由上游 Hermes Agent 原生提供、哪些由本仓库适配层提供、哪些仍待实现。
+- [x] **VER-04**: handoff 列出后续 remote adapter、生产化审计、容器隔离、gbrain 集成或 dashboard 的边界。
 
 ## Future Requirements
 
@@ -87,14 +87,14 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 | RUN-03 | Phase 11 | Completed |
 | RUN-04 | Phase 11 | Completed |
 | RUN-05 | Phase 11 | Completed |
-| SAFE-01 | Phase 12 | Pending |
-| SAFE-02 | Phase 12 | Pending |
-| DEC-01 | Phase 12 | Pending |
-| DEC-02 | Phase 12 | Pending |
-| VER-01 | Phase 12 | Pending |
-| VER-02 | Phase 12 | Pending |
-| VER-03 | Phase 12 | Pending |
-| VER-04 | Phase 12 | Pending |
+| SAFE-01 | Phase 12 | Complete |
+| SAFE-02 | Phase 12 | Complete |
+| DEC-01 | Phase 12 | Complete |
+| DEC-02 | Phase 12 | Complete |
+| VER-01 | Phase 12 | Complete |
+| VER-02 | Phase 12 | Complete |
+| VER-03 | Phase 12 | Complete |
+| VER-04 | Phase 12 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 21 total
@@ -103,4 +103,4 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 
 ---
 *Requirements defined: 2026-04-25*
-*Last updated: 2026-04-25 after Phase 11 project bootstrap, tmux runtime, and file bus execution*
+*Last updated: 2026-04-25 after Phase 12 risk decisions, verification, and handoff execution*

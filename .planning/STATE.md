@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Upstream Hermes Agent Integration
-status: ready_to_plan
-stopped_at: Phase 12 context gathered; next action is `$gsd-plan-phase 12`.
-last_updated: "2026-04-25T10:30:00.000Z"
-last_activity: 2026-04-25 -- Phase 12 discuss-phase complete, 4 gray areas explored
+status: milestone_complete
+stopped_at: Phase 12 verified; v1.1 milestone complete.
+last_updated: "2026-04-25T11:46:58Z"
+last_activity: 2026-04-25 -- Phase 12 verified and v1.1 milestone complete
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 6
-  completed_plans: 6
-  percent: 80
+  completed_phases: 5
+  total_plans: 11
+  completed_plans: 11
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-25)
 
 **Core value:** 用户可以通过 SSH/Hermes CLI 随时追加开发任务，让 Hermes 自动调度 Claude 与 Codex 推进多个项目，只在高风险或产品级决策时打断用户。  
-**Current focus:** Phase 12 — Risk Decisions, Verification & Handoff
+**Current focus:** v1.1 milestone complete — Phase 12 verified
 
 ## Current Position
 
-Phase: 12 — READY TO PLAN
-Plan: 0 of TBD
-Status: Phase 12 context gathered; ready for planning
-Last activity: 2026-04-25 -- Phase 12 discuss-phase complete, 4 gray areas explored
+Phase: 12 — COMPLETE
+Plan: 5 of 5
+Status: Milestone complete
+Last activity: 2026-04-25 -- Phase 12 verified and v1.1 milestone complete
 
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 
 ## Requirements Alignment
 
@@ -50,7 +50,7 @@ Nine decisions locked after README.md baseline review and Phase 9 clarification:
 
 **Velocity:**
 
-- Total plans completed: 6
+- Total plans completed: 11
 - Average duration: N/A
 - Total execution time: 0.0 hours
 
@@ -62,6 +62,7 @@ Nine decisions locked after README.md baseline review and Phase 9 clarification:
 | 9 | 1 | - | - |
 | 10 | 1 | 7 min | 7 min |
 | 11 | 3 | 85 min | 28 min |
+| 12 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -100,7 +101,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 - **D1 — 4-layer paths:** Runtime (`/tmp/`) + State (`~/.local/state/`) + Audit (`~/.local/share/`) + Cache (`~/.cache/`) per REQUIREMENTS-REV1.md §2.3.1. README.md's 2-layer structure is insufficient for durability.
 - **D2 — Minimal rulebook:** 3-5 core static JSON rules (database schema, auth, destructive ops, system commands, secrets) with Hermes enforcement. Extensible; more rules added post-v1.1.
-- **D3 — File fallback primary:** `hermes decisions/approve/reject` CLI commands implement REMOTE-05. Telegram remains optional, not required.
+- **D3 — File fallback primary:** `orch-decisions`, `orch-approve`, and `orch-reject` implement local REMOTE-05 fallback behavior. Concrete remote transports remain optional and deferred.
 - **D4 — Adapter completes gaps:** If upstream lacks capabilities README.md assumes (todo/memory, process registry, clarify/send_message, notify_on_complete), local adapter provides lightweight supplements. Does not replace upstream.
 - **D5 — Real install allowed:** Phase 9 may install/update upstream `NousResearch/hermes-agent` in the current user environment because no other Hermes system is installed. Stop and report if an unexpected existing `hermes` or conflicting `~/.hermes` state is found.
 - **D6 — Delete local CLI:** Delete independent Node CLI scaffolding instead of migrating or wrapping it. Avoid any local `hermes` command that can shadow upstream.
@@ -128,8 +129,10 @@ None for Phase 12 planning. Optional upstream browser/TUI dependency warnings re
 ## Session Continuity
 
 Last session: 2026-04-25
-Stopped at: Phase 12 context gathered; next action is `$gsd-plan-phase 12`.
+Stopped at: Phase 12 verified; v1.1 milestone complete.
 Resume file: `.planning/phases/12-risk-decisions-verification-handoff/12-CONTEXT.md`
+
+**Completed Phase:** 12 (Risk Decisions, Verification & Handoff) — 5/5 plans — static risk rulebook, local approval fallback, durable Audit JSONL, smoke fixtures, coverage matrix, handoff docs, clean code review, and passed verification; summaries at `.planning/phases/12-risk-decisions-verification-handoff/12-01-SUMMARY.md` through `12-05-SUMMARY.md`; verification at `.planning/phases/12-risk-decisions-verification-handoff/12-VERIFICATION.md`.
 
 **Completed Phase:** 11 (Project Bootstrap, tmux Runtime & File Bus) — 3/3 plans — project bootstrap, Claude/Codex tmux lifecycle, task dispatch, question routing, review capture, and project-prefixed status validated; summaries at `.planning/phases/11-project-bootstrap-tmux-runtime-file-bus/11-01-SUMMARY.md`, `11-02-SUMMARY.md`, and `11-03-SUMMARY.md`; verification at `.planning/phases/11-project-bootstrap-tmux-runtime-file-bus/11-VERIFICATION.md`.
 
