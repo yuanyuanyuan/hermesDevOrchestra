@@ -85,17 +85,33 @@ v1.0 规格阶段的用户输入与决策：
 
 v1.1 is complete. Phases 9-12 validated the upstream Hermes Agent baseline, package installer layer, local project runtime slice, risk rulebook enforcement, SSH/local decision fallback, durable Audit JSONL, smoke verification fixtures, coverage matrix, and next-milestone handoff.
 
-## Current Milestone: v1.1 Upstream Hermes Agent Integration
+## Milestone: v1.1 Upstream Hermes Agent Integration
 
+**Status:** ✅ Complete (2026-04-25)
+**Phases:** 9–12
 **Goal:** 基于社区 `NousResearch/hermes-agent` 实现单人多项目开发编排适配包，把原方案中的 Hermes Agent 顶层编排器、SOUL/skills、Claude/Codex tmux 会话、文件总线和风险决策 fallback 落成可验证的本地纵向切片。
 
-**Target features:**
-- Upstream Hermes Agent install/probe with pinned version or commit and no-sudo assumptions.
+**Delivered:**
+- Upstream Hermes Agent install/probe with pinned commit `023b1bff11c2a01a435f1956a0e2ac1773a065f3`.
 - SOUL.md and 4 custom skills installed into the upstream Hermes Agent skill layout.
 - `orch-init`, `orch-start`, `orch-stop`, and `orch-status` helpers that wrap upstream Hermes Agent plus tmux.
 - Per-project file bus connecting Hermes Agent, Claude Supervisor, and Codex Executor.
 - Risk rulebook, local decision fallback, smoke fixtures, integration docs, and handoff for remote adapters.
 
+## Current Milestone: v1.2 Hermes Dev Orchestra 规范化与迁移
+
+**Goal:** 通过证据盘点和 gap audit，修复根目录可发现性，按需迁移目录结构，规范化规格体系和开发工作流。
+
+**Target features:**
+- Phase 0: 证据盘点与 Gap Audit（当前仓库状态、路径引用、规格缺口）
+- Phase 1: 提交边界与回滚策略
+- Phase 2: 根目录可发现性修复（索引指针，保留现有结构）
+- Phase 3: 可选目录迁移（仅在证据支持时）
+- Phase 4: Upstream pin 与 submodule ADR
+- Phase 5: 规格体系整理（specs/ 派生文档）
+- Phase 6: Agents 规则合并（AGENTS.md 追加，不覆盖）
+- Phase 7: Makefile 与开发工作流
+- Phase 8: 10x 压力边界明确
 
 ## Next Milestone Goals
 
@@ -123,4 +139,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-25 after Phase 12 risk decisions, verification, and handoff completion*
+*Last updated: 2026-04-28 — Milestone v1.2 started*

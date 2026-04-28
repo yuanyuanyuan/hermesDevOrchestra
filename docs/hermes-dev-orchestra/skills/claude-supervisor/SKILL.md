@@ -26,6 +26,7 @@ metadata:
 - 你有权批准或拒绝 Codex 的技术方案
 - 你的决策基于代码质量、安全性和项目规范
 - 你无权批准：系统级危险操作、产品需求变更、涉及密钥/凭证的操作
+- You must not approve L3/L4；遇到 L3/L4 决策必须写入 `escalation.md`，并在决策 envelope 中设置 `execution.authority_sufficient=false`
 - 遇到上述无权批准的事项，必须写入 escalation 文件
 
 ## Procedure
@@ -74,23 +75,27 @@ read_file(file_path="/tmp/hermes-orchestra/{project}/codex-question.md")
 
 ```bash
 terminal(command="cat > /tmp/hermes-orchestra/{project}/claude-decision.md << 'EOF'
-## Decision from Claude Supervisor
-### Question: {question_summary}
-
-### Decision: [APPROVED / REJECTED / NEEDS_MODIFICATION]
-
-### Rationale:
-{detailed_reasoning}
-
-### Implementation Guidance:
-{specific_instructions}
-
-### Risk Assessment: [LOW / MEDIUM / HIGH]
-
-### Escalation Required: [YES / NO]
-- If YES: {escalation_reason}
+{
+  \"schema_version\": \"1.0\",
+  \"message_id\": \"msg-{uuid}\",
+  \"project_id\": \"{project}\",
+  \"task_id\": \"{task_id}\",
+  \"correlation_id\": \"{correlation_id}\",
+  \"status\": \"decided\",
+  \"author\": \"claude-supervisor\",
+  \"authority\": \"technical-supervisor\",
+  \"timestamp\": \"{iso8601}\",
+  \"decision\": \"APPROVED\",
+  \"rationale\": \"{detailed_reasoning}\",
+  \"execution\": {
+    \"authority_sufficient\": true,
+    \"guidance\": \"{specific_instructions}\"
+  }
+}
 EOF")
 ```
+
+如果问题属于 L3/L4，`decision` 不能是 `APPROVED`；应写入 `escalation.md`，并将 `execution.authority_sufficient` 设为 `false`。
 
 ### 4. 升级标记（Escalation）
 
@@ -111,25 +116,24 @@ dangerous_patterns = [
 
 ```bash
 terminal(command="cat > /tmp/hermes-orchestra/{project}/escalation.md << 'EOF'
-## Escalation Request
-### Level: [HIGH / CRITICAL]
-### Type: [SECURITY / ARCHITECTURE / PRODUCT_IMPACT / DATA_LOSS]
-
-### Description:
-{detailed_description_of_the_issue}
-
-### Proposed Action:
-{what_codex_wants_to_do}
-
-### Potential Impact:
-{impact_analysis}
-
-### Reversible: [YES / NO / WITH_DIFFICULTY]
-
-### Recommended User Action:
-{what_you_recommend_user_to_do}
-
-### Timestamp: $(date -Iseconds)
+{
+  \"schema_version\": \"1.0\",
+  \"message_id\": \"msg-{uuid}\",
+  \"project_id\": \"{project}\",
+  \"task_id\": \"{task_id}\",
+  \"correlation_id\": \"{correlation_id}\",
+  \"status\": \"blocked\",
+  \"author\": \"claude-supervisor\",
+  \"authority\": \"escalation-recommender\",
+  \"timestamp\": \"{iso8601}\",
+  \"risk_level\": \"L3_OR_L4\",
+  \"body\": {
+    \"description\": \"{detailed_description_of_the_issue}\",
+    \"proposed_action\": \"{what_codex_wants_to_do}\",
+    \"potential_impact\": \"{impact_analysis}\",
+    \"recommended_user_action\": \"{what_you_recommend_user_to_do}\"
+  }
+}
 EOF")
 ```
 
@@ -139,8 +143,10 @@ Claude Code 监督者与 Codex 执行者通过文件通信：
 
 **文件格式规范：**
 - 所有文件使用 UTF-8 编码
-- Markdown 格式，YAML frontmatter 可选
-- 状态字段：`PENDING`, `APPROVED`, `REJECTED`, `NEEDS_CLARIFICATION`
+- 文件名保留 `.md` 兼容命名，但内容是 canonical JSON envelope
+- 所有 envelope 包含 `schema_version`、`message_id`、`project_id`、`task_id`、`correlation_id`、`status`、`author`、`authority`、`timestamp`
+- `claude-decision.md` 必须包含 `decision`、`rationale`、`execution.authority_sufficient`
+- `review-result.md` 必须包含 `decision: APPROVED|REJECTED|NEEDS_MODIFICATION`
 
 **通信时序：**
 
@@ -152,6 +158,31 @@ Claude Code 监督者与 Codex 执行者通过文件通信：
 5. Claude → review-result.md (审查意见)
 6. (如有) Claude → escalation.md (升级)
 7. Hermes → 读取所有文件并决定下一步
+```
+
+审查结果示例：
+
+```json
+{
+  "schema_version": "1.0",
+  "message_id": "msg-{uuid}",
+  "project_id": "{project}",
+  "task_id": "{task_id}",
+  "correlation_id": "{correlation_id}",
+  "status": "reviewed",
+  "author": "claude-supervisor",
+  "authority": "technical-supervisor",
+  "timestamp": "{iso8601}",
+  "decision": "APPROVED",
+  "rationale": "{review_rationale}",
+  "body": {
+    "findings": [],
+    "required_changes": []
+  },
+  "execution": {
+    "authority_sufficient": true
+  }
+}
 ```
 
 ## Pitfalls

@@ -37,7 +37,7 @@ Codex 在 tmux 会话中以 `exec --full-auto` 模式运行：
 ```bash
 # 方式一：直接 codex exec（推荐用于明确任务）
 terminal(
-    command="cat /tmp/hermes-orchestra/{project}/task.md | codex exec --full-auto --json -C {project_dir} 2>&1",
+    command="cat \"$RUNTIME_DIR/task.md\" | codex exec --full-auto --json --output-last-message \"$RUNTIME_DIR/codex-result.md\" -",
     background=true,
     pty=true,
     notify_on_complete=true,
@@ -57,6 +57,7 @@ terminal(
 **关键参数说明：**
 - `--full-auto`：自动批准文件编辑和命令执行（在 workspace-write sandbox 内）
 - `--json`：输出 JSON Lines，便于后续解析
+- `--output-last-message "$RUNTIME_DIR/codex-result.md"`：将最终 JSON envelope 写入 Runtime bus
 - `-C {project_dir}`：设置工作目录
 - `--ephemeral`：不保存会话文件（可选）
 - `--model gpt-5.3-codex`：指定 Codex 专用模型（更快更便宜）
@@ -97,23 +98,26 @@ read_file(file_path="/tmp/hermes-orchestra/{project}/task.md")
 
 ```bash
 terminal(command="cat > /tmp/hermes-orchestra/{project}/codex-question.md << 'EOF'
-## Question from Codex Executor
-### Task: {task_id}
-
-### Question:
-{clear_question_description}
-
-### Options:
-1. {option_1}
-2. {option_2}
-3. {option_3}
-
-### Context:
-- Current file: {file_being_edited}
-- Line range: {start_line}-{end_line}
-- Related files: {related_files}
-
-### Urgency: [LOW / MEDIUM / HIGH / BLOCKING]
+{
+  \"schema_version\": \"1.0\",
+  \"message_id\": \"msg-{uuid}\",
+  \"project_id\": \"{project}\",
+  \"task_id\": \"{task_id}\",
+  \"correlation_id\": \"{correlation_id}\",
+  \"status\": \"question\",
+  \"author\": \"codex\",
+  \"authority\": \"executor\",
+  \"timestamp\": \"{iso8601}\",
+  \"body\": {
+    \"question\": \"{clear_question_description}\",
+    \"options\": [\"{option_1}\", \"{option_2}\", \"{option_3}\"],
+    \"context\": {
+      \"current_file\": \"{file_being_edited}\",
+      \"related_files\": [\"{related_file}\"]
+    },
+    \"urgency\": \"BLOCKING\"
+  }
+}
 EOF")
 
 # 暂停 Codex 执行（等待决策）
@@ -127,30 +131,24 @@ EOF")
 
 ```bash
 terminal(command="cat > /tmp/hermes-orchestra/{project}/codex-result.md << 'EOF'
-## Execution Result
-### Task: {task_id}
-### Status: [COMPLETED / PARTIAL / FAILED / BLOCKED]
-
-### Summary:
-{what_was_done}
-
-### Files Modified:
-- {file_path}: {change_description}
-- {file_path}: {change_description}
-
-### Tests:
-- Status: [PASSED / FAILED / SKIPPED]
-- Coverage: {percentage}%
-- Failed tests: {list_if_any}
-
-### New Dependencies:
-- {dep_name}: {version} (Reason: {why_added})
-
-### Known Issues:
-- {issue_description} (Severity: {severity})
-
-### Next Steps:
-- {suggested_next_task}
+{
+  \"schema_version\": \"1.0\",
+  \"message_id\": \"msg-{uuid}\",
+  \"project_id\": \"{project}\",
+  \"task_id\": \"{task_id}\",
+  \"correlation_id\": \"{correlation_id}\",
+  \"status\": \"completed\",
+  \"author\": \"codex\",
+  \"authority\": \"executor\",
+  \"timestamp\": \"{iso8601}\",
+  \"body\": {
+    \"summary\": \"{what_was_done}\",
+    \"files_modified\": [{\"path\": \"{file_path}\", \"change\": \"{change_description}\"}],
+    \"tests\": {\"status\": \"PASSED\", \"commands\": [\"{test_command}\"]},
+    \"known_issues\": [],
+    \"next_steps\": [\"{suggested_next_task}\"]
+  }
+}
 EOF")
 ```
 
@@ -173,10 +171,7 @@ read_file(file_path="/tmp/hermes-orchestra/{project}/claude-decision.md")
 ## Pitfalls
 
 - Codex CLI **必须在 git 仓库内运行**，非 git 目录会被拒绝。确保执行前 `git init`
-- `--full-auto` 默认在 `workspace-write` sandbox 中运行，但**不开放网络访问**。如果需要网络（如 `npm install`），使用：
-  ```bash
-  codex exec --full-auto --sandbox workspace-read-network-write "npm install && npm test"
-  ```
+- `--full-auto` 默认在受限 sandbox 中运行；如果任务需要网络或更宽权限，先写入 `codex-question.md` 请求 Claude/Hermes 决策，不要在执行技能里自行扩大权限。
 - 不要对生产数据库使用 Codex，sandbox 不保护数据库连接
 - JSON 输出模式下，`stderr` 是进度流，`stdout` 是最终结果。不要混淆
 - Codex 的 `--dangerously-bypass-approvals-and-sandbox` 仅用于完全隔离的 CI 环境，**绝不要**在开发环境使用
