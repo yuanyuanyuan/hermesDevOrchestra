@@ -1,10 +1,48 @@
 # Requirements: Hermes Dev Orchestra
 
-**Defined:** 2026-04-25  
-**Milestone:** v1.1 — Upstream Hermes Agent Integration  
+**Defined:** 2026-04-28  
+**Milestone:** v1.2 — Hermes Dev Orchestra 规范化与迁移  
 **Core Value:** 用户可以通过 SSH/Hermes CLI 随时追加开发任务，让 Hermes 自动调度 Claude 与 Codex 推进多个项目，只在高风险或产品级决策时打断用户。
 
-## v1.1 Requirements
+## v1.2 Requirements
+
+**Milestone:** v1.2 — Hermes Dev Orchestra 规范化与迁移  
+**Goal:** 通过证据盘点和 gap audit，修复根目录可发现性，按需迁移目录结构，规范化规格体系和开发工作流。
+
+### 仓库可发现性与结构
+
+- [ ] **DISC-01**: 根目录包含指向 `docs/hermes-dev-orchestra/` 的显式索引（README 或指针文件），解决增强层内容埋太深的问题。
+- [ ] **DISC-02**: `AGENTS.md` 保留现有 GSD/project/stack/workflow managed blocks，追加 Dev Orchestra 目录定位说明。
+- [ ] **MIGR-01**: 生成完整旧路径引用清单（`rg -n "docs/hermes-dev-orchestra"`），作为迁移或保留的决策依据。
+- [ ] **MIGR-02**: 目录迁移（若执行）必须使用 `git mv`，迁移后零旧路径残留，所有测试仍通过。
+
+### 上游依赖与规格权威
+
+- [ ] **UPST-01**: 编写 submodule ADR，比较 installer/probe pin / git submodule / manifest pin / vendor snapshot 四种方案。
+- [ ] **UPST-02**: 若选择 submodule，提交前验证暂存区只包含 `.gitmodules` 和 `hermes-agent` gitlink。
+- [ ] **SPEC-01**: `.planning/SPEC.md` 保持 canonical spec；任何 `specs/*.md` 派生文件必须声明 source、consumer 和 drift check。
+- [ ] **SPEC-02**: 每个派生 spec 至少有一个可失败的 conformance check；没有当前 consumer 的 spec 不得创建。
+
+### 开发工作流与工具
+
+- [ ] **DEV-01**: `Makefile` 只引用真实存在的测试脚本，不存在的 target（如 `test-integration`、`test-e2e`）不得出现。
+- [ ] **DEV-02**: `make test-unit` 调用现有 smoke/unit fixtures；`make test-risk` 调用三个风险审批测试。
+- [ ] **DEV-03**: `make lint-json` 验证所有 JSON 文件；`make lint-shell` 在无 shellcheck 时明确 skip 不伪失败。
+- [ ] **DEV-04**: `make upstream-status` 报告 repo-local pin 与 runtime pin 的一致性（若二者都有）。
+
+### Agents 规则与边界
+
+- [ ] **AGNT-01**: `AGENTS.md` 追加 Dev Orchestra Package Boundary 和 Agent Role Boundary，不覆盖现有 managed sections。
+- [ ] **AGNT-02**: 若创建 `CLAUDE.md`，必须指向 `AGENTS.md` 和 `.planning/SPEC.md` 作为权威，不重复所有规则。
+
+### 架构约束
+
+- [ ] **ARCH-01**: 明确固定文件名 file bus 表示单活动任务限制；若需支持多任务并行，必须另起设计（JSONL bus、per-task locks 等）。
+- [ ] **ARCH-02**: 当前 v1.1 的 10x 承诺仅限于"单人多项目，每项目单活动任务"，不得扩展为"同一项目多任务并行"。
+
+---
+
+## v1.1 Requirements (Completed)
 
 This milestone turns the v1.0 specification package into an upstream-first implementation based on `https://github.com/NousResearch/hermes-agent`. Scope is a minimal, testable vertical slice: install/probe upstream Hermes Agent, load the orchestra SOUL/skills package, bootstrap per-project tmux Claude/Codex sessions, coordinate through the file bus, enforce local L3/L4 decisions, and document the integration boundary.
 
@@ -96,11 +134,63 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 | VER-03 | Phase 12 | Complete |
 | VER-04 | Phase 12 | Complete |
 
+### v1.2 Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| DISC-01 | Phase 13 | Pending |
+| DISC-02 | Phase 13 | Pending |
+| MIGR-01 | Phase 13 | Pending |
+| MIGR-02 | Phase 14 | Pending |
+| UPST-01 | Phase 14 | Pending |
+| UPST-02 | Phase 14 | Pending |
+| SPEC-01 | Phase 15 | Pending |
+| SPEC-02 | Phase 15 | Pending |
+| DEV-01 | Phase 16 | Pending |
+| DEV-02 | Phase 16 | Pending |
+| DEV-03 | Phase 16 | Pending |
+| DEV-04 | Phase 16 | Pending |
+| AGNT-01 | Phase 17 | Pending |
+| AGNT-02 | Phase 17 | Pending |
+| ARCH-01 | Phase 18 | Pending |
+| ARCH-02 | Phase 18 | Pending |
+
+**Coverage:**
+- v1.2 requirements: 15 total
+- Mapped to phases: 15
+- Unmapped: 0 ✓
+
+### v1.1 Traceability (Completed)
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| UP-01 | Phase 9 | Completed |
+| UP-02 | Phase 9 | Completed |
+| UP-03 | Phase 9 | Completed |
+| UP-04 | Phase 9 | Completed |
+| PKG-01 | Phase 10 | Completed |
+| PKG-02 | Phase 10 | Completed |
+| PKG-03 | Phase 10 | Completed |
+| PKG-04 | Phase 10 | Completed |
+| RUN-01 | Phase 11 | Completed |
+| RUN-02 | Phase 11 | Completed |
+| RUN-03 | Phase 11 | Completed |
+| RUN-04 | Phase 11 | Completed |
+| RUN-05 | Phase 11 | Completed |
+| SAFE-01 | Phase 12 | Complete |
+| SAFE-02 | Phase 12 | Complete |
+| DEC-01 | Phase 12 | Complete |
+| DEC-02 | Phase 12 | Complete |
+| VER-01 | Phase 12 | Complete |
+| VER-02 | Phase 12 | Complete |
+| VER-03 | Phase 12 | Complete |
+| VER-04 | Phase 12 | Complete |
+
 **Coverage:**
 - v1.1 requirements: 21 total
 - Mapped to phases: 21
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-04-25*
-*Last updated: 2026-04-25 after Phase 12 risk decisions, verification, and handoff execution*
+*Requirements defined: 2026-04-28*
+*Last updated: 2026-04-28 — Milestone v1.2 requirements defined, awaiting roadmap*
