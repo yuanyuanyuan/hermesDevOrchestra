@@ -135,6 +135,28 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 18
 
 ---
 
+## Backlog
+
+### Phase 999.1: Supervisor Execution Audit Gap — Codex sandbox 失败后 Supervisor 直接执行，审计日志断流 (BACKLOG)
+
+**Goal:** [Captured for future planning] 修复 Supervisor 职责分离违规、审计日志完整性、文件总线状态一致性。
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.2: Collaborative Planning Mode — 多轮对抗式协作规划协议 (BACKLOG)
+
+**Goal:** [Captured for future planning] 引入 adversarial collaborative planning mode，让 Codex 和 Claude 在任务执行前进行多轮讨论并产出共识计划。
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+---
+
 ## Archives
 
 - [v1.0 roadmap archive](milestones/v1.0-ROADMAP.md)
