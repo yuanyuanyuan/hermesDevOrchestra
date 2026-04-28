@@ -11,9 +11,9 @@
 
 ### 仓库可发现性与结构
 
-- [ ] **DISC-01**: 根目录包含指向 `docs/hermes-dev-orchestra/` 的显式索引（README 或指针文件），解决增强层内容埋太深的问题。
-- [ ] **DISC-02**: `AGENTS.md` 保留现有 GSD/project/stack/workflow managed blocks，追加 Dev Orchestra 目录定位说明。
-- [ ] **MIGR-01**: 生成完整旧路径引用清单（`rg -n "docs/hermes-dev-orchestra"`），作为迁移或保留的决策依据。
+- [x] **DISC-01**: 根目录包含指向 `docs/hermes-dev-orchestra/` 的显式索引（README 或指针文件），解决增强层内容埋太深的问题。
+- [x] **DISC-02**: `AGENTS.md` 保留现有 GSD/project/stack/workflow managed blocks，追加 Dev Orchestra 目录定位说明。
+- [x] **MIGR-01**: 生成完整旧路径引用清单（`rg -n "docs/hermes-dev-orchestra"`），作为迁移或保留的决策依据。
 - [ ] **MIGR-02**: 目录迁移（若执行）必须使用 `git mv`，迁移后零旧路径残留，所有测试仍通过。
 
 ### 上游依赖与规格权威
@@ -138,9 +138,9 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DISC-01 | Phase 13 | Pending |
-| DISC-02 | Phase 13 | Pending |
-| MIGR-01 | Phase 13 | Pending |
+| DISC-01 | Phase 13 | Complete |
+| DISC-02 | Phase 13 | Complete |
+| MIGR-01 | Phase 13 | Complete |
 | MIGR-02 | Phase 14 | Pending |
 | UPST-01 | Phase 14 | Pending |
 | UPST-02 | Phase 14 | Pending |

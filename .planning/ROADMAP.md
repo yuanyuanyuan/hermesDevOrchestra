@@ -38,7 +38,7 @@
 
 **Goal:** 通过证据盘点和 gap audit，修复根目录可发现性，按需迁移目录结构，规范化规格体系和开发工作流。
 
-- [ ] **Phase 13: Evidence Audit & Discoverability** — 盘点仓库状态，修复根目录可发现性，生成路径引用清单。
+- [x] **Phase 13: Evidence Audit & Discoverability** — 盘点仓库状态，修复根目录可发现性，生成路径引用清单。 (completed 2026-04-28)
 - [ ] **Phase 14: Migration & Submodule ADR** — 按需迁移目录，编写 upstream pin 方案 ADR。
 - [ ] **Phase 15: Specification System** — 建立 specs/ 派生文档体系，保持 `.planning/SPEC.md` canonical。
 - [ ] **Phase 16: Makefile & Dev Workflow** — 创建只引用真实测试的 Makefile，提供本地验证入口。
@@ -58,7 +58,7 @@
   2. `rg -n "docs/hermes-dev-orchestra"` 输出完整旧路径引用清单。
   3. 根目录存在显式索引文件指向增强层文档。
   4. `AGENTS.md` 保留现有 managed blocks，已追加 Dev Orchestra 目录定位说明。
-**Plans:** 13-01
+**Plans:** 1/1 plans complete
 
 ### Phase 14: Migration & Submodule ADR
 **Goal:** 基于 Phase 13 的证据决定是否迁移目录；编写并决策 upstream pin 方案 ADR。
@@ -126,7 +126,7 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 18
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 13. Evidence Audit & Discoverability | v1.2 | 0/1 | Not started | — |
+| 13. Evidence Audit & Discoverability | v1.2 | 1/1 | Complete    | 2026-04-28 |
 | 14. Migration & Submodule ADR | v1.2 | 0/1 | Not started | — |
 | 15. Specification System | v1.2 | 0/1 | Not started | — |
 | 16. Makefile & Dev Workflow | v1.2 | 0/1 | Not started | — |

@@ -85,6 +85,8 @@ v1.0 规格阶段的用户输入与决策：
 
 v1.1 is complete. Phases 9-12 validated the upstream Hermes Agent baseline, package installer layer, local project runtime slice, risk rulebook enforcement, SSH/local decision fallback, durable Audit JSONL, smoke verification fixtures, coverage matrix, and next-milestone handoff.
 
+v1.2 is in progress. Phase 13 completed the evidence audit and discoverability pass: root `README.md` now points to the enhancement layer, `AGENTS.md`/`CLAUDE.md` expose the Dev Orchestra authority links, and `13-EVIDENCE.md` records the current `docs/hermes-dev-orchestra` reference inventory for Phase 14 migration decisions.
+
 ## Milestone: v1.1 Upstream Hermes Agent Integration
 
 **Status:** ✅ Complete (2026-04-25)
@@ -139,4 +141,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-28 — Milestone v1.2 started*
+*Last updated: 2026-04-28 — Phase 13 completed*
