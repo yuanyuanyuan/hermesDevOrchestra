@@ -82,3 +82,32 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 > Profile not yet configured. Run `$gsd-profile-user` to generate your developer profile.
 > This section is managed by `generate-claude-profile` — do not edit manually.
 <!-- GSD:profile-end -->
+
+<!-- hermes-dev-orchestra-start -->
+## Hermes Dev Orchestra
+
+Project-specific rules for the Hermes Dev Orchestra adaptation layer.
+These complement (not replace) the Architecture section above.
+
+### Package Boundary
+
+- This repository is an **adapter layer**, not a standalone runtime.
+- Local entrypoints are limited to `orch-*` helpers: `orch-init`, `orch-start`, `orch-stop`, `orch-status`, `orch-bus-loop`, `orch-risk-check`, `orch-audit`, `orch-decisions`, `orch-approve`, `orch-reject`, `orch-verify`.
+- Spec authority lives in `docs/hermes-dev-orchestra/`; `.planning/SPEC.md` is canonical for planning artifacts.
+
+### Agent Role Boundary
+
+- **Hermes** must not auto-approve L3/L4 escalations. Blocking flows through `escalation.md` or high-risk `claude-decision.md`, `orch-bus-loop`, pending decisions, and explicit user action via `orch-decisions`, `orch-approve`, or `orch-reject`.
+- **Claude** must not modify upstream `NousResearch/hermes-agent` core code.
+- **Codex** must not modify `~/.hermes-orchestra/rules.json`.
+- `orch-risk-check` is a risk classifier/helper; it is not a replacement for the L3/L4 blocking and user-decision flow.
+
+### Directory Navigation
+
+| Directory | Purpose |
+|-----------|---------|
+| `docs/hermes-dev-orchestra/` | Product behavior baseline, SOUL, skills, scripts |
+| `.planning/SPEC.md` | Canonical specification |
+| `.planning/STATE.md` | Project state and decisions |
+<!-- hermes-dev-orchestra-end -->
+
