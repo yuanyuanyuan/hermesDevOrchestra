@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Hermes Dev Orchestra 规范化与迁移
-status: ready_to_plan
-stopped_at: Phase 13 complete; Phase 14 ready to plan.
-last_updated: "2026-04-28T09:03:00Z"
+status: planning
+stopped_at: Phase 14 context gathered
+last_updated: "2026-04-28T09:20:25.528Z"
 last_activity: 2026-04-28 -- Phase 13 complete; Phase 14 ready to plan
 progress:
-  total_phases: 6
+  total_phases: 8
   completed_phases: 1
   total_plans: 1
   completed_plans: 1
@@ -53,6 +53,6 @@ None at milestone start.
 
 ## Session Continuity
 
-Last session: 2026-04-28
-Stopped at: Phase 13 complete; Phase 14 ready to plan
+Last session: --stopped-at
+Stopped at: Phase 14 context gathered
 Resume: Discuss or plan Phase 14
