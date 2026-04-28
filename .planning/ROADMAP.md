@@ -41,7 +41,7 @@
 - [x] **Phase 13: Evidence Audit & Discoverability** — 盘点仓库状态，修复根目录可发现性，生成路径引用清单。 (completed 2026-04-28)
 - [x] **Phase 14: Migration & Submodule ADR** — 按需迁移目录，编写 upstream pin 方案 ADR。 (completed 2026-04-28)
 - [x] **Phase 15: Specification System** — 建立 specs/ 派生文档体系，保持 `.planning/SPEC.md` canonical。 (completed 2026-04-28)
-- [ ] **Phase 16: Makefile & Dev Workflow** — 创建只引用真实测试的 Makefile，提供本地验证入口。
+- [x] **Phase 16: Makefile & Dev Workflow** — 创建只引用真实测试的 Makefile，提供本地验证入口。 (completed 2026-04-28)
 - [ ] **Phase 17: Agent Rules Consolidation** — 合并 Agents 规则到 `AGENTS.md`，不覆盖现有内容。
 - [ ] **Phase 18: Architecture Bounds & Verification** — 明确 10x 压力边界，完成 milestone 验收。
 
@@ -93,7 +93,7 @@
   4. `make lint-shell` 在无 shellcheck 时明确 skip，不返回伪失败。
   5. `make upstream-status` 正确报告 repo-local 和 runtime pin 状态。
   6. 不存在的 target 未出现在 Makefile 中。
-**Plans:** 16-01
+**Plans:** 1/1 plans complete
 
 ### Phase 17: Agent Rules Consolidation
 **Goal:** 在 `AGENTS.md` 中追加 Dev Orchestra 规则和 Agent 职责边界，不覆盖现有 managed sections。
@@ -129,7 +129,7 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 18
 | 13. Evidence Audit & Discoverability | v1.2 | 1/1 | Complete    | 2026-04-28 |
 | 14. Migration & Submodule ADR | v1.2 | 1/1 | Complete    | 2026-04-28 |
 | 15. Specification System | v1.2 | 1/1 | Complete    | 2026-04-28 |
-| 16. Makefile & Dev Workflow | v1.2 | 0/1 | Not started | — |
+| 16. Makefile & Dev Workflow | v1.2 | 1/1 | Complete | 2026-04-28 |
 | 17. Agent Rules Consolidation | v1.2 | 0/1 | Not started | — |
 | 18. Architecture Bounds & Verification | v1.2 | 0/1 | Not started | — |
 

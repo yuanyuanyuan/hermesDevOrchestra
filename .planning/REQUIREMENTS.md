@@ -25,10 +25,10 @@
 
 ### 开发工作流与工具
 
-- [ ] **DEV-01**: `Makefile` 只引用真实存在的测试脚本，不存在的 target（如 `test-integration`、`test-e2e`）不得出现。
-- [ ] **DEV-02**: `make test-unit` 调用现有 smoke/unit fixtures；`make test-risk` 调用三个风险审批测试。
-- [ ] **DEV-03**: `make lint-json` 验证所有 JSON 文件；`make lint-shell` 在无 shellcheck 时明确 skip 不伪失败。
-- [ ] **DEV-04**: `make upstream-status` 报告 repo-local pin 与 runtime pin 的一致性（若二者都有）。
+- [x] **DEV-01**: `Makefile` 只引用真实存在的测试脚本，不存在的 target（如 `test-integration`、`test-e2e`）不得出现。Validated in Phase 16.
+- [x] **DEV-02**: `make test-unit` 调用现有 smoke/unit fixtures；`make test-risk` 调用三个风险审批测试。Validated in Phase 16.
+- [x] **DEV-03**: `make lint-json` 验证所有 JSON 文件；`make lint-shell` 在无 shellcheck 时明确 skip 不伪失败。Validated in Phase 16.
+- [x] **DEV-04**: `make upstream-status` 报告 repo-local pin 与 runtime pin 的一致性（若二者都有）。Validated in Phase 16.
 
 ### Agents 规则与边界
 
@@ -146,10 +146,10 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 | UPST-02 | Phase 14 | Complete |
 | SPEC-01 | Phase 15 | Complete |
 | SPEC-02 | Phase 15 | Complete |
-| DEV-01 | Phase 16 | Pending |
-| DEV-02 | Phase 16 | Pending |
-| DEV-03 | Phase 16 | Pending |
-| DEV-04 | Phase 16 | Pending |
+| DEV-01 | Phase 16 | Complete |
+| DEV-02 | Phase 16 | Complete |
+| DEV-03 | Phase 16 | Complete |
+| DEV-04 | Phase 16 | Complete |
 | AGNT-01 | Phase 17 | Pending |
 | AGNT-02 | Phase 17 | Pending |
 | ARCH-01 | Phase 18 | Pending |
