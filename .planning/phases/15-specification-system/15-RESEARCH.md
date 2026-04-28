@@ -385,17 +385,19 @@ done
 | A2 | Free-form Markdown path parsing can be fragile. [ASSUMED] | Common Pitfalls / Code Examples | Medium; fixed backticked path convention and Python extraction reduce ambiguity. |
 | A3 | The ASVS applicability mapping uses standard ASVS category semantics. [ASSUMED] | Security Domain | Low for this docs-only phase; planner can confirm if security enforcement needs stricter classification. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should `orch-bus-loop` be listed as a risk-decision consumer as well as a file-bus consumer?**  
+1. **RESOLVED: Should `orch-bus-loop` be listed as a risk-decision consumer as well as a file-bus consumer?**  
    - What we know: `test-risk-decisions.sh` drives `orch-bus-loop`, and `orch-bus-loop` creates pending decisions and blocks Codex resume under risk conditions. [VERIFIED: docs/orchestra/scripts/tests/test-risk-decisions.sh; docs/orchestra/scripts/bin/orch-bus-loop]  
    - What's unclear: Phase context lists `orch-bus-loop` explicitly for file bus but not in D-03 for risk decisions. [VERIFIED: .planning/phases/15-specification-system/15-CONTEXT.md]  
    - Recommendation: Include `orch-bus-loop` as a supporting consumer in `specs/risk-decisions.md` only if the planner wants the spec to cover enforcement flow; this does not create a new spec. [VERIFIED: docs/orchestra/scripts/bin/orch-bus-loop; .planning/phases/15-specification-system/15-CONTEXT.md]
+   - Resolution: Do not list `orch-bus-loop` in `specs/risk-decisions.md` for Phase 15. The current plan keeps `orch-bus-loop` in `specs/file-bus.md` and `specs/commands.md`, while `specs/risk-decisions.md` lists the risk classifier, decision CLI helpers, risk rule data, and risk/decision tests from D-03. This preserves the locked consumer inventory and avoids broadening the risk spec beyond its current primary consumers. [VERIFIED: .planning/phases/15-specification-system/15-01-PLAN.md]
 
-2. **Should drift commands be executed by `test-specs.sh` or merely validated as present?**  
+2. **RESOLVED: Should drift commands be executed by `test-specs.sh` or merely validated as present?**  
    - What we know: D-12 requires tests to fail if a drift check command is missing; it does not require executing arbitrary Markdown commands. [VERIFIED: .planning/phases/15-specification-system/15-CONTEXT.md]  
    - What's unclear: "Concrete and can fail" leaves implementation details to the agent's discretion. [VERIFIED: .planning/phases/15-specification-system/15-CONTEXT.md]  
    - Recommendation: Validate that a non-empty fenced `bash` command exists under `## Drift Check`, and keep executable enforcement inside `test-specs.sh` itself. [VERIFIED: docs/orchestra/scripts/tests/*.sh; .planning/phases/15-specification-system/15-CONTEXT.md]
+   - Resolution: `test-specs.sh` validates that each derived spec has a non-empty fenced `bash` block under `## Drift Check`; it does not execute arbitrary commands embedded in Markdown. Executable enforcement remains in `test-specs.sh`, the existing smoke tests named in `## Conformance Checks`, and the final verification commands in `15-01-PLAN.md`. [VERIFIED: .planning/phases/15-specification-system/15-01-PLAN.md]
 
 ## Environment Availability
 
