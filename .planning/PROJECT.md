@@ -85,7 +85,7 @@ v1.0 规格阶段的用户输入与决策：
 
 v1.1 is complete. Phases 9-12 validated the upstream Hermes Agent baseline, package installer layer, local project runtime slice, risk rulebook enforcement, SSH/local decision fallback, durable Audit JSONL, smoke verification fixtures, coverage matrix, and next-milestone handoff.
 
-v1.2 is in progress. Phase 13 completed the evidence audit and discoverability pass. Phase 14 migrated the active Dev Orchestra package to `docs/orchestra/`, created `.planning/upstream/hermes-agent-pin.json`, and accepted manifest pin in `.planning/adr/ADR-001-upstream-pin.md`. Phase 15 created the `specs/` derived specification system, added conformance checks, and kept `.planning/SPEC.md` canonical. Phase 16 is next: Makefile and local developer workflow.
+v1.2 is in progress. Phase 13 completed the evidence audit and discoverability pass. Phase 14 migrated the active Dev Orchestra package to `docs/orchestra/`, created `.planning/upstream/hermes-agent-pin.json`, and accepted manifest pin in `.planning/adr/ADR-001-upstream-pin.md`. Phase 15 created the `specs/` derived specification system, added conformance checks, and kept `.planning/SPEC.md` canonical. Phase 16 created the root `Makefile` local developer workflow. Phase 17 is next: agent rules consolidation.
 
 ## Milestone: v1.1 Upstream Hermes Agent Integration
 
@@ -141,4 +141,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-28 — Phase 15 completed*
+*Last updated: 2026-04-28 — Phase 16 completed*
