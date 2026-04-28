@@ -13,13 +13,13 @@
 
 - [x] **DISC-01**: 根目录包含指向 `docs/orchestra/` 的显式索引（README 或指针文件），解决增强层内容埋太深的问题。
 - [x] **DISC-02**: `AGENTS.md` 保留现有 GSD/project/stack/workflow managed blocks，追加 Dev Orchestra 目录定位说明。
-- [x] **MIGR-01**: 生成完整旧路径引用清单（`rg -n "docs/orchestra"`），作为迁移或保留的决策依据。
-- [ ] **MIGR-02**: 目录迁移（若执行）必须使用 `git mv`，迁移后零旧路径残留，所有测试仍通过。
+- [x] **MIGR-01**: 生成完整迁移前路径引用清单，作为迁移或保留的决策依据。
+- [x] **MIGR-02**: 目录迁移（若执行）必须使用 `git mv`，迁移后零旧路径残留，所有测试仍通过。Validated in Phase 14.
 
 ### 上游依赖与规格权威
 
-- [ ] **UPST-01**: 编写 submodule ADR，比较 installer/probe pin / git submodule / manifest pin / vendor snapshot 四种方案。
-- [ ] **UPST-02**: 若选择 submodule，提交前验证暂存区只包含 `.gitmodules` 和 `hermes-agent` gitlink。
+- [x] **UPST-01**: 编写 submodule ADR，比较 installer/probe pin / git submodule / manifest pin / vendor snapshot 四种方案。Validated in Phase 14.
+- [x] **UPST-02**: 若选择 submodule，提交前验证暂存区只包含 `.gitmodules` 和 `hermes-agent` gitlink；Phase 14 选择 manifest pin，因此该条件不适用且已验证未引入 submodule artifact。Validated in Phase 14.
 - [ ] **SPEC-01**: `.planning/SPEC.md` 保持 canonical spec；任何 `specs/*.md` 派生文件必须声明 source、consumer 和 drift check。
 - [ ] **SPEC-02**: 每个派生 spec 至少有一个可失败的 conformance check；没有当前 consumer 的 spec 不得创建。
 
@@ -141,9 +141,9 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 | DISC-01 | Phase 13 | Complete |
 | DISC-02 | Phase 13 | Complete |
 | MIGR-01 | Phase 13 | Complete |
-| MIGR-02 | Phase 14 | Pending |
-| UPST-01 | Phase 14 | Pending |
-| UPST-02 | Phase 14 | Pending |
+| MIGR-02 | Phase 14 | Complete |
+| UPST-01 | Phase 14 | Complete |
+| UPST-02 | Phase 14 | Complete |
 | SPEC-01 | Phase 15 | Pending |
 | SPEC-02 | Phase 15 | Pending |
 | DEV-01 | Phase 16 | Pending |
@@ -193,4 +193,4 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 
 ---
 *Requirements defined: 2026-04-28*
-*Last updated: 2026-04-28 — Milestone v1.2 requirements defined, awaiting roadmap*
+*Last updated: 2026-04-28 — Phase 14 completed*

@@ -39,7 +39,7 @@
 **Goal:** 通过证据盘点和 gap audit，修复根目录可发现性，按需迁移目录结构，规范化规格体系和开发工作流。
 
 - [x] **Phase 13: Evidence Audit & Discoverability** — 盘点仓库状态，修复根目录可发现性，生成路径引用清单。 (completed 2026-04-28)
-- [ ] **Phase 14: Migration & Submodule ADR** — 按需迁移目录，编写 upstream pin 方案 ADR。
+- [x] **Phase 14: Migration & Submodule ADR** — 按需迁移目录，编写 upstream pin 方案 ADR。 (completed 2026-04-28)
 - [ ] **Phase 15: Specification System** — 建立 specs/ 派生文档体系，保持 `.planning/SPEC.md` canonical。
 - [ ] **Phase 16: Makefile & Dev Workflow** — 创建只引用真实测试的 Makefile，提供本地验证入口。
 - [ ] **Phase 17: Agent Rules Consolidation** — 合并 Agents 规则到 `AGENTS.md`，不覆盖现有内容。
@@ -55,7 +55,7 @@
 **Requirements:** DISC-01, DISC-02, MIGR-01
 **Success Criteria:**
   1. `git status --short --branch` 输出已审查，当前变更已明确归属。
-  2. `rg -n "docs/orchestra"` 输出完整旧路径引用清单。
+  2. 迁移前路径引用清单已完整输出并归档。
   3. 根目录存在显式索引文件指向增强层文档。
   4. `AGENTS.md` 保留现有 managed blocks，已追加 Dev Orchestra 目录定位说明。
 **Plans:** 1/1 plans complete
@@ -69,7 +69,7 @@
   2. 若执行迁移，`git mv` 后所有测试仍通过。
   3. ADR 比较了四种 upstream pin 方案。
   4. 若选择 submodule，暂存区验证只包含 `.gitmodules` 和 `hermes-agent` gitlink。
-**Plans:** 14-01
+**Plans:** 1/1 plans complete
 
 ### Phase 15: Specification System
 **Goal:** 建立 specs/ 派生文档体系，确保 `.planning/SPEC.md` 的 canonical 地位不受挑战。
@@ -127,7 +127,7 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 18
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 13. Evidence Audit & Discoverability | v1.2 | 1/1 | Complete    | 2026-04-28 |
-| 14. Migration & Submodule ADR | v1.2 | 0/1 | Not started | — |
+| 14. Migration & Submodule ADR | v1.2 | 1/1 | Complete    | 2026-04-28 |
 | 15. Specification System | v1.2 | 0/1 | Not started | — |
 | 16. Makefile & Dev Workflow | v1.2 | 0/1 | Not started | — |
 | 17. Agent Rules Consolidation | v1.2 | 0/1 | Not started | — |
