@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "component": "hermes-agent",
+  "upstream": {
+    "repository": "https://github.com/NousResearch/hermes-agent",
+    "remote": "https://github.com/NousResearch/hermes-agent.git"
+  },
+  "pin": {
+    "commit": "023b1bff11c2a01a435f1956a0e2ac1773a065f3",
+    "observed_version": "Hermes Agent v0.11.0 (2026.4.23)",
+    "probe_date": "2026-04-28",
+    "install_source": "https://github.com/NousResearch/hermes-agent",
+    "install_method": "upstream installer with HTTPS-safe Git config when needed",
+    "local_install_path": "~/.hermes/hermes-agent"
+  },
+  "probe_commands": [
+    "git -C ~/.hermes/hermes-agent rev-parse HEAD",
+    "hermes --version",
+    "hermes --help"
+  ],
+  "update_procedure": [
+    "Choose an intentional upstream commit.",
+    "Run the upstream installer or update procedure.",
+    "Verify hermes --version and hermes --help.",
+    "Update this manifest and related documentation in the same change."
+  ],
+  "phase_16_contract": {
+    "repo_pin_json_pointer": "/pin/commit",
+    "observed_version_json_pointer": "/pin/observed_version",
+    "runtime_pin_probe": "git -C ${HERMES_AGENT_DIR:-$HOME/.hermes/hermes-agent} rev-parse HEAD"
+  }
+}
