@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Hermes Dev Orchestra 规范化与迁移
 status: ready_to_build
-stopped_at: Milestone v1.2 roadmap created; ready for Phase 13 execution.
+stopped_at: Phase 13 planned; 1 plan ready for execution.
 last_updated: "2026-04-28T00:00:00Z"
-last_activity: 2026-04-28 -- Milestone v1.2 roadmap created
+last_activity: 2026-04-28 -- Phase 13 planned (1 plan, 5 tasks)
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
+  total_plans: 1
   completed_plans: 0
   percent: 0
 ---
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 ## Current Position
 
-Phase: Not started (roadmap created, awaiting execution)
-Plan: —
-Status: Ready to build
-Last activity: 2026-04-28 -- Milestone v1.2 roadmap created
+Phase: 13 — Evidence Audit & Discoverability
+Plan: 13-01 (5 tasks, Wave 1)
+Status: Planned — Ready to execute
+Last activity: 2026-04-28 -- Phase 13 planned (1 plan, 5 tasks)
 
 Progress: [░░░░░░░░░░] 0%
 
