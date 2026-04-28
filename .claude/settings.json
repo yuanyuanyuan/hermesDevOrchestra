@@ -10,11 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": [
-              "bash",
-              "-c",
-              "project=\"${HERMES_ORCHESTRA_PROJECT:-$(basename \"$PWD\")}\"; mkdir -p \"/tmp/hermes-orchestra/$project\"; event=\"$(printf '{\"event\":\"PermissionRequest\",\"ts\":\"%s\",\"session\":\"%s\",\"project\":\"%s\"}' \"$(date -Iseconds)\" \"${CLAUDE_SESSION_NAME:-unknown}\" \"$project\")\"; printf '%s\\n' \"$event\" | tee -a \"/tmp/hermes-orchestra/$project/claude-events.jsonl\" \"/tmp/hermes-orchestra/claude-events.jsonl\" >/dev/null; exit 0"
-            ],
+            "command": "bash -c 'project=\"${HERMES_ORCHESTRA_PROJECT:-$(basename \"$PWD\")}\"; mkdir -p \"/tmp/hermes-orchestra/$project\"; event=\"$(printf '{\"event\":\"PermissionRequest\",\"ts\":\"%s\",\"session\":\"%s\",\"project\":\"%s\"}' \"$(date -Iseconds)\" \"${CLAUDE_SESSION_NAME:-unknown}\" \"$project\")\"; printf '%s\\n' \"$event\" | tee -a \"/tmp/hermes-orchestra/$project/claude-events.jsonl\" \"/tmp/hermes-orchestra/claude-events.jsonl\" >/dev/null; exit 0'",
             "async": true,
             "timeout": 5000
           }
@@ -27,11 +23,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": [
-              "bash",
-              "-c",
-              "project=\"${HERMES_ORCHESTRA_PROJECT:-$(basename \"$PWD\")}\"; mkdir -p \"/tmp/hermes-orchestra/$project\"; event=\"$(printf '{\"event\":\"Notification\",\"ts\":\"%s\",\"session\":\"%s\",\"project\":\"%s\"}' \"$(date -Iseconds)\" \"${CLAUDE_SESSION_NAME:-unknown}\" \"$project\")\"; printf '%s\\n' \"$event\" | tee -a \"/tmp/hermes-orchestra/$project/claude-events.jsonl\" \"/tmp/hermes-orchestra/claude-events.jsonl\" >/dev/null"
-            ],
+            "command": "bash -c 'project=\"${HERMES_ORCHESTRA_PROJECT:-$(basename \"$PWD\")}\"; mkdir -p \"/tmp/hermes-orchestra/$project\"; event=\"$(printf '{\"event\":\"Notification\",\"ts\":\"%s\",\"session\":\"%s\",\"project\":\"%s\"}' \"$(date -Iseconds)\" \"${CLAUDE_SESSION_NAME:-unknown}\" \"$project\")\"; printf '%s\\n' \"$event\" | tee -a \"/tmp/hermes-orchestra/$project/claude-events.jsonl\" \"/tmp/hermes-orchestra/claude-events.jsonl\" >/dev/null'",
             "async": true,
             "timeout": 3000
           }
@@ -44,11 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": [
-              "bash",
-              "-c",
-              "project=\"${HERMES_ORCHESTRA_PROJECT:-$(basename \"$PWD\")}\"; mkdir -p \"/tmp/hermes-orchestra/$project\"; event=\"$(printf '{\"event\":\"SessionStart\",\"ts\":\"%s\",\"session\":\"%s\",\"project\":\"%s\"}' \"$(date -Iseconds)\" \"${CLAUDE_SESSION_NAME:-unknown}\" \"$project\")\"; printf '%s\\n' \"$event\" | tee -a \"/tmp/hermes-orchestra/$project/claude-events.jsonl\" \"/tmp/hermes-orchestra/claude-events.jsonl\" >/dev/null"
-            ],
+            "command": "bash -c 'project=\"${HERMES_ORCHESTRA_PROJECT:-$(basename \"$PWD\")}\"; mkdir -p \"/tmp/hermes-orchestra/$project\"; event=\"$(printf '{\"event\":\"SessionStart\",\"ts\":\"%s\",\"session\":\"%s\",\"project\":\"%s\"}' \"$(date -Iseconds)\" \"${CLAUDE_SESSION_NAME:-unknown}\" \"$project\")\"; printf '%s\\n' \"$event\" | tee -a \"/tmp/hermes-orchestra/$project/claude-events.jsonl\" \"/tmp/hermes-orchestra/claude-events.jsonl\" >/dev/null'",
             "async": true,
             "timeout": 3000
           }
@@ -61,11 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": [
-              "bash",
-              "-c",
-              "project=\"${HERMES_ORCHESTRA_PROJECT:-$(basename \"$PWD\")}\"; mkdir -p \"/tmp/hermes-orchestra/$project\"; event=\"$(printf '{\"event\":\"Stop\",\"ts\":\"%s\",\"session\":\"%s\",\"project\":\"%s\"}' \"$(date -Iseconds)\" \"${CLAUDE_SESSION_NAME:-unknown}\" \"$project\")\"; printf '%s\\n' \"$event\" | tee -a \"/tmp/hermes-orchestra/$project/claude-events.jsonl\" \"/tmp/hermes-orchestra/claude-events.jsonl\" >/dev/null"
-            ],
+            "command": "bash -c 'project=\"${HERMES_ORCHESTRA_PROJECT:-$(basename \"$PWD\")}\"; mkdir -p \"/tmp/hermes-orchestra/$project\"; event=\"$(printf '{\"event\":\"Stop\",\"ts\":\"%s\",\"session\":\"%s\",\"project\":\"%s\"}' \"$(date -Iseconds)\" \"${CLAUDE_SESSION_NAME:-unknown}\" \"$project\")\"; printf '%s\\n' \"$event\" | tee -a \"/tmp/hermes-orchestra/$project/claude-events.jsonl\" \"/tmp/hermes-orchestra/claude-events.jsonl\" >/dev/null'",
             "async": true,
             "timeout": 3000
           }
@@ -74,7 +58,15 @@
     ]
   },
   "permissionMode": "autoEdit",
-  "allowedTools": ["Bash", "Edit", "Read", "Write", "Glob", "Grep", "Task"],
+  "allowedTools": [
+    "Bash",
+    "Edit",
+    "Read",
+    "Write",
+    "Glob",
+    "Grep",
+    "Task"
+  ],
   "memory": {
     "enabled": true,
     "maxItems": 50
