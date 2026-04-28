@@ -323,9 +323,9 @@ rtk make test
 |---|-------|---------|---------------|
 | — | No claims in this research are tagged as assumed. | All sections | No user confirmation required before planning. [VERIFIED: source provenance review of this document] |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **None blocking.** Current `AGENTS.md`, `CLAUDE.md`, static checks, and `rtk make test` already support a verification-first Phase 17 plan. [VERIFIED: static agent-rule checks, `rtk make test`]
+1. RESOLVED: **None blocking.** Current `AGENTS.md`, `CLAUDE.md`, static checks, and `rtk make test` already support a verification-first Phase 17 plan. [VERIFIED: static agent-rule checks, `rtk make test`]
 
 ## Environment Availability
 
