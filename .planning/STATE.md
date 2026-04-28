@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Hermes Dev Orchestra 规范化与迁移
-status: defining_requirements
-stopped_at: Milestone v1.2 started; awaiting requirements definition.
+status: ready_to_build
+stopped_at: Milestone v1.2 roadmap created; ready for Phase 13 execution.
 last_updated: "2026-04-28T00:00:00Z"
-last_activity: 2026-04-28 -- Milestone v1.2 started
+last_activity: 2026-04-28 -- Milestone v1.2 roadmap created
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -25,16 +25,17 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started (roadmap created, awaiting execution)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-28 -- Milestone v1.2 started
+Status: Ready to build
+Last activity: 2026-04-28 -- Milestone v1.2 roadmap created
 
 Progress: [░░░░░░░░░░] 0%
 
 ## Requirements Alignment
 
-Pending requirement definition for v1.2.
+v1.2 requirements defined: 15 requirements across 6 categories.
+Roadmap created: 6 phases (13-18) with success criteria and traceability.
 
 ## Accumulated Context
 
