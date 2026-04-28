@@ -20,8 +20,8 @@
 
 - [x] **UPST-01**: 编写 submodule ADR，比较 installer/probe pin / git submodule / manifest pin / vendor snapshot 四种方案。Validated in Phase 14.
 - [x] **UPST-02**: 若选择 submodule，提交前验证暂存区只包含 `.gitmodules` 和 `hermes-agent` gitlink；Phase 14 选择 manifest pin，因此该条件不适用且已验证未引入 submodule artifact。Validated in Phase 14.
-- [ ] **SPEC-01**: `.planning/SPEC.md` 保持 canonical spec；任何 `specs/*.md` 派生文件必须声明 source、consumer 和 drift check。
-- [ ] **SPEC-02**: 每个派生 spec 至少有一个可失败的 conformance check；没有当前 consumer 的 spec 不得创建。
+- [x] **SPEC-01**: `.planning/SPEC.md` 保持 canonical spec；任何 `specs/*.md` 派生文件必须声明 source、consumer 和 drift check。
+- [x] **SPEC-02**: 每个派生 spec 至少有一个可失败的 conformance check；没有当前 consumer 的 spec 不得创建。
 
 ### 开发工作流与工具
 
@@ -144,8 +144,8 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 | MIGR-02 | Phase 14 | Complete |
 | UPST-01 | Phase 14 | Complete |
 | UPST-02 | Phase 14 | Complete |
-| SPEC-01 | Phase 15 | Pending |
-| SPEC-02 | Phase 15 | Pending |
+| SPEC-01 | Phase 15 | Complete |
+| SPEC-02 | Phase 15 | Complete |
 | DEV-01 | Phase 16 | Pending |
 | DEV-02 | Phase 16 | Pending |
 | DEV-03 | Phase 16 | Pending |
