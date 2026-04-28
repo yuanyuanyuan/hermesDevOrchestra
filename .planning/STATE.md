@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Hermes Dev Orchestra 规范化与迁移
-status: verifying
-stopped_at: Completed 15-01-PLAN.md
-last_updated: "2026-04-28T11:20:25.179Z"
-last_activity: 2026-04-28
+status: ready_to_plan
+stopped_at: Phase 15 complete; ready to plan Phase 16
+last_updated: "2026-04-28T11:32:52Z"
+last_activity: 2026-04-28 -- Phase 15 verified complete; ready to plan Phase 16
 progress:
-  total_phases: 8
+  total_phases: 6
   completed_phases: 3
-  total_plans: 3
+  total_plans: 6
   completed_plans: 3
-  percent: 100
+  percent: 50
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-28)
 
 **Core value:** 用户可以通过 SSH/Hermes CLI 随时追加开发任务，让 Hermes 自动调度 Claude 与 Codex 推进多个项目，只在高风险或产品级决策时打断用户。
-**Current focus:** Phase 15 — specification-system
+**Current focus:** Phase 16 — Makefile & Dev Workflow
 
 ## Current Position
 
-Phase: 15 (specification-system) — EXECUTING
-Plan: 1 of 1
-Status: Phase complete — ready for verification
-Last activity: 2026-04-28
+Phase: 16
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-04-28 -- Phase 15 verified complete; ready to plan Phase 16
 
-Progress: [███░░░░░░░] 33%
+Progress: [█████░░░░░] 50%
 
 ## Requirements Alignment
 
@@ -58,6 +58,6 @@ None at milestone start.
 
 ## Session Continuity
 
-Last session: 2026-04-28T11:20:24.931Z
-Stopped at: Completed 15-01-PLAN.md
-Resume: Execute Phase 15
+Last session: 2026-04-28T11:32:52Z
+Stopped at: Phase 15 complete; ready to plan Phase 16
+Resume: Plan Phase 16
