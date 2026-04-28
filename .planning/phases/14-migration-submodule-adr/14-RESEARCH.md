@@ -426,12 +426,11 @@ These commands verify that the manifest-pin path did not accidentally introduce 
 
 All claims in this research were verified locally, cited from official docs, or copied from locked Phase 14 context. [VERIFIED: local probes 2026-04-28; .planning/phases/14-migration-submodule-adr/14-CONTEXT.md]
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should historical `.planning/` artifacts be rewritten to satisfy a literal global grep?**
    - What we know: D-14-04 targets zero actionable old-path references and explicitly allows calling out historical artifacts that cannot be updated without corrupting audit evidence. [VERIFIED: .planning/phases/14-migration-submodule-adr/14-CONTEXT.md]
-   - What's unclear: Whether final acceptance will require literal zero matches across hidden historical archives. [VERIFIED: .planning/REQUIREMENTS.md; `.planning/phases/14-migration-submodule-adr/14-CONTEXT.md`]
-   - Recommendation: Plan an actionable zero gate plus a historical residual report; do not rewrite Phase 13 evidence or old milestone archives unless the user explicitly accepts audit-history rewriting. [VERIFIED: .planning/phases/13-evidence-audit-and-discoverability/13-EVIDENCE.md; .planning/phases/14-migration-submodule-adr/14-CONTEXT.md]
+   - RESOLVED: Phase 14 planning uses a strict actionable zero gate for current reader docs, package docs/tests, and active planning files, plus a separate historical residual report for audit artifacts. Do not rewrite Phase 13 evidence, old milestone archives, discussion logs, task transcripts, or backlog artifacts solely to satisfy a broad hidden grep. [VERIFIED: .planning/phases/13-evidence-audit-and-discoverability/13-EVIDENCE.md; .planning/phases/14-migration-submodule-adr/14-CONTEXT.md; .planning/phases/14-migration-submodule-adr/14-01-PLAN.md]
 
 ## Environment Availability
 
@@ -470,8 +469,8 @@ The pre-migration suite passed with 9 tests and 0 failures. [VERIFIED: `bash doc
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|--------------|
 | MIGR-02 | Moved package path has no actionable old-path references and existing smoke behavior still passes. [VERIFIED: .planning/REQUIREMENTS.md] | grep + smoke | `! rg -n "docs/hermes-dev-orchestra" README.md AGENTS.md CLAUDE.md docs .planning/PROJECT.md .planning/REQUIREMENTS.md .planning/ROADMAP.md .planning/DIRECTION-CORRECTION.md && bash docs/orchestra/scripts/tests/run-all.sh` | Current equivalent exists under old path; `docs/orchestra` appears after `git mv`. [VERIFIED: repo inventory 2026-04-28] |
-| UPST-01 | ADR compares four upstream pin strategies and selects manifest pin. [VERIFIED: .planning/REQUIREMENTS.md; .planning/phases/14-migration-submodule-adr/14-CONTEXT.md] | doc/grep + JSON parse | `rg -n "installer/probe pin|git submodule|manifest pin|vendor snapshot" .planning/adr/ADR-001-upstream-pin.md && python3 -m json.tool .planning/upstream/hermes-agent-pin.json >/dev/null` | Files to create in Phase 14. [VERIFIED: .planning/phases/14-migration-submodule-adr/14-CONTEXT.md] |
-| UPST-02 | Submodule-only staging check is marked not applicable when manifest pin is selected. [VERIFIED: .planning/phases/14-migration-submodule-adr/14-CONTEXT.md] | doc/grep + git status | `rg -n "UPST-02|not applicable|manifest pin" .planning/adr/ADR-001-upstream-pin.md && test ! -f .gitmodules && ! git ls-files --stage \| grep -q '^160000 '` | ADR to create; repo currently has no `.gitmodules`. [VERIFIED: local probe 2026-04-28] |
+| UPST-01 | ADR compares four upstream pin strategies and selects manifest pin. [VERIFIED: .planning/REQUIREMENTS.md; .planning/phases/14-migration-submodule-adr/14-CONTEXT.md] | doc/grep + JSON parse | `python3 -m json.tool .planning/upstream/hermes-agent-pin.json >/dev/null && rg -q --fixed-strings "installer/probe pin" .planning/adr/ADR-001-upstream-pin.md && rg -q --fixed-strings "git submodule" .planning/adr/ADR-001-upstream-pin.md && rg -q --fixed-strings "manifest pin" .planning/adr/ADR-001-upstream-pin.md && rg -q --fixed-strings "vendor snapshot" .planning/adr/ADR-001-upstream-pin.md` | Files to create in Phase 14. [VERIFIED: .planning/phases/14-migration-submodule-adr/14-CONTEXT.md] |
+| UPST-02 | Submodule-only staging check is marked not applicable when manifest pin is selected. [VERIFIED: .planning/phases/14-migration-submodule-adr/14-CONTEXT.md] | doc/grep + git status | `rg -q --fixed-strings "UPST-02" .planning/adr/ADR-001-upstream-pin.md && rg -q --fixed-strings "not applicable" .planning/adr/ADR-001-upstream-pin.md && rg -q --fixed-strings "manifest pin" .planning/adr/ADR-001-upstream-pin.md && test ! -f .gitmodules && ! git ls-files --stage \| grep -q '^160000 '` | ADR to create; repo currently has no `.gitmodules`. [VERIFIED: local probe 2026-04-28] |
 
 ### Sampling Rate
 
