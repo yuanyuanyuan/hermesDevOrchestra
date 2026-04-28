@@ -32,8 +32,8 @@
 
 ### Agents 规则与边界
 
-- [ ] **AGNT-01**: `AGENTS.md` 追加 Dev Orchestra Package Boundary 和 Agent Role Boundary，不覆盖现有 managed sections。
-- [ ] **AGNT-02**: 若创建 `CLAUDE.md`，必须指向 `AGENTS.md` 和 `.planning/SPEC.md` 作为权威，不重复所有规则。
+- [x] **AGNT-01**: `AGENTS.md` 追加 Dev Orchestra Package Boundary 和 Agent Role Boundary，不覆盖现有 managed sections。
+- [x] **AGNT-02**: 若创建 `CLAUDE.md`，必须指向 `AGENTS.md` 和 `.planning/SPEC.md` 作为权威，不重复所有规则。
 
 ### 架构约束
 
@@ -150,8 +150,8 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 | DEV-02 | Phase 16 | Complete |
 | DEV-03 | Phase 16 | Complete |
 | DEV-04 | Phase 16 | Complete |
-| AGNT-01 | Phase 17 | Pending |
-| AGNT-02 | Phase 17 | Pending |
+| AGNT-01 | Phase 17 | Complete |
+| AGNT-02 | Phase 17 | Complete |
 | ARCH-01 | Phase 18 | Pending |
 | ARCH-02 | Phase 18 | Pending |
 

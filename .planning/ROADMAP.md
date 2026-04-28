@@ -42,7 +42,7 @@
 - [x] **Phase 14: Migration & Submodule ADR** — 按需迁移目录，编写 upstream pin 方案 ADR。 (completed 2026-04-28)
 - [x] **Phase 15: Specification System** — 建立 specs/ 派生文档体系，保持 `.planning/SPEC.md` canonical。 (completed 2026-04-28)
 - [x] **Phase 16: Makefile & Dev Workflow** — 创建只引用真实测试的 Makefile，提供本地验证入口。 (completed 2026-04-28)
-- [ ] **Phase 17: Agent Rules Consolidation** — 合并 Agents 规则到 `AGENTS.md`，不覆盖现有内容。
+- [x] **Phase 17: Agent Rules Consolidation** — 合并 Agents 规则到 `AGENTS.md`，不覆盖现有内容。 (completed 2026-04-28)
 - [ ] **Phase 18: Architecture Bounds & Verification** — 明确 10x 压力边界，完成 milestone 验收。
 
 ---
@@ -104,7 +104,7 @@
   2. 已追加 "Dev Orchestra Package Boundary" 和 "Agent Role Boundary" 章节。
   3. 若创建 `CLAUDE.md`，它指向 `AGENTS.md` 和 `.planning/SPEC.md` 作为权威。
   4. 合并验证通过。
-**Plans:** 17-01
+**Plans:** 1/1 plans complete
 
 ### Phase 18: Architecture Bounds & Verification
 **Goal:** 明确 10x 压力边界限制，完成 milestone 验收。
@@ -130,7 +130,7 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 18
 | 14. Migration & Submodule ADR | v1.2 | 1/1 | Complete    | 2026-04-28 |
 | 15. Specification System | v1.2 | 1/1 | Complete    | 2026-04-28 |
 | 16. Makefile & Dev Workflow | v1.2 | 1/1 | Complete | 2026-04-28 |
-| 17. Agent Rules Consolidation | v1.2 | 0/1 | Not started | — |
+| 17. Agent Rules Consolidation | v1.2 | 1/1 | Complete    | 2026-04-28 |
 | 18. Architecture Bounds & Verification | v1.2 | 0/1 | Not started | — |
 
 ---
