@@ -40,7 +40,7 @@ None for the completed v1.1 milestone.
 
 ## Context
 
-已有输入资料位于 `docs/hermes-dev-orchestra/`，包括：
+已有输入资料位于 `docs/orchestra/`，包括：
 
 - `README.md`：描述多项目 AI 开发编排系统、三层代理架构、文件通信总线、三级决策流转、多项目管理、部署步骤、日常使用、配置文件、故障排查、安全最佳实践和扩展路线。
 - `hermes/SOUL.md`：定义 Hermes 顶层编排器人格，强调“管理者而非编码者”、信任 Claude 技术决策、只在危险/产品级问题上升级用户、多项目隔离和审计记录。
@@ -85,7 +85,7 @@ v1.0 规格阶段的用户输入与决策：
 
 v1.1 is complete. Phases 9-12 validated the upstream Hermes Agent baseline, package installer layer, local project runtime slice, risk rulebook enforcement, SSH/local decision fallback, durable Audit JSONL, smoke verification fixtures, coverage matrix, and next-milestone handoff.
 
-v1.2 is in progress. Phase 13 completed the evidence audit and discoverability pass: root `README.md` now points to the enhancement layer, `AGENTS.md`/`CLAUDE.md` expose the Dev Orchestra authority links, and `13-EVIDENCE.md` records the current `docs/hermes-dev-orchestra` reference inventory for Phase 14 migration decisions.
+v1.2 is in progress. Phase 13 completed the evidence audit and discoverability pass: root `README.md` now points to the enhancement layer, `AGENTS.md`/`CLAUDE.md` expose the Dev Orchestra authority links, and `13-EVIDENCE.md` records the current `docs/orchestra` reference inventory for Phase 14 migration decisions.
 
 ## Milestone: v1.1 Upstream Hermes Agent Integration
 

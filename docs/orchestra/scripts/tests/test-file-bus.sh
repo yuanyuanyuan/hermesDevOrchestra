@@ -57,20 +57,20 @@ PROJECT_DIR="$TMP_DIR/project"
 mkdir -p "$HOME" "$PROJECT_DIR"
 git -C "$PROJECT_DIR" init >/dev/null
 
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-init" test-proj "$PROJECT_DIR" >/tmp/orch-file-bus-init.out
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-init" test-proj "$PROJECT_DIR" >/tmp/orch-file-bus-init.out
 RUNTIME_DIR="$RUNTIME_ROOT/test-proj"
 cat > "$RUNTIME_DIR/task.md" <<'JSON'
 {"schema_version":"1.0","project_id":"test-proj","task_id":"task-1","correlation_id":"corr-1","status":"queued","author":"hermes","authority":"orchestrator","description":"fixture"}
 JSON
 
 for _ in 1 2 3 4; do
-  "$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
+  "$REPO_ROOT/docs/orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
 done
 assert_file_exists "$RUNTIME_DIR/codex-question.md" "codex-question.md not created"
 assert_file_exists "$RUNTIME_DIR/claude-decision.md" "claude-decision.md not created"
 assert_file_exists "$RUNTIME_DIR/codex-result.md" "codex-result.md not created"
 assert_file_exists "$RUNTIME_DIR/review-result.md" "review-result.md not created"
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
 find "$AUDIT_ROOT/test-proj/archive" -name archive-manifest.json | grep -q . || fail "archive-manifest.json missing" "manifest" "missing"
 
 cat > "$RUNTIME_DIR/task.md" <<'JSON'
@@ -79,7 +79,7 @@ JSON
 cat > "$RUNTIME_DIR/review-result.md" <<'JSON'
 {"schema_version":"1.0","project_id":"test-proj","decision":"APPROVED","author":"claude"}
 JSON
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
 assert_file_exists "$RUNTIME_DIR/task.md" "stale review without task_id must not consume current task"
 [ ! -f "$RUNTIME_DIR/review-result.md" ] || fail "stale review should be quarantined" "quarantined" "still present"
 

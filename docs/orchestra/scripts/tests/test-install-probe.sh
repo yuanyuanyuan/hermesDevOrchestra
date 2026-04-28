@@ -36,7 +36,7 @@ export AUDIT_ROOT="$TMP_DIR/audit/hermes-orchestra"
 export CACHE_ROOT="$TMP_DIR/cache/hermes-orchestra"
 mkdir -p "$HOME"
 
-bash "$REPO_ROOT/docs/hermes-dev-orchestra/scripts/setup.sh" >/tmp/orch-install-probe.out
+bash "$REPO_ROOT/docs/orchestra/scripts/setup.sh" >/tmp/orch-install-probe.out
 
 assert_contains "0.11.0" /tmp/orch-install-probe.out "setup must probe upstream hermes 0.11.0"
 assert_file_exists "$HOME/.hermes/SOUL.md" "SOUL not installed"

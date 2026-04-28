@@ -93,7 +93,7 @@ These complement (not replace) the Architecture section above.
 
 - This repository is an **adapter layer**, not a standalone runtime.
 - Local entrypoints are limited to `orch-*` helpers: `orch-init`, `orch-start`, `orch-stop`, `orch-status`, `orch-bus-loop`, `orch-risk-check`, `orch-audit`, `orch-decisions`, `orch-approve`, `orch-reject`, `orch-verify`.
-- Spec authority lives in `docs/hermes-dev-orchestra/`; `.planning/SPEC.md` is canonical for planning artifacts.
+- Spec authority lives in `docs/orchestra/`; `.planning/SPEC.md` is canonical for planning artifacts.
 
 ### Agent Role Boundary
 
@@ -106,7 +106,7 @@ These complement (not replace) the Architecture section above.
 
 | Directory | Purpose |
 |-----------|---------|
-| `docs/hermes-dev-orchestra/` | Product behavior baseline, SOUL, skills, scripts |
+| `docs/orchestra/` | Product behavior baseline, SOUL, skills, scripts |
 | `.planning/SPEC.md` | Canonical specification |
 | `.planning/STATE.md` | Project state and decisions |
 <!-- hermes-dev-orchestra-end -->

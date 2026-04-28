@@ -144,7 +144,7 @@ python3 --version   # >= 3.10
 cd ~/hermes-dev-orchestra
 
 # 运行安装脚本（无需 sudo，全部安装在用户目录）
-bash docs/hermes-dev-orchestra/scripts/setup.sh
+bash docs/orchestra/scripts/setup.sh
 ```
 
 setup.sh 会自动完成：

@@ -46,10 +46,10 @@ PROJECT_DIR="$TMP_DIR/project"
 mkdir -p "$HOME" "$PROJECT_DIR"
 git -C "$PROJECT_DIR" init >/dev/null
 
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-init" test-proj "$PROJECT_DIR" >/tmp/orch-init-start-init.out
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-start" test-proj "$PROJECT_DIR" >/tmp/orch-init-start-start.out
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-status" test-proj > /tmp/orch-init-start-status.out
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-stop" test-proj >/tmp/orch-init-start-stop.out || true
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-init" test-proj "$PROJECT_DIR" >/tmp/orch-init-start-init.out
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-start" test-proj "$PROJECT_DIR" >/tmp/orch-init-start-start.out
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-status" test-proj > /tmp/orch-init-start-status.out
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-stop" test-proj >/tmp/orch-init-start-stop.out || true
 
 assert_contains "Project: test-proj" /tmp/orch-init-start-status.out "status missing project"
 assert_contains "Stage:" /tmp/orch-init-start-status.out "status missing stage"

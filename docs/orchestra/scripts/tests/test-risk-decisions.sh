@@ -45,7 +45,7 @@ PROJECT_DIR="$TMP_DIR/project"
 mkdir -p "$HOME" "$PROJECT_DIR"
 git -C "$PROJECT_DIR" init >/dev/null
 
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-init" test-proj "$PROJECT_DIR" >/tmp/orch-risk-decisions-init.out
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-init" test-proj "$PROJECT_DIR" >/tmp/orch-risk-decisions-init.out
 RUNTIME_DIR="$RUNTIME_ROOT/test-proj"
 cat > "$RUNTIME_DIR/task.md" <<'JSON'
 {"schema_version":"1.0","project_id":"test-proj","task_id":"task-1","correlation_id":"corr-1","description":"修改 JWT"}
@@ -57,13 +57,13 @@ cat > "$RUNTIME_DIR/escalation.md" <<'JSON'
 {"schema_version":"1.0","project_id":"test-proj","task_id":"task-1","correlation_id":"corr-1","level":"L3","type":"SECURITY","details":"修改 JWT"}
 JSON
 
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
 pending_count="$(find "$STATE_ROOT/test-proj/pending-decisions" -name '*.json' | wc -l | tr -d ' ')"
 assert_eq "1" "$pending_count" "escalation should create one pending decision"
 [ ! -f "$CODEX_RESUME_LOG" ] || fail "no Codex resume before approval" "no Codex" "resumed"
 approval_id="$(find "$STATE_ROOT/test-proj/pending-decisions" -name '*.json' -printf '%f\n' | sed 's/\.json$//')"
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-approve" "$approval_id" "approved fixture" >/tmp/orch-risk-approved.out
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-approve" "$approval_id" "approved fixture" >/tmp/orch-risk-approved.out
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
 assert_file_exists "$CODEX_RESUME_LOG" "Codex should resume after user approval"
 [ ! -f "$RUNTIME_DIR/escalation.md" ] || fail "approved escalation.md should be archived automatically" "archived" "still present"
 
@@ -79,7 +79,7 @@ JSON
 cat > "$RUNTIME_DIR/codex-question.md" <<'JSON'
 {"schema_version":"1.0","project_id":"test-proj","task_id":"task-2","correlation_id":"corr-2","question":"Need decision"}
 JSON
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
 find "$STATE_ROOT/test-proj/pending-decisions" -name '*.json' | grep -q . || fail "under-classified L2 with L4 text should create pending decision" "pending" "missing"
 [ ! -f "$CODEX_RESUME_LOG" ] || fail "under-classified Claude decision must not resume Codex" "no Codex" "resumed"
 

@@ -11,9 +11,9 @@
 
 ### 仓库可发现性与结构
 
-- [x] **DISC-01**: 根目录包含指向 `docs/hermes-dev-orchestra/` 的显式索引（README 或指针文件），解决增强层内容埋太深的问题。
+- [x] **DISC-01**: 根目录包含指向 `docs/orchestra/` 的显式索引（README 或指针文件），解决增强层内容埋太深的问题。
 - [x] **DISC-02**: `AGENTS.md` 保留现有 GSD/project/stack/workflow managed blocks，追加 Dev Orchestra 目录定位说明。
-- [x] **MIGR-01**: 生成完整旧路径引用清单（`rg -n "docs/hermes-dev-orchestra"`），作为迁移或保留的决策依据。
+- [x] **MIGR-01**: 生成完整旧路径引用清单（`rg -n "docs/orchestra"`），作为迁移或保留的决策依据。
 - [ ] **MIGR-02**: 目录迁移（若执行）必须使用 `git mv`，迁移后零旧路径残留，所有测试仍通过。
 
 ### 上游依赖与规格权威
@@ -55,7 +55,7 @@ This milestone turns the v1.0 specification package into an upstream-first imple
 
 ### Orchestra Package Installation
 
-- [x] **PKG-01**: 安装脚本将 `docs/hermes-dev-orchestra/hermes/SOUL.md` 安装到上游 Hermes Agent 可读取的位置。
+- [x] **PKG-01**: 安装脚本将 `docs/orchestra/hermes/SOUL.md` 安装到上游 Hermes Agent 可读取的位置。
 - [x] **PKG-02**: 安装脚本将 `dev-orchestra`、`claude-supervisor`、`codex-executor`、`escalation-handler` 四个 skills 安装到上游 Hermes Agent skill layout。
 - [x] **PKG-03**: 安装脚本创建 `~/.hermes-orchestra/`、`/tmp/hermes-orchestra/` 和 per-project bus 目录，且不需要 sudo。
 - [x] **PKG-04**: `orch-init`、`orch-start`、`orch-stop`、`orch-status` helper 明确调用上游 Hermes Agent、tmux、Claude Code CLI 和 Codex CLI，而不是调用自研 Agent runtime。

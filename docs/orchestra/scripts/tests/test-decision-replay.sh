@@ -17,14 +17,14 @@ export AUDIT_ROOT="$TMP_DIR/audit/hermes-orchestra"
 export CACHE_ROOT="$TMP_DIR/cache/hermes-orchestra"
 mkdir -p "$HOME"
 
-source "$REPO_ROOT/docs/hermes-dev-orchestra/scripts/lib/orch-common.sh"
+source "$REPO_ROOT/docs/orchestra/scripts/lib/orch-common.sh"
 orch_project_dirs test-proj
 mkdir -p "$RUNTIME_DIR" "$STATE_DIR" "$AUDIT_DIR"
 
 id_once="$(orch_create_pending_decision L3 SECURITY "One-time" task-1 esc-1 escalation-handler)"
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-approve" "$id_once" "first approval" >/tmp/orch-replay-first.out
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-approve" "$id_once" "first approval" >/tmp/orch-replay-first.out
 set +e
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-approve" "$id_once" "replay approval" >/tmp/orch-replay-second.out 2>&1
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-approve" "$id_once" "replay approval" >/tmp/orch-replay-second.out 2>&1
 second=$?
 set -e
 [ "$second" -ne 0 ] || fail "used_at approval replay should fail" "non-zero" "$second"
@@ -40,7 +40,7 @@ json.dump(data, open(tmp, "w", encoding="utf-8"), indent=2)
 os.replace(tmp, path)
 PY
 set +e
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-approve" "$id_expired" "expired approval" >/tmp/orch-replay-expired.out 2>&1
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-approve" "$id_expired" "expired approval" >/tmp/orch-replay-expired.out 2>&1
 expired=$?
 set -e
 [ "$expired" -ne 0 ] || fail "expires_at_epoch approval should fail" "non-zero" "$expired"
@@ -56,7 +56,7 @@ json.dump(data, open(tmp, "w", encoding="utf-8"), indent=2)
 os.replace(tmp, path)
 PY
 set +e
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-approve" "$id_project" "project mismatch" >/tmp/orch-replay-project.out 2>&1
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-approve" "$id_project" "project mismatch" >/tmp/orch-replay-project.out 2>&1
 project_code=$?
 set -e
 [ "$project_code" -ne 0 ] || fail "project_id binding mismatch should fail" "non-zero" "$project_code"
@@ -72,7 +72,7 @@ json.dump(data, open(tmp, "w", encoding="utf-8"), indent=2)
 os.replace(tmp, path)
 PY
 set +e
-"$REPO_ROOT/docs/hermes-dev-orchestra/scripts/bin/orch-approve" "$id_task" "task mismatch" >/tmp/orch-replay-task.out 2>&1
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-approve" "$id_task" "task mismatch" >/tmp/orch-replay-task.out 2>&1
 task_code=$?
 set -e
 [ "$task_code" -ne 0 ] || fail "task_id binding mismatch should fail" "non-zero" "$task_code"

@@ -55,7 +55,7 @@
 **Requirements:** DISC-01, DISC-02, MIGR-01
 **Success Criteria:**
   1. `git status --short --branch` 输出已审查，当前变更已明确归属。
-  2. `rg -n "docs/hermes-dev-orchestra"` 输出完整旧路径引用清单。
+  2. `rg -n "docs/orchestra"` 输出完整旧路径引用清单。
   3. 根目录存在显式索引文件指向增强层文档。
   4. `AGENTS.md` 保留现有 managed blocks，已追加 Dev Orchestra 目录定位说明。
 **Plans:** 1/1 plans complete

@@ -3,9 +3,9 @@
 | Capability | Upstream native | Adapter-provided | Deferred | Evidence | Notes |
 |---|---:|---:|---:|---|---|
 | Upstream install/probe | Yes | No | No | `hermes --version`; pinned commit `023b1bff11c2a01a435f1956a0e2ac1773a065f3` | Upstream remains the `hermes` entry point. |
-| SOUL load | Yes | Yes | No | `docs/hermes-dev-orchestra/hermes/SOUL.md`; `setup.sh` | Adapter installs orchestra SOUL into upstream layout. |
+| SOUL load | Yes | Yes | No | `docs/orchestra/hermes/SOUL.md`; `setup.sh` | Adapter installs orchestra SOUL into upstream layout. |
 | Four skills load | Yes | Yes | No | `dev-orchestra`, `claude-supervisor`, `codex-executor`, `escalation-handler` | Installed under `~/.hermes/skills/`. |
-| `orch-init/start/stop/status` | No | Yes | No | `docs/hermes-dev-orchestra/scripts/bin/` | Local entrypoints remain `orch-*`. |
+| `orch-init/start/stop/status` | No | Yes | No | `docs/orchestra/scripts/bin/` | Local entrypoints remain `orch-*`. |
 | tmux Claude/Codex sessions | No | Yes | No | `orch-start`; `hermes-{project}-claude`; `hermes-{project}-codex` | Persistent PTY envelopes. |
 | File bus task/question/decision/review routing | No | Yes | No | `orch-bus-loop`; Runtime `/tmp/hermes-orchestra/{project}/` | JSON envelopes use `.md` compatibility filenames. |
 | Static risk rulebook | No | Yes | No | `config/rules.json`; `orch-risk-check` | Defines L3/L4 minimum floors. |

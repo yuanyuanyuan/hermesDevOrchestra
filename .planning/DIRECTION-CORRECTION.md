@@ -22,8 +22,8 @@ The user clarified that the original方案 was to build from `https://github.com
 
 ## Source Evidence
 
-- `docs/hermes-dev-orchestra/README.md` describes Hermes Agent as the Ubuntu top-level orchestrator.
-- `docs/hermes-dev-orchestra/scripts/setup.sh` installs Hermes Agent from `https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh`.
+- `docs/orchestra/README.md` describes Hermes Agent as the Ubuntu top-level orchestrator.
+- `docs/orchestra/scripts/setup.sh` installs Hermes Agent from `https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh`.
 - `.planning/SPEC.md` already named Hermes Agent as a reference implementation; this correction makes it the implementation foundation for v1.1.
 
 ## Impact

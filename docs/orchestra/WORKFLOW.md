@@ -73,7 +73,7 @@ codex login
 
 ```bash
 cd ~/hermes-dev-orchestra
-bash docs/hermes-dev-orchestra/scripts/setup.sh
+bash docs/orchestra/scripts/setup.sh
 ```
 
 `setup.sh` 会自动完成：
