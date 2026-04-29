@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Hermes Dev Orchestra 规范化与迁移
-status: ready_to_discuss
-stopped_at: Phase 17 complete; ready to discuss Phase 18
-last_updated: "2026-04-28T23:50:15.541Z"
-last_activity: 2026-04-28 -- Phase 17 completed; AGNT-01 and AGNT-02 verified
+status: ready_to_plan
+stopped_at: Phase 18 context gathered
+last_updated: "2026-04-29T00:01:07.085Z"
+last_activity: 2026-04-29 -- Phase 18 context gathered; ready to plan Phase 18
 progress:
   total_phases: 6
   completed_phases: 5
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-04-28)
 
 Phase: 18
 Plan: Not planned
-Status: Ready to discuss
-Last activity: 2026-04-28 -- Phase 17 completed; AGNT-01 and AGNT-02 verified
+Status: Ready to plan
+Last activity: 2026-04-29 -- Phase 18 context gathered; ready to plan Phase 18
 
 Progress: [████████░░] 83%
 
@@ -51,6 +51,7 @@ All v1.1 decisions remain valid.
 - [Phase 16]: Root `Makefile` created as the local developer workflow entrypoint. — `make test` now aggregates smoke tests, risk tests, JSON lint, shell lint, and upstream pin status without adding placeholder targets.
 - [Phase 17 Plan]: Use a verification-first agent-rule convergence plan. — `17-01` covers AGNT-01 and AGNT-02 with static checks for all GSD managed markers, Dev Orchestra boundaries, current `orch-*` helper coverage, L3/L4 no-auto-approval wording, pointer-only `CLAUDE.md`, and `rtk make test`.
 - [Phase 17]: Agent rule convergence verified without source edits. — `AGENTS.md` already preserves managed sections and the Dev Orchestra boundary block; `CLAUDE.md` remains pointer-only to `AGENTS.md` and `.planning/SPEC.md`; static checks and `rtk make test` passed.
+- [Phase 18 Context]: Use explicit architecture-boundary wording across canonical, derived, and user-facing docs. — Fixed Runtime bus filenames represent one active task slot per project; same-project parallelism is future v2 design work; "10x" is limited to single-developer multi-project orchestration, not same-project parallel Codex execution or AI-factory concurrency.
 
 ### Pending Todos
 
@@ -62,6 +63,6 @@ None at milestone start.
 
 ## Session Continuity
 
-Last session: 2026-04-28T23:50:15Z
-Stopped at: Phase 17 complete; ready to discuss Phase 18
-Resume: Discuss or plan Phase 18
+Last session: 2026-04-29T00:01:07.081Z
+Stopped at: Phase 18 context gathered
+Resume: Plan Phase 18
