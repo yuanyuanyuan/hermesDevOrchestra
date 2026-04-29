@@ -789,6 +789,8 @@ orch-status api-gateway
 | `codex-result.md` | Codex | Hermes/Claude | 执行结果与产出 |
 | `review-result.md` | Claude | Hermes | 代码审查意见 |
 
+边界：fixed Runtime bus filenames represent one active task slot per project。当前固定 Runtime bus 文件是 `task.md, codex-question.md, claude-decision.md, escalation.md, codex-result.md, review-result.md`；它们 are not a per-project multi-task parallel execution protocol。排队或追加任务可以存在于 State/todo 层，但同一项目的 Runtime bus 不表达多个同时活动任务。
+
 ---
 
 ## 六、故障排查

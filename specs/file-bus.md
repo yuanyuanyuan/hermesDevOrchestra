@@ -27,6 +27,7 @@ Downstream read order: `.planning/SPEC.md`, then this derived spec, then `docs/o
   - `codex-result.md` is written by Codex and read by Hermes and Claude.
   - `review-result.md` is written by Claude and read by Hermes.
   - `*.jsonl` event files are appended by Claude Code hooks and read by Hermes.
+- Boundary: fixed Runtime bus filenames represent one active task slot per project. The fixed Runtime bus files are `task.md, codex-question.md, claude-decision.md, escalation.md, codex-result.md, review-result.md`; they are not a per-project multi-task parallel execution protocol. Queued or appended work may exist in State/todo layers, but the Runtime bus does not represent multiple simultaneously active tasks inside the same project.
 - All bus writes use write-to-temp plus rename, with the temp file on the same filesystem as the target.
 - File-level advisory locking uses `flock` on a `{filename}.lock` file.
 - Stale messages are rejected when they are older than the configured threshold relative to the current task activity.

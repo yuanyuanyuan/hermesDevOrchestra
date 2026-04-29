@@ -241,6 +241,8 @@ Message types and their payload schemas:
 - **`review-result.md`** — Code review output. Payload: `decision` ("APPROVED"|"REJECTED"|"NEEDS_MODIFICATION"), `rationale` (string), `issues` (array of {severity, description, file, line}), `risk_assessment` ("LOW"|"MEDIUM"|"HIGH").
 - **`event.jsonl`** — Hook events from Claude Code. Payload: `event_type` ("PermissionRequest"|"Notification"|"SessionStart"|"Stop"), `session` (string), `tool` (string|null), `files` (string[]|null), `timestamp` (ISO8601).
 
+Boundary: fixed Runtime bus filenames represent one active task slot per project. The fixed Runtime bus files are `task.md, codex-question.md, claude-decision.md, escalation.md, codex-result.md, review-result.md`; they are not a per-project multi-task parallel execution protocol. Queued or appended work may exist in State/todo layers, but the Runtime bus does not represent multiple simultaneously active tasks inside the same project.
+
 ### BUS-03 — Required envelope fields
 
 Every message MUST include: `schema_version`, `message_id`, `project_id`, `task_id`, `correlation_id`, `status`, `author`, `authority`, `timestamp`. Missing fields cause the message to be rejected by the validation gate.
