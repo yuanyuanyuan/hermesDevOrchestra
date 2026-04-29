@@ -37,8 +37,8 @@
 
 ### 架构约束
 
-- [ ] **ARCH-01**: 明确固定文件名 file bus 表示单活动任务限制；若需支持多任务并行，必须另起设计（JSONL bus、per-task locks 等）。
-- [ ] **ARCH-02**: 当前 v1.1 的 10x 承诺仅限于"单人多项目，每项目单活动任务"，不得扩展为"同一项目多任务并行"。
+- [x] **ARCH-01**: 明确固定文件名 file bus 表示单活动任务限制；若需支持多任务并行，必须另起设计（JSONL bus、per-task locks 等）。Validated in Phase 18.
+- [x] **ARCH-02**: 当前 v1.1 的 10x 承诺仅限于"单人多项目，每项目单活动任务"，不得扩展为"同一项目多任务并行"。Validated in Phase 18.
 
 ---
 
@@ -152,12 +152,12 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 | DEV-04 | Phase 16 | Complete |
 | AGNT-01 | Phase 17 | Complete |
 | AGNT-02 | Phase 17 | Complete |
-| ARCH-01 | Phase 18 | Pending |
-| ARCH-02 | Phase 18 | Pending |
+| ARCH-01 | Phase 18 | Complete |
+| ARCH-02 | Phase 18 | Complete |
 
 **Coverage:**
-- v1.2 requirements: 15 total
-- Mapped to phases: 15
+- v1.2 requirements: 16 total
+- Mapped to phases: 16
 - Unmapped: 0 ✓
 
 ### v1.1 Traceability (Completed)
@@ -193,4 +193,4 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 
 ---
 *Requirements defined: 2026-04-28*
-*Last updated: 2026-04-28 — Phase 15 completed*
+*Last updated: 2026-04-29 — Phase 18 completed*

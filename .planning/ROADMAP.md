@@ -4,7 +4,7 @@
 
 - **v1.0 Specification Package** — Phases 1-7 (shipped 2026-04-25)
 - **v1.1 Upstream Hermes Agent Integration** — Phases 8-12 (shipped 2026-04-25)
-- **v1.2 Hermes Dev Orchestra 规范化与迁移** — Phases 13-18 (in progress)
+- **v1.2 Hermes Dev Orchestra 规范化与迁移** — Phases 13-18 (ready for milestone completion)
 
 ## Phases
 
@@ -43,7 +43,7 @@
 - [x] **Phase 15: Specification System** — 建立 specs/ 派生文档体系，保持 `.planning/SPEC.md` canonical。 (completed 2026-04-28)
 - [x] **Phase 16: Makefile & Dev Workflow** — 创建只引用真实测试的 Makefile，提供本地验证入口。 (completed 2026-04-28)
 - [x] **Phase 17: Agent Rules Consolidation** — 合并 Agents 规则到 `AGENTS.md`，不覆盖现有内容。 (completed 2026-04-28)
-- [ ] **Phase 18: Architecture Bounds & Verification** — 明确 10x 压力边界，完成 milestone 验收。
+- [x] **Phase 18: Architecture Bounds & Verification** — 明确 10x 压力边界，完成 milestone 验收。 (completed 2026-04-29)
 
 ---
 
@@ -115,7 +115,7 @@
   2. 若需支持多任务并行，文档描述另起设计方案并明确不属于 v1.2 范围。
   3. 10x 承诺被限定为"单人多项目，每项目单活动任务"。
   4. 所有 v1.2 需求通过验收验证。
-**Plans:** 18-01
+**Plans:** 1/1 plans complete
 
 ---
 
@@ -131,7 +131,7 @@ Phases execute in numeric order: 13 → 14 → 15 → 16 → 17 → 18
 | 15. Specification System | v1.2 | 1/1 | Complete    | 2026-04-28 |
 | 16. Makefile & Dev Workflow | v1.2 | 1/1 | Complete | 2026-04-28 |
 | 17. Agent Rules Consolidation | v1.2 | 1/1 | Complete    | 2026-04-28 |
-| 18. Architecture Bounds & Verification | v1.2 | 0/1 | Not started | — |
+| 18. Architecture Bounds & Verification | v1.2 | 1/1 | Complete | 2026-04-29 |
 
 ---
 

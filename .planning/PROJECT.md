@@ -87,7 +87,7 @@ v1.0 规格阶段的用户输入与决策：
 
 v1.1 is complete. Phases 9-12 validated the upstream Hermes Agent baseline, package installer layer, local project runtime slice, risk rulebook enforcement, SSH/local decision fallback, durable Audit JSONL, smoke verification fixtures, coverage matrix, and next-milestone handoff.
 
-v1.2 is in progress. Phase 13 completed the evidence audit and discoverability pass. Phase 14 migrated the active Dev Orchestra package to `docs/orchestra/`, created `.planning/upstream/hermes-agent-pin.json`, and accepted manifest pin in `.planning/adr/ADR-001-upstream-pin.md`. Phase 15 created the `specs/` derived specification system, added conformance checks, and kept `.planning/SPEC.md` canonical. Phase 16 created the root `Makefile` local developer workflow. Phase 17 verified agent rule consolidation without source edits: `AGENTS.md` already carries the Dev Orchestra boundary block and `CLAUDE.md` remains pointer-only. Phase 18 is next: architecture bounds and milestone verification.
+v1.2 Phase 18 clarified architecture bounds across `.planning/SPEC.md`, `specs/file-bus.md`, `docs/orchestra/README.md`, `docs/orchestra/WORKFLOW.md`, and `.planning/PROJECT.md`. The fixed Runtime bus is documented as one active task slot per project, same-project parallelism is out of scope for v1.2, and the "10x" claim is limited to single-developer multi-project coordination. Phase 18 verification passed, and the milestone is ready for completion via `$gsd-complete-milestone`.
 
 ## Milestone: v1.1 Upstream Hermes Agent Integration
 
