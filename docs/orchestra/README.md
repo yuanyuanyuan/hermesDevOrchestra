@@ -14,6 +14,8 @@
 - **一个人要同时开发多个项目**
 - 需要 **三层代理协作** + **三级决策流转**
 
+边界："10x" means lower coordination overhead across multiple projects for one developer；v1.2 does not promise same-project parallel Codex execution、team-scale concurrency 或 AI-factory throughput。Same-project parallelism is out of scope for v1.2. 未来若支持，需要另起设计覆盖 JSONL/event bus semantics、per-task file namespaces、per-task locks、worktrees or per-task branches、merge/review arbitration。
+
 ---
 
 ## 二、核心架构设计

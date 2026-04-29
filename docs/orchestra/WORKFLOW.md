@@ -6,6 +6,8 @@
 
 ---
 
+边界："10x" means lower coordination overhead across multiple projects for one developer；v1.2 does not promise same-project parallel Codex execution、team-scale concurrency 或 AI-factory throughput。Same-project parallelism is out of scope for v1.2. 未来若支持，需要另起设计覆盖 JSONL/event bus semantics、per-task file namespaces、per-task locks、worktrees or per-task branches、merge/review arbitration。
+
 ## 一、流程全景图
 
 ```

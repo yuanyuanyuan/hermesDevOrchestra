@@ -41,6 +41,8 @@ v1 is a specification package, not a runnable orchestrator implementation. The d
 
 The primary user is a single developer managing multiple software projects through SSH into an Ubuntu/Linux host. The developer uses Windows as their local OS and interacts with Hermes via SSH session or tmux reattachment. No team collaboration, shared approvals, or multi-user audit roles are in scope.
 
+"10x" means lower coordination overhead across multiple projects for one developer; v1.2 does not promise same-project parallel Codex execution, team-scale concurrency, or AI-factory throughput.
+
 ### SCOPE-03 — Explicit non-goals (v1)
 
 The following are explicitly excluded from v1:
@@ -396,7 +398,7 @@ When one project is blocked, Hermes continues polling other projects. No project
 
 If multiple registered projects point to the same git repository path, Hermes MUST serialize their access. Only one project's Codex session may actively modify files at a time. This is enforced by a repository-level lock file `.hermes-lock` in the repository root.
 
-Future work (v2): worktree-based isolation may allow true parallel access to the same repository.
+Same-project parallelism is out of scope for v1.2. Future support would require a separate design covering JSONL/event bus semantics, per-task file namespaces, per-task locks, worktrees or per-task branches, and merge/review arbitration. This note is a boundary, not a v1.2 command or runtime contract.
 
 ---
 
