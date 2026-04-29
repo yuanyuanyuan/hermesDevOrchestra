@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Hermes Dev Orchestra 规范化与迁移
-status: ready_to_execute
-stopped_at: Phase 18 planned
-last_updated: "2026-04-29T00:08:48.608Z"
-last_activity: 2026-04-29 -- Phase 18 planning complete
+status: milestone_complete
+stopped_at: Phase 18 complete
+last_updated: "2026-04-29T00:20:43.322Z"
+last_activity: 2026-04-29
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 6
-  completed_plans: 5
-  percent: 83
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -21,20 +21,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-28)
 
 **Core value:** 用户可以通过 SSH/Hermes CLI 随时追加开发任务，让 Hermes 自动调度 Claude 与 Codex 推进多个项目，只在高风险或产品级决策时打断用户。
-**Current focus:** Phase 18 — Architecture Bounds & Verification
+**Current focus:** v1.2 complete — ready for milestone completion
 
 ## Current Position
 
-Phase: 18
-Plan: 18-01 planned
-Status: Ready to execute
-Last activity: 2026-04-29 -- Phase 18 planning complete
+Phase: 18 complete
+Plan: 18-01 complete
+Status: Milestone complete
+Last activity: 2026-04-29 -- Phase 18 complete; ready for $gsd-complete-milestone
 
-Progress: [████████░░] 83%
+Progress: [██████████] 100%
 
 ## Requirements Alignment
 
-v1.2 requirements defined: 15 requirements across 6 categories.
+v1.2 requirements defined: 16 requirements across 6 categories.
 Roadmap created: 6 phases (13-18) with success criteria and traceability.
 
 ## Accumulated Context
@@ -53,6 +53,7 @@ All v1.1 decisions remain valid.
 - [Phase 17]: Agent rule convergence verified without source edits. — `AGENTS.md` already preserves managed sections and the Dev Orchestra boundary block; `CLAUDE.md` remains pointer-only to `AGENTS.md` and `.planning/SPEC.md`; static checks and `rtk make test` passed.
 - [Phase 18 Context]: Use explicit architecture-boundary wording across canonical, derived, and user-facing docs. — Fixed Runtime bus filenames represent one active task slot per project; same-project parallelism is future v2 design work; "10x" is limited to single-developer multi-project orchestration, not same-project parallel Codex execution or AI-factory concurrency.
 - [Phase 18 Plan]: Execute one documentation and verification plan. — `18-01` covers ARCH-01 and ARCH-02 with fixed Runtime bus boundary wording, future same-project parallelism scope, 10x limitation, static drift checks, `rtk make test`, traceability updates, and Phase 18 verification evidence.
+- [Phase 18]: Architecture bounds and v1.2 closeout verified. — Fixed Runtime bus single-slot wording, same-project parallelism future-work boundary, 10x limitation, `rtk make test`, and Phase 13-18 traceability all passed; v1.2 is ready for `$gsd-complete-milestone`.
 
 ### Pending Todos
 
@@ -65,5 +66,5 @@ None at milestone start.
 ## Session Continuity
 
 Last session: 2026-04-29T00:01:07.081Z
-Stopped at: Phase 18 planned
-Resume: Execute Phase 18
+Stopped at: Phase 18 complete
+Resume: Complete v1.2 milestone
