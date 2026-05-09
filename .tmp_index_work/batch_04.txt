@@ -1,0 +1,7419 @@
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/hooks
+TITLE: Event Hooks | Hermes Agent
+H1: Event Hooks
+TEXT:
+On this page
+
+Hermes has three hook systems that run custom code at key lifecycle points:
+
+System
+Registered via
+Runs in
+Use case
+Gateway hooks
+HOOK.yaml
+ + 
+handler.py
+ in 
+~/.hermes/hooks/
+Gateway only
+Logging, alerts, webhooks
+Plugin hooks
+ctx.register_hook()
+ in a 
+plugin
+CLI + Gateway
+Tool interception, metrics, guardrails
+Shell hooks
+hooks:
+ block in 
+~/.hermes/config.yaml
+ pointing at shell scripts
+CLI + Gateway
+Drop-in scripts for blocking, auto-formatting, context injection
+
+All three systems are non-blocking — errors in any hook are caught and logged, never crashing the agent.
+
+Gateway Event Hooks
+​
+
+Gateway hooks fire automatically during gateway operation (Telegram, Discord, Slack, WhatsApp, Teams) without blocking the main agent pipeline.
+
+Creating a Hook
+​
+
+Each hook is a directory under 
+~/.hermes/hooks/
+ containing two files:
+
+~/.hermes/hooks/
+└── my-hook/
+ ├── HOOK.yaml # Declares which events to listen for
+ └── handler.py # Python handler function
+
+HOOK.yaml
+​
+
+name
+:
+ my
+-
+hook
+description
+:
+ Log all agent activity to a file
+events
+:
+
+-
+ agent
+:
+start
+
+-
+ agent
+:
+end
+
+-
+ agent
+:
+step
+
+The 
+events
+ list determines which events trigger your handler. You can subscribe to any combination of events, including wildcards like 
+command:*
+.
+
+handler.py
+​
+
+import
+ json
+from
+ datetime 
+import
+ datetime
+from
+ pathlib 
+import
+ Path
+LOG_FILE 
+=
+ Path
+.
+home
+(
+)
+
+/
+
+".hermes"
+
+/
+
+"hooks"
+
+/
+
+"my-hook"
+
+/
+
+"activity.log"
+async
+
+def
+
+handle
+(
+event_type
+:
+
+str
+,
+ context
+:
+
+dict
+)
+:
+
+"""Called for each subscribed event. Must be named 'handle'."""
+ entry 
+=
+
+{
+
+"timestamp"
+:
+ datetime
+.
+now
+(
+)
+.
+isoformat
+(
+)
+,
+
+"event"
+:
+ event_type
+,
+
+**
+context
+,
+
+}
+
+with
+
+open
+(
+LOG_FILE
+,
+
+"a"
+)
+
+as
+ f
+:
+ f
+.
+write
+(
+json
+.
+dumps
+(
+entry
+)
+
++
+
+"\n"
+)
+
+Handler rules:
+
+Must be named 
+handle
+
+Receives 
+event_type
+ (string) and 
+context
+ (dict)
+
+Can be 
+async def
+ or regular 
+def
+ — both work
+
+Errors are caught and logged, never crashing the agent
+
+Available Events
+​
+
+Event
+When it fires
+Context keys
+gateway:startup
+Gateway process starts
+platforms
+ (list of active platform names)
+session:start
+New messaging session created
+platform
+, 
+user_id
+, 
+session_id
+, 
+session_key
+session:end
+Session ended (before reset)
+platform
+, 
+user_id
+, 
+session_key
+session:reset
+User ran 
+/new
+ or 
+/reset
+platform
+, 
+user_id
+, 
+session_key
+agent:start
+Agent begins processing a message
+platform
+, 
+user_id
+, 
+session_id
+, 
+message
+agent:step
+Each iteration of the tool-calling loop
+platform
+, 
+user_id
+, 
+session_id
+, 
+iteration
+, 
+tool_names
+agent:end
+Agent finishes processing
+platform
+, 
+user_id
+, 
+session_id
+, 
+message
+, 
+response
+command:*
+Any slash command executed
+platform
+, 
+user_id
+, 
+command
+, 
+args
+
+Wildcard Matching
+​
+
+Handlers registered for 
+command:*
+ fire for any 
+command:
+ event (
+command:model
+, 
+command:reset
+, etc.). Monitor all slash commands with a single subscription.
+
+Examples
+​
+
+Telegram Alert on Long Tasks
+​
+
+Send yourself a message when the agent takes more than 10 steps:
+
+# ~/.hermes/hooks/long-task-alert/HOOK.yaml
+name
+:
+ long
+-
+task
+-
+alert
+description
+:
+ Alert when agent is taking many steps
+events
+:
+
+-
+ agent
+:
+step
+
+# ~/.hermes/hooks/long-task-alert/handler.py
+import
+ os
+import
+ httpx
+THRESHOLD 
+=
+
+10
+BOT_TOKEN 
+=
+ os
+.
+getenv
+(
+"TELEGRAM_BOT_TOKEN"
+)
+CHAT_ID 
+=
+ os
+.
+getenv
+(
+"TELEGRAM_HOME_CHANNEL"
+)
+async
+
+def
+
+handle
+(
+event_type
+:
+
+str
+,
+ context
+:
+
+dict
+)
+:
+ iteration 
+=
+ context
+.
+get
+(
+"iteration"
+,
+
+0
+)
+
+if
+ iteration 
+==
+ THRESHOLD 
+and
+ BOT_TOKEN 
+and
+ CHAT_ID
+:
+ tools 
+=
+
+", "
+.
+join
+(
+context
+.
+get
+(
+"tool_names"
+,
+
+[
+]
+)
+)
+ text 
+=
+
+f"⚠️ Agent has been running for 
+{
+iteration
+}
+ steps. Last tools: 
+{
+tools
+}
+"
+
+async
+
+with
+ httpx
+.
+AsyncClient
+(
+)
+
+as
+ client
+:
+
+await
+ client
+.
+post
+(
+
+f"https://api.telegram.org/bot
+{
+BOT_TOKEN
+}
+/sendMessage"
+,
+ json
+=
+{
+"chat_id"
+:
+ CHAT_ID
+,
+
+"text"
+:
+ text
+}
+,
+
+)
+
+Command Usage Logger
+​
+
+Track which slash commands are used:
+
+# ~/.hermes/hooks/command-logger/HOOK.yaml
+name
+:
+ command
+-
+logger
+description
+:
+ Log slash command usage
+events
+:
+
+-
+ command
+:
+*
+
+# ~/.hermes/hooks/command-logger/handler.py
+import
+ json
+from
+ datetime 
+import
+ datetime
+from
+ pathlib 
+import
+ Path
+LOG 
+=
+ Path
+.
+home
+(
+)
+
+/
+
+".hermes"
+
+/
+
+"logs"
+
+/
+
+"command_usage.jsonl"
+def
+
+handle
+(
+event_type
+:
+
+str
+,
+ context
+:
+
+dict
+)
+:
+ LOG
+.
+parent
+.
+mkdir
+(
+parents
+=
+True
+,
+ exist_ok
+=
+True
+)
+ entry 
+=
+
+{
+
+"ts"
+:
+ datetime
+.
+now
+(
+)
+.
+isoformat
+(
+)
+,
+
+"command"
+:
+ context
+.
+get
+(
+"command"
+)
+,
+
+"args"
+:
+ context
+.
+get
+(
+"args"
+)
+,
+
+"platform"
+:
+ context
+.
+get
+(
+"platform"
+)
+,
+
+"user"
+:
+ context
+.
+get
+(
+"user_id"
+)
+,
+
+}
+
+with
+
+open
+(
+LOG
+,
+
+"a"
+)
+
+as
+ f
+:
+ f
+.
+write
+(
+json
+.
+dumps
+(
+entry
+)
+
++
+
+"\n"
+)
+
+Session Start Webhook
+​
+
+POST to an external service on new sessions:
+
+# ~/.hermes/hooks/session-webhook/HOOK.yaml
+name
+:
+ session
+-
+webhook
+description
+:
+ Notify external service on new sessions
+events
+:
+
+-
+ session
+:
+start
+
+-
+ session
+:
+reset
+
+# ~/.hermes/hooks/session-webhook/handler.py
+import
+ httpx
+WEBHOOK_URL 
+=
+
+"https://your-service.example.com/hermes-events"
+async
+
+def
+
+handle
+(
+event_type
+:
+
+str
+,
+ context
+:
+
+dict
+)
+:
+
+async
+
+with
+ httpx
+.
+AsyncClient
+(
+)
+
+as
+ client
+:
+
+await
+ client
+.
+post
+(
+WEBHOOK_URL
+,
+ json
+=
+{
+
+"event"
+:
+ event_type
+,
+
+**
+context
+,
+
+}
+,
+ timeout
+=
+5
+)
+
+Tutorial: BOOT.md — Run a Startup Checklist on Every Gateway Boot
+​
+
+A popular pattern from the community: drop a Markdown checklist at 
+~/.hermes/BOOT.md
+, and have the agent run it once every time the gateway starts. Useful for "on every boot, check overnight cron failures and ping me on Discord if anything failed," or "summarize the last 24h of deploy.log and post it to Slack #ops."
+
+This tutorial shows how to build it yourself as a user-defined hook. Hermes does not ship a built-in BOOT.md hook — you wire up exactly the behavior you want.
+
+What we're building
+​
+
+A file at 
+~/.hermes/BOOT.md
+ with natural-language startup instructions.
+
+A gateway hook that fires on 
+gateway:startup
+, spawns a one-shot agent with your gateway's resolved model/credentials, and runs the BOOT.md instructions.
+
+A 
+[SILENT]
+ convention so the agent can opt out of sending a message when there's nothing to report.
+
+Step 1: Write your checklist
+​
+
+Create 
+~/.hermes/BOOT.md
+. Write it as if you were giving instructions to a human assistant:
+
+#
+ Startup Checklist
+1.
+ Run 
+`hermes cron list`
+ and check if any scheduled jobs failed overnight.
+2.
+ If any failed, send a summary to Discord #ops using the 
+`send_message`
+ tool.
+3.
+ Check if 
+`/opt/app/deploy.log`
+ has any ERROR lines from the last 24 hours. If yes, summarize them and include in the same Discord message.
+4.
+ If nothing went wrong, reply with only 
+`[SILENT]`
+ so no message is sent.
+
+The agent sees this as part of its prompt, so anything you can describe in plain language works — tool calls, shell commands, sending messages, summarizing files.
+
+Step 2: Create the hook
+​
+
+~/.hermes/hooks/boot-md/
+├── HOOK.yaml
+└── handler.py
+
+~/.hermes/hooks/boot-md/HOOK.yaml
+
+name
+:
+ boot
+-
+md
+description
+:
+ Run ~/.hermes/BOOT.md on gateway startup
+events
+:
+
+-
+ gateway
+:
+startup
+
+~/.hermes/hooks/boot-md/handler.py
+
+"""Run ~/.hermes/BOOT.md on every gateway startup."""
+import
+ logging
+import
+ threading
+from
+ pathlib 
+import
+ Path
+logger 
+=
+ logging
+.
+getLogger
+(
+"hooks.boot-md"
+)
+BOOT_FILE 
+=
+ Path
+.
+home
+(
+)
+
+/
+
+".hermes"
+
+/
+
+"BOOT.md"
+def
+
+_build_prompt
+(
+content
+:
+
+str
+)
+
+-
+>
+
+str
+:
+
+return
+
+(
+
+"You are running a startup boot checklist. Follow the instructions "
+
+"below exactly.\n\n"
+
+"---\n"
+
+f"
+{
+content
+}
+\n"
+
+"---\n\n"
+
+"Execute each instruction. Use the send_message tool to deliver any "
+
+"messages to platforms like Discord or Slack.\n"
+
+"If nothing needs attention and there is nothing to report, reply "
+
+"with ONLY: [SILENT]"
+
+)
+def
+
+_run_boot_agent
+(
+content
+:
+
+str
+)
+
+-
+>
+
+None
+:
+
+"""Spawn a one-shot agent and execute the checklist.
+ Uses the gateway's resolved model and runtime credentials so this works
+ against custom endpoints, aggregators, and OAuth-based providers alike.
+ """
+
+try
+:
+
+from
+ gateway
+.
+run 
+import
+ _resolve_gateway_model
+,
+ _resolve_runtime_agent_kwargs
+
+from
+ run_agent 
+import
+ AIAgent
+ agent 
+=
+ AIAgent
+(
+ model
+=
+_resolve_gateway_model
+(
+)
+,
+
+**
+_resolve_runtime_agent_kwargs
+(
+)
+,
+ platform
+=
+"gateway"
+,
+ quiet_mode
+=
+True
+,
+ skip_context_files
+=
+True
+,
+ skip_memory
+=
+True
+,
+ max_iterations
+=
+20
+,
+
+)
+ result 
+=
+ agent
+.
+run_conversation
+(
+_build_prompt
+(
+content
+)
+)
+ response 
+=
+ result
+.
+get
+(
+"final_response"
+,
+
+""
+)
+
+if
+ response 
+and
+
+"[SILENT]"
+
+not
+
+in
+ response
+:
+ logger
+.
+info
+(
+"boot-md completed: %s"
+,
+ response
+[
+:
+200
+]
+)
+
+else
+:
+ logger
+.
+info
+(
+"boot-md completed (nothing to report)"
+)
+
+except
+ Exception 
+as
+ e
+:
+ logger
+.
+error
+(
+"boot-md agent failed: %s"
+,
+ e
+)
+async
+
+def
+
+handle
+(
+event_type
+:
+
+str
+,
+ context
+:
+
+dict
+)
+
+-
+>
+
+None
+:
+
+if
+
+not
+ BOOT_FILE
+.
+exists
+(
+)
+:
+
+return
+ content 
+=
+ BOOT_FILE
+.
+read_text
+(
+encoding
+=
+"utf-8"
+)
+.
+strip
+(
+)
+
+if
+
+not
+ content
+:
+
+return
+ logger
+.
+info
+(
+"Running BOOT.md (%d chars)"
+,
+
+len
+(
+content
+)
+)
+
+# Background thread so gateway startup isn't blocked on a full agent turn.
+ thread 
+=
+ threading
+.
+Thread
+(
+ target
+=
+_run_boot_agent
+,
+ args
+=
+(
+content
+,
+)
+,
+ name
+=
+"boot-md"
+,
+ daemon
+=
+True
+,
+
+)
+ thread
+.
+start
+(
+)
+
+The two key lines:
+
+_resolve_gateway_model()
+ reads the gateway's currently-configured model.
+
+_resolve_runtime_agent_kwargs()
+ resolves provider credentials the same way a normal gateway turn does — including API keys, base URLs, OAuth tokens, and credential pools.
+
+Without these, a bare 
+AIAgent()
+ falls back to built-in defaults and will 401 against any non-default endpoint.
+
+Step 3: Test it
+​
+
+Restart the gateway:
+
+hermes gateway restart
+
+Watch the logs:
+
+hermes logs 
+--follow
+
+--level
+ INFO 
+|
+
+grep
+ boot-md
+
+You should see 
+Running BOOT.md (N chars)
+ followed by either 
+boot-md completed: ...
+ (summary of what the agent did) or 
+boot-md completed (nothing to report)
+ when the agent replied 
+[SILENT]
+.
+
+Delete 
+~/.hermes/BOOT.md
+ to disable the checklist — the hook stays loaded but silently skips when the file isn't there.
+
+Extending the pattern
+​
+
+Schedule-aware checklists:
+ key off 
+datetime.now().weekday()
+ inside BOOT.md's instructions ("if it's Monday, also check the weekly deploy log"). The instructions are free-form text, so anything the agent can reason about is fair game.
+
+Multiple checklists:
+ point the hook at a different file (
+STARTUP.md
+, 
+MORNING.md
+, etc.) and register separate hook directories for each.
+
+Non-agent variant:
+ if you don't need a full agent loop, skip 
+AIAgent
+ entirely and have the handler post a fixed notification directly via 
+httpx
+. Cheaper, faster, and has no provider dependency.
+
+Why this isn't a built-in
+​
+
+An earlier version of Hermes shipped this as a built-in hook and silently spawned an agent with bare defaults on every gateway boot. That surprised users with custom endpoints and made the feature invisible to users who didn't know it was running. Keeping it as a documented pattern — built by you, in your hooks directory — means you see exactly what it does and opt in by writing the files.
+
+How It Works
+​
+
+On gateway startup, 
+HookRegistry.discover_and_load()
+ scans 
+~/.hermes/hooks/
+
+Each subdirectory with 
+HOOK.yaml
+ + 
+handler.py
+ is loaded dynamically
+
+Handlers are registered for their declared events
+
+At each lifecycle point, 
+hooks.emit()
+ fires all matching handlers
+
+Errors in any handler are caught and logged — a broken hook never crashes the agent
+
+info
+Gateway hooks only fire in the 
+gateway
+ (Telegram, Discord, Slack, WhatsApp, Teams). The CLI does not load gateway hooks. For hooks that work everywhere, use 
+plugin hooks
+.
+
+Plugin Hooks
+​
+
+Plugins
+ can register hooks that fire in 
+both CLI and gateway
+ sessions. These are registered programmatically via 
+ctx.register_hook()
+ in your plugin's 
+register()
+ function.
+
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"pre_tool_call"
+,
+ my_tool_observer
+)
+ ctx
+.
+register_hook
+(
+"post_tool_call"
+,
+ my_tool_logger
+)
+ ctx
+.
+register_hook
+(
+"pre_llm_call"
+,
+ my_memory_callback
+)
+ ctx
+.
+register_hook
+(
+"post_llm_call"
+,
+ my_sync_callback
+)
+ ctx
+.
+register_hook
+(
+"on_session_start"
+,
+ my_init_callback
+)
+ ctx
+.
+register_hook
+(
+"on_session_end"
+,
+ my_cleanup_callback
+)
+
+General rules for all hooks:
+
+Callbacks receive 
+keyword arguments
+. Always accept 
+**kwargs
+ for forward compatibility — new parameters may be added in future versions without breaking your plugin.
+
+If a callback 
+crashes
+, it's logged and skipped. Other hooks and the agent continue normally. A misbehaving plugin can never break the agent.
+
+Two hooks' return values affect behavior: 
+pre_tool_call
+ can 
+block
+ the tool, and 
+pre_llm_call
+ can 
+inject context
+ into the LLM call. All other hooks are fire-and-forget observers.
+
+Quick reference
+​
+
+Hook
+Fires when
+Returns
+pre_tool_call
+Before any tool executes
+{"action": "block", "message": str}
+ to veto the call
+post_tool_call
+After any tool returns
+ignored
+pre_llm_call
+Once per turn, before the tool-calling loop
+{"context": str}
+ to prepend context to the user message
+post_llm_call
+Once per turn, after the tool-calling loop
+ignored
+on_session_start
+New session created (first turn only)
+ignored
+on_session_end
+Session ends
+ignored
+on_session_finalize
+CLI/gateway tears down an active session (flush, save, stats)
+ignored
+on_session_reset
+Gateway swaps in a fresh session key (e.g. 
+/new
+, 
+/reset
+)
+ignored
+subagent_stop
+A 
+delegate_task
+ child has exited
+ignored
+pre_gateway_dispatch
+Gateway received a user message, before auth + dispatch
+{"action": "skip" | "rewrite" | "allow", ...}
+ to influence flow
+pre_approval_request
+Dangerous command needs user approval, before the prompt/notification is sent
+ignored
+post_approval_response
+User responded to an approval prompt (or it timed out)
+ignored
+transform_tool_result
+After any tool returns, before the result is handed back to the model
+str
+ to replace the result, 
+None
+ to leave unchanged
+transform_terminal_output
+Inside the 
+terminal
+ tool, before truncation/ANSI-strip/redact
+str
+ to replace the raw output, 
+None
+ to leave unchanged
+transform_llm_output
+After the tool-calling loop completes, before the final response is delivered
+str
+ to replace the response text, 
+None
+/empty to leave unchanged
+
+pre_tool_call
+​
+
+Fires 
+immediately before
+ every tool execution — built-in tools and plugin tools alike.
+
+Callback signature:
+
+def
+
+my_callback
+(
+tool_name
+:
+
+str
+,
+ args
+:
+
+dict
+,
+ task_id
+:
+
+str
+,
+
+**
+kwargs
+)
+:
+
+Parameter
+Type
+Description
+tool_name
+str
+Name of the tool about to execute (e.g. 
+"terminal"
+, 
+"web_search"
+, 
+"read_file"
+)
+args
+dict
+The arguments the model passed to the tool
+task_id
+str
+Session/task identifier. Empty string if not set.
+
+Fires:
+ In 
+model_tools.py
+, inside 
+handle_function_call()
+, before the tool's handler runs. Fires once per tool call — if the model calls 3 tools in parallel, this fires 3 times.
+
+Return value — veto the call:
+
+return
+
+{
+"action"
+:
+
+"block"
+,
+
+"message"
+:
+
+"Reason the tool call was blocked"
+}
+
+The agent short-circuits the tool with 
+message
+ as the error returned to the model. The first matching block directive wins (Python plugins registered first, then shell hooks). Any other return value is ignored, so existing observer-only callbacks keep working unchanged.
+
+Use cases:
+ Logging, audit trails, tool call counters, blocking dangerous operations, rate limiting, per-user policy enforcement.
+
+Example — tool call audit log:
+
+import
+ json
+,
+ logging
+from
+ datetime 
+import
+ datetime
+logger 
+=
+ logging
+.
+getLogger
+(
+__name__
+)
+def
+
+audit_tool_call
+(
+tool_name
+,
+ args
+,
+ task_id
+,
+
+**
+kwargs
+)
+:
+ logger
+.
+info
+(
+"TOOL_CALL session=%s tool=%s args=%s"
+,
+ task_id
+,
+ tool_name
+,
+ json
+.
+dumps
+(
+args
+)
+[
+:
+200
+]
+)
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"pre_tool_call"
+,
+ audit_tool_call
+)
+
+Example — warn on dangerous tools:
+
+DANGEROUS 
+=
+
+{
+"terminal"
+,
+
+"write_file"
+,
+
+"patch"
+}
+def
+
+warn_dangerous
+(
+tool_name
+,
+
+**
+kwargs
+)
+:
+
+if
+ tool_name 
+in
+ DANGEROUS
+:
+
+print
+(
+f"⚠ Executing potentially dangerous tool: 
+{
+tool_name
+}
+"
+)
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"pre_tool_call"
+,
+ warn_dangerous
+)
+
+post_tool_call
+​
+
+Fires 
+immediately after
+ every tool execution returns.
+
+Callback signature:
+
+def
+
+my_callback
+(
+tool_name
+:
+
+str
+,
+ args
+:
+
+dict
+,
+ result
+:
+
+str
+,
+ task_id
+:
+
+str
+,
+ duration_ms
+:
+
+int
+,
+
+**
+kwargs
+)
+:
+
+Parameter
+Type
+Description
+tool_name
+str
+Name of the tool that just executed
+args
+dict
+The arguments the model passed to the tool
+result
+str
+The tool's return value (always a JSON string)
+task_id
+str
+Session/task identifier. Empty string if not set.
+duration_ms
+int
+How long the tool's dispatch took, in milliseconds (measured with 
+time.monotonic()
+ around 
+registry.dispatch()
+).
+
+Fires:
+ In 
+model_tools.py
+, inside 
+handle_function_call()
+, after the tool's handler returns. Fires once per tool call. Does 
+not
+ fire if the tool raised an unhandled exception (the error is caught and returned as an error JSON string instead, and 
+post_tool_call
+ fires with that error string as 
+result
+).
+
+Return value:
+ Ignored.
+
+Use cases:
+ Logging tool results, metrics collection, tracking tool success/failure rates, latency dashboards, per-tool budget alerts, sending notifications when specific tools complete.
+
+Example — track tool usage metrics:
+
+from
+ collections 
+import
+ Counter
+,
+ defaultdict
+import
+ json
+_tool_counts 
+=
+ Counter
+(
+)
+_error_counts 
+=
+ Counter
+(
+)
+_latency_ms 
+=
+ defaultdict
+(
+list
+)
+def
+
+track_metrics
+(
+tool_name
+,
+ result
+,
+ duration_ms
+=
+0
+,
+
+**
+kwargs
+)
+:
+ _tool_counts
+[
+tool_name
+]
+
++=
+
+1
+ _latency_ms
+[
+tool_name
+]
+.
+append
+(
+duration_ms
+)
+
+try
+:
+ parsed 
+=
+ json
+.
+loads
+(
+result
+)
+
+if
+
+"error"
+
+in
+ parsed
+:
+ _error_counts
+[
+tool_name
+]
+
++=
+
+1
+
+except
+
+(
+json
+.
+JSONDecodeError
+,
+ TypeError
+)
+:
+
+pass
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"post_tool_call"
+,
+ track_metrics
+)
+
+pre_llm_call
+​
+
+Fires 
+once per turn
+, before the tool-calling loop begins. This is the 
+only hook whose return value is used
+ — it can inject context into the current turn's user message.
+
+Callback signature:
+
+def
+
+my_callback
+(
+session_id
+:
+
+str
+,
+ user_message
+:
+
+str
+,
+ conversation_history
+:
+
+list
+,
+ is_first_turn
+:
+
+bool
+,
+ model
+:
+
+str
+,
+ platform
+:
+
+str
+,
+
+**
+kwargs
+)
+:
+
+Parameter
+Type
+Description
+session_id
+str
+Unique identifier for the current session
+user_message
+str
+The user's original message for this turn (before any skill injection)
+conversation_history
+list
+Copy of the full message list (OpenAI format: 
+[{"role": "user", "content": "..."}]
+)
+is_first_turn
+bool
+True
+ if this is the first turn of a new session, 
+False
+ on subsequent turns
+model
+str
+The model identifier (e.g. 
+"anthropic/claude-sonnet-4.6"
+)
+platform
+str
+Where the session is running: 
+"cli"
+, 
+"telegram"
+, 
+"discord"
+, etc.
+
+Fires:
+ In 
+run_agent.py
+, inside 
+run_conversation()
+, after context compression but before the main 
+while
+ loop. Fires once per 
+run_conversation()
+ call (i.e. once per user turn), not once per API call within the tool loop.
+
+Return value:
+ If the callback returns a dict with a 
+"context"
+ key, or a plain non-empty string, the text is appended to the current turn's user message. Return 
+None
+ for no injection.
+
+# Inject context
+return
+
+{
+"context"
+:
+
+"Recalled memories:\n- User likes Python\n- Working on hermes-agent"
+}
+# Plain string (equivalent)
+return
+
+"Recalled memories:\n- User likes Python"
+# No injection
+return
+
+None
+
+Where context is injected:
+ Always the 
+user message
+, never the system prompt. This preserves the prompt cache — the system prompt stays identical across turns, so cached tokens are reused. The system prompt is Hermes's territory (model guidance, tool enforcement, personality, skills). Plugins contribute context alongside the user's input.
+
+All injected context is 
+ephemeral
+ — added at API call time only. The original user message in the conversation history is never mutated, and nothing is persisted to the session database.
+
+When 
+multiple plugins
+ return context, their outputs are joined with double newlines in plugin discovery order (alphabetical by directory name).
+
+Use cases:
+ Memory recall, RAG context injection, guardrails, per-turn analytics.
+
+Example — memory recall:
+
+import
+ httpx
+MEMORY_API 
+=
+
+"https://your-memory-api.example.com"
+def
+
+recall
+(
+session_id
+,
+ user_message
+,
+ is_first_turn
+,
+
+**
+kwargs
+)
+:
+
+try
+:
+ resp 
+=
+ httpx
+.
+post
+(
+f"
+{
+MEMORY_API
+}
+/recall"
+,
+ json
+=
+{
+
+"session_id"
+:
+ session_id
+,
+
+"query"
+:
+ user_message
+,
+
+}
+,
+ timeout
+=
+3
+)
+ memories 
+=
+ resp
+.
+json
+(
+)
+.
+get
+(
+"results"
+,
+
+[
+]
+)
+
+if
+
+not
+ memories
+:
+
+return
+
+None
+ text 
+=
+
+"Recalled context:\n"
+
++
+
+"\n"
+.
+join
+(
+f"- 
+{
+m
+[
+'text'
+]
+}
+"
+
+for
+ m 
+in
+ memories
+)
+
+return
+
+{
+"context"
+:
+ text
+}
+
+except
+ Exception
+:
+
+return
+
+None
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"pre_llm_call"
+,
+ recall
+)
+
+Example — guardrails:
+
+POLICY 
+=
+
+"Never execute commands that delete files without explicit user confirmation."
+def
+
+guardrails
+(
+**
+kwargs
+)
+:
+
+return
+
+{
+"context"
+:
+ POLICY
+}
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"pre_llm_call"
+,
+ guardrails
+)
+
+post_llm_call
+​
+
+Fires 
+once per turn
+, after the tool-calling loop completes and the agent has produced a final response. Only fires on 
+successful
+ turns — does not fire if the turn was interrupted.
+
+Callback signature:
+
+def
+
+my_callback
+(
+session_id
+:
+
+str
+,
+ user_message
+:
+
+str
+,
+ assistant_response
+:
+
+str
+,
+ conversation_history
+:
+
+list
+,
+ model
+:
+
+str
+,
+ platform
+:
+
+str
+,
+
+**
+kwargs
+)
+:
+
+Parameter
+Type
+Description
+session_id
+str
+Unique identifier for the current session
+user_message
+str
+The user's original message for this turn
+assistant_response
+str
+The agent's final text response for this turn
+conversation_history
+list
+Copy of the full message list after the turn completed
+model
+str
+The model identifier
+platform
+str
+Where the session is running
+
+Fires:
+ In 
+run_agent.py
+, inside 
+run_conversation()
+, after the tool loop exits with a final response. Guarded by 
+if final_response and not interrupted
+ — so it does 
+not
+ fire when the user interrupts mid-turn or the agent hits the iteration limit without producing a response.
+
+Return value:
+ Ignored.
+
+Use cases:
+ Syncing conversation data to an external memory system, computing response quality metrics, logging turn summaries, triggering follow-up actions.
+
+Example — sync to external memory:
+
+import
+ httpx
+MEMORY_API 
+=
+
+"https://your-memory-api.example.com"
+def
+
+sync_memory
+(
+session_id
+,
+ user_message
+,
+ assistant_response
+,
+
+**
+kwargs
+)
+:
+
+try
+:
+ httpx
+.
+post
+(
+f"
+{
+MEMORY_API
+}
+/store"
+,
+ json
+=
+{
+
+"session_id"
+:
+ session_id
+,
+
+"user"
+:
+ user_message
+,
+
+"assistant"
+:
+ assistant_response
+,
+
+}
+,
+ timeout
+=
+5
+)
+
+except
+ Exception
+:
+
+pass
+
+# best-effort
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"post_llm_call"
+,
+ sync_memory
+)
+
+Example — track response lengths:
+
+import
+ logging
+logger 
+=
+ logging
+.
+getLogger
+(
+__name__
+)
+def
+
+log_response_length
+(
+session_id
+,
+ assistant_response
+,
+ model
+,
+
+**
+kwargs
+)
+:
+ logger
+.
+info
+(
+"RESPONSE session=%s model=%s chars=%d"
+,
+ session_id
+,
+ model
+,
+
+len
+(
+assistant_response 
+or
+
+""
+)
+)
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"post_llm_call"
+,
+ log_response_length
+)
+
+on_session_start
+​
+
+Fires 
+once
+ when a brand-new session is created. Does 
+not
+ fire on session continuation (when the user sends a second message in an existing session).
+
+Callback signature:
+
+def
+
+my_callback
+(
+session_id
+:
+
+str
+,
+ model
+:
+
+str
+,
+ platform
+:
+
+str
+,
+
+**
+kwargs
+)
+:
+
+Parameter
+Type
+Description
+session_id
+str
+Unique identifier for the new session
+model
+str
+The model identifier
+platform
+str
+Where the session is running
+
+Fires:
+ In 
+run_agent.py
+, inside 
+run_conversation()
+, during the first turn of a new session — specifically after the system prompt is built but before the tool loop starts. The check is 
+if not conversation_history
+ (no prior messages = new session).
+
+Return value:
+ Ignored.
+
+Use cases:
+ Initializing session-scoped state, warming caches, registering the session with an external service, logging session starts.
+
+Example — initialize a session cache:
+
+_session_caches 
+=
+
+{
+}
+def
+
+init_session
+(
+session_id
+,
+ model
+,
+ platform
+,
+
+**
+kwargs
+)
+:
+ _session_caches
+[
+session_id
+]
+
+=
+
+{
+
+"model"
+:
+ model
+,
+
+"platform"
+:
+ platform
+,
+
+"tool_calls"
+:
+
+0
+,
+
+"started"
+:
+
+__import__
+(
+"datetime"
+)
+.
+datetime
+.
+now
+(
+)
+.
+isoformat
+(
+)
+,
+
+}
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"on_session_start"
+,
+ init_session
+)
+
+on_session_end
+​
+
+Fires at the 
+very end
+ of every 
+run_conversation()
+ call, regardless of outcome. Also fires from the CLI's exit handler if the agent was mid-turn when the user quit.
+
+Callback signature:
+
+def
+
+my_callback
+(
+session_id
+:
+
+str
+,
+ completed
+:
+
+bool
+,
+ interrupted
+:
+
+bool
+,
+ model
+:
+
+str
+,
+ platform
+:
+
+str
+,
+
+**
+kwargs
+)
+:
+
+Parameter
+Type
+Description
+session_id
+str
+Unique identifier for the session
+completed
+bool
+True
+ if the agent produced a final response, 
+False
+ otherwise
+interrupted
+bool
+True
+ if the turn was interrupted (user sent new message, 
+/stop
+, or quit)
+model
+str
+The model identifier
+platform
+str
+Where the session is running
+
+Fires:
+ In two places:
+
+run_agent.py
+ — at the end of every 
+run_conversation()
+ call, after all cleanup. Always fires, even if the turn errored.
+
+cli.py
+ — in the CLI's atexit handler, but 
+only
+ if the agent was mid-turn (
+_agent_running=True
+) when the exit occurred. This catches Ctrl+C and 
+/exit
+ during processing. In this case, 
+completed=False
+ and 
+interrupted=True
+.
+
+Return value:
+ Ignored.
+
+Use cases:
+ Flushing buffers, closing connections, persisting session state, logging session duration, cleanup of resources initialized in 
+on_session_start
+.
+
+Example — flush and cleanup:
+
+_session_caches 
+=
+
+{
+}
+def
+
+cleanup_session
+(
+session_id
+,
+ completed
+,
+ interrupted
+,
+
+**
+kwargs
+)
+:
+ cache 
+=
+ _session_caches
+.
+pop
+(
+session_id
+,
+
+None
+)
+
+if
+ cache
+:
+
+# Flush accumulated data to disk or external service
+ status 
+=
+
+"completed"
+
+if
+ completed 
+else
+
+(
+"interrupted"
+
+if
+ interrupted 
+else
+
+"failed"
+)
+
+print
+(
+f"Session 
+{
+session_id
+}
+ ended: 
+{
+status
+}
+, 
+{
+cache
+[
+'tool_calls'
+]
+}
+ tool calls"
+)
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"on_session_end"
+,
+ cleanup_session
+)
+
+Example — session duration tracking:
+
+import
+ time
+,
+ logging
+logger 
+=
+ logging
+.
+getLogger
+(
+__name__
+)
+_start_times 
+=
+
+{
+}
+def
+
+on_start
+(
+session_id
+,
+
+**
+kwargs
+)
+:
+ _start_times
+[
+session_id
+]
+
+=
+ time
+.
+time
+(
+)
+def
+
+on_end
+(
+session_id
+,
+ completed
+,
+ interrupted
+,
+
+**
+kwargs
+)
+:
+ start 
+=
+ _start_times
+.
+pop
+(
+session_id
+,
+
+None
+)
+
+if
+ start
+:
+ duration 
+=
+ time
+.
+time
+(
+)
+
+-
+ start
+ logger
+.
+info
+(
+"SESSION_DURATION session=%s seconds=%.1f completed=%s interrupted=%s"
+,
+ session_id
+,
+ duration
+,
+ completed
+,
+ interrupted
+)
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"on_session_start"
+,
+ on_start
+)
+ ctx
+.
+register_hook
+(
+"on_session_end"
+,
+ on_end
+)
+
+on_session_finalize
+​
+
+Fires when the CLI or gateway 
+tears down
+ an active session — for example, when the user runs 
+/new
+, the gateway GC'd an idle session, or the CLI quit with an active agent. This is the last chance to flush state tied to the outgoing session before its identity is gone.
+
+Callback signature:
+
+def
+
+my_callback
+(
+session_id
+:
+
+str
+
+|
+
+None
+,
+ platform
+:
+
+str
+,
+
+**
+kwargs
+)
+:
+
+Parameter
+Type
+Description
+session_id
+str
+ or 
+None
+The outgoing session ID. May be 
+None
+ if no active session existed.
+platform
+str
+"cli"
+ or the messaging platform name (
+"telegram"
+, 
+"discord"
+, etc.).
+
+Fires:
+ In 
+cli.py
+ (on 
+/new
+ / CLI exit) and 
+gateway/run.py
+ (when a session is reset or GC'd). Always paired with 
+on_session_reset
+ on the gateway side.
+
+Return value:
+ Ignored.
+
+Use cases:
+ Persist final session metrics before the session ID is discarded, close per-session resources, emit a final telemetry event, drain queued writes.
+
+on_session_reset
+​
+
+Fires when the gateway 
+swaps in a new session key
+ for an active chat — the user invoked 
+/new
+, 
+/reset
+, 
+/clear
+, or the adapter picked a fresh session after an idle window. This lets plugins react to the fact that conversation state has been wiped without waiting for the next 
+on_session_start
+.
+
+Callback signature:
+
+def
+
+my_callback
+(
+session_id
+:
+
+str
+,
+ platform
+:
+
+str
+,
+
+**
+kwargs
+)
+:
+
+Parameter
+Type
+Description
+session_id
+str
+The new session's ID (already rotated to the fresh value).
+platform
+str
+The messaging platform name.
+
+Fires:
+ In 
+gateway/run.py
+, immediately after the new session key is allocated but before the next inbound message is processed. On the gateway, the order is: 
+on_session_finalize(old_id)
+ → swap → 
+on_session_reset(new_id)
+ → 
+on_session_start(new_id)
+ on the first inbound turn.
+
+Return value:
+ Ignored.
+
+Use cases:
+ Reset per-session caches keyed by 
+session_id
+, emit "session rotated" analytics, prime a fresh state bucket.
+
+See the 
+Build a Plugin guide
+ for the full walkthrough including tool schemas, handlers, and advanced hook patterns.
+
+subagent_stop
+​
+
+Fires 
+once per child agent
+ after 
+delegate_task
+ finishes. Whether you delegated a single task or a batch of three, this hook fires once for each child, serialised on the parent thread.
+
+Callback signature:
+
+def
+
+my_callback
+(
+parent_session_id
+:
+
+str
+,
+ child_role
+:
+
+str
+
+|
+
+None
+,
+ child_summary
+:
+
+str
+
+|
+
+None
+,
+ child_status
+:
+
+str
+,
+ duration_ms
+:
+
+int
+,
+
+**
+kwargs
+)
+:
+
+Parameter
+Type
+Description
+parent_session_id
+str
+Session ID of the delegating parent agent
+child_role
+str | None
+Orchestrator role tag set on the child (
+None
+ if the feature isn't enabled)
+child_summary
+str | None
+The final response the child returned to the parent
+child_status
+str
+"completed"
+, 
+"failed"
+, 
+"interrupted"
+, or 
+"error"
+duration_ms
+int
+Wall-clock time spent running the child, in milliseconds
+
+Fires:
+ In 
+tools/delegate_tool.py
+, after 
+ThreadPoolExecutor.as_completed()
+ drains all child futures. Firing is marshalled to the parent thread so hook authors don't have to reason about concurrent callback execution.
+
+Return value:
+ Ignored.
+
+Use cases:
+ Logging orchestration activity, accumulating child durations for billing, writing post-delegation audit records.
+
+Example — log orchestrator activity:
+
+import
+ logging
+logger 
+=
+ logging
+.
+getLogger
+(
+__name__
+)
+def
+
+log_subagent
+(
+parent_session_id
+,
+ child_role
+,
+ child_status
+,
+ duration_ms
+,
+
+**
+kwargs
+)
+:
+ logger
+.
+info
+(
+
+"SUBAGENT parent=%s role=%s status=%s duration_ms=%d"
+,
+ parent_session_id
+,
+ child_role
+,
+ child_status
+,
+ duration_ms
+,
+
+)
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"subagent_stop"
+,
+ log_subagent
+)
+
+info
+With heavy delegation (e.g. orchestrator roles × 5 leaves × nested depth), 
+subagent_stop
+ fires many times per turn. Keep your callback fast; push expensive work to a background queue.
+
+pre_gateway_dispatch
+​
+
+Fires 
+once per incoming 
+MessageEvent
+ in the gateway, after the internal-event guard but 
+before
+ auth/pairing and agent dispatch. This is the interception point for gateway-level message-flow policies (listen-only windows, human handover, per-chat routing, etc.) that don't fit cleanly into any single platform adapter.
+
+Callback signature:
+
+def
+
+my_callback
+(
+event
+,
+ gateway
+,
+ session_store
+,
+
+**
+kwargs
+)
+:
+
+Parameter
+Type
+Description
+event
+MessageEvent
+The normalized inbound message (has 
+.text
+, 
+.source
+, 
+.message_id
+, 
+.internal
+, etc.).
+gateway
+GatewayRunner
+The active gateway runner, so plugins can call 
+gateway.adapters[platform].send(...)
+ for side-channel replies (owner notifications, etc.).
+session_store
+SessionStore
+For silent transcript ingestion via 
+session_store.append_to_transcript(...)
+.
+
+Fires:
+ In 
+gateway/run.py
+, inside 
+GatewayRunner._handle_message()
+, immediately after 
+is_internal
+ is computed. 
+Internal events skip the hook entirely
+ (they are system-generated — background-process completions, etc. — and must not be gate-kept by user-facing policy).
+
+Return value:
+
+None
+ or a dict. The first recognized action dict wins; remaining plugin results are ignored. Exceptions in plugin callbacks are caught and logged; the gateway always falls through to normal dispatch on error.
+
+Return
+Effect
+{"action": "skip", "reason": "..."}
+Drop the message — no agent reply, no pairing flow, no auth. Plugin is assumed to have handled it (e.g. silent-ingested into the transcript).
+{"action": "rewrite", "text": "new text"}
+Replace 
+event.text
+, then continue normal dispatch with the modified event. Useful for collapsing buffered ambient messages into a single prompt.
+{"action": "allow"}
+ / 
+None
+Normal dispatch — runs the full auth / pairing / agent-loop chain.
+
+Use cases:
+ Listen-only group chats (only respond when tagged; buffer ambient messages into context); human handover (silent-ingest customer messages while owner handles the chat manually); per-profile rate limiting; policy-driven routing.
+
+Example — drop unauthorized DMs silently without triggering the pairing code:
+
+def
+
+deny_unauthorized_dms
+(
+event
+,
+
+**
+kwargs
+)
+:
+ src 
+=
+ event
+.
+source
+
+if
+ src
+.
+chat_type 
+==
+
+"dm"
+
+and
+
+not
+ _is_approved_user
+(
+src
+.
+user_id
+)
+:
+
+return
+
+{
+"action"
+:
+
+"skip"
+,
+
+"reason"
+:
+
+"unauthorized-dm"
+}
+
+return
+
+None
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"pre_gateway_dispatch"
+,
+ deny_unauthorized_dms
+)
+
+Example — rewrite an ambient-message buffer into a single prompt on mention:
+
+_buffers 
+=
+
+{
+}
+def
+
+buffer_or_rewrite
+(
+event
+,
+
+**
+kwargs
+)
+:
+ key 
+=
+
+(
+event
+.
+source
+.
+platform
+,
+ event
+.
+source
+.
+chat_id
+)
+ buf 
+=
+ _buffers
+.
+setdefault
+(
+key
+,
+
+[
+]
+)
+
+if
+ _bot_mentioned
+(
+event
+.
+text
+)
+:
+ combined 
+=
+
+"\n"
+.
+join
+(
+buf 
++
+
+[
+event
+.
+text
+]
+)
+ buf
+.
+clear
+(
+)
+
+return
+
+{
+"action"
+:
+
+"rewrite"
+,
+
+"text"
+:
+ combined
+}
+ buf
+.
+append
+(
+event
+.
+text
+)
+
+return
+
+{
+"action"
+:
+
+"skip"
+,
+
+"reason"
+:
+
+"ambient-buffered"
+}
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"pre_gateway_dispatch"
+,
+ buffer_or_rewrite
+)
+
+pre_approval_request
+​
+
+Fires 
+immediately before
+ an approval request is shown to the user — covers every surface: interactive CLI, the Ink TUI, gateway platforms (Telegram, Discord, Slack, WhatsApp, Matrix, etc.), and ACP clients (VS Code, Zed, JetBrains).
+
+This is the right place to wire a custom notifier — for example, a macOS menu-bar app that pops an allow/deny notification, or an audit log that records every approval request with context.
+
+Callback signature:
+
+def
+
+my_callback
+(
+ command
+:
+
+str
+,
+ description
+:
+
+str
+,
+ pattern_key
+:
+
+str
+,
+ pattern_keys
+:
+
+list
+[
+str
+]
+,
+ session_key
+:
+
+str
+,
+ surface
+:
+
+str
+,
+
+**
+kwargs
+,
+)
+:
+
+Parameter
+Type
+Description
+command
+str
+The shell command awaiting approval
+description
+str
+Human-readable reason(s) the command is flagged (combined when multiple patterns match)
+pattern_key
+str
+Primary pattern key that triggered the approval (e.g. 
+"rm_rf"
+, 
+"sudo"
+)
+pattern_keys
+list[str]
+All pattern keys that matched
+session_key
+str
+Session identifier, useful for scoping notifications per-chat
+surface
+str
+"cli"
+ for interactive CLI/TUI prompts, 
+"gateway"
+ for async platform approvals
+
+Return value:
+ ignored. Hooks here are observer-only; they cannot veto or pre-answer the approval. Use 
+pre_tool_call
+ to block a tool before it reaches the approval system.
+
+Use cases:
+ Desktop notifications, push alerts, audit logging, Slack webhooks, escalation routing, metrics.
+
+Example — desktop notification on macOS:
+
+import
+ subprocess
+def
+
+notify_approval
+(
+command
+,
+ description
+,
+ session_key
+,
+
+**
+kwargs
+)
+:
+ title 
+=
+
+"Hermes needs approval"
+ body 
+=
+
+f"
+{
+description
+}
+: 
+{
+command
+[
+:
+80]
+}
+"
+ subprocess
+.
+Popen
+(
+[
+
+"osascript"
+,
+
+"-e"
+,
+
+f'display notification "
+{
+body
+}
+" with title "
+{
+title
+}
+"'
+,
+
+]
+)
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"pre_approval_request"
+,
+ notify_approval
+)
+
+post_approval_response
+​
+
+Fires 
+after
+ the user responds to an approval prompt (or the prompt times out).
+
+Callback signature:
+
+def
+
+my_callback
+(
+ command
+:
+
+str
+,
+ description
+:
+
+str
+,
+ pattern_key
+:
+
+str
+,
+ pattern_keys
+:
+
+list
+[
+str
+]
+,
+ session_key
+:
+
+str
+,
+ surface
+:
+
+str
+,
+ choice
+:
+
+str
+,
+
+**
+kwargs
+,
+)
+:
+
+Same kwargs as 
+pre_approval_request
+, plus:
+
+Parameter
+Type
+Description
+choice
+str
+One of 
+"once"
+, 
+"session"
+, 
+"always"
+, 
+"deny"
+, or 
+"timeout"
+
+Return value:
+ ignored.
+
+Use cases:
+ Close the matching desktop notification, record the final decision in an audit log, update metrics, roll forward a rate limiter.
+
+def
+
+log_decision
+(
+command
+,
+ choice
+,
+ session_key
+,
+
+**
+kwargs
+)
+:
+ logger
+.
+info
+(
+"approval %s: %s for session %s"
+,
+ choice
+,
+ command
+[
+:
+60
+]
+,
+ session_key
+)
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"post_approval_response"
+,
+ log_decision
+)
+
+transform_tool_result
+​
+
+Fires 
+after
+ a tool returns and 
+before
+ the result is appended to the conversation. Lets a plugin rewrite ANY tool's result string — not just terminal output — before the model sees it.
+
+Callback signature:
+
+def
+
+my_callback
+(
+ tool_name
+:
+
+str
+,
+ arguments
+:
+
+dict
+,
+ result
+:
+
+str
+,
+ task_id
+:
+
+str
+
+|
+
+None
+,
+
+**
+kwargs
+,
+)
+
+-
+>
+
+str
+
+|
+
+None
+:
+
+Parameter
+Type
+Description
+tool_name
+str
+Tool that produced the result (
+read_file
+, 
+web_extract
+, 
+delegate_task
+, …).
+arguments
+dict
+Arguments the model called the tool with.
+result
+str
+The tool's raw result string, post-truncation and post-ANSI-strip.
+task_id
+str | None
+Task/session ID when running inside RL/benchmark environments.
+
+Return value:
+
+str
+ to replace the result (the returned string is what the model sees), 
+None
+ to leave it unchanged.
+
+Use cases:
+ Redact organization-specific PII from 
+web_extract
+ output, wrap long JSON tool responses in a summary header, inject retrieval-augmented hints into 
+read_file
+ results, rewrite 
+delegate_task
+ subagent reports into a project-specific schema.
+
+import
+ re
+SECRET 
+=
+ re
+.
+compile
+(
+r"sk-[A-Za-z0-9]{32,}"
+)
+def
+
+redact_secrets
+(
+tool_name
+,
+ result
+,
+
+**
+kwargs
+)
+:
+
+if
+ SECRET
+.
+search
+(
+result
+)
+:
+
+return
+ SECRET
+.
+sub
+(
+"[REDACTED]"
+,
+ result
+)
+
+return
+
+None
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"transform_tool_result"
+,
+ redact_secrets
+)
+
+Applies to every tool. For terminal-only rewriting see 
+transform_terminal_output
+ below — it's narrower and runs earlier in the pipeline (pre-truncation, pre-redaction).
+
+transform_terminal_output
+​
+
+Fires inside the 
+terminal
+ tool's foreground-output pipeline, 
+before
+ the default 50 KB truncation, ANSI strip, and secret redaction. Lets plugins rewrite the raw stdout/stderr of a shell command before any downstream processing touches it.
+
+Callback signature:
+
+def
+
+my_callback
+(
+ command
+:
+
+str
+,
+ output
+:
+
+str
+,
+ exit_code
+:
+
+int
+,
+ cwd
+:
+
+str
+,
+ task_id
+:
+
+str
+
+|
+
+None
+,
+
+**
+kwargs
+,
+)
+
+-
+>
+
+str
+
+|
+
+None
+:
+
+Parameter
+Type
+Description
+command
+str
+The shell command that produced the output.
+output
+str
+Raw combined stdout/stderr (may be very large — truncation happens after the hook).
+exit_code
+int
+Process exit code.
+cwd
+str
+Working directory the command ran in.
+
+Return value:
+
+str
+ to replace the output, 
+None
+ to leave it unchanged.
+
+Use cases:
+ Inject summaries for commands that produce massive output (
+du -ah
+, 
+find
+, 
+tree
+), tag output with a project-specific marker so downstream hooks know how to handle it, strip timing noise that flaps between runs and defeats prompt caching.
+
+def
+
+summarize_find
+(
+command
+,
+ output
+,
+
+**
+kwargs
+)
+:
+
+if
+ command
+.
+startswith
+(
+"find "
+)
+
+and
+
+len
+(
+output
+)
+
+>
+
+50_000
+:
+ lines 
+=
+ output
+.
+count
+(
+"\n"
+)
+ head 
+=
+
+"\n"
+.
+join
+(
+output
+.
+splitlines
+(
+)
+[
+:
+40
+]
+)
+
+return
+
+f"
+{
+head
+}
+\n\n[summary: 
+{
+lines
+}
+ paths total, showing first 40]"
+
+return
+
+None
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"transform_terminal_output"
+,
+ summarize_find
+)
+
+Pairs well with 
+transform_tool_result
+ (which covers every other tool).
+
+transform_llm_output
+​
+
+Fires 
+once per turn
+ after the tool-calling loop completes and the model has produced a final response, 
+before
+ that response is delivered to the user (CLI, gateway, or programmatic caller). Lets a plugin rewrite the assistant's final text using classical-programming methods — no extra inference tokens burned on SOUL flavor text or a skill-driven transform.
+
+Callback signature:
+
+def
+
+my_callback
+(
+ response_text
+:
+
+str
+,
+ session_id
+:
+
+str
+,
+ model
+:
+
+str
+,
+ platform
+:
+
+str
+,
+
+**
+kwargs
+,
+)
+
+-
+>
+
+str
+
+|
+
+None
+:
+
+Parameter
+Type
+Description
+response_text
+str
+The assistant's final response text for this turn.
+session_id
+str
+Session ID for this conversation (may be empty for one-shot runs).
+model
+str
+Model name that produced the response (e.g. 
+anthropic/claude-sonnet-4.6
+).
+platform
+str
+Delivery platform (
+cli
+, 
+telegram
+, 
+discord
+, …; empty when unset).
+
+Return value:
+ Non-empty 
+str
+ to replace the response text, 
+None
+ or empty string to leave it unchanged. 
+First non-empty string wins
+ when multiple plugins register — mirroring 
+transform_tool_result
+.
+
+Use cases:
+ Apply a personality/vocabulary transform (pirate-speak, Spongebob), redact user-specific identifiers from the final text, append a project-specific signature footer, enforce a house style guide without burning tokens on SOUL instructions.
+
+import
+ os
+,
+ re
+def
+
+spongebob
+(
+response_text
+,
+
+**
+kwargs
+)
+:
+
+if
+ os
+.
+environ
+.
+get
+(
+"SPONGEBOB_MODE"
+)
+
+!=
+
+"on"
+:
+
+return
+
+None
+
+# pass through unchanged
+
+return
+ re
+.
+sub
+(
+r"!"
+,
+
+"!! Tartar sauce!"
+,
+ response_text
+)
+def
+
+register
+(
+ctx
+)
+:
+ ctx
+.
+register_hook
+(
+"transform_llm_output"
+,
+ spongebob
+)
+
+The hook is guarded on a non-empty, non-interrupted response — it will not fire on stop-button interrupts or empty turns. Exceptions are logged as warnings and do not break agent execution.
+
+Shell Hooks
+​
+
+Declare shell-script hooks in your 
+cli-config.yaml
+ and Hermes will run them as subprocesses whenever the corresponding plugin-hook event fires — in both CLI and gateway sessions. No Python plugin authoring required.
+
+Use shell hooks when you want a drop-in, single-file script (Bash, Python, anything with a shebang) to:
+
+Block a tool call
+ — reject dangerous 
+terminal
+ commands, enforce per-directory policies, require approval for destructive 
+write_file
+ / 
+patch
+ operations.
+
+Run after a tool call
+ — auto-format Python or TypeScript files that the agent just wrote, log API calls, trigger a CI workflow.
+
+Inject context into the next LLM turn
+ — prepend 
+git status
+ output, the current weekday, or retrieved documents to the user message (see 
+pre_llm_call
+).
+
+Observe lifecycle events
+ — write a log line when a subagent completes (
+subagent_stop
+) or a session starts (
+on_session_start
+).
+
+Shell hooks are registered by calling 
+agent.shell_hooks.register_from_config(cfg)
+ at both CLI startup (
+hermes_cli/main.py
+) and gateway startup (
+gateway/run.py
+). They compose naturally with Python plugin hooks — both flow through the same dispatcher.
+
+Comparison at a glance
+​
+
+Dimension
+Shell hooks
+Plugin hooks
+Gateway hooks
+Declared in
+hooks:
+ block in 
+~/.hermes/config.yaml
+register()
+ in a 
+plugin.yaml
+ plugin
+HOOK.yaml
+ + 
+handler.py
+ directory
+Lives under
+~/.hermes/agent-hooks/
+ (by convention)
+~/.hermes/plugins/<name>/
+~/.hermes/hooks/<name>/
+Language
+Any (Bash, Python, Go binary, …)
+Python only
+Python only
+Runs in
+CLI + Gateway
+CLI + Gateway
+Gateway only
+Events
+VALID_HOOKS
+ (incl. 
+subagent_stop
+)
+VALID_HOOKS
+Gateway lifecycle (
+gateway:startup
+, 
+agent:*
+, 
+command:*
+)
+Can block a tool call
+Yes (
+pre_tool_call
+)
+Yes (
+pre_tool_call
+)
+No
+Can inject LLM context
+Yes (
+pre_llm_call
+)
+Yes (
+pre_llm_call
+)
+No
+Consent
+First-use prompt per 
+(event, command)
+ pair
+Implicit (Python plugin trust)
+Implicit (dir trust)
+Inter-process isolation
+Yes (subprocess)
+No (in-process)
+No (in-process)
+
+Configuration schema
+​
+
+hooks
+:
+
+<event_name>
+:
+
+# Must be in VALID_HOOKS
+
+-
+
+matcher
+:
+
+"<regex>"
+
+# Optional; used for pre/post_tool_call only
+
+command
+:
+
+"<shell command>"
+
+# Required; runs via shlex.split, shell=False
+
+timeout
+:
+ <seconds
+>
+
+# Optional; default 60, capped at 300
+hooks_auto_accept
+:
+
+false
+
+# See "Consent model" below
+
+Event names must be one of the 
+plugin hook events
+; typos produce a "Did you mean X?" warning and are skipped. Unknown keys inside a single entry are ignored; missing 
+command
+ is a skip-with-warning. 
+timeout > 300
+ is clamped with a warning.
+
+JSON wire protocol
+​
+
+Each time the event fires, Hermes spawns a subprocess for every matching hook (matcher permitting), pipes a JSON payload to 
+stdin
+, and reads 
+stdout
+ back as JSON.
+
+stdin — payload the script receives:
+
+{
+
+"hook_event_name"
+:
+
+"pre_tool_call"
+,
+
+"tool_name"
+:
+
+"terminal"
+,
+
+"tool_input"
+:
+
+{
+"command"
+:
+
+"rm -rf /"
+}
+,
+
+"session_id"
+:
+
+"sess_abc123"
+,
+
+"cwd"
+:
+
+"/home/user/project"
+,
+
+"extra"
+:
+
+{
+"task_id"
+:
+
+"..."
+,
+
+"tool_call_id"
+:
+
+"..."
+}
+}
+
+tool_name
+ and 
+tool_input
+ are 
+null
+ for non-tool events (
+pre_llm_call
+, 
+subagent_stop
+, session lifecycle). The 
+extra
+ dict carries all event-specific kwargs (
+user_message
+, 
+conversation_history
+, 
+child_role
+, 
+duration_ms
+, …). Unserialisable values are stringified rather than omitted.
+
+stdout — optional response:
+
+// Block a pre_tool_call (both shapes accepted; normalised internally):
+{"decision": "block", "reason": "Forbidden: rm -rf"} // Claude-Code style
+{"action": "block", "message": "Forbidden: rm -rf"} // Hermes-canonical
+// Inject context for pre_llm_call:
+{"context": "Today is Friday, 2026-04-17"}
+// Silent no-op — any empty / non-matching output is fine:
+
+Malformed JSON, non-zero exit codes, and timeouts log a warning but never abort the agent loop.
+
+Worked examples
+​
+
+1. Auto-format Python files after every write
+​
+
+# ~/.hermes/config.yaml
+hooks
+:
+
+post_tool_call
+:
+
+-
+
+matcher
+:
+
+"write_file|patch"
+
+command
+:
+
+"~/.hermes/agent-hooks/auto-format.sh"
+
+#!/usr/bin/env bash
+# ~/.hermes/agent-hooks/auto-format.sh
+payload
+=
+"
+$(
+cat
+ -
+)
+"
+path
+=
+$(
+echo
+
+"
+$payload
+"
+
+|
+ jq 
+-r
+
+'.tool_input.path // empty'
+)
+[
+[
+
+"
+$path
+"
+
+==
+ *.py 
+]
+]
+
+&&
+
+command
+
+-v
+ black 
+>
+/dev/null 
+&&
+ black 
+"
+$path
+"
+
+2
+>
+/dev/null
+printf
+
+'{}\n'
+
+The agent's in-context view of the file is 
+not
+ re-read automatically — the reformat only affects the file on disk. Subsequent 
+read_file
+ calls pick up the formatted version.
+
+2. Block destructive 
+terminal
+ commands
+​
+
+hooks
+:
+
+pre_tool_call
+:
+
+-
+
+matcher
+:
+
+"terminal"
+
+command
+:
+
+"~/.hermes/agent-hooks/block-rm-rf.sh"
+
+timeout
+:
+
+5
+
+#!/usr/bin/env bash
+# ~/.hermes/agent-hooks/block-rm-rf.sh
+payload
+=
+"
+$(
+cat
+ -
+)
+"
+cmd
+=
+$(
+echo
+
+"
+$payload
+"
+
+|
+ jq 
+-r
+
+'.tool_input.command // empty'
+)
+if
+
+echo
+
+"
+$cmd
+"
+
+|
+
+grep
+
+-qE
+
+'rm[[:space:]]+-rf?[[:space:]]+/'
+;
+
+then
+
+printf
+
+'{"decision": "block", "reason": "blocked: rm -rf / is not permitted"}\n'
+else
+
+printf
+
+'{}\n'
+fi
+
+3. Inject 
+git status
+ into every turn (Claude-Code 
+UserPromptSubmit
+ equivalent)
+​
+
+hooks
+:
+
+pre_llm_call
+:
+
+-
+
+command
+:
+
+"~/.hermes/agent-hooks/inject-cwd-context.sh"
+
+#!/usr/bin/env bash
+# ~/.hermes/agent-hooks/inject-cwd-context.sh
+cat
+ - 
+>
+/dev/null 
+# discard stdin payload
+if
+
+status
+=
+$(
+git
+ status 
+--porcelain
+
+2
+>
+/dev/null
+)
+
+&&
+
+[
+[
+
+-n
+
+"
+$status
+"
+
+]
+]
+;
+
+then
+ jq --null-input 
+--arg
+ s 
+"
+$status
+"
+
+\
+
+'{context: ("Uncommitted changes in cwd:\n" + $s)}'
+else
+
+printf
+
+'{}\n'
+fi
+
+Claude Code's 
+UserPromptSubmit
+ event is intentionally not a separate Hermes event — 
+pre_llm_call
+ fires at the same place and already supports context injection. Use it here.
+
+4. Log every subagent completion
+​
+
+hooks
+:
+
+subagent_stop
+:
+
+-
+
+command
+:
+
+"~/.hermes/agent-hooks/log-orchestration.sh"
+
+#!/usr/bin/env bash
+# ~/.hermes/agent-hooks/log-orchestration.sh
+log
+=~
+/.hermes/logs/orchestration.log
+jq 
+-c
+
+'{ts: now, parent: .session_id, extra: .extra}'
+
+<
+ /dev/stdin 
+>>
+
+"
+$log
+"
+printf
+
+'{}\n'
+
+Consent model
+​
+
+Each unique 
+(event, command)
+ pair prompts the user for approval the first time Hermes sees it, then persists the decision to 
+~/.hermes/shell-hooks-allowlist.json
+. Subsequent runs (CLI or gateway) skip the prompt.
+
+Three escape hatches bypass the interactive prompt — any one is sufficient:
+
+--accept-hooks
+ flag on the CLI (e.g. 
+hermes --accept-hooks chat
+)
+
+HERMES_ACCEPT_HOOKS=1
+ environment variable
+
+hooks_auto_accept: true
+ in 
+cli-config.yaml
+
+Non-TTY runs (gateway, cron, CI) need one of these three — otherwise any newly-added hook silently stays un-registered and logs a warning.
+
+Script edits are silently trusted.
+ The allowlist keys on the exact command string, not the script's hash, so editing the script on disk does not invalidate consent. 
+hermes hooks doctor
+ flags mtime drift so you can spot edits and decide whether to re-approve.
+
+The 
+hermes hooks
+ CLI
+​
+
+Command
+What it does
+hermes hooks list
+Dump configured hooks with matcher, timeout, and consent status
+hermes hooks test <event> [--for-tool X] [--payload-file F]
+Fire every matching hook against a synthetic payload and print the parsed response
+hermes hooks revoke <command>
+Remove every allowlist entry matching 
+<command>
+ (takes effect on next restart)
+hermes hooks doctor
+For every configured hook: check exec bit, allowlist status, mtime drift, JSON output validity, and rough execution time
+
+Security
+​
+
+Shell hooks run with 
+your full user credentials
+ — same trust boundary as a cron entry or a shell alias. Treat the 
+hooks:
+ block in 
+config.yaml
+ as privileged configuration:
+
+Only reference scripts you wrote or fully reviewed.
+
+Keep scripts inside 
+~/.hermes/agent-hooks/
+ so the path is easy to audit.
+
+Re-run 
+hermes hooks doctor
+ after you pull a shared config to spot newly-added hooks before they register.
+
+If your config.yaml is version-controlled across a team, review PRs that change the 
+hooks:
+ section the same way you'd review CI config.
+
+Ordering and precedence
+​
+
+Both Python plugin hooks and shell hooks flow through the same 
+invoke_hook()
+ dispatcher. Python plugins are registered first (
+discover_and_load()
+), shell hooks second (
+register_from_config()
+), so Python 
+pre_tool_call
+ block decisions take precedence in tie cases. The first valid block wins — the aggregator returns as soon as any callback produces 
+{"action": "block", "message": str}
+ with a non-empty message.
+========================================
+CODE_BLOCKS:
+~/.hermes/hooks/└── my-hook/    ├── HOOK.yaml      # Declares which events to listen for    └── handler.py     # Python handler function
+
+name: my-hookdescription: Log all agent activity to a fileevents:  - agent:start  - agent:end  - agent:step
+
+import jsonfrom datetime import datetimefrom pathlib import PathLOG_FILE = Path.home() / ".hermes" / "hooks" / "my-hook" / "activity.log"async def handle(event_type: str, context: dict):    """Called for each subscribed event. Must be named 'handle'."""    entry = {        "timestamp": datetime.now().isoformat(),        "event": event_type,        **context,    }    with open(LOG_FILE, "a") as f:        f.write(json.dumps(entry) + "\n")
+
+# ~/.hermes/hooks/long-task-alert/HOOK.yamlname: long-task-alertdescription: Alert when agent is taking many stepsevents:  - agent:step
+
+# ~/.hermes/hooks/long-task-alert/handler.pyimport osimport httpxTHRESHOLD = 10BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")CHAT_ID = os.getenv("TELEGRAM_HOME_CHANNEL")async def handle(event_type: str, context: dict):    iteration = context.get("iteration", 0)    if iteration == THRESHOLD and BOT_TOKEN and CHAT_ID:        tools = ", ".join(context.get("tool_names", []))        text = f"⚠️ Agent has been running for {iteration} steps. Last tools: {tools}"        async with httpx.AsyncClient() as cl
+
+# ~/.hermes/hooks/command-logger/HOOK.yamlname: command-loggerdescription: Log slash command usageevents:  - command:*
+
+# ~/.hermes/hooks/command-logger/handler.pyimport jsonfrom datetime import datetimefrom pathlib import PathLOG = Path.home() / ".hermes" / "logs" / "command_usage.jsonl"def handle(event_type: str, context: dict):    LOG.parent.mkdir(parents=True, exist_ok=True)    entry = {        "ts": datetime.now().isoformat(),        "command": context.get("command"),        "args": context.get("args"),        "platform": context.get("platform"),        "user": context.get("user_id"),    }    with open(LOG, 
+
+# ~/.hermes/hooks/session-webhook/HOOK.yamlname: session-webhookdescription: Notify external service on new sessionsevents:  - session:start  - session:reset
+
+# ~/.hermes/hooks/session-webhook/handler.pyimport httpxWEBHOOK_URL = "https://your-service.example.com/hermes-events"async def handle(event_type: str, context: dict):    async with httpx.AsyncClient() as client:        await client.post(WEBHOOK_URL, json={            "event": event_type,            **context,        }, timeout=5)
+
+# Startup Checklist1. Run `hermes cron list` and check if any scheduled jobs failed overnight.2. If any failed, send a summary to Discord #ops using the `send_message` tool.3. Check if `/opt/app/deploy.log` has any ERROR lines from the last 24 hours. If yes, summarize them and include in the same Discord message.4. If nothing went wrong, reply with only `[SILENT]` so no message is sent.
+
+~/.hermes/hooks/boot-md/├── HOOK.yaml└── handler.py
+
+name: boot-mddescription: Run ~/.hermes/BOOT.md on gateway startupevents:  - gateway:startup
+
+"""Run ~/.hermes/BOOT.md on every gateway startup."""import loggingimport threadingfrom pathlib import Pathlogger = logging.getLogger("hooks.boot-md")BOOT_FILE = Path.home() / ".hermes" / "BOOT.md"def _build_prompt(content: str) -> str:    return (        "You are running a startup boot checklist. Follow the instructions "        "below exactly.\n\n"        "---\n"        f"{content}\n"        "---\n\n"        "Execute each instruction. Use the send_message tool to deliver any "        "messages
+
+hermes gateway restart
+
+hermes logs --follow --level INFO | grep boot-md
+
+def register(ctx):    ctx.register_hook("pre_tool_call", my_tool_observer)    ctx.register_hook("post_tool_call", my_tool_logger)    ctx.register_hook("pre_llm_call", my_memory_callback)    ctx.register_hook("post_llm_call", my_sync_callback)    ctx.register_hook("on_session_start", my_init_callback)    ctx.register_hook("on_session_end", my_cleanup_callback)
+
+def my_callback(tool_name: str, args: dict, task_id: str, **kwargs):
+
+return {"action": "block", "message": "Reason the tool call was blocked"}
+
+import json, loggingfrom datetime import datetimelogger = logging.getLogger(__name__)def audit_tool_call(tool_name, args, task_id, **kwargs):    logger.info("TOOL_CALL session=%s tool=%s args=%s",                task_id, tool_name, json.dumps(args)[:200])def register(ctx):    ctx.register_hook("pre_tool_call", audit_tool_call)
+
+DANGEROUS = {"terminal", "write_file", "patch"}def warn_dangerous(tool_name, **kwargs):    if tool_name in DANGEROUS:        print(f"⚠ Executing potentially dangerous tool: {tool_name}")def register(ctx):    ctx.register_hook("pre_tool_call", warn_dangerous)
+
+def my_callback(tool_name: str, args: dict, result: str, task_id: str,                duration_ms: int, **kwargs):
+
+from collections import Counter, defaultdictimport json_tool_counts = Counter()_error_counts = Counter()_latency_ms = defaultdict(list)def track_metrics(tool_name, result, duration_ms=0, **kwargs):    _tool_counts[tool_name] += 1    _latency_ms[tool_name].append(duration_ms)    try:        parsed = json.loads(result)        if "error" in parsed:            _error_counts[tool_name] += 1    except (json.JSONDecodeError, TypeError):        passdef register(ctx):    ctx.register_hook("post_tool_call
+
+def my_callback(session_id: str, user_message: str, conversation_history: list,                is_first_turn: bool, model: str, platform: str, **kwargs):
+
+# Inject contextreturn {"context": "Recalled memories:\n- User likes Python\n- Working on hermes-agent"}# Plain string (equivalent)return "Recalled memories:\n- User likes Python"# No injectionreturn None
+
+import httpxMEMORY_API = "https://your-memory-api.example.com"def recall(session_id, user_message, is_first_turn, **kwargs):    try:        resp = httpx.post(f"{MEMORY_API}/recall", json={            "session_id": session_id,            "query": user_message,        }, timeout=3)        memories = resp.json().get("results", [])        if not memories:            return None        text = "Recalled context:\n" + "\n".join(f"- {m['text']}" for m in memories)        return {"context": text}    exce
+
+POLICY = "Never execute commands that delete files without explicit user confirmation."def guardrails(**kwargs):    return {"context": POLICY}def register(ctx):    ctx.register_hook("pre_llm_call", guardrails)
+
+def my_callback(session_id: str, user_message: str, assistant_response: str,                conversation_history: list, model: str, platform: str, **kwargs):
+
+import httpxMEMORY_API = "https://your-memory-api.example.com"def sync_memory(session_id, user_message, assistant_response, **kwargs):    try:        httpx.post(f"{MEMORY_API}/store", json={            "session_id": session_id,            "user": user_message,            "assistant": assistant_response,        }, timeout=5)    except Exception:        pass  # best-effortdef register(ctx):    ctx.register_hook("post_llm_call", sync_memory)
+
+import logginglogger = logging.getLogger(__name__)def log_response_length(session_id, assistant_response, model, **kwargs):    logger.info("RESPONSE session=%s model=%s chars=%d",                session_id, model, len(assistant_response or ""))def register(ctx):    ctx.register_hook("post_llm_call", log_response_length)
+
+def my_callback(session_id: str, model: str, platform: str, **kwargs):
+
+_session_caches = {}def init_session(session_id, model, platform, **kwargs):    _session_caches[session_id] = {        "model": model,        "platform": platform,        "tool_calls": 0,        "started": __import__("datetime").datetime.now().isoformat(),    }def register(ctx):    ctx.register_hook("on_session_start", init_session)
+
+def my_callback(session_id: str, completed: bool, interrupted: bool,                model: str, platform: str, **kwargs):
+
+_session_caches = {}def cleanup_session(session_id, completed, interrupted, **kwargs):    cache = _session_caches.pop(session_id, None)    if cache:        # Flush accumulated data to disk or external service        status = "completed" if completed else ("interrupted" if interrupted else "failed")        print(f"Session {session_id} ended: {status}, {cache['tool_calls']} tool calls")def register(ctx):    ctx.register_hook("on_session_end", cleanup_session)
+
+import time, logginglogger = logging.getLogger(__name__)_start_times = {}def on_start(session_id, **kwargs):    _start_times[session_id] = time.time()def on_end(session_id, completed, interrupted, **kwargs):    start = _start_times.pop(session_id, None)    if start:        duration = time.time() - start        logger.info("SESSION_DURATION session=%s seconds=%.1f completed=%s interrupted=%s",                     session_id, duration, completed, interrupted)def register(ctx):    ctx.register_hook
+
+def my_callback(session_id: str | None, platform: str, **kwargs):
+
+def my_callback(session_id: str, platform: str, **kwargs):
+
+def my_callback(parent_session_id: str, child_role: str | None,                child_summary: str | None, child_status: str,                duration_ms: int, **kwargs):
+
+import logginglogger = logging.getLogger(__name__)def log_subagent(parent_session_id, child_role, child_status, duration_ms, **kwargs):    logger.info(        "SUBAGENT parent=%s role=%s status=%s duration_ms=%d",        parent_session_id, child_role, child_status, duration_ms,    )def register(ctx):    ctx.register_hook("subagent_stop", log_subagent)
+
+def my_callback(event, gateway, session_store, **kwargs):
+
+def deny_unauthorized_dms(event, **kwargs):    src = event.source    if src.chat_type == "dm" and not _is_approved_user(src.user_id):        return {"action": "skip", "reason": "unauthorized-dm"}    return Nonedef register(ctx):    ctx.register_hook("pre_gateway_dispatch", deny_unauthorized_dms)
+
+_buffers = {}def buffer_or_rewrite(event, **kwargs):    key = (event.source.platform, event.source.chat_id)    buf = _buffers.setdefault(key, [])    if _bot_mentioned(event.text):        combined = "\n".join(buf + [event.text])        buf.clear()        return {"action": "rewrite", "text": combined}    buf.append(event.text)    return {"action": "skip", "reason": "ambient-buffered"}def register(ctx):    ctx.register_hook("pre_gateway_dispatch", buffer_or_rewrite)
+
+def my_callback(    command: str,    description: str,    pattern_key: str,    pattern_keys: list[str],    session_key: str,    surface: str,    **kwargs,):
+
+import subprocessdef notify_approval(command, description, session_key, **kwargs):    title = "Hermes needs approval"    body = f"{description}: {command[:80]}"    subprocess.Popen([        "osascript", "-e",        f'display notification "{body}" with title "{title}"',    ])def register(ctx):    ctx.register_hook("pre_approval_request", notify_approval)
+
+def my_callback(    command: str,    description: str,    pattern_key: str,    pattern_keys: list[str],    session_key: str,    surface: str,    choice: str,    **kwargs,):
+
+def log_decision(command, choice, session_key, **kwargs):    logger.info("approval %s: %s for session %s", choice, command[:60], session_key)def register(ctx):    ctx.register_hook("post_approval_response", log_decision)
+
+def my_callback(    tool_name: str,    arguments: dict,    result: str,    task_id: str | None,    **kwargs,) -> str | None:
+
+import reSECRET = re.compile(r"sk-[A-Za-z0-9]{32,}")def redact_secrets(tool_name, result, **kwargs):    if SECRET.search(result):        return SECRET.sub("[REDACTED]", result)    return Nonedef register(ctx):    ctx.register_hook("transform_tool_result", redact_secrets)
+
+def my_callback(    command: str,    output: str,    exit_code: int,    cwd: str,    task_id: str | None,    **kwargs,) -> str | None:
+
+def summarize_find(command, output, **kwargs):    if command.startswith("find ") and len(output) > 50_000:        lines = output.count("\n")        head = "\n".join(output.splitlines()[:40])        return f"{head}\n\n[summary: {lines} paths total, showing first 40]"    return Nonedef register(ctx):    ctx.register_hook("transform_terminal_output", summarize_find)
+
+def my_callback(    response_text: str,    session_id: str,    model: str,    platform: str,    **kwargs,) -> str | None:
+
+import os, redef spongebob(response_text, **kwargs):    if os.environ.get("SPONGEBOB_MODE") != "on":        return None  # pass through unchanged    return re.sub(r"!", "!! Tartar sauce!", response_text)def register(ctx):    ctx.register_hook("transform_llm_output", spongebob)
+
+hooks:  <event_name>:                  # Must be in VALID_HOOKS    - matcher: "<regex>"         # Optional; used for pre/post_tool_call only      command: "<shell command>" # Required; runs via shlex.split, shell=False      timeout: <seconds>         # Optional; default 60, capped at 300hooks_auto_accept: false         # See "Consent model" below
+
+{  "hook_event_name": "pre_tool_call",  "tool_name":       "terminal",  "tool_input":      {"command": "rm -rf /"},  "session_id":      "sess_abc123",  "cwd":             "/home/user/project",  "extra":           {"task_id": "...", "tool_call_id": "..."}}
+
+// Block a pre_tool_call (both shapes accepted; normalised internally):{"decision": "block", "reason":  "Forbidden: rm -rf"}   // Claude-Code style{"action":   "block", "message": "Forbidden: rm -rf"}   // Hermes-canonical// Inject context for pre_llm_call:{"context": "Today is Friday, 2026-04-17"}// Silent no-op — any empty / non-matching output is fine:
+
+# ~/.hermes/config.yamlhooks:  post_tool_call:    - matcher: "write_file|patch"      command: "~/.hermes/agent-hooks/auto-format.sh"
+
+#!/usr/bin/env bash# ~/.hermes/agent-hooks/auto-format.shpayload="$(cat -)"path=$(echo "$payload" | jq -r '.tool_input.path // empty')[[ "$path" == *.py ]] && command -v black >/dev/null && black "$path" 2>/dev/nullprintf '{}\n'
+
+hooks:  pre_tool_call:    - matcher: "terminal"      command: "~/.hermes/agent-hooks/block-rm-rf.sh"      timeout: 5
+
+#!/usr/bin/env bash# ~/.hermes/agent-hooks/block-rm-rf.shpayload="$(cat -)"cmd=$(echo "$payload" | jq -r '.tool_input.command // empty')if echo "$cmd" | grep -qE 'rm[[:space:]]+-rf?[[:space:]]+/'; then  printf '{"decision": "block", "reason": "blocked: rm -rf / is not permitted"}\n'else  printf '{}\n'fi
+
+hooks:  pre_llm_call:    - command: "~/.hermes/agent-hooks/inject-cwd-context.sh"
+
+#!/usr/bin/env bash# ~/.hermes/agent-hooks/inject-cwd-context.shcat - >/dev/null   # discard stdin payloadif status=$(git status --porcelain 2>/dev/null) && [[ -n "$status" ]]; then  jq --null-input --arg s "$status" \     '{context: ("Uncommitted changes in cwd:\n" + $s)}'else  printf '{}\n'fi
+
+hooks:  subagent_stop:    - command: "~/.hermes/agent-hooks/log-orchestration.sh"
+
+#!/usr/bin/env bash# ~/.hermes/agent-hooks/log-orchestration.shlog=~/.hermes/logs/orchestration.logjq -c '{ts: now, parent: .session_id, extra: .extra}' < /dev/stdin >> "$log"printf '{}\n'
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/image-generation
+TITLE: Image Generation | Hermes Agent
+H1: Image Generation
+TEXT:
+On this page
+
+Hermes Agent generates images from text prompts via FAL.ai. Nine models are supported out of the box, each with different speed, quality, and cost tradeoffs. The active model is user-configurable via 
+hermes tools
+ and persists in 
+config.yaml
+.
+
+Supported Models
+​
+
+Model
+Speed
+Strengths
+Price
+fal-ai/flux-2/klein/9b
+
+(default)
+<1s
+Fast, crisp text
+$0.006/MP
+fal-ai/flux-2-pro
+~6s
+Studio photorealism
+$0.03/MP
+fal-ai/z-image/turbo
+~2s
+Bilingual EN/CN, 6B params
+$0.005/MP
+fal-ai/nano-banana-pro
+~8s
+Gemini 3 Pro, reasoning depth, text rendering
+$0.15/image (1K)
+fal-ai/gpt-image-1.5
+~15s
+Prompt adherence
+$0.034/image
+fal-ai/gpt-image-2
+~20s
+SOTA text rendering + CJK, world-aware photorealism
+$0.04–0.06/image
+fal-ai/ideogram/v3
+~5s
+Best typography
+$0.03–0.09/image
+fal-ai/recraft/v4/pro/text-to-image
+~8s
+Design, brand systems, production-ready
+$0.25/image
+fal-ai/qwen-image
+~12s
+LLM-based, complex text
+$0.02/MP
+
+Prices are FAL's pricing at time of writing; check 
+fal.ai
+ for current numbers.
+
+Setup
+​
+
+Nous Subscribers
+If you have a paid 
+Nous Portal
+ subscription, you can use image generation through the 
+Tool Gateway
+ without a FAL API key. Your model selection persists across both paths.
+If the managed gateway returns 
+HTTP 4xx
+ for a specific model, that model isn't yet proxied on the portal side — the agent will tell you so, with remediation steps (set 
+FAL_KEY
+ for direct access, or pick a different model).
+
+Get a FAL API Key
+​
+
+Sign up at 
+fal.ai
+
+Generate an API key from your dashboard
+
+Configure and Pick a Model
+​
+
+Run the tools command:
+
+hermes tools
+
+Navigate to 
+🎨 Image Generation
+, pick your backend (Nous Subscription or FAL.ai), then the picker shows all supported models in a column-aligned table — arrow keys to navigate, Enter to select:
+
+ Model Speed Strengths Price
+ fal-ai/flux-2/klein/9b <1s Fast, crisp text $0.006/MP ← currently in use
+ fal-ai/flux-2-pro ~6s Studio photorealism $0.03/MP
+ fal-ai/z-image/turbo ~2s Bilingual EN/CN, 6B $0.005/MP
+ ...
+
+Your selection is saved to 
+config.yaml
+:
+
+image_gen
+:
+
+model
+:
+ fal
+-
+ai/flux
+-
+2/klein/9b
+
+use_gateway
+:
+
+false
+
+# true if using Nous Subscription
+
+GPT-Image Quality
+​
+
+The 
+fal-ai/gpt-image-1.5
+ and 
+fal-ai/gpt-image-2
+ request quality is pinned to 
+medium
+ (~$0.034–$0.06/image at 1024×1024). We don't expose the 
+low
+ / 
+high
+ tiers as a user-facing option so that Nous Portal billing stays predictable across all users — the cost spread between tiers is 3–22×. If you want a cheaper option, pick Klein 9B or Z-Image Turbo; if you want higher quality, use Nano Banana Pro or Recraft V4 Pro.
+
+Usage
+​
+
+The agent-facing schema is intentionally minimal — the model picks up whatever you've configured:
+
+Generate an image of a serene mountain landscape with cherry blossoms
+
+Create a square portrait of a wise old owl — use the typography model
+
+Make me a futuristic cityscape, landscape orientation
+
+Aspect Ratios
+​
+
+Every model accepts the same three aspect ratios from the agent's perspective. Internally, each model's native size spec is filled in automatically:
+
+Agent input
+image_size (flux/z-image/qwen/recraft/ideogram)
+aspect_ratio (nano-banana-pro)
+image_size (gpt-image-1.5)
+image_size (gpt-image-2)
+landscape
+landscape_16_9
+16:9
+1536x1024
+landscape_4_3
+ (1024×768)
+square
+square_hd
+1:1
+1024x1024
+square_hd
+ (1024×1024)
+portrait
+portrait_16_9
+9:16
+1024x1536
+portrait_4_3
+ (768×1024)
+
+GPT Image 2 maps to 4:3 presets rather than 16:9 because its minimum pixel count is 655,360 — the 
+landscape_16_9
+ preset (1024×576 = 589,824) would be rejected.
+
+This translation happens in 
+_build_fal_payload()
+ — agent code never has to know about per-model schema differences.
+
+Automatic Upscaling
+​
+
+Upscaling via FAL's 
+Clarity Upscaler
+ is gated per-model:
+
+Model
+Upscale?
+Why
+fal-ai/flux-2-pro
+✓
+Backward-compat (was the pre-picker default)
+All others
+✗
+Fast models would lose their sub-second value prop; hi-res models don't need it
+
+When upscaling runs, it uses these settings:
+
+Setting
+Value
+Upscale factor
+2×
+Creativity
+0.35
+Resemblance
+0.6
+Guidance scale
+4
+Inference steps
+18
+
+If upscaling fails (network issue, rate limit), the original image is returned automatically.
+
+How It Works Internally
+​
+
+Model resolution
+ — 
+_resolve_fal_model()
+ reads 
+image_gen.model
+ from 
+config.yaml
+, falls back to the 
+FAL_IMAGE_MODEL
+ env var, then to 
+fal-ai/flux-2/klein/9b
+.
+
+Payload building
+ — 
+_build_fal_payload()
+ translates your 
+aspect_ratio
+ into the model's native format (preset enum, aspect-ratio enum, or GPT literal), merges the model's default params, applies any caller overrides, then filters to the model's 
+supports
+ whitelist so unsupported keys are never sent.
+
+Submission
+ — 
+_submit_fal_request()
+ routes via direct FAL credentials or the managed Nous gateway.
+
+Upscaling
+ — runs only if the model's metadata has 
+upscale: True
+.
+
+Delivery
+ — final image URL returned to the agent, which emits a 
+MEDIA:<url>
+ tag that platform adapters convert to native media.
+
+Debugging
+​
+
+Enable debug logging:
+
+export
+
+IMAGE_TOOLS_DEBUG
+=
+true
+
+Debug logs go to 
+./logs/image_tools_debug_<session_id>.json
+ with per-call details (model, parameters, timing, errors).
+
+Platform Delivery
+​
+
+Platform
+Delivery
+CLI
+Image URL printed as markdown 
+![](url)
+ — click to open
+Telegram
+Photo message with the prompt as caption
+Discord
+Embedded in a message
+Slack
+URL unfurled by Slack
+WhatsApp
+Media message
+Others
+URL in plain text
+
+Limitations
+​
+
+Requires FAL credentials
+ (direct 
+FAL_KEY
+ or Nous Subscription)
+
+Text-to-image only
+ — no inpainting, img2img, or editing via this tool
+
+Temporary URLs
+ — FAL returns hosted URLs that expire after hours/days; save locally if needed
+
+Per-model constraints
+ — some models don't support 
+seed
+, 
+num_inference_steps
+, etc. The 
+supports
+ filter silently drops unsupported params; this is expected behavior
+========================================
+CODE_BLOCKS:
+hermes tools
+
+Model                          Speed    Strengths                    Price  fal-ai/flux-2/klein/9b         <1s      Fast, crisp text             $0.006/MP   ← currently in use  fal-ai/flux-2-pro              ~6s      Studio photorealism          $0.03/MP  fal-ai/z-image/turbo           ~2s      Bilingual EN/CN, 6B          $0.005/MP  ...
+
+image_gen:  model: fal-ai/flux-2/klein/9b  use_gateway: false            # true if using Nous Subscription
+
+Generate an image of a serene mountain landscape with cherry blossoms
+
+Create a square portrait of a wise old owl — use the typography model
+
+Make me a futuristic cityscape, landscape orientation
+
+export IMAGE_TOOLS_DEBUG=true
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban
+TITLE: Kanban (Multi-Agent Board) | Hermes Agent
+H1: Kanban — Multi-Agent Profile Collaboration
+TEXT:
+On this page
+
+Want a walkthrough?
+ Read the 
+Kanban tutorial
+ — four user stories (solo dev, fleet farming, role pipeline with retry, circuit breaker) with dashboard screenshots of each. This page is the reference; the tutorial is the narrative.
+
+Hermes Kanban is a durable task board, shared across all your Hermes profiles, that lets multiple named agents collaborate on work without fragile in-process subagent swarms. Every task is a row in 
+~/.hermes/kanban.db
+; every handoff is a row anyone can read and write; every worker is a full OS process with its own identity.
+
+Two surfaces: the model talks through tools, you talk through the CLI
+​
+
+The board has two front doors, both backed by the same 
+~/.hermes/kanban.db
+:
+
+Agents drive the board through a dedicated 
+kanban_*
+ toolset
+ — 
+kanban_show
+, 
+kanban_complete
+, 
+kanban_block
+, 
+kanban_heartbeat
+, 
+kanban_comment
+, 
+kanban_create
+, 
+kanban_link
+. The dispatcher spawns each worker with these tools already in its schema; the model reads its task and hands work off by calling them directly, 
+not
+ by shelling out to 
+hermes kanban
+. See 
+How workers interact with the board
+ below.
+
+You (and scripts, and cron) drive the board through 
+hermes kanban …
+ on the CLI, 
+/kanban …
+ as a slash command, or the dashboard. These are for humans and automation — the places without a tool-calling model behind them.
+
+Both surfaces route through the same 
+kanban_db
+ layer, so reads see a consistent view and writes can't drift. The rest of this page shows CLI examples because they're easy to copy-paste, but every CLI verb has a tool-call equivalent the model uses.
+
+This is the shape that covers the workloads 
+delegate_task
+ can't:
+
+Research triage
+ — parallel researchers + analyst + writer, human-in-the-loop.
+
+Scheduled ops
+ — recurring daily briefs that build a journal over weeks.
+
+Digital twins
+ — persistent named assistants (
+inbox-triage
+, 
+ops-review
+) that accumulate memory over time.
+
+Engineering pipelines
+ — decompose → implement in parallel worktrees → review → iterate → PR.
+
+Fleet work
+ — one specialist managing N subjects (50 social accounts, 12 monitored services).
+
+For the full design rationale, comparative analysis against Cline Kanban / Paperclip / NanoClaw / Google Gemini Enterprise, and the eight canonical collaboration patterns, see 
+docs/hermes-kanban-v1-spec.pdf
+ in the repository.
+
+Kanban vs. 
+delegate_task
+​
+
+They look similar; they are not the same primitive.
+
+delegate_task
+Kanban
+Shape
+RPC call (fork → join)
+Durable message queue + state machine
+Parent
+Blocks until child returns
+Fire-and-forget after 
+create
+Child identity
+Anonymous subagent
+Named profile with persistent memory
+Resumability
+None — failed = failed
+Block → unblock → re-run; crash → reclaim
+Human in the loop
+Not supported
+Comment / unblock at any point
+Agents per task
+One call = one subagent
+N agents over task's life (retry, review, follow-up)
+Audit trail
+Lost on context compression
+Durable rows in SQLite forever
+Coordination
+Hierarchical (caller → callee)
+Peer — any profile reads/writes any task
+
+One-sentence distinction:
+
+delegate_task
+ is a function call; Kanban is a work queue where every handoff is a row any profile (or human) can see and edit.
+
+Use 
+delegate_task
+ when
+ the parent agent needs a short reasoning answer before continuing, no humans involved, result goes back into the parent's context.
+
+Use Kanban when
+ work crosses agent boundaries, needs to survive restarts, might need human input, might be picked up by a different role, or needs to be discoverable after the fact.
+
+They coexist: a kanban worker may call 
+delegate_task
+ internally during its run.
+
+Core concepts
+​
+
+Board
+ — a standalone queue of tasks with its own SQLite DB, workspaces
+directory, and dispatcher loop. A single install can have many boards
+(e.g. one per project, repo, or domain); see 
+Boards (multi-project)
+
+below. Single-project users stay on the 
+default
+ board and never see the
+word "board" outside this docs section.
+
+Task
+ — a row with title, optional body, one assignee (a profile name), status (
+triage | todo | ready | running | blocked | done | archived
+), optional tenant namespace, optional idempotency key (dedup for retried automation).
+
+Link
+ — 
+task_links
+ row recording a parent → child dependency. The dispatcher promotes 
+todo → ready
+ when all parents are 
+done
+.
+
+Comment
+ — the inter-agent protocol. Agents and humans append comments; when a worker is (re-)spawned it reads the full comment thread as part of its context.
+
+Workspace
+ — the directory a worker operates in. Three kinds:
+
+scratch
+ (default) — fresh tmp dir under 
+~/.hermes/kanban/workspaces/<id>/
+ (or 
+~/.hermes/kanban/boards/<slug>/workspaces/<id>/
+ on non-default boards).
+
+dir:<path>
+ — an existing shared directory (Obsidian vault, mail ops dir, per-account folder). 
+Must be an absolute path.
+ Relative paths like 
+dir:../tenants/foo/
+ are rejected at dispatch because they'd resolve against whatever CWD the dispatcher happens to be in, which is ambiguous and a confused-deputy escape vector. The path is otherwise trusted — it's your box, your filesystem, the worker runs with your uid. This is the trusted-local-user threat model; kanban is single-host by design.
+
+worktree
+ — a git worktree under 
+.worktrees/<id>/
+ for coding tasks. Worker-side 
+git worktree add
+ creates it.
+
+Dispatcher
+ — a long-lived loop that, every N seconds (default 60): reclaims stale claims, reclaims crashed workers (PID gone but TTL not yet expired), promotes ready tasks, atomically claims, spawns assigned profiles. Runs 
+inside the gateway
+ by default (
+kanban.dispatch_in_gateway: true
+). One dispatcher sweeps all boards per tick; workers are spawned with 
+HERMES_KANBAN_BOARD
+ pinned so they can't see other boards. After ~5 consecutive spawn failures on the same task the dispatcher auto-blocks it with the last error as the reason — prevents thrashing on tasks whose profile doesn't exist, workspace can't mount, etc.
+
+Tenant
+ — optional string namespace 
+within
+ a board. One specialist fleet can serve multiple businesses (
+--tenant business-a
+) with data isolation by workspace path and memory key prefix. Tenants are a soft filter; boards are the hard isolation boundary.
+
+Boards (multi-project)
+​
+
+Boards let you separate unrelated streams of work — one per project, repo,
+or domain — into isolated queues. A new install has exactly one board
+called 
+default
+ (DB at 
+~/.hermes/kanban.db
+ for back-compat). Users who
+only want one stream of work never need to know about boards; the feature
+is opt-in.
+
+Per-board isolation is absolute:
+
+Separate SQLite DB per board (
+~/.hermes/kanban/boards/<slug>/kanban.db
+).
+
+Separate 
+workspaces/
+ and 
+logs/
+ directories.
+
+Workers spawned for a task see 
+only
+ their board's tasks — the
+dispatcher sets 
+HERMES_KANBAN_BOARD
+ in the child env and every
+
+kanban_*
+ tool the worker has access to reads it.
+
+Linking tasks across boards is not allowed (keeps the schema simple; if
+you really need cross-project refs, use free-text mentions and look
+them up by id manually).
+
+Managing boards from the CLI
+​
+
+# See what's on disk. Fresh installs show only "default".
+hermes kanban boards list
+# Create a new board.
+hermes kanban boards create atm10-server 
+\
+
+--name
+
+"ATM10 Server"
+
+\
+
+--description
+
+"Minecraft modded server ops"
+
+\
+
+--icon
+ 🎮 
+\
+
+--switch
+
+# optional: make it the active board
+# Operate on a specific board without switching.
+hermes kanban 
+--board
+ atm10-server list
+hermes kanban 
+--board
+ atm10-server create 
+"Restart ATM server"
+
+--assignee
+ ops
+# Change which board is "current" for subsequent calls.
+hermes kanban boards switch atm10-server
+hermes kanban boards show 
+# who's active right now?
+# Rename the display name (the slug is immutable — it's the directory name).
+hermes kanban boards 
+rename
+ atm10-server 
+"ATM10 (Prod)"
+# Archive (default) — moves the board's dir to boards/_archived/<slug>-<ts>/.
+# Recoverable by moving the dir back.
+hermes kanban boards 
+rm
+ atm10-server
+# Hard delete — `rm -rf` the board dir. No recovery.
+hermes kanban boards 
+rm
+ atm10-server 
+--delete
+
+Board resolution order (highest precedence first):
+
+Explicit 
+--board <slug>
+ on the CLI call.
+
+HERMES_KANBAN_BOARD
+ env var (set by the dispatcher when spawning a
+worker, so workers can't see other boards).
+
+~/.hermes/kanban/current
+ — the slug persisted by 
+hermes kanban boards switch
+.
+
+default
+.
+
+Slugs are validated: lowercase alphanumerics + hyphens + underscores, 1-64
+chars, must start with alphanumeric. Uppercase input is auto-downcased.
+Anything else (slashes, spaces, dots, 
+..
+) is rejected at the CLI layer
+so path-traversal tricks can't name a board.
+
+Managing boards from the dashboard
+​
+
+hermes dashboard
+ → Kanban tab shows a board switcher at the top as soon
+as more than one board exists (or any board has tasks). Single-board users
+see only a small 
++ New board
+ button; the switcher is hidden until it
+matters.
+
+Board dropdown
+ — pick the active board. Your selection is saved to
+the browser's 
+localStorage
+ so it persists across reloads without
+shifting the CLI's 
+current
+ pointer out from under a terminal you left
+open.
+
++ New board
+ — opens a modal asking for slug, display name,
+description, and icon. Option to auto-switch to the new board.
+
+Archive
+ — only shown on non-
+default
+ boards. Confirms, then moves
+the board dir to 
+boards/_archived/
+.
+
+All dashboard API endpoints accept 
+?board=<slug>
+ for board scoping. The
+events WebSocket is pinned to a board at connection time; switching in
+the UI opens a fresh WS against the new board.
+
+Quick start
+​
+
+The commands below are 
+you
+ (the human) setting up the board and creating tasks. Once a task is assigned, the dispatcher spawns the assigned profile as a worker, and from there 
+the model drives the task through 
+kanban_*
+ tool calls, not CLI commands
+ — see 
+How workers interact with the board
+.
+
+# 1. Create the board (you)
+hermes kanban init
+# 2. Start the gateway (hosts the embedded dispatcher)
+hermes gateway start
+# 3. Create a task (you — or an orchestrator agent via kanban_create)
+hermes kanban create 
+"research AI funding landscape"
+
+--assignee
+ researcher
+# 4. Watch activity live (you)
+hermes kanban 
+watch
+# 5. See the board (you)
+hermes kanban list
+hermes kanban stats
+
+When the dispatcher picks up 
+t_abcd
+ and spawns the 
+researcher
+ profile, the very first thing that worker's model does is call 
+kanban_show()
+ to read its task. It doesn't run 
+hermes kanban show t_abcd
+.
+
+Gateway-embedded dispatcher (default)
+​
+
+The dispatcher runs inside the gateway process. Nothing to install, no
+separate service to manage — if the gateway is up, ready tasks get picked
+up on the next tick (60s by default).
+
+# config.yaml
+kanban
+:
+
+dispatch_in_gateway
+:
+
+true
+
+# default
+
+dispatch_interval_seconds
+:
+
+60
+
+# default
+
+Override the config flag at runtime via 
+HERMES_KANBAN_DISPATCH_IN_GATEWAY=0
+
+for debugging. Standard gateway supervision applies: run 
+hermes gateway start
+ directly, or wire the gateway up as a systemd user unit (see the
+gateway docs). Without a running gateway, 
+ready
+ tasks stay where they are
+until one comes up — 
+hermes kanban create
+ warns about this at creation
+time.
+
+Running 
+hermes kanban daemon
+ as a separate process is 
+deprecated
+;
+use the gateway. If you truly cannot run the gateway (headless host
+policy forbids long-lived services, etc.) a 
+--force
+ escape hatch keeps
+the old standalone daemon alive for one release cycle, but running both
+a gateway-embedded dispatcher AND a standalone daemon against the same
+
+kanban.db
+ causes claim races and is not supported.
+
+Idempotent create (for automation / webhooks)
+​
+
+# First call creates the task. Any subsequent call with the same key
+# returns the existing task id instead of duplicating.
+hermes kanban create 
+"nightly ops review"
+
+\
+
+--assignee
+ ops 
+\
+ --idempotency-key 
+"nightly-ops-
+$(
+date
+
+-u
+ +%Y-%m-%d
+)
+"
+
+\
+
+--json
+
+Bulk CLI verbs
+​
+
+All the lifecycle verbs accept multiple ids so you can clean up a batch
+in one command:
+
+hermes kanban complete t_abc t_def t_hij 
+--result
+
+"batch wrap"
+hermes kanban archive t_abc t_def t_hij
+hermes kanban unblock t_abc t_def
+hermes kanban block t_abc 
+"need input"
+
+--ids
+ t_def t_hij
+
+How workers interact with the board
+​
+
+Workers do not shell out to 
+hermes kanban
+.
+ When the dispatcher spawns a worker it sets 
+HERMES_KANBAN_TASK=t_abcd
+ in the child's env, and that env var flips on a dedicated 
+kanban toolset
+ in the model's schema — seven tools that read and mutate the board directly via the Python 
+kanban_db
+ layer, same as the CLI does. A running worker calls these like any other tool; it never sees or needs the 
+hermes kanban
+ CLI.
+
+Tool
+Purpose
+Required params
+kanban_show
+Read the current task (title, body, prior attempts, parent handoffs, comments, full pre-formatted 
+worker_context
+). Defaults to the env's task id.
+—
+kanban_complete
+Finish with 
+summary
+ + 
+metadata
+ structured handoff.
+at least one of 
+summary
+ / 
+result
+kanban_block
+Escalate for human input with a 
+reason
+.
+reason
+kanban_heartbeat
+Signal liveness during long operations. Pure side-effect.
+—
+kanban_comment
+Append a durable note to the task thread.
+task_id
+, 
+body
+kanban_create
+(Orchestrators) fan out into child tasks with an 
+assignee
+, optional 
+parents
+, 
+skills
+, etc.
+title
+, 
+assignee
+kanban_link
+(Orchestrators) add a 
+parent_id → child_id
+ dependency edge after the fact.
+parent_id
+, 
+child_id
+
+A typical worker turn looks like:
+
+# Model's tool calls, in order:
+kanban_show() # no args — uses HERMES_KANBAN_TASK
+# (model reads the returned worker_context, does the work via terminal/file tools)
+kanban_heartbeat(note="halfway through — 4 of 8 files transformed")
+# (more work)
+kanban_complete(
+ summary="migrated limiter.py to token-bucket; added 14 tests, all pass",
+ metadata={"changed_files": ["limiter.py", "tests/test_limiter.py"], "tests_run": 14},
+)
+
+An 
+orchestrator
+ worker fans out instead:
+
+kanban_show()
+kanban_create(
+ title="research ICP funding 2024-2026",
+ assignee="researcher-a",
+ body="focus on seed + series A, North America, AI-adjacent",
+)
+# → returns {"task_id": "t_r1", ...}
+kanban_create(title="research ICP funding — EU angle", assignee="researcher-b", body="…")
+# → returns {"task_id": "t_r2", ...}
+kanban_create(
+ title="synthesize findings into launch brief",
+ assignee="writer",
+ parents=["t_r1", "t_r2"], # promotes to ready when both complete
+ body="one-pager, 300 words, neutral tone",
+)
+kanban_complete(summary="decomposed into 2 research tasks + 1 writer; linked dependencies")
+
+The three "(Orchestrators)" tools — 
+kanban_create
+, 
+kanban_link
+, and 
+kanban_comment
+ on foreign tasks — are available to every worker; the convention (enforced by the 
+kanban-orchestrator
+ skill) is that worker profiles don't fan out and orchestrator profiles don't execute.
+
+Why tools instead of shelling to 
+hermes kanban
+​
+
+Three reasons:
+
+Backend portability.
+ Workers whose terminal tool points at a remote backend (Docker / Modal / Singularity / SSH) would run 
+hermes kanban complete
+
+inside
+ the container, where 
+hermes
+ isn't installed and 
+~/.hermes/kanban.db
+ isn't mounted. The kanban tools run in the agent's own Python process and always reach 
+~/.hermes/kanban.db
+ regardless of terminal backend.
+
+No shell-quoting fragility.
+ Passing 
+--metadata '{"files": [...]}'
+ through shlex + argparse is a latent footgun. Structured tool args skip it entirely.
+
+Better errors.
+ Tool results are structured JSON the model can reason about, not stderr strings it has to parse.
+
+Zero schema footprint on normal sessions.
+ A regular 
+hermes chat
+ session has zero 
+kanban_*
+ tools in its schema. The 
+check_fn
+ on each tool only returns True when 
+HERMES_KANBAN_TASK
+ is set, which only happens when the dispatcher spawned this process. No tool bloat for users who never touch kanban.
+
+The 
+kanban-worker
+ and 
+kanban-orchestrator
+ skills teach the model which tool to call when and in what order.
+
+Recommended handoff evidence
+​
+
+kanban_complete(summary=..., metadata={...})
+ is intentionally flexible:
+the summary is the human-readable closeout, and 
+metadata
+ is the
+machine-readable handoff that downstream agents, reviewers, or dashboards can
+reuse without scraping prose.
+
+For engineering and review tasks, prefer this optional metadata shape:
+
+{
+
+"changed_files"
+:
+
+[
+"path/to/file.py"
+]
+,
+
+"verification"
+:
+
+[
+"pytest tests/hermes_cli/test_kanban_db.py -q"
+]
+,
+
+"dependencies"
+:
+
+[
+"parent task id or external issue, if any"
+]
+,
+
+"blocked_reason"
+:
+
+null
+,
+
+"retry_notes"
+:
+
+"what failed before, if this was a retry"
+,
+
+"residual_risk"
+:
+
+[
+"what was not tested or still needs human review"
+]
+}
+
+These keys are a convention, not a schema requirement. The useful property is
+that every worker leaves enough evidence for the next reader to answer four
+questions quickly:
+
+What changed?
+
+How was it verified?
+
+What can unblock or retry this if it fails?
+
+What risk is still deliberately left open?
+
+Keep secrets, raw logs, tokens, OAuth material, and unrelated transcripts out of
+
+metadata
+. Store pointers and summaries instead. If a task has no files or
+tests, say so explicitly in 
+summary
+ and use 
+metadata
+ for the evidence that
+does exist, such as source URLs, issue ids, or manual review steps.
+
+The worker skill
+​
+
+Any profile that should be able to work kanban tasks must load the 
+kanban-worker
+ skill. It teaches the worker the full lifecycle in 
+tool calls
+, not CLI commands:
+
+On spawn, call 
+kanban_show()
+ to read title + body + parent handoffs + prior attempts + full comment thread.
+
+cd $HERMES_KANBAN_WORKSPACE
+ (via the terminal tool) and do the work there.
+
+Call 
+kanban_heartbeat(note="...")
+ every few minutes during long operations.
+
+Complete with 
+kanban_complete(summary="...", metadata={...})
+, or 
+kanban_block(reason="...")
+ if stuck.
+
+kanban-worker
+ is a bundled skill, synced into every profile during install and
+update — there is no separate Skills Hub install step. Verify it is present in
+whichever profile you use for kanban workers (
+researcher
+, 
+writer
+, 
+ops
+,
+etc.):
+
+hermes 
+-p
+
+<
+your-worker-profile
+>
+ skills list 
+|
+
+grep
+ kanban-worker
+
+If the bundled copy is missing, restore it for that profile:
+
+hermes 
+-p
+
+<
+your-worker-profile
+>
+ skills reset kanban-worker 
+--restore
+
+The dispatcher also auto-passes 
+--skills kanban-worker
+ when spawning every worker, so the worker always has the pattern library available even if a profile's default skills config doesn't include it.
+
+Pinning extra skills to a specific task
+​
+
+Sometimes a single task needs specialist context the assignee profile doesn't carry by default — a translation job that needs the 
+translation
+ skill, a review task that needs 
+github-code-review
+, a security audit that needs 
+security-pr-audit
+. Rather than editing the assignee's profile every time, attach the skills directly to the task.
+
+From an orchestrator agent
+ (the usual case — one agent routing work to another), use the 
+kanban_create
+ tool's 
+skills
+ array:
+
+kanban_create(
+ title="translate README to Japanese",
+ assignee="linguist",
+ skills=["translation"],
+)
+kanban_create(
+ title="audit auth flow",
+ assignee="reviewer",
+ skills=["security-pr-audit", "github-code-review"],
+)
+
+From a human (CLI / slash command)
+, repeat 
+--skill
+ for each one:
+
+hermes kanban create 
+"translate README to Japanese"
+
+\
+
+--assignee
+ linguist 
+\
+
+--skill
+ translation
+hermes kanban create 
+"audit auth flow"
+
+\
+
+--assignee
+ reviewer 
+\
+
+--skill
+ security-pr-audit 
+\
+
+--skill
+ github-code-review
+
+From the dashboard
+, type the skills comma-separated into the 
+skills
+ field of the inline create form.
+
+These skills are 
+additive
+ to the built-in 
+kanban-worker
+ — the dispatcher emits one 
+--skills <name>
+ flag for each (and for the built-in), so the worker spawns with all of them loaded. The skill names must match skills that are actually installed on the assignee's profile (run 
+hermes skills list
+ to see what's available); there's no runtime install.
+
+The orchestrator skill
+​
+
+A 
+well-behaved orchestrator does not do the work itself.
+ It decomposes the user's goal into tasks, links them, assigns each to a specialist, and steps back. The 
+kanban-orchestrator
+ skill encodes this as tool-call patterns: anti-temptation rules, a standard specialist roster (
+researcher
+, 
+writer
+, 
+analyst
+, 
+backend-eng
+, 
+reviewer
+, 
+ops
+), and a decomposition playbook keyed on 
+kanban_create
+ / 
+kanban_link
+ / 
+kanban_comment
+.
+
+A canonical orchestrator turn (two parallel researchers handing off to a writer):
+
+# Goal from user: "draft a launch post on the ICP funding landscape"
+kanban_create(title="research ICP funding, NA angle", assignee="researcher-a", body="…") # → t_r1
+kanban_create(title="research ICP funding, EU angle", assignee="researcher-b", body="…") # → t_r2
+kanban_create(
+ title="synthesize ICP funding research into launch post draft",
+ assignee="writer",
+ parents=["t_r1", "t_r2"], # promoted to 'ready' when both researchers complete
+ body="one-pager, neutral tone, cite sources inline",
+) # → t_w1
+# Optional: add cross-cutting deps discovered later without re-creating tasks
+kanban_link(parent_id="t_r1", child_id="t_followup")
+kanban_complete(
+ summary="decomposed into 2 parallel research tasks → 1 synthesis task; writer starts when both researchers finish",
+)
+
+kanban-orchestrator
+ is a bundled skill. It is synced into each profile during
+install and update, so there is no separate Skills Hub install step. Verify it is
+present in your orchestrator profile:
+
+hermes 
+-p
+ orchestrator skills list 
+|
+
+grep
+ kanban-orchestrator
+
+If the bundled copy is missing, restore it for that profile:
+
+hermes 
+-p
+ orchestrator skills reset kanban-orchestrator 
+--restore
+
+For best results, pair it with a profile whose toolsets are restricted to board operations (
+kanban
+, 
+gateway
+, 
+memory
+) so the orchestrator literally cannot execute implementation tasks even if it tries.
+
+Dashboard (GUI)
+​
+
+The 
+/kanban
+ CLI and slash command are enough to run the board headlessly, but a visual board is often the right interface for humans-in-the-loop: triage, cross-profile supervision, reading comment threads, and dragging cards between columns. Hermes ships this as a 
+bundled dashboard plugin
+ at 
+plugins/kanban/
+ — not a core feature, not a separate service — following the model laid out in 
+Extending the Dashboard
+.
+
+Open it with:
+
+hermes kanban init 
+# one-time: create kanban.db if not already present
+hermes dashboard 
+# "Kanban" tab appears in the nav, after "Skills"
+
+What the plugin gives you
+​
+
+A 
+Kanban
+ tab showing one column per status: 
+triage
+, 
+todo
+, 
+ready
+, 
+running
+, 
+blocked
+, 
+done
+ (plus 
+archived
+ when the toggle is on).
+
+triage
+ is the parking column for rough ideas a specifier is expected to flesh out. Tasks created with 
+hermes kanban create --triage
+ (or via the Triage column's inline create) land here and the dispatcher leaves them alone until a human or specifier promotes them to 
+todo
+ / 
+ready
+. Run 
+hermes kanban specify <id>
+ to have the auxiliary LLM expand a triage task into a concrete spec (title + body with goal, approach, acceptance criteria) and promote it to 
+todo
+ in one shot; 
+--all
+ sweeps every triage task at once. Configure which model runs the specifier under 
+auxiliary.triage_specifier
+ in 
+config.yaml
+.
+
+Cards show the task id, title, priority badge, tenant tag, assigned profile, comment/link counts, a 
+progress pill
+ (
+N/M
+ children done when the task has dependents), and "created N ago". A per-card checkbox enables multi-select.
+
+Per-profile lanes inside Running
+ — toolbar checkbox toggles sub-grouping of the Running column by assignee.
+
+Live updates via WebSocket
+ — the plugin tails the append-only 
+task_events
+ table on a short poll interval; the board reflects changes the instant any profile (CLI, gateway, or another dashboard tab) acts. Reloads are debounced so a burst of events triggers a single refetch.
+
+Drag-drop
+ cards between columns to change status. The drop sends 
+PATCH /api/plugins/kanban/tasks/:id
+ which routes through the same 
+kanban_db
+ code the CLI uses — the three surfaces can never drift. Moves into destructive statuses (
+done
+, 
+archived
+, 
+blocked
+) prompt for confirmation. Touch devices use a pointer-based fallback so the board is usable from a tablet.
+
+Inline create
+ — click 
++
+ on any column header to type a title, assignee, priority, and (optionally) a parent task from a dropdown over every existing task. Creating from the Triage column automatically parks the new task in triage.
+
+Multi-select with bulk actions
+ — shift/ctrl-click a card or tick its checkbox to add it to the selection. A bulk action bar appears at the top with batch status transitions, archive, and reassign (by profile dropdown, or "(unassign)"). Destructive batches confirm first. Per-id partial failures are reported without aborting the rest.
+
+Click a card
+ (without shift/ctrl) to open a side drawer (Escape or click-outside closes) with:
+
+Editable title
+ — click the heading to rename.
+
+Editable assignee / priority
+ — click the meta row to rewrite.
+
+Editable description
+ — markdown-rendered by default (headings, bold, italic, inline code, fenced code, 
+http(s)
+ / 
+mailto:
+ links, bullet lists), with an "edit" button that swaps in a textarea. Markdown rendering is a tiny, XSS-safe renderer — every substitution runs on HTML-escaped input, only 
+http(s)
+ / 
+mailto:
+ links pass through, and 
+target="_blank"
+ + 
+rel="noopener noreferrer"
+ are always set.
+
+Dependency editor
+ — chip list of parents and children, each with an 
+×
+ to unlink, plus dropdowns over every other task to add a new parent or child. Cycle attempts are rejected server-side with a clear message.
+
+Status action row
+ (→ triage / → ready / → running / block / unblock / complete / archive) with confirm prompts for destructive transitions. For cards in the 
+Triage
+ column the row also exposes a 
+✨ Specify
+ button that calls the auxiliary LLM (
+auxiliary.triage_specifier
+ in 
+config.yaml
+) to expand the one-liner into a concrete spec (title + body with goal, approach, acceptance criteria) and promote the task to 
+todo
+. The same behaviour is reachable from the CLI (
+hermes kanban specify <id>
+ / 
+--all
+), from any gateway platform (
+/kanban specify <id>
+), and programmatically via 
+POST /api/plugins/kanban/tasks/:id/specify
+.
+
+Result section (also markdown-rendered), comment thread with Enter-to-submit, the last 20 events.
+
+Toolbar filters
+ — free-text search, tenant dropdown (defaults to 
+dashboard.kanban.default_tenant
+ from 
+config.yaml
+), assignee dropdown, "show archived" toggle, "lanes by profile" toggle, and a 
+Nudge dispatcher
+ button so you don't have to wait for the next 60 s tick.
+
+Visually the target is the familiar Linear / Fusion layout: dark theme, column headers with counts, coloured status dots, pill chips for priority and tenant. The plugin reads only theme CSS vars (
+--color-*
+, 
+--radius
+, 
+--font-mono
+, ...), so it reskins automatically with whichever dashboard theme is active.
+
+Architecture
+​
+
+The GUI is strictly a 
+read-through-the-DB + write-through-kanban_db
+ layer with no domain logic of its own:
+
+┌────────────────────────┐ WebSocket (tails task_events)
+│ React SPA (plugin) │ ◀──────────────────────────────────┐
+│ HTML5 drag-and-drop │ │
+└──────────┬─────────────┘ │
+ │ REST over fetchJSON │
+ ▼ │
+┌────────────────────────┐ writes call kanban_db.* │
+│ FastAPI router │ directly — same code path │
+│ plugins/kanban/ │ the CLI /kanban verbs use │
+│ dashboard/plugin_api.py │
+└──────────┬─────────────┘ │
+ │ │
+ ▼ │
+┌────────────────────────┐ │
+│ ~/.hermes/kanban.db │ ───── append task_events ──────────┘
+│ (WAL, shared) │
+└────────────────────────┘
+
+REST surface
+​
+
+All routes are mounted under 
+/api/plugins/kanban/
+ and protected by the dashboard's ephemeral session token:
+
+Method
+Path
+Purpose
+GET
+/board?tenant=<name>&include_archived=…
+Full board grouped by status column, plus tenants + assignees for filter dropdowns
+GET
+/tasks/:id
+Task + comments + events + links
+POST
+/tasks
+Create (wraps 
+kanban_db.create_task
+, accepts 
+triage: bool
+ and 
+parents: [id, …]
+)
+PATCH
+/tasks/:id
+Status / assignee / priority / title / body / result
+POST
+/tasks/bulk
+Apply the same patch (status / archive / assignee / priority) to every id in 
+ids
+. Per-id failures reported without aborting siblings
+POST
+/tasks/:id/comments
+Append a comment
+POST
+/tasks/:id/specify
+Run the triage specifier — auxiliary LLM fleshes out the task body and promotes it from 
+triage
+ to 
+todo
+. Returns 
+{ok, task_id, reason, new_title}
+; 
+ok=false
+ with a human-readable reason on "not in triage" / no aux client / LLM error is a 200, not a 4xx
+POST
+/links
+Add a dependency (
+parent_id
+ → 
+child_id
+)
+DELETE
+/links?parent_id=…&child_id=…
+Remove a dependency
+POST
+/dispatch?max=…&dry_run=…
+Nudge the dispatcher — skip the 60 s wait
+GET
+/config
+Read 
+dashboard.kanban
+ preferences from 
+config.yaml
+ — 
+default_tenant
+, 
+lane_by_profile
+, 
+include_archived_by_default
+, 
+render_markdown
+WS
+/events?since=<event_id>
+Live stream of 
+task_events
+ rows
+
+Every handler is a thin wrapper — the plugin is ~700 lines of Python (router + WebSocket tail + bulk batcher + config reader) and adds no new business logic. A tiny 
+_conn()
+ helper auto-initializes 
+kanban.db
+ on every read and write, so a fresh install works whether the user opened the dashboard first, hit the REST API directly, or ran 
+hermes kanban init
+.
+
+Dashboard config
+​
+
+Any of these keys under 
+dashboard.kanban
+ in 
+~/.hermes/config.yaml
+ changes the tab's defaults — the plugin reads them at load time via 
+GET /config
+:
+
+dashboard
+:
+
+kanban
+:
+
+default_tenant
+:
+ acme 
+# preselects the tenant filter
+
+lane_by_profile
+:
+
+true
+
+# default for the "lanes by profile" toggle
+
+include_archived_by_default
+:
+
+false
+
+render_markdown
+:
+
+true
+
+# set false for plain <pre> rendering
+
+Each key is optional and falls back to the shown default.
+
+Security model
+​
+
+The dashboard's HTTP auth middleware 
+explicitly skips 
+/api/plugins/
+ — plugin routes are unauthenticated by design because the dashboard binds to localhost by default. That means the kanban REST surface is reachable from any process on the host.
+
+The WebSocket takes one additional step: it requires the dashboard's ephemeral session token as a 
+?token=…
+ query parameter (browsers can't set 
+Authorization
+ on an upgrade request), matching the pattern used by the in-browser PTY bridge.
+
+If you run 
+hermes dashboard --host 0.0.0.0
+, every plugin route — kanban included — becomes reachable from the network. 
+Don't do that on a shared host.
+ The board contains task bodies, comments, and workspace paths; an attacker reaching these routes gets read access to your entire collaboration surface and can also create / reassign / archive tasks.
+
+Tasks in 
+~/.hermes/kanban.db
+ are profile-agnostic on purpose (that's the coordination primitive). If you open the dashboard with 
+hermes -p <profile> dashboard
+, the board still shows tasks created by any other profile on the host. Same user owns all profiles, but this is worth knowing if multiple personas coexist.
+
+Live updates
+​
+
+task_events
+ is an append-only SQLite table with a monotonic 
+id
+. The WebSocket endpoint holds each client's last-seen event id and pushes new rows as they land. When a burst of events arrives, the frontend reloads the (very cheap) board endpoint — simpler and more correct than trying to patch local state from every event kind. WAL mode means the read loop never blocks the dispatcher's 
+BEGIN IMMEDIATE
+ claim transactions.
+
+Extending it
+​
+
+The plugin uses the standard Hermes dashboard plugin contract — see 
+Extending the Dashboard
+ for the full manifest reference, shell slots, page-scoped slots, and the Plugin SDK. Extra columns, custom card chrome, tenant-filtered layouts, or full 
+tab.override
+ replacements are all expressible without forking this plugin.
+
+To disable without removing: add 
+dashboard.plugins.kanban.enabled: false
+ to 
+config.yaml
+ (or delete 
+plugins/kanban/dashboard/manifest.json
+).
+
+Scope boundary
+​
+
+The GUI is deliberately thin. Everything the plugin does is reachable from the CLI; the plugin just makes it comfortable for humans. Auto-assignment, budgets, governance gates, and org-chart views remain user-space — a router profile, another plugin, or a reuse of 
+tools/approval.py
+ — exactly as listed in the out-of-scope section of the design spec.
+
+CLI command reference
+​
+
+This is the surface 
+you
+ (or scripts, cron, the dashboard) use to drive the board. Workers running inside the dispatcher use the 
+kanban_*
+
+tool surface
+ for the same operations — the CLI here and the tools there both route through 
+kanban_db
+, so the two surfaces agree by construction.
+
+hermes kanban init # create kanban.db + print daemon hint
+hermes kanban create "<title>" [--body ...] [--assignee <profile>]
+ [--parent <id>]... [--tenant <name>]
+ [--workspace scratch|worktree|dir:<path>]
+ [--priority N] [--triage] [--idempotency-key KEY]
+ [--max-runtime 30m|2h|1d|<seconds>]
+ [--skill <name>]...
+ [--json]
+hermes kanban list [--mine] [--assignee P] [--status S] [--tenant T] [--archived] [--json]
+hermes kanban show <id> [--json]
+hermes kanban assign <id> <profile> # or 'none' to unassign
+hermes kanban link <parent_id> <child_id>
+hermes kanban unlink <parent_id> <child_id>
+hermes kanban claim <id> [--ttl SECONDS]
+hermes kanban comment <id> "<text>" [--author NAME]
+# Bulk verbs — accept multiple ids:
+hermes kanban complete <id>... [--result "..."]
+hermes kanban block <id> "<reason>" [--ids <id>...]
+hermes kanban unblock <id>...
+hermes kanban archive <id>...
+hermes kanban tail <id> # follow a single task's event stream
+hermes kanban watch [--assignee P] [--tenant T] # live stream ALL events to the terminal
+ [--kinds completed,blocked,…] [--interval SECS]
+hermes kanban heartbeat <id> [--note "..."] # worker liveness signal for long ops
+hermes kanban runs <id> [--json] # attempt history (one row per run)
+hermes kanban assignees [--json] # profiles on disk + per-assignee task counts
+hermes kanban dispatch [--dry-run] [--max N] # one-shot pass
+ [--failure-limit N] [--json]
+hermes kanban daemon --force # DEPRECATED — standalone dispatcher (use `hermes gateway start` instead)
+ [--failure-limit N] [--pidfile PATH] [-v]
+hermes kanban stats [--json] # per-status + per-assignee counts
+hermes kanban log <id> [--tail BYTES] # worker log from ~/.hermes/kanban/logs/
+hermes kanban notify-subscribe <id> # gateway bridge hook (used by /kanban in the gateway)
+ --platform <name> --chat-id <id> [--thread-id <id>] [--user-id <id>]
+hermes kanban notify-list [<id>] [--json]
+hermes kanban notify-unsubscribe <id>
+ --platform <name> --chat-id <id> [--thread-id <id>]
+hermes kanban context <id> # what a worker sees
+hermes kanban specify [<id> | --all] [--tenant T] # flesh out a triage-column idea
+ [--author NAME] [--json] # into a full spec and promote to todo
+hermes kanban gc [--event-retention-days N] # workspaces + old events + old logs
+ [--log-retention-days N]
+
+All commands are also available as a slash command in the interactive CLI and in the messaging gateway (see 
+/kanban
+ slash command
+ below).
+
+/kanban
+ slash command
+​
+
+Every 
+hermes kanban <action>
+ verb is also reachable as 
+/kanban <action>
+ — from inside an interactive 
+hermes chat
+ session 
+and
+ from any gateway platform (Telegram, Discord, Slack, WhatsApp, Signal, Matrix, Mattermost, email, SMS). Both surfaces call the exact same 
+hermes_cli.kanban.run_slash()
+ entry point that reuses the 
+hermes kanban
+ argparse tree, so the argument surface, flags, and output format are identical across CLI, 
+/kanban
+, and 
+hermes kanban
+. You don't have to leave the chat to drive the board.
+
+/kanban list
+/kanban show t_abcd
+/kanban create "write launch post" --assignee writer --parent t_research
+/kanban comment t_abcd "looks good, ship it"
+/kanban unblock t_abcd
+/kanban dispatch --max 3
+/kanban specify t_abcd # flesh out a triage one-liner into a real spec
+/kanban specify --all --tenant engineering # sweep every triage task in one tenant
+
+Quote multi-word arguments the same way you would on a shell — 
+run_slash
+ parses the rest of the line with 
+shlex.split
+, so 
+"..."
+ and 
+'...'
+ both work.
+
+Mid-run usage: 
+/kanban
+ bypasses the running-agent guard
+​
+
+The gateway normally queues slash commands and user messages while an agent is still thinking — that's what stops you from accidentally starting a second turn while the first is in flight. 
+/kanban
+ is explicitly exempted from this guard.
+ The board lives in 
+~/.hermes/kanban.db
+, not in the running agent's state, so reads (
+list
+, 
+show
+, 
+context
+, 
+tail
+, 
+watch
+, 
+stats
+, 
+runs
+) and writes (
+comment
+, 
+unblock
+, 
+block
+, 
+assign
+, 
+archive
+, 
+create
+, 
+link
+, …) all go through immediately, even mid-turn.
+
+This is the whole point of the separation:
+
+A worker blocks waiting on a peer → you send 
+/kanban unblock t_abcd
+ from your phone and the dispatcher picks the peer up on its next tick. The blocked worker isn't interrupted — it just stops being blocked.
+
+You spot a card that needs human context → 
+/kanban comment t_xyz "use the 2026 schema, not 2025"
+ lands on the task thread and the 
+next
+ run of that task will read it in 
+kanban_show()
+.
+
+You want to know what your fleet is doing without stopping the orchestrator → 
+/kanban list --mine
+ or 
+/kanban stats
+ inspects the board without touching your main conversation.
+
+Auto-subscribe on 
+/kanban create
+ (gateway only)
+​
+
+When you create a task from the gateway with 
+/kanban create "…"
+, the originating chat (platform + chat id + thread id) is automatically subscribed to that task's terminal events (
+completed
+, 
+blocked
+, 
+gave_up
+, 
+crashed
+, 
+timed_out
+). You'll get one message back per terminal event — including the first line of the worker's result summary on 
+completed
+ — without having to poll or remember the task id.
+
+you> /kanban create "transcribe today's podcast" --assignee transcriber
+bot> Created t_9fc1a3 (ready, assignee=transcriber)
+ (subscribed — you'll be notified when t_9fc1a3 completes or blocks)
+… ~8 minutes later …
+bot> ✓ t_9fc1a3 completed by transcriber
+ transcribed 42 minutes, saved to podcast/2026-05-04.md
+
+Subscriptions auto-remove themselves once the task reaches 
+done
+ or 
+archived
+. If you script a create with 
+--json
+ (machine output) the auto-subscribe is skipped — the assumption is that scripted callers want to manage subscriptions explicitly via 
+/kanban notify-subscribe
+.
+
+Output truncation in messaging
+​
+
+Gateway platforms have practical message-length caps. If 
+/kanban list
+, 
+/kanban show
+, or 
+/kanban tail
+ produce more than ~3800 characters of output, the response is truncated with a 
+… (truncated; use \
+hermes kanban …` in your terminal for full output)` footer. The CLI surface has no such cap.
+
+Autocomplete
+​
+
+In the interactive CLI, typing 
+/kanban 
+ and hitting Tab cycles through the built-in subcommand list (
+list
+, 
+ls
+, 
+show
+, 
+create
+, 
+assign
+, 
+link
+, 
+unlink
+, 
+claim
+, 
+comment
+, 
+complete
+, 
+block
+, 
+unblock
+, 
+archive
+, 
+tail
+, 
+dispatch
+, 
+context
+, 
+init
+, 
+gc
+). The remaining verbs listed in the CLI reference above (
+watch
+, 
+stats
+, 
+runs
+, 
+log
+, 
+assignees
+, 
+heartbeat
+, 
+notify-subscribe
+, 
+notify-list
+, 
+notify-unsubscribe
+, 
+daemon
+) also work — they're just not in the autocomplete hint list yet.
+
+Collaboration patterns
+​
+
+The board supports these eight patterns without any new primitives:
+
+Pattern
+Shape
+Example
+P1 Fan-out
+N siblings, same role
+"research 5 angles in parallel"
+P2 Pipeline
+role chain: scout → editor → writer
+daily brief assembly
+P3 Voting / quorum
+N siblings + 1 aggregator
+3 researchers → 1 reviewer picks
+P4 Long-running journal
+same profile + shared dir + cron
+Obsidian vault
+P5 Human-in-the-loop
+worker blocks → user comments → unblock
+ambiguous decisions
+P6 
+@mention
+inline routing from prose
+@reviewer look at this
+P7 Thread-scoped workspace
+/kanban here
+ in a thread
+per-project gateway threads
+P8 Fleet farming
+one profile, N subjects
+50 social accounts
+P9 Triage specifier
+rough idea → 
+triage
+ → 
+hermes kanban specify
+ expands body → 
+todo
+"turn this one-liner into a spec'd task"
+
+For worked examples of each, see 
+docs/hermes-kanban-v1-spec.pdf
+.
+
+Multi-tenant usage
+​
+
+When one specialist fleet serves multiple businesses, tag each task with a tenant:
+
+hermes kanban create 
+"monthly report"
+
+\
+
+--assignee
+ researcher 
+\
+
+--tenant
+ business-a 
+\
+
+--workspace
+ dir:~/tenants/business-a/data/
+
+Workers receive 
+$HERMES_TENANT
+ and namespace their memory writes by prefix. The board, the dispatcher, and the profile definitions are all shared; only the data is scoped.
+
+Gateway notifications
+​
+
+When you run 
+/kanban create …
+ from the gateway (Telegram, Discord, Slack, etc.), the originating chat is automatically subscribed to the new task. The gateway's background notifier polls 
+task_events
+ every few seconds and delivers one message per terminal event (
+completed
+, 
+blocked
+, 
+gave_up
+, 
+crashed
+, 
+timed_out
+) to that chat. Completed tasks also send the first line of the worker's 
+--result
+ so you see the outcome without having to 
+/kanban show
+.
+
+You can manage subscriptions explicitly from the CLI — useful when a script / cron job wants to notify a chat it didn't originate from:
+
+hermes kanban notify-subscribe t_abcd 
+\
+
+--platform
+ telegram --chat-id 
+12345678
+ --thread-id 
+7
+hermes kanban notify-list
+hermes kanban notify-unsubscribe t_abcd 
+\
+
+--platform
+ telegram --chat-id 
+12345678
+ --thread-id 
+7
+
+A subscription removes itself automatically once the task reaches 
+done
+ or 
+archived
+; no cleanup needed.
+
+Runs — one row per attempt
+​
+
+A task is a logical unit of work; a 
+run
+ is one attempt to execute it. When the dispatcher claims a ready task it creates a row in 
+task_runs
+ and points 
+tasks.current_run_id
+ at it. When that attempt ends — completed, blocked, crashed, timed out, spawn-failed, reclaimed — the run row closes with an 
+outcome
+ and the task's pointer clears. A task that's been attempted three times has three 
+task_runs
+ rows.
+
+Why two tables instead of just mutating the task: you need 
+full attempt history
+ for real-world postmortems ("the second reviewer attempt got to approve, the third merged"), and you need a clean place to hang per-attempt metadata — which files changed, which tests ran, which findings a reviewer noted. Those are run facts, not task facts.
+
+Runs are also where 
+structured handoff
+ lives. When a worker completes a task (via 
+kanban_complete(...)
+) it can pass:
+
+summary
+ (tool param) / 
+--summary
+ (CLI) — human handoff; goes on the run; downstream children see it in their 
+build_worker_context
+.
+
+metadata
+ (tool param) / 
+--metadata
+ (CLI) — free-form JSON dict on the run; children see it serialized alongside the summary.
+
+result
+ (tool param) / 
+--result
+ (CLI) — short log line that goes on the task row (legacy field, kept for back-compat).
+
+Downstream children read the most recent completed run's summary + metadata for each parent. Retrying workers read the prior attempts on their own task (outcome, summary, error) so they don't repeat a path that already failed.
+
+# What a worker actually does — a tool call, from inside the agent loop:
+kanban_complete(
+ summary="implemented token bucket, keys on user_id with IP fallback, all tests pass",
+ metadata={"changed_files": ["limiter.py", "tests/test_limiter.py"], "tests_run": 14},
+ result="rate limiter shipped",
+)
+
+The same handoff is reachable from the CLI when you (the human) need to close out a task a worker can't — e.g. a task that was abandoned, or one you marked done manually from the dashboard:
+
+hermes kanban complete t_abcd 
+\
+
+--result
+
+"rate limiter shipped"
+
+\
+
+--summary
+
+"implemented token bucket, keys on user_id with IP fallback, all tests pass"
+
+\
+
+--metadata
+
+'{"changed_files": ["limiter.py", "tests/test_limiter.py"], "tests_run": 14}'
+# Review the attempt history on a retried task:
+hermes kanban runs t_abcd
+# # OUTCOME PROFILE ELAPSED STARTED
+# 1 blocked worker 12s 2026-04-27 14:02
+# → BLOCKED: need decision on rate-limit key
+# 2 completed worker 8m 2026-04-27 15:18
+# → implemented token bucket, keys on user_id with IP fallback
+
+Runs are exposed on the dashboard (Run History section in the drawer, one coloured row per attempt) and on the REST API (
+GET /api/plugins/kanban/tasks/:id
+ returns a 
+runs[]
+ array). 
+PATCH /api/plugins/kanban/tasks/:id
+ with 
+{status: "done", summary, metadata}
+ forwards both to the kernel, so the dashboard's "mark done" button is CLI-equivalent. 
+task_events
+ rows carry the 
+run_id
+ they belong to so the UI can group them by attempt, and the 
+completed
+ event embeds the first-line summary in its payload (capped at 400 chars) so gateway notifiers can render structured handoffs without a second SQL round-trip.
+
+Bulk close caveat.
+
+hermes kanban complete a b c --summary X
+ is refused — structured handoff is per-run, so copy-pasting the same summary to N tasks is almost always wrong. Bulk close 
+without
+
+--summary
+ / 
+--metadata
+ still works for the common "I finished a pile of admin tasks" case.
+
+Reclaimed runs from status changes.
+ If you drag a running task off 
+running
+ in the dashboard (back to 
+ready
+, or straight to 
+todo
+), or archive a task that was still running, the in-flight run closes with 
+outcome='reclaimed'
+ rather than being orphaned. The 
+task_runs
+ row is always in a terminal state when 
+tasks.current_run_id
+ is 
+NULL
+, and vice versa — that invariant holds across CLI, dashboard, dispatcher, and notifier.
+
+Synthetic runs for never-claimed completions.
+ Completing or blocking a task that was never claimed (e.g. a human closes a 
+ready
+ task from the dashboard with a summary, or a CLI user runs 
+hermes kanban complete <ready-task> --summary X
+) would otherwise drop the handoff. Instead the kernel inserts a zero-duration run row (
+started_at == ended_at
+) carrying the summary / metadata / reason so attempt history stays complete. The 
+completed
+ / 
+blocked
+ event's 
+run_id
+ points at that row.
+
+Live drawer refresh.
+ When the dashboard's WebSocket event stream reports new events for the task the user is currently viewing, the drawer reloads itself (via a per-task event counter threaded into its 
+useEffect
+ dependency list). Closing and reopening is no longer required to see a run's new row or updated outcome.
+
+Forward compatibility
+​
+
+Two nullable columns on 
+tasks
+ are reserved for v2 workflow routing: 
+workflow_template_id
+ (which template this task belongs to) and 
+current_step_key
+ (which step in that template is active). The v1 kernel ignores them for routing but lets clients write them, so a v2 release can add the routing machinery without another schema migration.
+
+Event reference
+​
+
+Every transition appends a row to 
+task_events
+. Each row carries an optional 
+run_id
+ so UIs can group events by attempt. Kinds group into three clusters so filtering is easy (
+hermes kanban watch --kinds completed,gave_up,timed_out
+):
+
+Lifecycle
+ (what changed about the task as a logical unit):
+
+Kind
+Payload
+When
+created
+{assignee, status, parents, tenant}
+Task inserted. 
+run_id
+ is 
+NULL
+.
+promoted
+—
+todo → ready
+ because all parents hit 
+done
+. 
+run_id
+ is 
+NULL
+.
+claimed
+{lock, expires, run_id}
+Dispatcher atomically claimed a 
+ready
+ task for spawn.
+completed
+{result_len, summary?}
+Worker wrote 
+--result
+ / 
+--summary
+ and task hit 
+done
+. 
+summary
+ is the first-line handoff (400-char cap); full version lives on the run row. If 
+complete_task
+ is called on a never-claimed task with handoff fields, a zero-duration run is synthesized so 
+run_id
+ still points at something.
+blocked
+{reason}
+Worker or human flipped the task to 
+blocked
+. Synthesizes a zero-duration run when called on a never-claimed task with 
+--reason
+.
+unblocked
+—
+blocked → ready
+, either manually or via 
+/unblock
+. 
+run_id
+ is 
+NULL
+.
+archived
+—
+Hidden from the default board. If the task was still running, carries the 
+run_id
+ of the run that was reclaimed as a side effect.
+
+Edits
+ (human-driven changes that aren't transitions):
+
+Kind
+Payload
+When
+assigned
+{assignee}
+Assignee changed (including unassignment).
+edited
+{fields}
+Title or body updated.
+reprioritized
+{priority}
+Priority changed.
+status
+{status}
+Dashboard drag-drop wrote a status directly (e.g. 
+todo → ready
+). Carries the 
+run_id
+ of the run that was reclaimed when dragging off 
+running
+; otherwise 
+run_id
+ is NULL.
+
+Worker telemetry
+ (about the execution process, not the logical task):
+
+Kind
+Payload
+When
+spawned
+{pid}
+Dispatcher successfully started a worker process.
+heartbeat
+{note?}
+Worker called 
+hermes kanban heartbeat $TASK
+ to signal liveness during long operations.
+reclaimed
+{stale_lock}
+Claim TTL expired without a completion; task goes back to 
+ready
+.
+crashed
+{pid, claimer}
+Worker PID no longer alive but TTL hadn't expired yet.
+timed_out
+{pid, elapsed_seconds, limit_seconds, sigkill}
+max_runtime_seconds
+ exceeded; dispatcher SIGTERM'd (then SIGKILL'd after 5 s grace) and re-queued.
+spawn_failed
+{error, failures}
+One spawn attempt failed (missing PATH, workspace unmountable, …). Counter increments; task returns to 
+ready
+ for retry.
+gave_up
+{failures, error}
+Circuit breaker fired after N consecutive 
+spawn_failed
+. Task auto-blocks with the last error. Default N = 5; override via 
+--failure-limit
+.
+
+hermes kanban tail <id>
+ shows these for a single task. 
+hermes kanban watch
+ streams them board-wide.
+
+Out of scope
+​
+
+Kanban is deliberately single-host. 
+~/.hermes/kanban.db
+ is a local SQLite file and the dispatcher spawns workers on the same machine. Running a shared board across two hosts is not supported — there's no coordination primitive for "worker X on host A, worker Y on host B," and the crash-detection path assumes PIDs are host-local. If you need multi-host, run an independent board per host and use 
+delegate_task
+ / a message queue to bridge them.
+
+Design spec
+​
+
+The complete design — architecture, concurrency correctness, comparison with other systems, implementation plan, risks, open questions — lives in 
+docs/hermes-kanban-v1-spec.pdf
+. Read that before filing any behavior-change PR.
+========================================
+CODE_BLOCKS:
+# See what's on disk. Fresh installs show only "default".hermes kanban boards list# Create a new board.hermes kanban boards create atm10-server \    --name "ATM10 Server" \    --description "Minecraft modded server ops" \    --icon 🎮 \    --switch                   # optional: make it the active board# Operate on a specific board without switching.hermes kanban --board atm10-server listhermes kanban --board atm10-server create "Restart ATM server" --assignee ops# Change which board is "current" 
+
+# 1. Create the board (you)hermes kanban init# 2. Start the gateway (hosts the embedded dispatcher)hermes gateway start# 3. Create a task (you — or an orchestrator agent via kanban_create)hermes kanban create "research AI funding landscape" --assignee researcher# 4. Watch activity live (you)hermes kanban watch# 5. See the board (you)hermes kanban listhermes kanban stats
+
+# config.yamlkanban:  dispatch_in_gateway: true        # default  dispatch_interval_seconds: 60    # default
+
+# First call creates the task. Any subsequent call with the same key# returns the existing task id instead of duplicating.hermes kanban create "nightly ops review" \    --assignee ops \    --idempotency-key "nightly-ops-$(date -u +%Y-%m-%d)" \    --json
+
+hermes kanban complete t_abc t_def t_hij --result "batch wrap"hermes kanban archive  t_abc t_def t_hijhermes kanban unblock  t_abc t_defhermes kanban block    t_abc "need input" --ids t_def t_hij
+
+# Model's tool calls, in order:kanban_show()                                     # no args — uses HERMES_KANBAN_TASK# (model reads the returned worker_context, does the work via terminal/file tools)kanban_heartbeat(note="halfway through — 4 of 8 files transformed")# (more work)kanban_complete(    summary="migrated limiter.py to token-bucket; added 14 tests, all pass",    metadata={"changed_files": ["limiter.py", "tests/test_limiter.py"], "tests_run": 14},)
+
+kanban_show()kanban_create(    title="research ICP funding 2024-2026",    assignee="researcher-a",    body="focus on seed + series A, North America, AI-adjacent",)# → returns {"task_id": "t_r1", ...}kanban_create(title="research ICP funding — EU angle", assignee="researcher-b", body="…")# → returns {"task_id": "t_r2", ...}kanban_create(    title="synthesize findings into launch brief",    assignee="writer",    parents=["t_r1", "t_r2"],                     # promotes to ready when both complete  
+
+{  "changed_files": ["path/to/file.py"],  "verification": ["pytest tests/hermes_cli/test_kanban_db.py -q"],  "dependencies": ["parent task id or external issue, if any"],  "blocked_reason": null,  "retry_notes": "what failed before, if this was a retry",  "residual_risk": ["what was not tested or still needs human review"]}
+
+hermes -p <your-worker-profile> skills list | grep kanban-worker
+
+hermes -p <your-worker-profile> skills reset kanban-worker --restore
+
+kanban_create(    title="translate README to Japanese",    assignee="linguist",    skills=["translation"],)kanban_create(    title="audit auth flow",    assignee="reviewer",    skills=["security-pr-audit", "github-code-review"],)
+
+hermes kanban create "translate README to Japanese" \    --assignee linguist \    --skill translationhermes kanban create "audit auth flow" \    --assignee reviewer \    --skill security-pr-audit \    --skill github-code-review
+
+# Goal from user: "draft a launch post on the ICP funding landscape"kanban_create(title="research ICP funding, NA angle",  assignee="researcher-a", body="…")  # → t_r1kanban_create(title="research ICP funding, EU angle",  assignee="researcher-b", body="…")  # → t_r2kanban_create(    title="synthesize ICP funding research into launch post draft",    assignee="writer",    parents=["t_r1", "t_r2"],        # promoted to 'ready' when both researchers complete    body="one-pager, neutral tone, cite so
+
+hermes -p orchestrator skills list | grep kanban-orchestrator
+
+hermes -p orchestrator skills reset kanban-orchestrator --restore
+
+hermes kanban init      # one-time: create kanban.db if not already presenthermes dashboard        # "Kanban" tab appears in the nav, after "Skills"
+
+┌────────────────────────┐      WebSocket (tails task_events)│   React SPA (plugin)   │ ◀──────────────────────────────────┐│   HTML5 drag-and-drop  │                                    │└──────────┬─────────────┘                                    │           │ REST over fetchJSON                              │           ▼                                                  │┌────────────────────────┐     writes call kanban_db.*        ││  FastAPI router        │     directly — same code path     
+
+dashboard:  kanban:    default_tenant: acme              # preselects the tenant filter    lane_by_profile: true             # default for the "lanes by profile" toggle    include_archived_by_default: false    render_markdown: true             # set false for plain <pre> rendering
+
+hermes kanban init                                     # create kanban.db + print daemon hinthermes kanban create "<title>" [--body ...] [--assignee <profile>]                                [--parent <id>]... [--tenant <name>]                                [--workspace scratch|worktree|dir:<path>]                                [--priority N] [--triage] [--idempotency-key KEY]                                [--max-runtime 30m|2h|1d|<seconds>]                                [--skill <name>]... 
+
+/kanban list/kanban show t_abcd/kanban create "write launch post" --assignee writer --parent t_research/kanban comment t_abcd "looks good, ship it"/kanban unblock t_abcd/kanban dispatch --max 3/kanban specify t_abcd                  # flesh out a triage one-liner into a real spec/kanban specify --all --tenant engineering  # sweep every triage task in one tenant
+
+you> /kanban create "transcribe today's podcast" --assignee transcriberbot> Created t_9fc1a3  (ready, assignee=transcriber)     (subscribed — you'll be notified when t_9fc1a3 completes or blocks)… ~8 minutes later …bot> ✓ t_9fc1a3 completed by transcriber     transcribed 42 minutes, saved to podcast/2026-05-04.md
+
+hermes kanban create "monthly report" \    --assignee researcher \    --tenant business-a \    --workspace dir:~/tenants/business-a/data/
+
+hermes kanban notify-subscribe t_abcd \    --platform telegram --chat-id 12345678 --thread-id 7hermes kanban notify-listhermes kanban notify-unsubscribe t_abcd \    --platform telegram --chat-id 12345678 --thread-id 7
+
+# What a worker actually does — a tool call, from inside the agent loop:kanban_complete(    summary="implemented token bucket, keys on user_id with IP fallback, all tests pass",    metadata={"changed_files": ["limiter.py", "tests/test_limiter.py"], "tests_run": 14},    result="rate limiter shipped",)
+
+hermes kanban complete t_abcd \    --result "rate limiter shipped" \    --summary "implemented token bucket, keys on user_id with IP fallback, all tests pass" \    --metadata '{"changed_files": ["limiter.py", "tests/test_limiter.py"], "tests_run": 14}'# Review the attempt history on a retried task:hermes kanban runs t_abcd#   #  OUTCOME       PROFILE           ELAPSED  STARTED#   1  blocked       worker               12s  2026-04-27 14:02#        → BLOCKED: need decision on rate-limit key#   2  
+================================================================================
+

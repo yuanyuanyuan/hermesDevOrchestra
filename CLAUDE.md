@@ -79,9 +79,20 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
-## Hermes Dev Orchestra References
-
-- Agent rules and boundaries: See `AGENTS.md` -> `## Hermes Dev Orchestra`
-- Canonical specification: See `.planning/SPEC.md`
-
 ---
+
+## Project Reference: Hermes Docs Index
+
+当用户询问 Hermes Agent 相关问题时（安装、配置、CLI、Providers、Skills、Tools、Sessions、Cron、Messaging Gateway、Developer Guide 等）：
+
+→ **先读取** `reference/hermes-docs-index/SKILL.md`，按其中的检索流程定位相关文档页面，再用 `FetchURL` 获取最新内容回答用户。
+
+本目录下 4 个索引文件：
+- `reference/hermes-docs-index/hermes_docs_index.json` — 机器索引（JSON，540 页）
+- `reference/hermes-docs-index/hermes_docs_index.md` — 人类导航（Markdown）
+- `reference/hermes-docs-index/hermes_docs_sitemap.txt` — URL 清单
+- `reference/hermes-docs-index/hermes_docs_crossref.md` — 概念交叉引用
+
+**禁止**依赖预训练知识回答 Hermes 文档问题；必须通过索引检索 → FetchURL 获取最新官方内容。
+
+@RTK.md

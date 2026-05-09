@@ -1,0 +1,663 @@
+#!/usr/bin/env python3
+"""Direct generation of extracted_A_core.json from known page data."""
+
+import json
+import re
+
+OUTPUT_PATH = "/data/hermes/.tmp_index_work/extracted_A_core.json"
+
+PAGES = []
+
+# ---------------------------------------------------------------------------
+# Helper to build a record
+# ---------------------------------------------------------------------------
+
+def make(url, title, h1, category, summary, key_concepts, code_snippets, audience, prerequisites, related_pages, embedding_keywords):
+    PAGES.append({
+        "url": url,
+        "title": title,
+        "category": category,
+        "summary": summary,
+        "key_concepts": key_concepts,
+        "code_snippets": code_snippets,
+        "audience": audience,
+        "prerequisites": prerequisites,
+        "related_pages": related_pages,
+        "embedding_keywords": embedding_keywords,
+    })
+
+# ---------------------------------------------------------------------------
+# English pages
+# ---------------------------------------------------------------------------
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs",
+    title="Hermes Agent Documentation",
+    h1="Hermes Agent",
+    category="getting-started",
+    summary="The self-improving AI agent built by Nous Research. The only agent with a built-in learning loop — it creates skills from experience, improves them during use, nudges itself to persist knowledge, and builds a deepening model of who you are across sessions. Install via one-line curl or PowerShell, then explore quickstart, learning path, configuration, messaging gateway, tools, and skills.",
+    key_concepts=["Hermes Agent", "Nous Research", "learning loop", "skills", "install.sh", "install.ps1", "SOUL.md", "config.yaml", "messaging gateway", "tools", "68 built-in tools"],
+    code_snippets=["One-line curl installer", "PowerShell installer"],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/getting-started/installation", "/docs/getting-started/quickstart", "/docs/getting-started/learning-path", "/docs/integrations", "/docs/skills"],
+    embedding_keywords="hermes agent hermes-agent nous research ai agent autonomous agent self-improving learning loop skills install quickstart documentation homepage getting started beginner install.sh install.ps1 curl powershell linux macos wsl2 windows android termux configuration messaging gateway tools built-in tools"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/getting-started/installation",
+    title="Installation",
+    h1="Installation",
+    category="getting-started",
+    summary="Get Hermes Agent up and running in under two minutes with the one-line installer. Supports Linux, macOS, and WSL2 via curl, and native Windows via PowerShell (early beta). The installer handles uv, Python 3.11, Node.js 22, ripgrep, ffmpeg, and portable Git Bash (MinGit). Covers per-user vs root layout, Git handling, and uninstall steps.",
+    key_concepts=["install.sh", "install.ps1", "curl", "PowerShell", "MinGit", "uv", "Python 3.11", "Node.js 22", "ripgrep", "ffmpeg", "per-user install", "root install", "WSL2", "early beta"],
+    code_snippets=["One-line curl installer", "PowerShell installer", "hermes setup command"],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/getting-started/quickstart", "/docs/getting-started/learning-path", "/docs/getting-started/nix-setup", "/docs/getting-started/termux", "/docs/getting-started/updating"],
+    embedding_keywords="hermes installation install hermes agent setup curl bash powershell windows linux macos wsl2 termux android one-line installer install.sh install.ps1 mingit uv python nodejs ripgrep ffmpeg per-user root uninstall getting started beginner"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/getting-started/learning-path",
+    title="Learning Path",
+    h1="Learning Path",
+    category="getting-started",
+    summary="Helps users figure out where to start based on experience level and goals. Provides reading paths for beginner (installation, quickstart, CLI usage, configuration ~1 hour), intermediate (sessions, messaging, tools, skills, memory, cron ~2-3 hours), and advanced (architecture, adding tools, creating skills, RL training, contributing ~4-6 hours) users. Also organized by use case such as CLI coding assistant, messaging bot, and task automation.",
+    key_concepts=["beginner", "intermediate", "advanced", "Installation", "Quickstart", "CLI Usage", "Configuration", "Sessions", "Messaging", "Tools", "Skills", "Memory", "Cron", "Architecture", "RL Training", "Contributing"],
+    code_snippets=[],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/getting-started/installation", "/docs/getting-started/quickstart", "/docs/user-guide/cli-usage", "/docs/user-guide/configuration", "/docs/user-guide/sessions", "/docs/user-guide/messaging", "/docs/user-guide/tools", "/docs/user-guide/skills", "/docs/user-guide/memory", "/docs/user-guide/cron"],
+    embedding_keywords="hermes learning path beginner intermediate advanced getting started guide roadmap reading order install quickstart cli configuration sessions messaging tools skills memory cron architecture rl training contributing use case tutorial study plan"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/getting-started/nix-setup",
+    title="Nix & NixOS Setup",
+    h1="Nix & NixOS Setup",
+    category="getting-started",
+    summary="Hermes Agent ships a Nix flake with three integration levels: nix run / nix profile install for any Nix user, NixOS native module for server deployments with declarative config and hardened systemd service, and NixOS container module for agents needing self-modification. Uses uv2nix to build Python dependencies and wraps runtime tools (Node.js, git, ripgrep, ffmpeg) into the binary PATH. Requires Nix with flakes enabled and API keys.",
+    key_concepts=["Nix flake", "nix run", "nix profile install", "NixOS module", "uv2nix", "configuration.nix", "sops-nix", "agenix", "systemd", "Determinate Nix", "flakes"],
+    code_snippets=["Nix run command", "NixOS configuration"],
+    audience="advanced",
+    prerequisites="Nix with flakes enabled",
+    related_pages=["/docs/getting-started/installation", "/docs/getting-started/quickstart", "/docs/integrations/providers"],
+    embedding_keywords="hermes nix nixos setup nix flake nix run nix profile install nixos module uv2nix configuration.nix sops-nix agenix systemd determinate nix flakes server deployment declarative config advanced install"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/getting-started/quickstart",
+    title="Quickstart",
+    h1="Quickstart",
+    category="getting-started",
+    summary="Guide to get from zero to a working Hermes setup that survives real use. Covers installation, choosing a provider with hermes model, verifying chat works, and troubleshooting. Recommends getting one clean conversation working before adding gateway, cron, skills, voice, or routing. Includes paths for local/self-hosted models and multi-provider fallback.",
+    key_concepts=["hermes setup", "hermes model", "hermes gateway setup", "provider", "chat verification", "troubleshooting", "local model", "self-hosted", "multi-provider fallback", "custom endpoint"],
+    code_snippets=["One-line curl installer", "hermes setup command", "hermes model command", "hermes gateway setup command"],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/getting-started/installation", "/docs/getting-started/learning-path", "/docs/integrations/providers", "/docs/user-guide/configuration"],
+    embedding_keywords="hermes quickstart getting started hermes setup hermes model hermes gateway setup provider chat verify troubleshooting local model self-hosted multi-provider fallback custom endpoint beginner tutorial first steps"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/getting-started/termux",
+    title="Android / Termux",
+    h1="Hermes on Android with Termux",
+    category="getting-started",
+    summary="Tested path for running Hermes Agent directly on an Android phone through Termux. Installs the Hermes CLI, cron support, PTY/background terminal, Telegram gateway (manual/best-effort), MCP, Honcho memory, and ACP. Maps to python -m pip install -e '.[termux]' -c constraints-termux.txt. Notes limitations: voice extra blocked by faster-whisper -> ctranslate2, Playwright skipped, Docker isolation unavailable, and Android may suspend background jobs.",
+    key_concepts=["Termux", "Android", "python -m pip install", ".[termux]", "constraints-termux.txt", "cron", "PTY", "Telegram gateway", "MCP", "Honcho memory", "ACP", "faster-whisper", "ctranslate2", "Playwright", "Docker"],
+    code_snippets=["One-line curl installer", "Python pip install"],
+    audience="advanced",
+    prerequisites="Android with Termux installed",
+    related_pages=["/docs/getting-started/installation", "/docs/getting-started/quickstart", "/docs/integrations"],
+    embedding_keywords="hermes termux android mobile install cron pty telegram gateway mcp honcho memory acp faster-whisper ctranslate2 playwright docker background jobs constraints-termux.txt advanced"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/getting-started/updating",
+    title="Updating & Uninstalling",
+    h1="Updating & Uninstalling",
+    category="getting-started",
+    summary="Update Hermes to the latest version with a single hermes update command. The update process includes: pairing-data snapshot (covers ~/.hermes/pairing/, Feishu comment rules), git pull from main branch, dependency install via uv pip install -e '.[all]', config migration for new options, and gateway auto-restart for service-managed and manual gateways. Also covers preview check with hermes update --check and uninstall steps.",
+    key_concepts=["hermes update", "hermes update --check", "hermes config check", "hermes config migrate", "hermes backup restore", "pairing-data snapshot", "git pull", "uv pip install", "gateway auto-restart", "systemd", "launchd"],
+    code_snippets=["hermes update command", "hermes config check command"],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/getting-started/installation", "/docs/getting-started/quickstart", "/docs/reference/cli-commands"],
+    embedding_keywords="hermes update updating uninstall upgrade hermes update --check config migration pairing data snapshot git pull uv pip install gateway auto-restart systemd launchd hermes backup restore maintenance"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/integrations",
+    title="Integrations",
+    h1="Integrations",
+    category="integrations",
+    summary="Overview of Hermes Agent integrations with external systems. Covers AI Providers & Routing (OpenRouter, Anthropic, OpenAI, Google, OpenAI-compatible endpoints with auto-detected capabilities), Provider Routing (cost/speed/quality sorting, whitelists, blacklists), Fallback Providers (automatic failover), MCP Tool Servers (stdio and SSE transports, per-server filtering), and Web Search Backends (Firecrawl, Parallel, Tavily, Exa with env vars and YAML config).",
+    key_concepts=["AI Providers", "Provider Routing", "Fallback Providers", "MCP Servers", "web_search", "web_extract", "Firecrawl", "Parallel", "Tavily", "Exa", "stdio", "SSE", "OpenRouter", "Anthropic", "OpenAI", "Google"],
+    code_snippets=["YAML config example", "Web search config"],
+    audience="intermediate",
+    prerequisites="",
+    related_pages=["/docs/integrations/providers", "/docs/guides/use-mcp-with-hermes", "/docs/user-guide/configuration"],
+    embedding_keywords="hermes integrations ai providers provider routing fallback providers mcp servers web search backends firecrawl parallel tavily exa openrouter anthropic openai google stdio sse web_search web_extract config intermediate"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/integrations/providers",
+    title="AI Providers",
+    h1="AI Providers",
+    category="integrations",
+    summary="Detailed setup guide for inference providers. Covers cloud APIs (Nous Portal via OAuth, OpenAI Codex via ChatGPT OAuth, GitHub Copilot via OAuth/device code/COPILOT_GITHUB_TOKEN, Anthropic via OAuth/API key, OpenRouter via OPENROUTER_API_KEY, AI Gateway, z.ai/GLM, Kimi/Moonshot, Arcee AI, GMI Cloud, MiniMax, Alibaba Cloud) and self-hosted endpoints (Ollama, vLLM, llama.cpp, SGLang). Includes capability auto-detection, custom endpoints, and advanced routing/fallback configurations.",
+    key_concepts=["Nous Portal", "OpenAI Codex", "GitHub Copilot", "Anthropic", "OpenRouter", "AI Gateway", "z.ai", "GLM", "Kimi", "Moonshot", "Arcee AI", "GMI Cloud", "MiniMax", "Alibaba Cloud", "Ollama", "vLLM", "llama.cpp", "SGLang", "OPENROUTER_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "custom endpoint"],
+    code_snippets=["Environment variable setup", "YAML config example"],
+    audience="intermediate",
+    prerequisites="API key for at least one LLM provider",
+    related_pages=["/docs/integrations", "/docs/user-guide/configuration", "/docs/reference/environment-variables"],
+    embedding_keywords="hermes ai providers inference openrouter anthropic openai google nous portal codex github copilot glm kimi moonshot arcee gmi minimax alibaba ollama vllm llamacpp sglang api key oauth custom endpoint provider setup intermediate"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/skills",
+    title="Skills Hub",
+    h1="Skills Hub",
+    category="skills",
+    summary="Skills Hub listing all built-in skills available in Hermes Agent. Organized by category and platform compatibility. Categories include Apple (apple-notes, apple-reminders, findmy, imessage, macos-computer-use), AI Agents (claude-code, codex, hermes-agent, opencode), Creative (architecture-diagram, ascii-art, ascii-video), and many others. Each skill shows platform support (macOS, Linux, Windows).",
+    key_concepts=["skills", "apple-notes", "apple-reminders", "findmy", "imessage", "macos-computer-use", "claude-code", "codex", "hermes-agent skill", "opencode", "architecture-diagram", "ascii-art", "ascii-video", "built-in skills", "platform support"],
+    code_snippets=[],
+    audience="intermediate",
+    prerequisites="Installed Hermes CLI",
+    related_pages=["/docs/reference/skills-catalog", "/docs/reference/optional-skills-catalog", "/docs/user-guide/skills"],
+    embedding_keywords="hermes skills hub built-in skills apple notes reminders findmy imessage macos computer use claude code codex opencode architecture diagram ascii art ascii video creative ai agents platform support macos linux windows intermediate"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/user-stories",
+    title="User Stories & Use Cases",
+    h1="User Stories & Use Cases",
+    category="user-guide",
+    summary="Collection of real community use cases scraped from X, GitHub, Reddit, Hacker News, YouTube, blogs, and podcasts. 99 stories across 15 categories including Dev Workflow (16), Personal Assistant (16), Integrations (15), Meta & Ecosystem (10), Business Ops (8), Enterprise (6), Content Creation (5), Research (4), Messaging (4), Cost Optimization (4), Trading & Markets (3), Creative (3), Privacy & Self-Hosted (3), Marketing (1), and General (1).",
+    key_concepts=["user stories", "use cases", "community", "Dev Workflow", "Personal Assistant", "Integrations", "Meta & Ecosystem", "Business Ops", "Enterprise", "Content Creation", "Research", "Messaging", "Cost Optimization", "Trading & Markets", "Creative"],
+    code_snippets=[],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/getting-started/quickstart", "/docs/skills", "/docs/integrations"],
+    embedding_keywords="hermes user stories use cases community examples dev workflow personal assistant integrations business ops enterprise content creation research messaging cost optimization trading creative privacy self-hosted beginner inspiration"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/reference/cli-commands",
+    title="CLI Commands Reference",
+    h1="CLI Commands Reference",
+    category="reference",
+    summary="Complete reference for all Hermes terminal commands. Covers global options (--version, --profile, --resume, --continue, --worktree, --yolo, --pass-session-id, --ignore-user-config, --ignore-rules, --tui, --dev) and top-level commands: chat, model, fallback, gateway, setup, whatsapp, update, tools, skills, sessions, memory, cron, config, backup, profile, bus, voice, mcp, docs, web, evaluate, daemon, repl, and more.",
+    key_concepts=["hermes chat", "hermes model", "hermes fallback", "hermes gateway", "hermes setup", "hermes update", "hermes tools", "hermes skills", "hermes config", "hermes profile", "hermes backup", "--profile", "--resume", "--yolo", "--tui", "COMMAND_REGISTRY"],
+    code_snippets=["hermes setup command", "hermes model command", "hermes update command", "hermes chat command"],
+    audience="intermediate",
+    prerequisites="Installed Hermes CLI",
+    related_pages=["/docs/reference/slash-commands", "/docs/reference/environment-variables", "/docs/reference/profile-commands"],
+    embedding_keywords="hermes cli commands reference terminal hermes chat hermes model hermes gateway hermes setup hermes update hermes tools hermes skills hermes config hermes profile hermes backup global options --profile --resume --yolo --tui command registry intermediate"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/reference/environment-variables",
+    title="Environment Variables",
+    h1="Environment Variables Reference",
+    category="reference",
+    summary="Complete reference for all environment variables stored in ~/.hermes/.env. Organized by LLM Providers (OPENROUTER_API_KEY, OPENROUTER_BASE_URL, HERMES_OPENROUTER_CACHE, ANTHROPIC_API_KEY, OPENAI_API_KEY, COPILOT_GITHUB_TOKEN, GH_TOKEN, GLM_API_KEY, KIMI_API_KEY, etc.), Web Search (FIRECRAWL_API_KEY, PARALLEL_API_KEY, TAVILY_API_KEY, EXA_API_KEY), Gateway (TELEGRAM_BOT_TOKEN, DISCORD_BOT_TOKEN, etc.), Browser/Playwright, Memory (HONCHO_API_KEY), ACP, and Feature Flags.",
+    key_concepts=["OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "HERMES_OPENROUTER_CACHE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GLM_API_KEY", "KIMI_API_KEY", "FIRECRAWL_API_KEY", "TAVILY_API_KEY", "TELEGRAM_BOT_TOKEN", "HONCHO_API_KEY", "~/.hermes/.env", "hermes config set"],
+    code_snippets=["Environment variable setup"],
+    audience="intermediate",
+    prerequisites="Installed Hermes CLI",
+    related_pages=["/docs/integrations/providers", "/docs/reference/cli-commands", "/docs/user-guide/configuration"],
+    embedding_keywords="hermes environment variables reference env vars .env openrouter api key anthropic openai copilot github token glm kimi firecrawl tavily telegram bot token honcho memory gateway browser playwright feature flags config intermediate"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/reference/faq",
+    title="FAQ & Troubleshooting",
+    h1="FAQ & Troubleshooting",
+    category="reference",
+    summary="Quick answers and fixes for common questions and issues. Covers supported LLM providers (OpenRouter, Nous Portal, OpenAI, Anthropic, Google, z.ai, Kimi, MiniMax, local models via Ollama/vLLM), Windows support (WSL2 recommended), WSL2 Chrome control via MCP bridge, Android/Termux, custom endpoints, config location (~/.hermes/config.yaml), updating, and more.",
+    key_concepts=["FAQ", "troubleshooting", "LLM providers", "OpenRouter", "Ollama", "vLLM", "WSL2", "Windows", "Android", "Termux", "MCP bridge", "Chrome", "custom endpoint", "config.yaml", "~/.hermes"],
+    code_snippets=["One-line curl installer", "WSL2 install command"],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/getting-started/installation", "/docs/getting-started/quickstart", "/docs/integrations/providers", "/docs/reference/environment-variables"],
+    embedding_keywords="hermes faq troubleshooting常见问题 故障排除 llm providers openrouter ollama vllm wsl2 windows android termux mcp chrome custom endpoint config.yaml beginner help support"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference",
+    title="MCP Config Reference",
+    h1="MCP Config Reference",
+    category="reference",
+    summary="Compact reference companion for MCP server configuration. Covers root config shape (mcp_servers), server keys (command, args, env for stdio; url, headers for HTTP; enabled, timeout, connect_timeout, tools, auth, sampling), tools policy keys (include, exclude, resources, prompts), and filtering semantics for whitelisting/blacklisting server-native MCP tools.",
+    key_concepts=["mcp_servers", "stdio", "HTTP", "command", "args", "env", "url", "headers", "enabled", "timeout", "connect_timeout", "tools", "include", "exclude", "resources", "prompts", "auth", "sampling", "OAuth 2.1", "PKCE"],
+    code_snippets=["YAML config example", "MCP server config"],
+    audience="intermediate",
+    prerequisites="Installed Hermes CLI",
+    related_pages=["/docs/guides/use-mcp-with-hermes", "/docs/integrations", "/docs/reference/cli-commands"],
+    embedding_keywords="hermes mcp config reference model context protocol mcp_servers stdio http command args env url headers timeout tools include exclude resources prompts auth oauth pkce intermediate"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/reference/model-catalog",
+    title="Model Catalog",
+    h1="Model Catalog",
+    category="reference",
+    summary="Hermes fetches curated model lists for OpenRouter and Nous Portal from a JSON manifest hosted alongside the docs site. When the manifest is unreachable (offline, network blocked, hosting failure), Hermes silently falls back to the in-repo snapshot that ships with the CLI. Schema includes version, updated_at, metadata, and providers with model arrays. Published on every merge to main via deploy-site.yml GitHub Pages pipeline.",
+    key_concepts=["model catalog", "OpenRouter", "Nous Portal", "JSON manifest", "model lists", "version", "updated_at", "metadata", "providers", "deploy-site.yml", "GitHub Pages", "offline fallback", "snapshot"],
+    code_snippets=["JSON config example"],
+    audience="intermediate",
+    prerequisites="Installed Hermes CLI",
+    related_pages=["/docs/integrations/providers", "/docs/reference/cli-commands"],
+    embedding_keywords="hermes model catalog openrouter nous portal json manifest model list version metadata providers deploy-site.yml github pages offline fallback snapshot intermediate reference"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/reference/optional-skills-catalog",
+    title="Optional Skills Catalog",
+    h1="Optional Skills Catalog",
+    category="reference",
+    summary="Optional skills ship with hermes-agent under optional-skills/ but are not active by default. Install via hermes skills install official/<category>/<skill> and uninstall via hermes skills uninstall <skill-name>. Categories include autonomous-ai-agents (blackbox, honcho), blockchain (base, solana), communication (one-three-one-rule), and more. Each skill links to a dedicated page with full definition, setup, and usage.",
+    key_concepts=["optional skills", "optional-skills/", "hermes skills install", "hermes skills uninstall", "blackbox", "honcho", "base", "solana", "one-three-one-rule", "official/<category>/<skill>"],
+    code_snippets=["Skill installation command", "Skill uninstall command"],
+    audience="intermediate",
+    prerequisites="Installed Hermes CLI",
+    related_pages=["/docs/skills", "/docs/reference/skills-catalog", "/docs/user-guide/skills"],
+    embedding_keywords="hermes optional skills catalog install uninstall blackbox honcho base solana one-three-one-rule official category skill intermediate reference"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/reference/profile-commands",
+    title="Profile Commands Reference",
+    h1="Profile Commands Reference",
+    category="reference",
+    summary="Reference for all Hermes profile management commands. Subcommands: list (shows active profile marked with *), use (set active profile), create (with --clone, --clone-all, --clone-from options), delete, show, alias, rename, export (to tar.gz), import (from tar.gz). Profiles allow isolated configurations, environments, skills, and sessions for different workflows or identities.",
+    key_concepts=["hermes profile", "hermes profile list", "hermes profile use", "hermes profile create", "hermes profile delete", "hermes profile export", "hermes profile import", "--clone", "--clone-all", "--clone-from", "tar.gz", "active profile"],
+    code_snippets=["Profile management command"],
+    audience="intermediate",
+    prerequisites="Installed Hermes CLI",
+    related_pages=["/docs/reference/cli-commands", "/docs/user-guide/configuration"],
+    embedding_keywords="hermes profile commands reference list use create delete show alias rename export import clone clone-all clone-from tar.gz active profile intermediate"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/reference/skills-catalog",
+    title="Bundled Skills Catalog",
+    h1="Bundled Skills Catalog",
+    category="reference",
+    summary="Hermes ships with a large built-in skill library copied into ~/.hermes/skills/ on install. Skills sync on hermes update while respecting local deletions and user edits. Missing skills can be restored with hermes skills reset <name> --restore. Categories: apple, autonomous-ai-agents, creative, data-analysis, devops, finance, home-automation, mlops, productivity, research, security, social, system, web, and more. Catalog is regenerated by website/scripts/generate-skill-docs.py.",
+    key_concepts=["bundled skills", "~/.hermes/skills/", "hermes update", "hermes skills reset", "apple", "autonomous-ai-agents", "creative", "data-analysis", "devops", "finance", "home-automation", "mlops", "productivity", "research", "security", "social", "system", "web"],
+    code_snippets=["Skill reset command"],
+    audience="intermediate",
+    prerequisites="Installed Hermes CLI",
+    related_pages=["/docs/skills", "/docs/reference/optional-skills-catalog", "/docs/user-guide/skills"],
+    embedding_keywords="hermes bundled skills catalog built-in skills ~/.hermes/skills/ hermes update hermes skills reset apple creative devops finance home-automation mlops productivity research security social system web intermediate reference"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/reference/slash-commands",
+    title="Slash Commands Reference",
+    h1="Slash Commands Reference",
+    category="reference",
+    summary="Reference for interactive CLI slash commands and messaging slash commands, both driven by COMMAND_REGISTRY in hermes_cli/commands.py. Session commands: /new, /clear, /history, /save, /retry, /undo, /title, /compress, /rollback, /snapshot, /stop, /queue. Tools commands: /tools, /skills. Installed skills are exposed as dynamic slash commands on both surfaces. Includes plan mode (/plan) saving markdown plans under .hermes/plans/.",
+    key_concepts=["/new", "/clear", "/history", "/save", "/retry", "/undo", "/title", "/compress", "/rollback", "/snapshot", "/stop", "/queue", "/tools", "/skills", "/plan", "COMMAND_REGISTRY", "cli.py", "gateway/run.py"],
+    code_snippets=[],
+    audience="intermediate",
+    prerequisites="Installed Hermes CLI",
+    related_pages=["/docs/reference/cli-commands", "/docs/reference/tools-reference", "/docs/user-guide/skills"],
+    embedding_keywords="hermes slash commands reference /new /clear /history /save /retry /undo /title /compress /rollback /snapshot /stop /queue /tools /skills /plan command registry cli gateway intermediate"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/reference/tools-reference",
+    title="Built-in Tools Reference",
+    h1="Built-in Tools Reference",
+    category="reference",
+    summary="Documents all 68 built-in tools in the Hermes tool registry, grouped by toolset. Browser tools: browser_back, browser_click, browser_console, browser_get_images, browser_navigate, browser_press, browser_scroll, browser_snapshot, browser_type, browser_vision. File tools: read_file, write_file, patch, search_files. Terminal tools: bash, python. Web tools: web_search, web_extract. Also covers RL tools, Home Assistant tools, Feishu tools, Spotify tools, Yuanbao tools, Discord tools, and MCP tools.",
+    key_concepts=["browser_back", "browser_click", "browser_navigate", "browser_snapshot", "browser_vision", "read_file", "write_file", "patch", "search_files", "bash", "python", "web_search", "web_extract", "68 built-in tools", "tool registry", "toolset", "MCP tools"],
+    code_snippets=[],
+    audience="advanced",
+    prerequisites="Installed Hermes CLI",
+    related_pages=["/docs/reference/toolsets-reference", "/docs/integrations", "/docs/user-guide/tools"],
+    embedding_keywords="hermes built-in tools reference browser tools file tools terminal tools web tools rl home assistant feishu spotify yuanbao discord mcp tools tool registry 68 tools advanced"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/reference/toolsets-reference",
+    title="Toolsets Reference",
+    h1="Toolsets Reference",
+    category="reference",
+    summary="Reference for toolsets — named bundles of tools controlling agent capabilities. Core toolsets: browser, file, terminal, web, voice, vision. Composite toolsets: debugging (file+terminal+web), coding, research. Platform toolsets: hermes-cli (default for interactive CLI), hermes-telegram, hermes-discord, hermes-slack. Configurable per-session via --toolsets or per-platform in config.yaml. Interactive management via hermes tools curses UI or in-session /tools commands.",
+    key_concepts=["toolsets", "core toolset", "composite toolset", "platform toolset", "browser", "file", "terminal", "web", "voice", "vision", "debugging", "coding", "research", "hermes-cli", "hermes-telegram", "hermes-discord", "hermes-slack", "--toolsets", "config.yaml", "hermes tools"],
+    code_snippets=["Toolsets config", "hermes tools command"],
+    audience="intermediate",
+    prerequisites="Installed Hermes CLI",
+    related_pages=["/docs/reference/tools-reference", "/docs/reference/cli-commands", "/docs/user-guide/tools"],
+    embedding_keywords="hermes toolsets reference core composite platform browser file terminal web voice vision debugging coding research hermes-cli hermes-telegram hermes-discord hermes-slack --toolsets config.yaml intermediate"
+)
+
+# ---------------------------------------------------------------------------
+# Chinese pages (zh-Hans) — same content, Chinese text fields
+# ---------------------------------------------------------------------------
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans",
+    title="Hermes Agent Documentation",
+    h1="Hermes Agent",
+    category="getting-started",
+    summary="由 Nous Research 构建的自我改进型 AI Agent。唯一内置学习循环的 Agent——它从经验中创建技能、在使用过程中改进技能、主动提示自己持久化知识，并在多次会话中构建对你越来越深的模型。支持通过一行 curl 或 PowerShell 命令安装，然后探索快速入门、学习路径、配置、消息网关、工具和技能。",
+    key_concepts=["Hermes Agent", "Nous Research", "学习循环", "技能", "install.sh", "install.ps1", "SOUL.md", "config.yaml", "消息网关", "工具", "68 个内置工具"],
+    code_snippets=["一行命令 curl 安装脚本", "PowerShell 安装脚本"],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/zh-Hans/getting-started/installation", "/docs/zh-Hans/getting-started/quickstart", "/docs/zh-Hans/getting-started/learning-path", "/docs/zh-Hans/integrations", "/docs/zh-Hans/skills"],
+    embedding_keywords="hermes agent hermes-agent nous research ai agent 自主代理 自我改进 学习循环 技能 安装 快速入门 文档主页 初学者 install.sh install.ps1 curl powershell linux macos wsl2 windows android termux 配置 消息网关 工具 内置工具"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/getting-started/installation",
+    title="Installation",
+    h1="Installation",
+    category="getting-started",
+    summary="通过一行命令安装程序，在两分钟内完成 Hermes Agent 的安装并运行。支持 Linux、macOS 和 WSL2（通过 curl），以及原生 Windows（通过 PowerShell，早期测试版）。安装程序会自动处理 uv、Python 3.11、Node.js 22、ripgrep、ffmpeg 和便携版 Git Bash（MinGit）。涵盖按用户安装与 root 安装的区别、Git 处理方式以及卸载步骤。",
+    key_concepts=["install.sh", "install.ps1", "curl", "PowerShell", "MinGit", "uv", "Python 3.11", "Node.js 22", "ripgrep", "ffmpeg", "按用户安装", "root 安装", "WSL2", "早期测试版"],
+    code_snippets=["一行命令 curl 安装脚本", "PowerShell 安装脚本", "hermes setup 设置命令"],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/zh-Hans/getting-started/quickstart", "/docs/zh-Hans/getting-started/learning-path", "/docs/zh-Hans/getting-started/nix-setup", "/docs/zh-Hans/getting-started/termux", "/docs/zh-Hans/getting-started/updating"],
+    embedding_keywords="hermes 安装 installation 设置 setup curl bash powershell windows linux macos wsl2 termux android 一行安装 install.sh install.ps1 mingit uv python nodejs ripgrep ffmpeg 按用户安装 root 安装 卸载 初学者 入门"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/getting-started/learning-path",
+    title="Learning Path",
+    h1="Learning Path",
+    category="getting-started",
+    summary="根据用户的经验水平和目标提供学习路径指引。为初学者（安装、快速入门、CLI 使用、配置，约 1 小时）、进阶用户（会话、消息、工具、技能、记忆、定时任务，约 2-3 小时）和高级开发者（架构、添加工具、创建技能、RL 训练、贡献代码，约 4-6 小时）分别推荐阅读顺序。还按使用场景组织，如 CLI 编程助手、消息机器人、任务自动化等。",
+    key_concepts=["初学者", "进阶用户", "高级开发者", "Installation", "Quickstart", "CLI Usage", "Configuration", "Sessions", "Messaging", "Tools", "Skills", "Memory", "Cron", "Architecture", "RL Training", "Contributing"],
+    code_snippets=[],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/zh-Hans/getting-started/installation", "/docs/zh-Hans/getting-started/quickstart", "/docs/zh-Hans/user-guide/cli-usage", "/docs/zh-Hans/user-guide/configuration", "/docs/zh-Hans/user-guide/sessions", "/docs/zh-Hans/user-guide/messaging", "/docs/zh-Hans/user-guide/tools", "/docs/zh-Hans/user-guide/skills", "/docs/zh-Hans/user-guide/memory", "/docs/zh-Hans/user-guide/cron"],
+    embedding_keywords="hermes 学习路径 初学者 进阶 高级 入门指南 阅读顺序 安装 快速入门 CLI 配置 会话 消息 工具 技能 记忆 定时任务 架构 RL 训练 贡献代码 使用场景 教程 学习计划"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/getting-started/nix-setup",
+    title="Nix & NixOS Setup",
+    h1="Nix & NixOS Setup",
+    category="getting-started",
+    summary="介绍通过 Nix flake 安装和配置 Hermes Agent 的方法，包含三个集成级别：nix run / nix profile install（适用于任何 Nix 用户）、NixOS 原生模块（适用于服务器部署，提供声明式配置和加固的 systemd 服务）、NixOS 容器模块（适用于需要自我修改的 Agent）。使用 uv2nix 构建 Python 依赖，并将运行时工具（Node.js、git、ripgrep、ffmpeg）包装到二进制 PATH 中。需要启用 flakes 的 Nix 环境和 API 密钥。",
+    key_concepts=["Nix flake", "nix run", "nix profile install", "NixOS 模块", "uv2nix", "configuration.nix", "sops-nix", "agenix", "systemd", "Determinate Nix", "flakes"],
+    code_snippets=["Nix run 命令", "NixOS 配置"],
+    audience="advanced",
+    prerequisites="已启用 flakes 的 Nix 环境",
+    related_pages=["/docs/zh-Hans/getting-started/installation", "/docs/zh-Hans/getting-started/quickstart", "/docs/zh-Hans/integrations/providers"],
+    embedding_keywords="hermes nix nixos 安装 nix flake nix run nix profile install nixos 模块 uv2nix configuration.nix sops-nix agenix systemd determinate nix flakes 服务器部署 声明式配置 高级安装"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/getting-started/quickstart",
+    title="Quickstart",
+    h1="Quickstart",
+    category="getting-started",
+    summary="从零开始搭建可在实际使用中稳定运行的 Hermes 环境的快速入门指南。涵盖安装、使用 hermes model 选择提供方、验证聊天功能是否正常以及故障排查。建议在添加网关、定时任务、技能、语音或路由之前，先确保能完成一次正常对话。还包括本地/自托管模型和多提供方回退的路径。",
+    key_concepts=["hermes setup", "hermes model", "hermes gateway setup", "提供方", "聊天验证", "故障排查", "本地模型", "自托管", "多提供方回退", "自定义端点"],
+    code_snippets=["一行命令 curl 安装脚本", "hermes setup 设置命令", "hermes model 模型配置命令", "hermes gateway setup 网关设置命令"],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/zh-Hans/getting-started/installation", "/docs/zh-Hans/getting-started/learning-path", "/docs/zh-Hans/integrations/providers", "/docs/zh-Hans/user-guide/configuration"],
+    embedding_keywords="hermes 快速入门 quickstart 入门指南 hermes setup hermes model hermes gateway setup 提供方 聊天验证 故障排查 本地模型 自托管 多提供方回退 自定义端点 初学者 第一步"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/getting-started/termux",
+    title="Android / Termux",
+    h1="Hermes on Android with Termux",
+    category="getting-started",
+    summary="在 Android 手机上通过 Termux 直接运行 Hermes Agent 的测试路径。安装内容包括 Hermes CLI、cron 支持、PTY/后台终端、Telegram 网关（手动/尽力而为）、MCP、Honcho 内存和 ACP。对应 python -m pip install -e '.[termux]' -c constraints-termux.txt。已知限制：语音额外功能因 faster-whisper -> ctranslate2 受阻、Playwright 被跳过、Docker 隔离不可用，且 Android 可能挂起后台任务。",
+    key_concepts=["Termux", "Android", "python -m pip install", ".[termux]", "constraints-termux.txt", "cron", "PTY", "Telegram 网关", "MCP", "Honcho 内存", "ACP", "faster-whisper", "ctranslate2", "Playwright", "Docker"],
+    code_snippets=["一行命令 curl 安装脚本", "Python pip 安装"],
+    audience="advanced",
+    prerequisites="已安装 Termux 的 Android 设备",
+    related_pages=["/docs/zh-Hans/getting-started/installation", "/docs/zh-Hans/getting-started/quickstart", "/docs/zh-Hans/integrations"],
+    embedding_keywords="hermes termux android 手机安装 移动端 cron pty telegram 网关 mcp honcho 内存 acp faster-whisper ctranslate2 playwright docker 后台任务 constraints-termux.txt 高级"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/getting-started/updating",
+    title="Updating & Uninstalling",
+    h1="Updating & Uninstalling",
+    category="getting-started",
+    summary="使用单条 hermes update 命令将 Hermes 更新到最新版本。更新流程包括：配对数据快照（覆盖 ~/.hermes/pairing/、飞书评论规则等）、从 main 分支拉取代码、通过 uv pip install -e '.[all]' 安装依赖、迁移新增配置选项、以及为受服务管理和手动网关自动重启网关。还支持预览检查 hermes update --check 和卸载步骤。",
+    key_concepts=["hermes update", "hermes update --check", "hermes config check", "hermes config migrate", "hermes backup restore", "配对数据快照", "git pull", "uv pip install", "网关自动重启", "systemd", "launchd"],
+    code_snippets=["hermes update 更新命令", "hermes config check 配置检查命令"],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/zh-Hans/getting-started/installation", "/docs/zh-Hans/getting-started/quickstart", "/docs/zh-Hans/reference/cli-commands"],
+    embedding_keywords="hermes 更新 updating 卸载 uninstall 升级 hermes update --check 配置迁移 配对数据快照 git pull uv pip install 网关自动重启 systemd launchd hermes backup restore 维护"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/integrations",
+    title="Integrations",
+    h1="Integrations",
+    category="integrations",
+    summary="概述 Hermes Agent 与外部系统的集成方式。涵盖 AI 提供方与路由（OpenRouter、Anthropic、OpenAI、Google 等兼容端点，自动检测视觉、流式传输和工具使用能力）、提供方路由（按成本/速度/质量排序、白名单、黑名单）、回退提供方（自动故障转移）、MCP 工具服务器（stdio 和 SSE 传输、按服务器过滤）以及网页搜索后端（Firecrawl、Parallel、Tavily、Exa，通过环境变量和 YAML 配置）。",
+    key_concepts=["AI 提供方", "提供方路由", "回退提供方", "MCP 服务器", "web_search", "web_extract", "Firecrawl", "Parallel", "Tavily", "Exa", "stdio", "SSE", "OpenRouter", "Anthropic", "OpenAI", "Google"],
+    code_snippets=["YAML 配置示例", "网页搜索配置"],
+    audience="intermediate",
+    prerequisites="",
+    related_pages=["/docs/zh-Hans/integrations/providers", "/docs/zh-Hans/guides/use-mcp-with-hermes", "/docs/zh-Hans/user-guide/configuration"],
+    embedding_keywords="hermes 集成 integrations ai 提供方 提供方路由 回退 mcp 服务器 网页搜索 后端 firecrawl parallel tavily exa openrouter anthropic openai google stdio sse web_search web_extract 配置 中级"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/integrations/providers",
+    title="AI Providers",
+    h1="AI Providers",
+    category="integrations",
+    summary="详细介绍配置各种 AI 推理提供方的方法。涵盖云 API（Nous Portal OAuth、OpenAI Codex ChatGPT OAuth、GitHub Copilot OAuth/设备码/COPILOT_GITHUB_TOKEN、Anthropic OAuth/API 密钥、OpenRouter OPENROUTER_API_KEY、AI Gateway、z.ai/GLM、Kimi/Moonshot、Arcee AI、GMI Cloud、MiniMax、阿里云）和自托管端点（Ollama、vLLM、llama.cpp、SGLang）。包括能力自动检测、自定义端点以及高级路由/回退配置。",
+    key_concepts=["Nous Portal", "OpenAI Codex", "GitHub Copilot", "Anthropic", "OpenRouter", "AI Gateway", "z.ai", "GLM", "Kimi", "Moonshot", "Arcee AI", "GMI Cloud", "MiniMax", "阿里云", "Ollama", "vLLM", "llama.cpp", "SGLang", "OPENROUTER_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "自定义端点"],
+    code_snippets=["环境变量设置", "YAML 配置示例"],
+    audience="intermediate",
+    prerequisites="至少一个 LLM 提供方的 API 密钥",
+    related_pages=["/docs/zh-Hans/integrations", "/docs/zh-Hans/user-guide/configuration", "/docs/zh-Hans/reference/environment-variables"],
+    embedding_keywords="hermes ai 提供方 推理 openrouter anthropic openai google nous portal codex github copilot glm kimi moonshot arcee gmi minimax 阿里云 ollama vllm llamacpp sglang api 密钥 oauth 自定义端点 配置 中级"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/skills",
+    title="Skills Hub",
+    h1="Skills Hub",
+    category="skills",
+    summary="展示 Hermes Agent 内置技能中心，按类别和平台兼容性列出所有可用技能。类别包括 Apple（apple-notes、apple-reminders、findmy、imessage、macos-computer-use）、AI Agents（claude-code、codex、hermes-agent、opencode）、Creative（architecture-diagram、ascii-art、ascii-video）等。每个技能显示支持的平台（macOS、Linux、Windows）。",
+    key_concepts=["技能", "apple-notes", "apple-reminders", "findmy", "imessage", "macos-computer-use", "claude-code", "codex", "hermes-agent skill", "opencode", "architecture-diagram", "ascii-art", "ascii-video", "内置技能", "平台支持"],
+    code_snippets=[],
+    audience="intermediate",
+    prerequisites="已安装 Hermes CLI",
+    related_pages=["/docs/zh-Hans/reference/skills-catalog", "/docs/zh-Hans/reference/optional-skills-catalog", "/docs/zh-Hans/user-guide/skills"],
+    embedding_keywords="hermes 技能中心 内置技能 apple notes reminders findmy imessage macos computer use claude code codex opencode architecture diagram ascii art ascii video 创意 ai 代理 平台支持 macos linux windows 中级"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/user-stories",
+    title="User Stories & Use Cases",
+    h1="User Stories & Use Cases",
+    category="user-guide",
+    summary="收集 Hermes Agent 社区的真实使用案例，内容来自 X、GitHub、Reddit、Hacker News、YouTube、博客和播客。共 99 个故事，分为 15 个类别：开发工作流（16）、个人助理（16）、集成（15）、元与生态（10）、商业运营（8）、企业（6）、内容创作（5）、研究（4）、消息（4）、成本优化（4）、交易与市场（3）、创意（3）、隐私与自托管（3）、营销（1）和通用（1）。",
+    key_concepts=["用户故事", "使用案例", "社区", "开发工作流", "个人助理", "集成", "元与生态", "商业运营", "企业", "内容创作", "研究", "消息", "成本优化", "交易与市场", "创意"],
+    code_snippets=[],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/zh-Hans/getting-started/quickstart", "/docs/zh-Hans/skills", "/docs/zh-Hans/integrations"],
+    embedding_keywords="hermes 用户故事 使用案例 社区 示例 开发工作流 个人助理 集成 商业运营 企业 内容创作 研究 消息 成本优化 交易 创意 隐私 自托管 营销 初学者 灵感"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/cli-commands",
+    title="CLI Commands Reference",
+    h1="CLI Commands Reference",
+    category="reference",
+    summary="提供 Hermes 所有终端命令的完整参考。涵盖全局选项（--version、--profile、--resume、--continue、--worktree、--yolo、--pass-session-id、--ignore-user-config、--ignore-rules、--tui、--dev）和顶级命令：chat、model、fallback、gateway、setup、whatsapp、update、tools、skills、sessions、memory、cron、config、backup、profile、bus、voice、mcp、docs、web、evaluate、daemon、repl 等。",
+    key_concepts=["hermes chat", "hermes model", "hermes fallback", "hermes gateway", "hermes setup", "hermes update", "hermes tools", "hermes skills", "hermes config", "hermes profile", "hermes backup", "--profile", "--resume", "--yolo", "--tui", "COMMAND_REGISTRY"],
+    code_snippets=["hermes setup 设置命令", "hermes model 模型配置命令", "hermes update 更新命令", "hermes chat 聊天命令"],
+    audience="intermediate",
+    prerequisites="已安装 Hermes CLI",
+    related_pages=["/docs/zh-Hans/reference/slash-commands", "/docs/zh-Hans/reference/environment-variables", "/docs/zh-Hans/reference/profile-commands"],
+    embedding_keywords="hermes cli 命令参考 终端 hermes chat hermes model hermes gateway hermes setup hermes update hermes tools hermes skills hermes config hermes profile hermes backup 全局选项 --profile --resume --yolo --tui 命令注册表 中级"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/environment-variables",
+    title="Environment Variables",
+    h1="Environment Variables Reference",
+    category="reference",
+    summary="列出可在 ~/.hermes/.env 中配置的所有环境变量的完整参考。按 LLM 提供方（OPENROUTER_API_KEY、OPENROUTER_BASE_URL、HERMES_OPENROUTER_CACHE、ANTHROPIC_API_KEY、OPENAI_API_KEY、COPILOT_GITHUB_TOKEN、GH_TOKEN、GLM_API_KEY、KIMI_API_KEY 等）、网页搜索（FIRECRAWL_API_KEY、PARALLEL_API_KEY、TAVILY_API_KEY、EXA_API_KEY）、网关（TELEGRAM_BOT_TOKEN、DISCORD_BOT_TOKEN 等）、浏览器/Playwright、内存（HONCHO_API_KEY）、ACP 和功能标志分类组织。",
+    key_concepts=["OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "HERMES_OPENROUTER_CACHE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GLM_API_KEY", "KIMI_API_KEY", "FIRECRAWL_API_KEY", "TAVILY_API_KEY", "TELEGRAM_BOT_TOKEN", "HONCHO_API_KEY", "~/.hermes/.env", "hermes config set"],
+    code_snippets=["环境变量设置"],
+    audience="intermediate",
+    prerequisites="已安装 Hermes CLI",
+    related_pages=["/docs/zh-Hans/integrations/providers", "/docs/zh-Hans/reference/cli-commands", "/docs/zh-Hans/user-guide/configuration"],
+    embedding_keywords="hermes 环境变量参考 env vars .env openrouter api 密钥 anthropic openai copilot github token glm kimi firecrawl tavily telegram bot token honcho 内存 网关 浏览器 playwright 功能标志 配置 中级"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/faq",
+    title="FAQ & Troubleshooting",
+    h1="FAQ & Troubleshooting",
+    category="reference",
+    summary="提供 Hermes Agent 常见问题的快速解答和故障排除方法。涵盖支持的 LLM 提供方（OpenRouter、Nous Portal、OpenAI、Anthropic、Google、z.ai、Kimi、MiniMax、通过 Ollama/vLLM 的本地模型）、Windows 支持（推荐 WSL2）、通过 MCP 桥接控制 WSL2 中的 Chrome、Android/Termux、自定义端点、配置文件位置（~/.hermes/config.yaml）、更新方法等主题。",
+    key_concepts=["FAQ", "故障排除", "LLM 提供方", "OpenRouter", "Ollama", "vLLM", "WSL2", "Windows", "Android", "Termux", "MCP 桥接", "Chrome", "自定义端点", "config.yaml", "~/.hermes"],
+    code_snippets=["一行命令 curl 安装脚本", "WSL2 安装命令"],
+    audience="beginner",
+    prerequisites="",
+    related_pages=["/docs/zh-Hans/getting-started/installation", "/docs/zh-Hans/getting-started/quickstart", "/docs/zh-Hans/integrations/providers", "/docs/zh-Hans/reference/environment-variables"],
+    embedding_keywords="hermes 常见问题 故障排除 faq troubleshooting llm 提供方 openrouter ollama vllm wsl2 windows android termux mcp chrome 自定义端点 config.yaml 初学者 帮助 支持"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/mcp-config-reference",
+    title="MCP Config Reference",
+    h1="MCP Config Reference",
+    category="reference",
+    summary="MCP 服务器配置的精简参考手册。涵盖根配置结构（mcp_servers）、服务器键值（stdio 的 command/args/env；HTTP 的 url/headers；enabled、timeout、connect_timeout、tools、auth、sampling）、工具策略键（include、exclude、resources、prompts）以及用于白名单/黑名单过滤服务器原生 MCP 工具的过滤语义。",
+    key_concepts=["mcp_servers", "stdio", "HTTP", "command", "args", "env", "url", "headers", "enabled", "timeout", "connect_timeout", "tools", "include", "exclude", "resources", "prompts", "auth", "sampling", "OAuth 2.1", "PKCE"],
+    code_snippets=["YAML 配置示例", "MCP 服务器配置"],
+    audience="intermediate",
+    prerequisites="已安装 Hermes CLI",
+    related_pages=["/docs/zh-Hans/guides/use-mcp-with-hermes", "/docs/zh-Hans/integrations", "/docs/zh-Hans/reference/cli-commands"],
+    embedding_keywords="hermes mcp 配置参考 模型上下文协议 mcp_servers stdio http command args env url headers timeout tools include exclude resources prompts auth oauth pkce 中级"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/model-catalog",
+    title="Model Catalog",
+    h1="Model Catalog",
+    category="reference",
+    summary="说明 Hermes 如何从 JSON 清单获取 OpenRouter 和 Nous Portal 的精选模型列表。当清单无法访问时（离线、网络受阻、托管故障），Hermes 会静默回退到随 CLI 一起发布的仓库快照。Schema 包含 version、updated_at、metadata 和 providers 及其模型数组。每次合并到 main 分支时通过 deploy-site.yml GitHub Pages 流水线发布。",
+    key_concepts=["模型目录", "OpenRouter", "Nous Portal", "JSON 清单", "模型列表", "version", "updated_at", "metadata", "providers", "deploy-site.yml", "GitHub Pages", "离线回退", "快照"],
+    code_snippets=["JSON 配置示例"],
+    audience="intermediate",
+    prerequisites="已安装 Hermes CLI",
+    related_pages=["/docs/zh-Hans/integrations/providers", "/docs/zh-Hans/reference/cli-commands"],
+    embedding_keywords="hermes 模型目录 openrouter nous portal json 清单 模型列表 version metadata providers deploy-site.yml github pages 离线回退 快照 中级 参考"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/optional-skills-catalog",
+    title="Optional Skills Catalog",
+    h1="Optional Skills Catalog",
+    category="reference",
+    summary="列出随 hermes-agent 一起发布但默认未激活的可选技能，位于 optional-skills/ 目录下。通过 hermes skills install official/<category>/<skill> 安装，通过 hermes skills uninstall <skill-name> 卸载。类别包括自主 AI Agent（blackbox、honcho）、区块链（base、solana）、通信（one-three-one-rule）等。每个技能链接到包含完整定义、设置和用法的独立页面。",
+    key_concepts=["可选技能", "optional-skills/", "hermes skills install", "hermes skills uninstall", "blackbox", "honcho", "base", "solana", "one-three-one-rule", "official/<category>/<skill>"],
+    code_snippets=["技能安装命令", "技能卸载命令"],
+    audience="intermediate",
+    prerequisites="已安装 Hermes CLI",
+    related_pages=["/docs/zh-Hans/skills", "/docs/zh-Hans/reference/skills-catalog", "/docs/zh-Hans/user-guide/skills"],
+    embedding_keywords="hermes 可选技能目录 安装 卸载 blackbox honcho base solana one-three-one-rule official category skill 中级 参考"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/profile-commands",
+    title="Profile Commands Reference",
+    h1="Profile Commands Reference",
+    category="reference",
+    summary="涵盖 Hermes 配置文件管理所有命令的参考。子命令包括：list（显示活跃配置文件，以 * 标记）、use（设置活跃配置文件）、create（支持 --clone、--clone-all、--clone-from 选项）、delete、show、alias、rename、export（导出为 tar.gz）、import（从 tar.gz 导入）。配置文件允许为不同工作流或身份隔离配置、环境、技能和会话。",
+    key_concepts=["hermes profile", "hermes profile list", "hermes profile use", "hermes profile create", "hermes profile delete", "hermes profile export", "hermes profile import", "--clone", "--clone-all", "--clone-from", "tar.gz", "活跃配置文件"],
+    code_snippets=["配置文件管理命令"],
+    audience="intermediate",
+    prerequisites="已安装 Hermes CLI",
+    related_pages=["/docs/zh-Hans/reference/cli-commands", "/docs/zh-Hans/user-guide/configuration"],
+    embedding_keywords="hermes 配置文件命令参考 list use create delete show alias rename export import clone clone-all clone-from tar.gz 活跃配置文件 中级"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/skills-catalog",
+    title="Bundled Skills Catalog",
+    h1="Bundled Skills Catalog",
+    category="reference",
+    summary="列出 Hermes 安装时内置并复制到 ~/.hermes/skills/ 的技能库。技能在 hermes update 时同步，同时尊重本地删除和用户编辑。缺失技能可通过 hermes skills reset <name> --restore 恢复。类别包括：apple、autonomous-ai-agents、creative、data-analysis、devops、finance、home-automation、mlops、productivity、research、security、social、system、web 等。目录由 website/scripts/generate-skill-docs.py 重新生成。",
+    key_concepts=["内置技能", "~/.hermes/skills/", "hermes update", "hermes skills reset", "apple", "autonomous-ai-agents", "creative", "data-analysis", "devops", "finance", "home-automation", "mlops", "productivity", "research", "security", "social", "system", "web"],
+    code_snippets=["技能重置命令"],
+    audience="intermediate",
+    prerequisites="已安装 Hermes CLI",
+    related_pages=["/docs/zh-Hans/skills", "/docs/zh-Hans/reference/optional-skills-catalog", "/docs/zh-Hans/user-guide/skills"],
+    embedding_keywords="hermes 内置技能目录 bundled skills ~/.hermes/skills/ hermes update hermes skills reset apple creative devops finance home-automation mlops productivity research security social system web 中级 参考"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/slash-commands",
+    title="Slash Commands Reference",
+    h1="Slash Commands Reference",
+    category="reference",
+    summary="介绍交互式 CLI 和消息网关斜杠命令的参考。两者均由 hermes_cli/commands.py 中的 COMMAND_REGISTRY 驱动。会话命令：/new、/clear、/history、/save、/retry、/undo、/title、/compress、/rollback、/snapshot、/stop、/queue。工具命令：/tools、/skills。已安装技能在两个界面上都作为动态斜杠命令暴露。包含计划模式（/plan），将 Markdown 计划保存在 .hermes/plans/ 下。",
+    key_concepts=["/new", "/clear", "/history", "/save", "/retry", "/undo", "/title", "/compress", "/rollback", "/snapshot", "/stop", "/queue", "/tools", "/skills", "/plan", "COMMAND_REGISTRY", "cli.py", "gateway/run.py"],
+    code_snippets=[],
+    audience="intermediate",
+    prerequisites="已安装 Hermes CLI",
+    related_pages=["/docs/zh-Hans/reference/cli-commands", "/docs/zh-Hans/reference/tools-reference", "/docs/zh-Hans/user-guide/skills"],
+    embedding_keywords="hermes 斜杠命令参考 /new /clear /history /save /retry /undo /title /compress /rollback /snapshot /stop /queue /tools /skills /plan 命令注册表 cli 网关 中级"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/tools-reference",
+    title="Built-in Tools Reference",
+    h1="Built-in Tools Reference",
+    category="reference",
+    summary="按工具集分组记录 Hermes 全部 68 个内置工具的参考文档。浏览器工具：browser_back、browser_click、browser_console、browser_get_images、browser_navigate、browser_press、browser_scroll、browser_snapshot、browser_type、browser_vision。文件工具：read_file、write_file、patch、search_files。终端工具：bash、python。网页工具：web_search、web_extract。还包括 RL 工具、Home Assistant 工具、Feishu 工具、Spotify 工具、Yuanbao 工具、Discord 工具和 MCP 工具。",
+    key_concepts=["browser_back", "browser_click", "browser_navigate", "browser_snapshot", "browser_vision", "read_file", "write_file", "patch", "search_files", "bash", "python", "web_search", "web_extract", "68 个内置工具", "工具注册表", "工具集", "MCP 工具"],
+    code_snippets=[],
+    audience="advanced",
+    prerequisites="已安装 Hermes CLI",
+    related_pages=["/docs/zh-Hans/reference/toolsets-reference", "/docs/zh-Hans/integrations", "/docs/zh-Hans/user-guide/tools"],
+    embedding_keywords="hermes 内置工具参考 浏览器工具 文件工具 终端工具 网页工具 RL Home Assistant Feishu Spotify Yuanbao Discord MCP 工具注册表 68 个工具 高级"
+)
+
+make(
+    url="https://hermes-agent.nousresearch.com/docs/zh-Hans/reference/toolsets-reference",
+    title="Toolsets Reference",
+    h1="Toolsets Reference",
+    category="reference",
+    summary="介绍控制 Agent 能力的工具集配置方法。核心工具集：browser、file、terminal、web、voice、vision。复合工具集：debugging（file+terminal+web）、coding、research。平台工具集：hermes-cli（交互式 CLI 默认）、hermes-telegram、hermes-discord、hermes-slack。可按会话通过 --toolsets 配置，或按平台在 config.yaml 中配置。支持通过 hermes tools 的 curses UI 或会话中 /tools 命令进行交互式管理。",
+    key_concepts=["工具集", "核心工具集", "复合工具集", "平台工具集", "browser", "file", "terminal", "web", "voice", "vision", "debugging", "coding", "research", "hermes-cli", "hermes-telegram", "hermes-discord", "hermes-slack", "--toolsets", "config.yaml", "hermes tools"],
+    code_snippets=["工具集配置", "hermes tools 命令"],
+    audience="intermediate",
+    prerequisites="已安装 Hermes CLI",
+    related_pages=["/docs/zh-Hans/reference/tools-reference", "/docs/zh-Hans/reference/cli-commands", "/docs/zh-Hans/user-guide/tools"],
+    embedding_keywords="hermes 工具集参考 核心 复合 平台 浏览器 文件 终端 网页 语音 视觉 debugging coding research hermes-cli hermes-telegram hermes-discord hermes-slack --toolsets config.yaml 中级"
+)
+
+# ---------------------------------------------------------------------------
+# Write output
+# ---------------------------------------------------------------------------
+
+def main():
+    with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
+        json.dump(PAGES, f, ensure_ascii=False, indent=2)
+    print(f"Wrote {len(PAGES)} records to {OUTPUT_PATH}")
+
+if __name__ == "__main__":
+    main()

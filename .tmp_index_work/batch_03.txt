@@ -1,0 +1,5837 @@
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/delegation
+TITLE: Subagent Delegation | Hermes Agent
+H1: Subagent Delegation
+TEXT:
+On this page
+
+The 
+delegate_task
+ tool spawns child AIAgent instances with isolated context, restricted toolsets, and their own terminal sessions. Each child gets a fresh conversation and works independently — only its final summary enters the parent's context.
+
+Single Task
+​
+
+delegate_task
+(
+ goal
+=
+"Debug why tests fail"
+,
+ context
+=
+"Error: assertion in test_foo.py line 42"
+,
+ toolsets
+=
+[
+"terminal"
+,
+
+"file"
+]
+)
+
+Parallel Batch
+​
+
+Up to 3 concurrent subagents by default (configurable, no hard ceiling):
+
+delegate_task
+(
+tasks
+=
+[
+
+{
+"goal"
+:
+
+"Research topic A"
+,
+
+"toolsets"
+:
+
+[
+"web"
+]
+}
+,
+
+{
+"goal"
+:
+
+"Research topic B"
+,
+
+"toolsets"
+:
+
+[
+"web"
+]
+}
+,
+
+{
+"goal"
+:
+
+"Fix the build"
+,
+
+"toolsets"
+:
+
+[
+"terminal"
+,
+
+"file"
+]
+}
+]
+)
+
+How Subagent Context Works
+​
+
+Critical: Subagents Know Nothing
+Subagents start with a 
+completely fresh conversation
+. They have zero knowledge of the parent's conversation history, prior tool calls, or anything discussed before delegation. The subagent's only context comes from the 
+goal
+ and 
+context
+ fields the parent agent populates when it calls 
+delegate_task
+.
+
+This means the parent agent must pass 
+everything
+ the subagent needs in the call:
+
+# BAD - subagent has no idea what "the error" is
+delegate_task
+(
+goal
+=
+"Fix the error"
+)
+# GOOD - subagent has all context it needs
+delegate_task
+(
+ goal
+=
+"Fix the TypeError in api/handlers.py"
+,
+ context
+=
+"""The file api/handlers.py has a TypeError on line 47:
+ 'NoneType' object has no attribute 'get'.
+ The function process_request() receives a dict from parse_body(),
+ but parse_body() returns None when Content-Type is missing.
+ The project is at /home/user/myproject and uses Python 3.11."""
+)
+
+The subagent receives a focused system prompt built from your goal and context, instructing it to complete the task and provide a structured summary of what it did, what it found, any files modified, and any issues encountered.
+
+Practical Examples
+​
+
+Parallel Research
+​
+
+Research multiple topics simultaneously and collect summaries:
+
+delegate_task
+(
+tasks
+=
+[
+
+{
+
+"goal"
+:
+
+"Research the current state of WebAssembly in 2025"
+,
+
+"context"
+:
+
+"Focus on: browser support, non-browser runtimes, language support"
+,
+
+"toolsets"
+:
+
+[
+"web"
+]
+
+}
+,
+
+{
+
+"goal"
+:
+
+"Research the current state of RISC-V adoption in 2025"
+,
+
+"context"
+:
+
+"Focus on: server chips, embedded systems, software ecosystem"
+,
+
+"toolsets"
+:
+
+[
+"web"
+]
+
+}
+,
+
+{
+
+"goal"
+:
+
+"Research quantum computing progress in 2025"
+,
+
+"context"
+:
+
+"Focus on: error correction breakthroughs, practical applications, key players"
+,
+
+"toolsets"
+:
+
+[
+"web"
+]
+
+}
+]
+)
+
+Code Review + Fix
+​
+
+Delegate a review-and-fix workflow to a fresh context:
+
+delegate_task
+(
+ goal
+=
+"Review the authentication module for security issues and fix any found"
+,
+ context
+=
+"""Project at /home/user/webapp.
+ Auth module files: src/auth/login.py, src/auth/jwt.py, src/auth/middleware.py.
+ The project uses Flask, PyJWT, and bcrypt.
+ Focus on: SQL injection, JWT validation, password handling, session management.
+ Fix any issues found and run the test suite (pytest tests/auth/)."""
+,
+ toolsets
+=
+[
+"terminal"
+,
+
+"file"
+]
+)
+
+Multi-File Refactoring
+​
+
+Delegate a large refactoring task that would flood the parent's context:
+
+delegate_task
+(
+ goal
+=
+"Refactor all Python files in src/ to replace print() with proper logging"
+,
+ context
+=
+"""Project at /home/user/myproject.
+ Use the 'logging' module with logger = logging.getLogger(__name__).
+ Replace print() calls with appropriate log levels:
+ - print(f"Error: ...") -> logger.error(...)
+ - print(f"Warning: ...") -> logger.warning(...)
+ - print(f"Debug: ...") -> logger.debug(...)
+ - Other prints -> logger.info(...)
+ Don't change print() in test files or CLI output.
+ Run pytest after to verify nothing broke."""
+,
+ toolsets
+=
+[
+"terminal"
+,
+
+"file"
+]
+)
+
+Batch Mode Details
+​
+
+When you provide a 
+tasks
+ array, subagents run in 
+parallel
+ using a thread pool:
+
+Maximum concurrency:
+ 3 tasks by default (configurable via 
+delegation.max_concurrent_children
+ or the 
+DELEGATION_MAX_CONCURRENT_CHILDREN
+ env var; floor of 1, no hard ceiling). Batches larger than the limit return a tool error rather than being silently truncated.
+
+Thread pool:
+ Uses 
+ThreadPoolExecutor
+ with the configured concurrency limit as max workers
+
+Progress display:
+ In CLI mode, a tree-view shows tool calls from each subagent in real-time with per-task completion lines. In gateway mode, progress is batched and relayed to the parent's progress callback
+
+Result ordering:
+ Results are sorted by task index to match input order regardless of completion order
+
+Interrupt propagation:
+ Interrupting the parent (e.g., sending a new message) interrupts all active children
+
+Single-task delegation runs directly without thread pool overhead.
+
+Model Override
+​
+
+You can configure a different model for subagents via 
+config.yaml
+ — useful for delegating simple tasks to cheaper/faster models:
+
+# In ~/.hermes/config.yaml
+delegation
+:
+
+model
+:
+
+"google/gemini-flash-2.0"
+
+# Cheaper model for subagents
+
+provider
+:
+
+"openrouter"
+
+# Optional: route subagents to a different provider
+
+If omitted, subagents use the same model as the parent.
+
+Toolset Selection Tips
+​
+
+The 
+toolsets
+ parameter controls what tools the subagent has access to. Choose based on the task:
+
+Toolset Pattern
+Use Case
+["terminal", "file"]
+Code work, debugging, file editing, builds
+["web"]
+Research, fact-checking, documentation lookup
+["terminal", "file", "web"]
+Full-stack tasks (default)
+["file"]
+Read-only analysis, code review without execution
+["terminal"]
+System administration, process management
+
+Certain toolsets are blocked for subagents regardless of what you specify:
+
+delegation
+ — blocked for leaf subagents (the default). Retained for 
+role="orchestrator"
+ children, bounded by 
+max_spawn_depth
+ — see 
+Depth Limit and Nested Orchestration
+ below.
+
+clarify
+ — subagents cannot interact with the user
+
+memory
+ — no writes to shared persistent memory
+
+code_execution
+ — children should reason step-by-step
+
+send_message
+ — no cross-platform side effects (e.g., sending Telegram messages)
+
+Max Iterations
+​
+
+Each subagent has an iteration limit (default: 50) that controls how many tool-calling turns it can take:
+
+delegate_task
+(
+ goal
+=
+"Quick file check"
+,
+ context
+=
+"Check if /etc/nginx/nginx.conf exists and print its first 10 lines"
+,
+ max_iterations
+=
+10
+
+# Simple task, don't need many turns
+)
+
+Child Timeout
+​
+
+Subagents are killed as stuck if they go quiet for more than 
+delegation.child_timeout_seconds
+ wall-clock seconds. The default is 
+600
+ (10 minutes) — bumped up from 300s in earlier releases because high-reasoning models on non-trivial research tasks were getting killed mid-think. Tune it per-install:
+
+delegation
+:
+
+child_timeout_seconds
+:
+
+600
+
+# default
+
+Lower it for fast local models; raise it for slow reasoning models on hard problems. The timer resets every time the child makes an API call or tool call — only genuinely idle workers trigger the kill.
+
+Diagnostic dump on zero-call timeout
+If a subagent times out having made 
+zero
+ API calls (usually: provider unreachable, auth failure, or tool-schema rejection), 
+delegate_task
+ writes a structured diagnostic to 
+~/.hermes/logs/subagent-timeout-<session>-<timestamp>.log
+ containing the subagent's config snapshot, credential-resolution trace, and any early error messages. Much easier to root-cause than the previous silent-timeout behavior.
+
+Monitoring Running Subagents (
+/agents
+)
+​
+
+The TUI ships a 
+/agents
+ overlay (alias 
+/tasks
+) that turns recursive 
+delegate_task
+ fan-out into a first-class audit surface:
+
+Live tree view of running and recently-finished subagents, grouped by parent
+
+Per-branch cost, token, and file-touched rollups
+
+Kill and pause controls — cancel a specific subagent mid-flight without interrupting its siblings
+
+Post-hoc review: step through each subagent's turn-by-turn history even after they've returned to the parent
+
+The classic CLI just prints 
+/agents
+ as a text summary; the TUI is where the overlay shines. See 
+TUI — Slash commands
+.
+
+Depth Limit and Nested Orchestration
+​
+
+By default, delegation is 
+flat
+: a parent (depth 0) spawns children (depth 1), and those children cannot delegate further. This prevents runaway recursive delegation.
+
+For multi-stage workflows (research → synthesis, or parallel orchestration over sub-problems), a parent can spawn 
+orchestrator
+ children that 
+can
+ delegate their own workers:
+
+delegate_task
+(
+ goal
+=
+"Survey three code review approaches and recommend one"
+,
+ role
+=
+"orchestrator"
+,
+
+# Allows this child to spawn its own workers
+ context
+=
+"..."
+,
+)
+
+role="leaf"
+ (default): child cannot delegate further — identical to the flat-delegation behavior.
+
+role="orchestrator"
+: child retains the 
+delegation
+ toolset. Gated by 
+delegation.max_spawn_depth
+ (default 
+1
+ = flat, so 
+role="orchestrator"
+ is a no-op at defaults). Raise 
+max_spawn_depth
+ to 2 to allow orchestrator children to spawn leaf grandchildren; 3 for three levels (cap).
+
+delegation.orchestrator_enabled: false
+: global kill switch that forces every child to 
+leaf
+ regardless of the 
+role
+ parameter.
+
+Cost warning:
+ With 
+max_spawn_depth: 3
+ and 
+max_concurrent_children: 3
+, the tree can reach 3×3×3 = 27 concurrent leaf agents. Each extra level multiplies spend — raise 
+max_spawn_depth
+ intentionally.
+
+Lifetime and Durability
+​
+
+delegate_task is synchronous — not durable
+delegate_task
+ runs 
+inside the parent's current turn
+. It blocks the parent until every child finishes (or is cancelled). It is 
+not
+ a background job queue:
+
+If the parent is interrupted (user sends a new message, 
+/stop
+, 
+/new
+), all active children are cancelled and return 
+status="interrupted"
+. Their in-progress work is discarded.
+
+Children do 
+not
+ continue running after the parent turn ends.
+
+Cancelled children return a structured result (
+status="interrupted"
+, 
+exit_reason="interrupted"
+), but because the parent was interrupted too, that result often never makes it into a user-visible reply.
+
+For 
+durable long-running work
+ that must survive interrupts or outlive the current turn, use:
+
+cronjob
+ (action=
+create
+) — schedules a separate agent run; immune to parent-turn interrupts.
+
+terminal(background=True, notify_on_complete=True)
+ — long-running shell commands that keep running while the agent does other things.
+
+Key Properties
+​
+
+Each subagent gets its 
+own terminal session
+ (separate from the parent)
+
+Nested delegation is opt-in
+ — only 
+role="orchestrator"
+ children can delegate further, and only when 
+max_spawn_depth
+ is raised from its default of 1 (flat). Disable globally with 
+orchestrator_enabled: false
+.
+
+Leaf subagents 
+cannot
+ call: 
+delegate_task
+, 
+clarify
+, 
+memory
+, 
+send_message
+, 
+execute_code
+. Orchestrator subagents retain 
+delegate_task
+ but still cannot use the other four.
+
+Interrupt propagation
+ — interrupting the parent interrupts all active children (including grandchildren under orchestrators)
+
+Only the final summary enters the parent's context, keeping token usage efficient
+
+Subagents inherit the parent's 
+API key, provider configuration, and credential pool
+ (enabling key rotation on rate limits)
+
+Delegation vs execute_code
+​
+
+Factor
+delegate_task
+execute_code
+Reasoning
+Full LLM reasoning loop
+Just Python code execution
+Context
+Fresh isolated conversation
+No conversation, just script
+Tool access
+All non-blocked tools with reasoning
+7 tools via RPC, no reasoning
+Parallelism
+3 concurrent subagents by default (configurable)
+Single script
+Best for
+Complex tasks needing judgment
+Mechanical multi-step pipelines
+Token cost
+Higher (full LLM loop)
+Lower (only stdout returned)
+User interaction
+None (subagents can't clarify)
+None
+
+Rule of thumb:
+ Use 
+delegate_task
+ when the subtask requires reasoning, judgment, or multi-step problem solving. Use 
+execute_code
+ when you need mechanical data processing or scripted workflows.
+
+Configuration
+​
+
+# In ~/.hermes/config.yaml
+delegation
+:
+
+max_iterations
+:
+
+50
+
+# Max turns per child (default: 50)
+
+# max_concurrent_children: 3 # Parallel children per batch (default: 3)
+
+# max_spawn_depth: 1 # Tree depth (1-3, default 1 = flat). Raise to 2 to allow orchestrator children to spawn leaves; 3 for three levels.
+
+# orchestrator_enabled: true # Disable to force all children to leaf role.
+
+model
+:
+
+"google/gemini-3-flash-preview"
+
+# Optional provider/model override
+
+provider
+:
+
+"openrouter"
+
+# Optional built-in provider
+# Or use a direct custom endpoint instead of provider:
+delegation
+:
+
+model
+:
+
+"qwen2.5-coder"
+
+base_url
+:
+
+"http://localhost:1234/v1"
+
+api_key
+:
+
+"local-key"
+
+tip
+The agent handles delegation automatically based on the task complexity. You don't need to explicitly ask it to delegate — it will do so when it makes sense.
+========================================
+CODE_BLOCKS:
+delegate_task(    goal="Debug why tests fail",    context="Error: assertion in test_foo.py line 42",    toolsets=["terminal", "file"])
+
+delegate_task(tasks=[    {"goal": "Research topic A", "toolsets": ["web"]},    {"goal": "Research topic B", "toolsets": ["web"]},    {"goal": "Fix the build", "toolsets": ["terminal", "file"]}])
+
+# BAD - subagent has no idea what "the error" isdelegate_task(goal="Fix the error")# GOOD - subagent has all context it needsdelegate_task(    goal="Fix the TypeError in api/handlers.py",    context="""The file api/handlers.py has a TypeError on line 47:    'NoneType' object has no attribute 'get'.    The function process_request() receives a dict from parse_body(),    but parse_body() returns None when Content-Type is missing.    The project is at /home/user/myproject and uses Python 3.11.""")
+
+delegate_task(tasks=[    {        "goal": "Research the current state of WebAssembly in 2025",        "context": "Focus on: browser support, non-browser runtimes, language support",        "toolsets": ["web"]    },    {        "goal": "Research the current state of RISC-V adoption in 2025",        "context": "Focus on: server chips, embedded systems, software ecosystem",        "toolsets": ["web"]    },    {        "goal": "Research quantum computing progress in 2025",        "context": "Focus o
+
+delegate_task(    goal="Review the authentication module for security issues and fix any found",    context="""Project at /home/user/webapp.    Auth module files: src/auth/login.py, src/auth/jwt.py, src/auth/middleware.py.    The project uses Flask, PyJWT, and bcrypt.    Focus on: SQL injection, JWT validation, password handling, session management.    Fix any issues found and run the test suite (pytest tests/auth/).""",    toolsets=["terminal", "file"])
+
+delegate_task(    goal="Refactor all Python files in src/ to replace print() with proper logging",    context="""Project at /home/user/myproject.    Use the 'logging' module with logger = logging.getLogger(__name__).    Replace print() calls with appropriate log levels:    - print(f"Error: ...") -> logger.error(...)    - print(f"Warning: ...") -> logger.warning(...)    - print(f"Debug: ...") -> logger.debug(...)    - Other prints -> logger.info(...)    Don't change print() in test files or CLI o
+
+# In ~/.hermes/config.yamldelegation:  model: "google/gemini-flash-2.0"    # Cheaper model for subagents  provider: "openrouter"              # Optional: route subagents to a different provider
+
+delegate_task(    goal="Quick file check",    context="Check if /etc/nginx/nginx.conf exists and print its first 10 lines",    max_iterations=10  # Simple task, don't need many turns)
+
+delegation:  child_timeout_seconds: 600   # default
+
+delegate_task(    goal="Survey three code review approaches and recommend one",    role="orchestrator",  # Allows this child to spawn its own workers    context="...",)
+
+# In ~/.hermes/config.yamldelegation:  max_iterations: 50                        # Max turns per child (default: 50)  # max_concurrent_children: 3              # Parallel children per batch (default: 3)  # max_spawn_depth: 1                      # Tree depth (1-3, default 1 = flat). Raise to 2 to allow orchestrator children to spawn leaves; 3 for three levels.  # orchestrator_enabled: true              # Disable to force all children to leaf role.  model: "google/gemini-3-flash-preview"         
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/extending-the-dashboard
+TITLE: Extending the Dashboard | Hermes Agent
+H1: Extending the Dashboard
+TEXT:
+On this page
+
+The Hermes web dashboard (
+hermes dashboard
+) is built to be reskinned and extended without forking the codebase. Three layers are exposed:
+
+Themes
+ — YAML files that repaint the dashboard's palette, typography, layout, and per-component chrome. Drop a file in 
+~/.hermes/dashboard-themes/
+; it appears in the theme switcher.
+
+UI plugins
+ — a directory with 
+manifest.json
+ + a JavaScript bundle that registers a tab, replaces a built-in page, augments one via page-scoped slots, or injects components into named shell slots.
+
+Backend plugins
+ — a Python file inside that plugin directory that exposes a FastAPI 
+router
+; routes are mounted under 
+/api/plugins/<name>/
+ and called from the plugin's UI.
+
+All three are 
+drop-in at runtime
+: no repo clone, no 
+npm run build
+, no patching the dashboard source. This page is the canonical reference for all three.
+
+If you just want to use the dashboard, see 
+Web Dashboard
+. If you want to reskin the terminal CLI (not the web dashboard), see 
+Skins & Themes
+ — the CLI skin system is unrelated to dashboard themes.
+
+How the pieces compose
+Themes and plugins are independent but synergistic. A theme can stand alone (just a YAML file). A plugin can stand alone (just a tab). Together they let you build a complete visual reskin with custom HUDs — the bundled 
+strike-freedom-cockpit
+ demo does exactly that. See 
+Combined theme + plugin demo
+.
+
+Table of contents
+​
+
+Themes
+
+Quick start — your first theme
+
+Palette, typography, layout
+
+Layout variants
+
+Theme assets (images as CSS vars)
+
+Component chrome overrides
+
+Color overrides
+
+Raw 
+customCSS
+
+Built-in themes
+
+Full theme YAML reference
+
+Plugins
+
+Quick start — your first plugin
+
+Directory layout
+
+Manifest reference
+
+The Plugin SDK
+
+Shell slots
+
+Replacing built-in pages (
+tab.override
+)
+
+Augmenting built-in pages (page-scoped slots)
+
+Slot-only plugins (
+tab.hidden
+)
+
+Backend API routes
+
+Custom CSS per plugin
+
+Plugin discovery & reload
+
+Combined theme + plugin demo
+
+API reference
+
+Troubleshooting
+
+Themes
+​
+
+Themes are YAML files stored in 
+~/.hermes/dashboard-themes/
+. The file name doesn't matter (the theme's 
+name:
+ field is what the system uses), but convention is 
+<name>.yaml
+. Every field is optional — missing keys fall back to the built-in 
+default
+ theme, so a theme can be as small as one color.
+
+Quick start — your first theme
+​
+
+mkdir
+
+-p
+ ~/.hermes/dashboard-themes
+
+# ~/.hermes/dashboard-themes/neon.yaml
+name
+:
+ neon
+label
+:
+ Neon
+description
+:
+ Pure magenta on black
+palette
+:
+
+background
+:
+
+"#000000"
+
+midground
+:
+
+"#ff00ff"
+
+Refresh the dashboard. Click the palette icon in the header and pick 
+Neon
+. The background goes black, text and accents go magenta, and every derived color (card, border, muted, ring, etc.) is recomputed from that 2-color triplet via 
+color-mix()
+ in CSS.
+
+That's the whole onboarding: one file, two colors. Everything below is optional refinement.
+
+Palette, typography, layout
+​
+
+These three blocks are the heart of a theme. Each is independent — override one, leave the others.
+
+Palette (3-layer)
+​
+
+The palette is a triplet of color layers plus a warm-glow vignette color and a noise-grain multiplier. The dashboard's design-system cascade derives every shadcn-compatible token (card, popover, muted, border, primary, destructive, ring, etc.) from this triplet via CSS 
+color-mix()
+. Overriding three colors cascades into the whole UI.
+
+Key
+Description
+palette.background
+Deepest canvas color — typically near-black. Drives the page background and card fill.
+palette.midground
+Primary text and accent. Most UI chrome reads this (foreground text, button outlines, focus rings).
+palette.foreground
+Top-layer highlight. The default theme sets this to white at alpha 0 (invisible); themes that want a bright accent on top can raise its alpha.
+palette.warmGlow
+rgba(...)
+ string used as the vignette color by 
+<Backdrop />
+.
+palette.noiseOpacity
+0–1.2 multiplier on the grain overlay. Lower = softer, higher = grittier.
+
+Each layer accepts either 
+{hex: "#RRGGBB", alpha: 0.0–1.0}
+ or a bare hex string (alpha defaults to 1.0).
+
+palette
+:
+
+background
+:
+
+hex
+:
+
+"#05091a"
+
+alpha
+:
+
+1.0
+
+midground
+:
+
+"#d8f0ff"
+
+# bare hex, alpha = 1.0
+
+foreground
+:
+
+hex
+:
+
+"#ffffff"
+
+alpha
+:
+
+0
+
+# invisible top layer
+
+warmGlow
+:
+
+"rgba(255, 199, 55, 0.24)"
+
+noiseOpacity
+:
+
+0.7
+
+Typography
+​
+
+Key
+Type
+Description
+fontSans
+string
+CSS font-family stack for body copy (applied to 
+html
+, 
+body
+).
+fontMono
+string
+CSS font-family stack for code blocks, 
+<code>
+, 
+.font-mono
+ utilities.
+fontDisplay
+string
+Optional heading/display stack. Falls back to 
+fontSans
+.
+fontUrl
+string
+Optional external stylesheet URL. Injected as 
+<link rel="stylesheet">
+ in 
+<head>
+ on theme switch. Same URL is never injected twice. Works with Google Fonts, Bunny Fonts, self-hosted 
+@font-face
+ sheets — anything linkable.
+baseSize
+string
+Root font size — controls the rem scale. E.g. 
+"14px"
+, 
+"16px"
+.
+lineHeight
+string
+Default line-height. E.g. 
+"1.5"
+, 
+"1.65"
+.
+letterSpacing
+string
+Default letter-spacing. E.g. 
+"0"
+, 
+"0.01em"
+, 
+"-0.01em"
+.
+
+typography
+:
+
+fontSans
+:
+
+'"Orbitron", "Eurostile", "Impact", sans-serif'
+
+fontMono
+:
+
+'"Share Tech Mono", ui-monospace, monospace'
+
+fontDisplay
+:
+
+'"Orbitron", "Eurostile", sans-serif'
+
+fontUrl
+:
+
+"https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Share+Tech+Mono&display=swap"
+
+baseSize
+:
+
+"14px"
+
+lineHeight
+:
+
+"1.5"
+
+letterSpacing
+:
+
+"0.04em"
+
+Layout
+​
+
+Key
+Values
+Description
+radius
+any CSS length (
+"0"
+, 
+"0.25rem"
+, 
+"0.5rem"
+, 
+"1rem"
+, ...)
+Corner-radius token. Maps to 
+--radius
+ and cascades into 
+--radius-sm/md/lg/xl
+ — every rounded element shifts together.
+density
+compact
+ | 
+comfortable
+ | 
+spacious
+Spacing multiplier applied as the 
+--spacing-mul
+ CSS var. 
+compact = 0.85×
+, 
+comfortable = 1.0×
+ (default), 
+spacious = 1.2×
+. Scales Tailwind's base spacing, so padding, gap, and space-between utilities all shift proportionally.
+
+layout
+:
+
+radius
+:
+
+"0"
+
+density
+:
+ compact
+
+Layout variants
+​
+
+layoutVariant
+ picks the overall shell layout. Defaults to 
+"standard"
+ when absent.
+
+Variant
+Behaviour
+standard
+Single column, 1600px max-width (default).
+cockpit
+Left sidebar rail (260px) + main content. Populated by plugins via the 
+sidebar
+ slot — see 
+Shell slots
+. Without a plugin the rail shows a placeholder.
+tiled
+Drops the max-width clamp so pages can use the full viewport width.
+
+layoutVariant
+:
+ cockpit
+
+The current variant is exposed as 
+document.documentElement.dataset.layoutVariant
+, so raw CSS in 
+customCSS
+ can target it via 
+:root[data-layout-variant="cockpit"] ...
+.
+
+Theme assets (images as CSS vars)
+​
+
+Ship artwork URLs with a theme. Each named slot becomes a CSS var (
+--theme-asset-<name>
+) that the built-in shell and any plugin can read. The 
+bg
+ slot is automatically wired into the backdrop; other slots are plugin-facing.
+
+assets
+:
+
+bg
+:
+
+"https://example.com/hero-bg.jpg"
+
+# auto-wired into <Backdrop />
+
+hero
+:
+
+"/my-images/strike-freedom.png"
+
+# for plugin sidebars
+
+crest
+:
+
+"/my-images/crest.svg"
+
+# for header-left plugins
+
+logo
+:
+
+"/my-images/logo.png"
+
+sidebar
+:
+
+"/my-images/rail.png"
+
+header
+:
+
+"/my-images/header-art.png"
+
+custom
+:
+
+scanLines
+:
+
+"/my-images/scanlines.png"
+
+# → --theme-asset-custom-scanLines
+
+Values accept:
+
+Bare URLs — wrapped in 
+url(...)
+ automatically.
+
+Pre-wrapped 
+url(...)
+, 
+linear-gradient(...)
+, 
+radial-gradient(...)
+ expressions — used as-is.
+
+"none"
+ — explicit opt-out.
+
+Every asset is also emitted as 
+--theme-asset-<name>-raw
+ (the unwrapped URL), in case a plugin needs to pass it to 
+<img src>
+ instead of 
+background-image
+.
+
+Plugins read these with plain CSS or JS:
+
+// In a plugin slot
+const
+ hero 
+=
+
+getComputedStyle
+(
+document
+.
+documentElement
+)
+
+.
+getPropertyValue
+(
+"--theme-asset-hero"
+)
+.
+trim
+(
+)
+;
+
+Component chrome overrides
+​
+
+componentStyles
+ restyles individual shell components without writing CSS selectors. Each bucket's entries become CSS vars (
+--component-<bucket>-<kebab-property>
+) that the shell's shared components read. So 
+card:
+ overrides apply to every 
+<Card>
+, 
+header:
+ to the app bar, etc.
+
+componentStyles
+:
+
+card
+:
+
+clipPath
+:
+
+"polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px)"
+
+background
+:
+
+"linear-gradient(180deg, rgba(10, 22, 52, 0.85), rgba(5, 9, 26, 0.92))"
+
+boxShadow
+:
+
+"inset 0 0 0 1px rgba(64, 200, 255, 0.28)"
+
+header
+:
+
+background
+:
+
+"linear-gradient(180deg, rgba(16, 32, 72, 0.95), rgba(5, 9, 26, 0.9))"
+
+tab
+:
+
+clipPath
+:
+
+"polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)"
+
+sidebar
+:
+
+{
+}
+
+backdrop
+:
+
+{
+}
+
+footer
+:
+
+{
+}
+
+progress
+:
+
+{
+}
+
+badge
+:
+
+{
+}
+
+page
+:
+
+{
+}
+
+Supported buckets: 
+card
+, 
+header
+, 
+footer
+, 
+sidebar
+, 
+tab
+, 
+progress
+, 
+badge
+, 
+backdrop
+, 
+page
+.
+
+Property names use camelCase (
+clipPath
+) and are emitted as kebab (
+clip-path
+). Values are plain CSS strings — anything CSS accepts (
+clip-path
+, 
+border-image
+, 
+background
+, 
+box-shadow
+, 
+animation
+, ...).
+
+Color overrides
+​
+
+Most themes won't need this — the 3-layer palette derives every shadcn token. Use 
+colorOverrides
+ when you want a specific accent the derivation won't produce (a softer destructive red for a pastel theme, a specific success green for a brand).
+
+colorOverrides
+:
+
+primary
+:
+
+"#ffce3a"
+
+primaryForeground
+:
+
+"#05091a"
+
+accent
+:
+
+"#3fd3ff"
+
+ring
+:
+
+"#3fd3ff"
+
+destructive
+:
+
+"#ff3a5e"
+
+border
+:
+
+"rgba(64, 200, 255, 0.28)"
+
+Supported keys: 
+card
+, 
+cardForeground
+, 
+popover
+, 
+popoverForeground
+, 
+primary
+, 
+primaryForeground
+, 
+secondary
+, 
+secondaryForeground
+, 
+muted
+, 
+mutedForeground
+, 
+accent
+, 
+accentForeground
+, 
+destructive
+, 
+destructiveForeground
+, 
+success
+, 
+warning
+, 
+border
+, 
+input
+, 
+ring
+.
+
+Each key maps 1:1 to the 
+--color-<kebab>
+ CSS var (e.g. 
+primaryForeground
+ → 
+--color-primary-foreground
+). Any key set here wins over the palette cascade for the active theme only — switching to another theme clears the overrides.
+
+Raw 
+customCSS
+​
+
+For selector-level chrome that 
+componentStyles
+ can't express — pseudo-elements, animations, media queries, theme-scoped overrides — drop raw CSS into 
+customCSS
+:
+
+customCSS
+:
+
+|
+ /* Scanline overlay — only visible when cockpit variant is active. */
+ :root[data-layout-variant="cockpit"] body::before {
+ content: "";
+ position: fixed;
+ inset: 0;
+ pointer-events: none;
+ z-index: 100;
+ background: repeating-linear-gradient(to bottom,
+ transparent 0px, transparent 2px,
+ rgba(64, 200, 255, 0.035) 3px, rgba(64, 200, 255, 0.035) 4px);
+ mix-blend-mode: screen;
+ }
+
+The CSS is injected as a single scoped 
+<style data-hermes-theme-css>
+ tag on theme apply and cleaned up on theme switch. 
+Capped at 32 KiB per theme.
+
+Built-in themes
+​
+
+Each built-in ships its own palette, typography, and layout — switching produces visible changes beyond color alone.
+
+Theme
+Palette
+Typography
+Layout
+Hermes Teal
+ (
+default
+)
+Dark teal + cream
+System stack, 15px
+0.5rem radius, comfortable
+Hermes Teal (Large)
+ (
+default-large
+)
+Same as default
+System stack, 18px, line-height 1.65
+0.5rem radius, spacious
+Midnight
+ (
+midnight
+)
+Deep blue-violet
+Inter + JetBrains Mono, 14px
+0.75rem radius, comfortable
+Ember
+ (
+ember
+)
+Warm crimson + bronze
+Spectral (serif) + IBM Plex Mono, 15px
+0.25rem radius, comfortable
+Mono
+ (
+mono
+)
+Grayscale
+IBM Plex Sans + IBM Plex Mono, 13px
+0 radius, compact
+Cyberpunk
+ (
+cyberpunk
+)
+Neon green on black
+Share Tech Mono everywhere, 14px
+0 radius, compact
+Rosé
+ (
+rose
+)
+Pink + ivory
+Fraunces (serif) + DM Mono, 16px
+1rem radius, spacious
+
+Themes that reference Google Fonts (all except Hermes Teal) load the stylesheet on demand — the first time you switch to them a 
+<link>
+ tag is injected into 
+<head>
+.
+
+Full theme YAML reference
+​
+
+Every knob in one file — copy and trim what you don't need:
+
+# ~/.hermes/dashboard-themes/ocean.yaml
+name
+:
+ ocean
+label
+:
+ Ocean Deep
+description
+:
+ Deep sea blues with coral accents
+# 3-layer palette (accepts {hex, alpha} or bare hex)
+palette
+:
+
+background
+:
+
+hex
+:
+
+"#0a1628"
+
+alpha
+:
+
+1.0
+
+midground
+:
+
+hex
+:
+
+"#a8d0ff"
+
+alpha
+:
+
+1.0
+
+foreground
+:
+
+hex
+:
+
+"#ffffff"
+
+alpha
+:
+
+0.0
+
+warmGlow
+:
+
+"rgba(255, 107, 107, 0.35)"
+
+noiseOpacity
+:
+
+0.7
+typography
+:
+
+fontSans
+:
+
+"Poppins, system-ui, sans-serif"
+
+fontMono
+:
+
+"Fira Code, ui-monospace, monospace"
+
+fontDisplay
+:
+
+"Poppins, system-ui, sans-serif"
+
+# optional
+
+fontUrl
+:
+
+"https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Fira+Code:wght@400;500&display=swap"
+
+baseSize
+:
+
+"15px"
+
+lineHeight
+:
+
+"1.6"
+
+letterSpacing
+:
+
+"-0.003em"
+layout
+:
+
+radius
+:
+
+"0.75rem"
+
+density
+:
+ comfortable
+layoutVariant
+:
+ standard 
+# standard | cockpit | tiled
+assets
+:
+
+bg
+:
+
+"https://example.com/ocean-bg.jpg"
+
+hero
+:
+
+"/my-images/kraken.png"
+
+crest
+:
+
+"/my-images/anchor.svg"
+
+logo
+:
+
+"/my-images/logo.png"
+
+custom
+:
+
+pattern
+:
+
+"/my-images/waves.svg"
+componentStyles
+:
+
+card
+:
+
+boxShadow
+:
+
+"inset 0 0 0 1px rgba(168, 208, 255, 0.18)"
+
+header
+:
+
+background
+:
+
+"linear-gradient(180deg, rgba(10, 22, 40, 0.95), rgba(5, 9, 26, 0.9))"
+colorOverrides
+:
+
+destructive
+:
+
+"#ff6b6b"
+
+ring
+:
+
+"#ff6b6b"
+customCSS
+:
+
+|
+ /* Any additional selector-level tweaks */
+
+Refresh the dashboard after creating the file. Switch themes live from the header bar — click the palette icon. Selection persists to 
+config.yaml
+ under 
+dashboard.theme
+ and is restored on reload.
+
+Plugins
+​
+
+A dashboard plugin is a directory with a 
+manifest.json
+, a pre-built JS bundle, and optionally a CSS file and a Python file with FastAPI routes. Plugins live next to other Hermes plugins in 
+~/.hermes/plugins/<name>/
+ — the dashboard extension is a 
+dashboard/
+ subfolder inside that plugin directory, so one plugin can extend both the CLI/gateway and the dashboard from a single install.
+
+Plugins don't bundle React or UI components. They use the 
+Plugin SDK
+ exposed on 
+window.__HERMES_PLUGIN_SDK__
+. This keeps plugin bundles tiny (typically a few KB) and avoids version conflicts.
+
+Quick start — your first plugin
+​
+
+Create the directory structure:
+
+mkdir
+
+-p
+ ~/.hermes/plugins/my-plugin/dashboard/dist
+
+Write the manifest:
+
+// ~/.hermes/plugins/my-plugin/dashboard/manifest.json
+{
+
+"name"
+:
+
+"my-plugin"
+,
+
+"label"
+:
+
+"My Plugin"
+,
+
+"icon"
+:
+
+"Sparkles"
+,
+
+"version"
+:
+
+"1.0.0"
+,
+
+"tab"
+:
+
+{
+
+"path"
+:
+
+"/my-plugin"
+,
+
+"position"
+:
+
+"after:skills"
+
+}
+,
+
+"entry"
+:
+
+"dist/index.js"
+}
+
+Write the JS bundle (a plain IIFE — no build step needed):
+
+// ~/.hermes/plugins/my-plugin/dashboard/dist/index.js
+(
+function
+
+(
+)
+
+{
+
+"use strict"
+;
+
+const
+
+SDK
+
+=
+
+window
+.
+__HERMES_PLUGIN_SDK__
+;
+
+const
+
+{
+
+React
+
+}
+
+=
+
+SDK
+;
+
+const
+
+{
+
+Card
+,
+
+CardHeader
+,
+
+CardTitle
+,
+
+CardContent
+
+}
+
+=
+
+SDK
+.
+components
+;
+
+function
+
+MyPage
+(
+)
+
+{
+
+return
+
+React
+.
+createElement
+(
+Card
+,
+
+null
+,
+
+React
+.
+createElement
+(
+CardHeader
+,
+
+null
+,
+
+React
+.
+createElement
+(
+CardTitle
+,
+
+null
+,
+
+"My Plugin"
+)
+,
+
+)
+,
+
+React
+.
+createElement
+(
+CardContent
+,
+
+null
+,
+
+React
+.
+createElement
+(
+"p"
+,
+
+{
+
+className
+:
+
+"text-sm text-muted-foreground"
+
+}
+,
+
+"Hello from my custom dashboard tab."
+,
+
+)
+,
+
+)
+,
+
+)
+;
+
+}
+
+window
+.
+__HERMES_PLUGINS__
+.
+register
+(
+"my-plugin"
+,
+
+MyPage
+)
+;
+}
+)
+(
+)
+;
+
+Refresh the dashboard — your tab appears in the nav bar, after 
+Skills
+.
+
+Skip React.createElement
+If you prefer JSX, use any bundler (esbuild, Vite, rollup) with React as an external and IIFE output. The only hard requirement is that the final file is a single JS file loadable via 
+<script>
+. React is never bundled; it comes from 
+SDK.React
+.
+
+Directory layout
+​
+
+~/.hermes/plugins/my-plugin/
+├── plugin.yaml # optional — existing CLI/gateway plugin manifest
+├── __init__.py # optional — existing CLI/gateway hooks
+└── dashboard/ # dashboard extension
+ ├── manifest.json # required — tab config, icon, entry point
+ ├── dist/
+ │ ├── index.js # required — pre-built JS bundle (IIFE)
+ │ └── style.css # optional — custom CSS
+ └── plugin_api.py # optional — backend API routes (FastAPI)
+
+A single plugin directory can carry three orthogonal extensions:
+
+plugin.yaml
+ + 
+__init__.py
+ — CLI/gateway plugin (
+see plugins page
+).
+
+dashboard/manifest.json
+ + 
+dashboard/dist/index.js
+ — dashboard UI plugin.
+
+dashboard/plugin_api.py
+ — dashboard backend routes.
+
+None of them are required; include only the layers you need.
+
+Manifest reference
+​
+
+{
+
+"name"
+:
+
+"my-plugin"
+,
+
+"label"
+:
+
+"My Plugin"
+,
+
+"description"
+:
+
+"What this plugin does"
+,
+
+"icon"
+:
+
+"Sparkles"
+,
+
+"version"
+:
+
+"1.0.0"
+,
+
+"tab"
+:
+
+{
+
+"path"
+:
+
+"/my-plugin"
+,
+
+"position"
+:
+
+"after:skills"
+,
+
+"override"
+:
+
+"/"
+,
+
+"hidden"
+:
+
+false
+
+}
+,
+
+"slots"
+:
+
+[
+"sidebar"
+,
+
+"header-left"
+]
+,
+
+"entry"
+:
+
+"dist/index.js"
+,
+
+"css"
+:
+
+"dist/style.css"
+,
+
+"api"
+:
+
+"plugin_api.py"
+}
+
+Field
+Required
+Description
+name
+Yes
+Unique plugin identifier. Lowercase, hyphens ok. Used in URLs and registration.
+label
+Yes
+Display name shown in the nav tab.
+description
+No
+Short description (shown in dashboard admin surfaces).
+icon
+No
+Lucide icon name. Defaults to 
+Puzzle
+. Unknown names fall back to 
+Puzzle
+.
+version
+No
+Semver string. Defaults to 
+0.0.0
+.
+tab.path
+Yes
+URL path for the tab (e.g. 
+/my-plugin
+).
+tab.position
+No
+Where to insert the tab. 
+"end"
+ (default), 
+"after:<path>"
+, or 
+"before:<path>"
+ — value after the colon is the 
+path segment
+ of the target tab (no leading slash). Examples: 
+"after:skills"
+, 
+"before:config"
+.
+tab.override
+No
+Set to a built-in route path (
+"/"
+, 
+"/sessions"
+, 
+"/config"
+, ...) to 
+replace
+ that page instead of adding a new tab. See 
+Replacing built-in pages
+.
+tab.hidden
+No
+When true, register the component and any slots without adding a tab to the nav. Used by slot-only plugins. See 
+Slot-only plugins
+.
+slots
+No
+Named shell slots this plugin populates. 
+Documentation aid only
+ — actual registration happens from the JS bundle via 
+registerSlot()
+. Listing slots here makes discovery surfaces more informative.
+entry
+Yes
+Path to the JS bundle relative to 
+dashboard/
+. Defaults to 
+dist/index.js
+.
+css
+No
+Path to a CSS file to inject as a 
+<link>
+ tag.
+api
+No
+Path to a Python file with FastAPI routes. Mounted at 
+/api/plugins/<name>/
+.
+
+Available icons
+​
+
+Plugins use Lucide icon names. The dashboard maps these by name — unknown names silently fall back to 
+Puzzle
+.
+
+Currently mapped: 
+Activity
+, 
+BarChart3
+, 
+Clock
+, 
+Code
+, 
+Database
+, 
+Eye
+, 
+FileText
+, 
+Globe
+, 
+Heart
+, 
+KeyRound
+, 
+MessageSquare
+, 
+Package
+, 
+Puzzle
+, 
+Settings
+, 
+Shield
+, 
+Sparkles
+, 
+Star
+, 
+Terminal
+, 
+Wrench
+, 
+Zap
+.
+
+Need a different icon? Open a PR to 
+web/src/App.tsx
+'s 
+ICON_MAP
+ — pure additive change.
+
+The Plugin SDK
+​
+
+Everything a plugin needs is on 
+window.__HERMES_PLUGIN_SDK__
+. Plugins should never import React directly.
+
+const
+
+SDK
+
+=
+
+window
+.
+__HERMES_PLUGIN_SDK__
+;
+// React + hooks
+SDK
+.
+React
+
+// the React instance
+SDK
+.
+hooks
+.
+useState
+SDK
+.
+hooks
+.
+useEffect
+SDK
+.
+hooks
+.
+useCallback
+SDK
+.
+hooks
+.
+useMemo
+SDK
+.
+hooks
+.
+useRef
+SDK
+.
+hooks
+.
+useContext
+SDK
+.
+hooks
+.
+createContext
+// UI components (shadcn/ui primitives)
+SDK
+.
+components
+.
+Card
+SDK
+.
+components
+.
+CardHeader
+SDK
+.
+components
+.
+CardTitle
+SDK
+.
+components
+.
+CardContent
+SDK
+.
+components
+.
+Badge
+SDK
+.
+components
+.
+Button
+SDK
+.
+components
+.
+Input
+SDK
+.
+components
+.
+Label
+SDK
+.
+components
+.
+Select
+SDK
+.
+components
+.
+SelectOption
+SDK
+.
+components
+.
+Separator
+SDK
+.
+components
+.
+Tabs
+SDK
+.
+components
+.
+TabsList
+SDK
+.
+components
+.
+TabsTrigger
+SDK
+.
+components
+.
+PluginSlot
+
+// render a named slot (useful for nested plugin UIs)
+// Hermes API client + raw fetcher
+SDK
+.
+api
+
+// typed client — getStatus, getSessions, getConfig, ...
+SDK
+.
+fetchJSON
+
+// raw fetch for custom endpoints (plugin-registered routes)
+// Utilities
+SDK
+.
+utils
+.
+cn
+
+// Tailwind class merger (clsx + twMerge)
+SDK
+.
+utils
+.
+timeAgo
+
+// "5m ago" from unix timestamp
+SDK
+.
+utils
+.
+isoTimeAgo
+
+// "5m ago" from ISO string
+// Hooks
+SDK
+.
+useI18n
+
+// i18n hook for multi-language plugins
+
+Calling your plugin's backend
+​
+
+SDK
+.
+fetchJSON
+(
+"/api/plugins/my-plugin/data"
+)
+
+.
+then
+(
+(
+data
+)
+
+=>
+
+console
+.
+log
+(
+data
+)
+)
+
+.
+catch
+(
+(
+err
+)
+
+=>
+
+console
+.
+error
+(
+"API call failed:"
+,
+ err
+)
+)
+;
+
+fetchJSON
+ injects the session auth token, surfaces errors as thrown exceptions, and parses JSON automatically.
+
+Calling built-in Hermes endpoints
+​
+
+// Agent status
+SDK
+.
+api
+.
+getStatus
+(
+)
+.
+then
+(
+(
+s
+)
+
+=>
+
+console
+.
+log
+(
+"Version:"
+,
+ s
+.
+version
+)
+)
+;
+// Recent sessions
+SDK
+.
+api
+.
+getSessions
+(
+10
+)
+.
+then
+(
+(
+resp
+)
+
+=>
+
+console
+.
+log
+(
+resp
+.
+sessions
+.
+length
+)
+)
+;
+
+See 
+Web Dashboard → REST API
+ for the full list.
+
+Shell slots
+​
+
+Slots let a plugin inject components into named locations of the app shell — the cockpit sidebar, the header, the footer, an overlay layer — without claiming a whole tab. Multiple plugins can populate the same slot; they render stacked in registration order.
+
+Register from inside the plugin bundle:
+
+window
+.
+__HERMES_PLUGINS__
+.
+registerSlot
+(
+"my-plugin"
+,
+
+"sidebar"
+,
+
+MySidebar
+)
+;
+window
+.
+__HERMES_PLUGINS__
+.
+registerSlot
+(
+"my-plugin"
+,
+
+"header-left"
+,
+
+MyCrest
+)
+;
+
+Slot catalogue
+​
+
+Shell-wide slots
+ (render anywhere in the app chrome):
+
+Slot
+Location
+backdrop
+Inside the 
+<Backdrop />
+ layer stack, above the noise layer.
+header-left
+Before the Hermes brand in the top bar.
+header-right
+Before the theme/language switchers in the top bar.
+header-banner
+Full-width strip below the nav.
+sidebar
+Cockpit sidebar rail — 
+only rendered when 
+layoutVariant === "cockpit"
+.
+pre-main
+Above the route outlet (inside 
+<main>
+).
+post-main
+Below the route outlet (inside 
+<main>
+).
+footer-left
+Footer cell content (replaces default).
+footer-right
+Footer cell content (replaces default).
+overlay
+Fixed-position layer above everything else. Useful for chrome (scanlines, vignettes) 
+customCSS
+ can't achieve alone.
+
+Page-scoped slots
+ (render only on the named built-in page — use these to inject widgets, cards, or toolbars into an existing page without overriding the whole route):
+
+Slot
+Where it renders
+sessions:top
+ / 
+sessions:bottom
+Top / bottom of the 
+/sessions
+ page.
+analytics:top
+ / 
+analytics:bottom
+Top / bottom of the 
+/analytics
+ page.
+logs:top
+ / 
+logs:bottom
+Top (above filter toolbar) / bottom (below log viewer) of 
+/logs
+.
+cron:top
+ / 
+cron:bottom
+Top / bottom of the 
+/cron
+ page.
+skills:top
+ / 
+skills:bottom
+Top / bottom of the 
+/skills
+ page.
+config:top
+ / 
+config:bottom
+Top / bottom of the 
+/config
+ page.
+env:top
+ / 
+env:bottom
+Top / bottom of the 
+/env
+ (Keys) page.
+docs:top
+ / 
+docs:bottom
+Top (above the iframe) / bottom of 
+/docs
+.
+chat:top
+ / 
+chat:bottom
+Top / bottom of 
+/chat
+ (only active when embedded chat is enabled).
+
+Example — add a banner card to the top of the Sessions page:
+
+function
+
+PinnedSessionsBanner
+(
+)
+
+{
+
+return
+
+React
+.
+createElement
+(
+Card
+,
+
+null
+,
+
+React
+.
+createElement
+(
+CardContent
+,
+
+{
+
+className
+:
+
+"py-2 text-xs"
+
+}
+,
+
+"Pinned note injected by my-plugin"
+)
+,
+
+)
+;
+}
+window
+.
+__HERMES_PLUGINS__
+.
+registerSlot
+(
+"my-plugin"
+,
+
+"sessions:top"
+,
+
+PinnedSessionsBanner
+)
+;
+
+Combine page-scoped slots with 
+tab.hidden: true
+ if your plugin only augments existing pages and doesn't need a sidebar tab of its own.
+
+The shell only renders 
+<PluginSlot name="..." />
+ for the slots above. Additional names are accepted by the registry for nested plugin UIs — a plugin can expose its own slots via 
+SDK.components.PluginSlot
+.
+
+Re-registration and HMR
+​
+
+If the same 
+(plugin, slot)
+ pair is registered twice, the later call replaces the earlier one — this matches how React HMR expects plugin re-mounts to behave.
+
+Replacing built-in pages (
+tab.override
+)
+​
+
+Setting 
+tab.override
+ to a built-in route path makes the plugin's component replace that page instead of adding a new tab. Useful when a theme wants a custom home page (
+/
+) but wants to keep the rest of the dashboard intact.
+
+{
+
+"name"
+:
+
+"my-home"
+,
+
+"label"
+:
+
+"Home"
+,
+
+"tab"
+:
+
+{
+
+"path"
+:
+
+"/my-home"
+,
+
+"override"
+:
+
+"/"
+,
+
+"position"
+:
+
+"end"
+
+}
+,
+
+"entry"
+:
+
+"dist/index.js"
+}
+
+With 
+override
+ set:
+
+The original page component at 
+/
+ is removed from the router.
+
+Your plugin renders at 
+/
+ instead.
+
+No nav tab is added for 
+tab.path
+ (the override is the point).
+
+Only one plugin can override a given path. If two plugins claim the same override, the first wins and the second is ignored with a dev-mode warning.
+
+If you only need to add a card or toolbar to an existing page without taking it over, use 
+page-scoped slots
+ instead.
+
+Augmenting built-in pages (page-scoped slots)
+​
+
+Full replacement via 
+tab.override
+ is heavy — your plugin now owns the entire page, including any future updates we ship to it. Most of the time you just want to add a banner, card, or toolbar to an existing page. That's what 
+page-scoped slots
+ are for.
+
+Every built-in page exposes 
+<page>:top
+ and 
+<page>:bottom
+ slots rendered at the top and bottom of its content area. Your plugin populates one by calling 
+registerSlot()
+ — the built-in page keeps working normally, and your component renders alongside it.
+
+Available slots: 
+sessions:*
+, 
+analytics:*
+, 
+logs:*
+, 
+cron:*
+, 
+skills:*
+, 
+config:*
+, 
+env:*
+, 
+docs:*
+, 
+chat:*
+ (each with 
+:top
+ and 
+:bottom
+). See the full catalogue in 
+Shell slots → Slot catalogue
+.
+
+Minimal example — pin a banner to the top of the Sessions page:
+
+// ~/.hermes/plugins/session-notes/dashboard/manifest.json
+{
+
+"name"
+:
+
+"session-notes"
+,
+
+"label"
+:
+
+"Session Notes"
+,
+
+"tab"
+:
+
+{
+
+"path"
+:
+
+"/session-notes"
+,
+
+"hidden"
+:
+
+true
+
+}
+,
+
+"slots"
+:
+
+[
+"sessions:top"
+]
+,
+
+"entry"
+:
+
+"dist/index.js"
+}
+
+// ~/.hermes/plugins/session-notes/dashboard/dist/index.js
+(
+function
+
+(
+)
+
+{
+
+const
+
+SDK
+
+=
+
+window
+.
+__HERMES_PLUGIN_SDK__
+;
+
+const
+
+{
+
+React
+
+}
+
+=
+
+SDK
+;
+
+const
+
+{
+
+Card
+,
+
+CardContent
+
+}
+
+=
+
+SDK
+.
+components
+;
+
+function
+
+Banner
+(
+)
+
+{
+
+return
+
+React
+.
+createElement
+(
+Card
+,
+
+null
+,
+
+React
+.
+createElement
+(
+CardContent
+,
+
+{
+
+className
+:
+
+"py-2 text-xs"
+
+}
+,
+
+"Remember to label important sessions before archiving."
+)
+,
+
+)
+;
+
+}
+
+// Placeholder for the hidden tab.
+
+window
+.
+__HERMES_PLUGINS__
+.
+register
+(
+"session-notes"
+,
+
+function
+
+(
+)
+
+{
+
+return
+
+null
+;
+
+}
+)
+;
+
+// The real work.
+
+window
+.
+__HERMES_PLUGINS__
+.
+registerSlot
+(
+"session-notes"
+,
+
+"sessions:top"
+,
+
+Banner
+)
+;
+}
+)
+(
+)
+;
+
+Key points:
+
+tab.hidden: true
+ keeps the plugin out of the sidebar — it has no standalone page.
+
+The 
+slots
+ manifest field is documentation only. The actual binding happens in the JS bundle via 
+registerSlot()
+.
+
+Multiple plugins can claim the same page-scoped slot. They render stacked in registration order.
+
+Zero footprint when no plugin registers: the built-in page renders exactly as before.
+
+The bundled 
+example-dashboard
+ plugin ships a live demo that injects a banner into 
+sessions:top
+ — install it to see the pattern end-to-end.
+
+Slot-only plugins (
+tab.hidden
+)
+​
+
+When 
+tab.hidden: true
+, the plugin registers its component (for direct URL visits) and any slots, but never adds a tab to the navigation. Used by plugins that only exist to inject into slots — a header crest, a sidebar HUD, an overlay.
+
+{
+
+"name"
+:
+
+"header-crest"
+,
+
+"label"
+:
+
+"Header Crest"
+,
+
+"tab"
+:
+
+{
+
+"path"
+:
+
+"/header-crest"
+,
+
+"position"
+:
+
+"end"
+,
+
+"hidden"
+:
+
+true
+
+}
+,
+
+"slots"
+:
+
+[
+"header-left"
+]
+,
+
+"entry"
+:
+
+"dist/index.js"
+}
+
+The bundle still calls 
+register()
+ with a placeholder component (good practice in case someone hits the URL directly) and then 
+registerSlot()
+ to do the real work.
+
+Backend API routes
+​
+
+Plugins can register FastAPI routes by setting 
+api
+ in the manifest. Create the file and export a 
+router
+:
+
+# ~/.hermes/plugins/my-plugin/dashboard/plugin_api.py
+from
+ fastapi 
+import
+ APIRouter
+router 
+=
+ APIRouter
+(
+)
+@router
+.
+get
+(
+"/data"
+)
+async
+
+def
+
+get_data
+(
+)
+:
+
+return
+
+{
+"items"
+:
+
+[
+"one"
+,
+
+"two"
+,
+
+"three"
+]
+}
+@router
+.
+post
+(
+"/action"
+)
+async
+
+def
+
+do_action
+(
+body
+:
+
+dict
+)
+:
+
+return
+
+{
+"ok"
+:
+
+True
+,
+
+"received"
+:
+ body
+}
+
+Routes are mounted under 
+/api/plugins/<name>/
+, so the above becomes:
+
+GET /api/plugins/my-plugin/data
+
+POST /api/plugins/my-plugin/action
+
+Plugin API routes bypass session-token authentication since the dashboard server binds to localhost by default. 
+Don't expose the dashboard on a public interface with 
+--host 0.0.0.0
+ if you run untrusted plugins
+ — their routes become reachable too.
+
+Accessing Hermes internals
+​
+
+Backend routes run inside the dashboard process, so they can import from the hermes-agent codebase directly:
+
+from
+ fastapi 
+import
+ APIRouter
+from
+ hermes_state 
+import
+ SessionDB
+from
+ hermes_cli
+.
+config 
+import
+ load_config
+router 
+=
+ APIRouter
+(
+)
+@router
+.
+get
+(
+"/session-count"
+)
+async
+
+def
+
+session_count
+(
+)
+:
+ db 
+=
+ SessionDB
+(
+)
+
+try
+:
+ count 
+=
+
+len
+(
+db
+.
+list_sessions
+(
+limit
+=
+9999
+)
+)
+
+return
+
+{
+"count"
+:
+ count
+}
+
+finally
+:
+ db
+.
+close
+(
+)
+@router
+.
+get
+(
+"/config-snapshot"
+)
+async
+
+def
+
+config_snapshot
+(
+)
+:
+ cfg 
+=
+ load_config
+(
+)
+
+return
+
+{
+"model"
+:
+ cfg
+.
+get
+(
+"model"
+,
+
+{
+}
+)
+}
+
+Custom CSS per plugin
+​
+
+If your plugin needs styles beyond Tailwind classes and inline 
+style=
+, add a CSS file and reference it in the manifest:
+
+{
+
+"css"
+:
+
+"dist/style.css"
+}
+
+The file is injected as a 
+<link>
+ tag on plugin load. Use specific class names to avoid conflicts with the dashboard's styles, and reference the dashboard's CSS vars to stay theme-aware:
+
+/* dist/style.css */
+.my-plugin-chart
+
+{
+
+border
+:
+
+1
+px
+ solid 
+var
+(
+--color-border
+)
+;
+
+background
+:
+
+var
+(
+--color-card
+)
+;
+
+color
+:
+
+var
+(
+--color-card-foreground
+)
+;
+
+padding
+:
+
+1
+rem
+;
+}
+.my-plugin-chart
+:hover
+
+{
+
+border-color
+:
+
+var
+(
+--color-ring
+)
+;
+}
+
+The dashboard exposes every shadcn token as 
+--color-*
+ plus theme extras (
+--theme-asset-*
+, 
+--component-<bucket>-*
+, 
+--radius
+, 
+--spacing-mul
+). Reference those and your plugin automatically reskins with the active theme.
+
+Plugin discovery & reload
+​
+
+The dashboard scans three directories for 
+dashboard/manifest.json
+:
+
+Priority
+Directory
+Source label
+1 (wins on conflict)
+~/.hermes/plugins/<name>/dashboard/
+user
+2
+<repo>/plugins/memory/<name>/dashboard/
+bundled
+2
+<repo>/plugins/<name>/dashboard/
+bundled
+3
+./.hermes/plugins/<name>/dashboard/
+project
+ — only when 
+HERMES_ENABLE_PROJECT_PLUGINS
+ is set
+
+Discovery results are cached per dashboard process. After adding a new plugin, either:
+
+# Force a rescan without restart
+curl
+ http://127.0.0.1:9119/api/dashboard/plugins/rescan
+
+…or restart 
+hermes dashboard
+.
+
+Plugin load lifecycle
+​
+
+Dashboard loads. 
+main.tsx
+ exposes the SDK on 
+window.__HERMES_PLUGIN_SDK__
+ and the registry on 
+window.__HERMES_PLUGINS__
+.
+
+App.tsx
+ calls 
+usePlugins()
+ → fetches 
+GET /api/dashboard/plugins
+.
+
+For each manifest: CSS 
+<link>
+ is injected (if declared), then a 
+<script>
+ tag loads the JS bundle.
+
+The plugin's IIFE runs and calls 
+window.__HERMES_PLUGINS__.register(name, Component)
+ — and optionally 
+.registerSlot(name, slot, Component)
+ for each slot.
+
+The dashboard resolves the registered component against the manifest, adds the tab to navigation (unless 
+hidden
+), and mounts the component as a route.
+
+Plugins have up to 
+2 seconds
+ after their script loads to call 
+register()
+. After that the dashboard stops waiting and finishes initial render. If a plugin later registers, it still appears — the nav is reactive.
+
+If a plugin's script fails to load (404, syntax error, exception during IIFE), the dashboard logs a warning to the browser console and continues without it.
+
+Combined theme + plugin demo
+​
+
+The repo ships 
+plugins/strike-freedom-cockpit/
+ as a complete reskin demo. It pairs a theme YAML with a slot-only plugin to produce a cockpit-style HUD without forking the dashboard.
+
+What it demonstrates:
+
+A full theme using palette, typography, 
+fontUrl
+, 
+layoutVariant: cockpit
+, 
+assets
+, 
+componentStyles
+ (notched card corners, gradient backgrounds), 
+colorOverrides
+, and 
+customCSS
+ (scanline overlay).
+
+A slot-only plugin (
+tab.hidden: true
+) that registers into three slots:
+
+sidebar
+ — an MS-STATUS panel with live telemetry bars driven by 
+SDK.api.getStatus()
+.
+
+header-left
+ — a faction crest that reads 
+--theme-asset-crest
+ from the active theme.
+
+footer-right
+ — a custom tagline replacing the default org line.
+
+The plugin reads theme-supplied artwork via CSS vars, so swapping themes changes the hero/crest without plugin code changes.
+
+Install:
+
+# Theme
+cp
+ plugins/strike-freedom-cockpit/theme/strike-freedom.yaml 
+\
+ ~/.hermes/dashboard-themes/
+# Plugin
+cp
+
+-r
+ plugins/strike-freedom-cockpit ~/.hermes/plugins/
+
+Open the dashboard, pick 
+Strike Freedom
+ from the theme switcher. The cockpit sidebar appears, the crest shows in the header, the tagline replaces the footer. Switch back to 
+Hermes Teal
+ and the plugin remains installed but invisible (the 
+sidebar
+ slot only renders under the 
+cockpit
+ layout variant).
+
+Read the plugin source (
+plugins/strike-freedom-cockpit/dashboard/dist/index.js
+) to see how it reads CSS vars, guards against older dashboards without slot support, and registers three slots from one bundle.
+
+API reference
+​
+
+Theme endpoints
+​
+
+Endpoint
+Method
+Description
+/api/dashboard/themes
+GET
+List available themes + active name. Built-ins return 
+{name, label, description}
+; user themes also include a 
+definition
+ field with the full normalised theme object.
+/api/dashboard/theme
+PUT
+Set active theme. Body: 
+{"name": "midnight"}
+. Persists to 
+config.yaml
+ under 
+dashboard.theme
+.
+
+Plugin endpoints
+​
+
+Endpoint
+Method
+Description
+/api/dashboard/plugins
+GET
+List discovered plugins (with manifests, minus internal fields).
+/api/dashboard/plugins/rescan
+GET
+Force re-scan the plugin directories without restarting.
+/dashboard-plugins/<name>/<path>
+GET
+Serve static assets from a plugin's 
+dashboard/
+ directory. Path traversal is blocked.
+/api/plugins/<name>/*
+*
+Plugin-registered backend routes.
+
+SDK on 
+window
+​
+
+Global
+Type
+Provider
+window.__HERMES_PLUGIN_SDK__
+object
+registry.ts
+ — React, hooks, UI components, API client, utils.
+window.__HERMES_PLUGINS__.register(name, Component)
+function
+Register a plugin's main component.
+window.__HERMES_PLUGINS__.registerSlot(name, slot, Component)
+function
+Register into a named shell slot.
+
+Troubleshooting
+​
+
+My theme doesn't appear in the picker.
+
+Check that the file is in 
+~/.hermes/dashboard-themes/
+ and ends in 
+.yaml
+ or 
+.yml
+. Refresh the page. Run 
+curl http://127.0.0.1:9119/api/dashboard/themes
+ — your theme should be in the response. If the YAML has a parse error, the dashboard logs to 
+errors.log
+ under 
+~/.hermes/logs/
+.
+
+My plugin's tab doesn't show up.
+
+Check the manifest is at 
+~/.hermes/plugins/<name>/dashboard/manifest.json
+ (note the 
+dashboard/
+ subdirectory).
+
+curl http://127.0.0.1:9119/api/dashboard/plugins/rescan
+ to force re-discovery.
+
+Open browser dev tools → Network — confirm 
+manifest.json
+, 
+index.js
+, and any CSS loaded without 404s.
+
+Open browser dev tools → Console — look for errors during the IIFE or 
+window.__HERMES_PLUGINS__ is undefined
+ (indicates the SDK didn't initialize, usually a React render crash earlier).
+
+Verify your bundle calls 
+window.__HERMES_PLUGINS__.register(...)
+ with the 
+same name
+ as 
+manifest.json:name
+.
+
+Slot-registered components don't render.
+
+The 
+sidebar
+ slot only renders when the active theme has 
+layoutVariant: cockpit
+. Other slots always render. If you're registering into a slot with no hits, add 
+console.log
+ inside 
+registerSlot
+ to confirm the plugin bundle ran at all.
+
+Plugin backend routes return 404.
+
+Confirm the manifest has 
+"api": "plugin_api.py"
+ pointing to an existing file inside 
+dashboard/
+.
+
+Restart 
+hermes dashboard
+ — plugin API routes are mounted once at startup, 
+not
+ on rescan.
+
+Check that 
+plugin_api.py
+ exports a module-level 
+router = APIRouter()
+. Other export names are not picked up.
+
+Tail 
+~/.hermes/logs/errors.log
+ for 
+Failed to load plugin <name> API routes
+ — import errors are logged there.
+
+Theme change drops my color overrides.
+
+colorOverrides
+ are scoped to the active theme and cleared on theme switch — that's by design. If you want overrides that persist, put them in your theme's YAML, not in the live switcher.
+
+Theme customCSS gets truncated.
+
+The 
+customCSS
+ block is capped at 32 KiB per theme. Split large stylesheets across multiple themes, or switch to a plugin that injects a full stylesheet via its 
+css
+ field (no size cap).
+
+I want to ship a plugin on PyPI.
+
+Dashboard plugins are installed by directory layout, not by pip entry point. The cleanest distribution path today is a git repo the user clones into 
+~/.hermes/plugins/
+. A pip-based installer for dashboard plugins is not currently wired up.
+========================================
+CODE_BLOCKS:
+mkdir -p ~/.hermes/dashboard-themes
+
+# ~/.hermes/dashboard-themes/neon.yamlname: neonlabel: Neondescription: Pure magenta on blackpalette:  background: "#000000"  midground: "#ff00ff"
+
+palette:  background:    hex: "#05091a"    alpha: 1.0  midground: "#d8f0ff"          # bare hex, alpha = 1.0  foreground:    hex: "#ffffff"    alpha: 0                    # invisible top layer  warmGlow: "rgba(255, 199, 55, 0.24)"  noiseOpacity: 0.7
+
+typography:  fontSans: '"Orbitron", "Eurostile", "Impact", sans-serif'  fontMono: '"Share Tech Mono", ui-monospace, monospace'  fontDisplay: '"Orbitron", "Eurostile", sans-serif'  fontUrl: "https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Share+Tech+Mono&display=swap"  baseSize: "14px"  lineHeight: "1.5"  letterSpacing: "0.04em"
+
+layout:  radius: "0"  density: compact
+
+layoutVariant: cockpit
+
+assets:  bg: "https://example.com/hero-bg.jpg"           # auto-wired into <Backdrop />  hero: "/my-images/strike-freedom.png"           # for plugin sidebars  crest: "/my-images/crest.svg"                   # for header-left plugins  logo: "/my-images/logo.png"  sidebar: "/my-images/rail.png"  header: "/my-images/header-art.png"  custom:    scanLines: "/my-images/scanlines.png"         # → --theme-asset-custom-scanLines
+
+// In a plugin slotconst hero = getComputedStyle(document.documentElement)  .getPropertyValue("--theme-asset-hero").trim();
+
+componentStyles:  card:    clipPath: "polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px)"    background: "linear-gradient(180deg, rgba(10, 22, 52, 0.85), rgba(5, 9, 26, 0.92))"    boxShadow: "inset 0 0 0 1px rgba(64, 200, 255, 0.28)"  header:    background: "linear-gradient(180deg, rgba(16, 32, 72, 0.95), rgba(5, 9, 26, 0.9))"  tab:    clipPath: "polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)"  sidebar: {}  backdrop: {}  footer: {}  progress: {}  badge
+
+colorOverrides:  primary: "#ffce3a"  primaryForeground: "#05091a"  accent: "#3fd3ff"  ring: "#3fd3ff"  destructive: "#ff3a5e"  border: "rgba(64, 200, 255, 0.28)"
+
+customCSS: |  /* Scanline overlay — only visible when cockpit variant is active. */  :root[data-layout-variant="cockpit"] body::before {    content: "";    position: fixed;    inset: 0;    pointer-events: none;    z-index: 100;    background: repeating-linear-gradient(to bottom,      transparent 0px, transparent 2px,      rgba(64, 200, 255, 0.035) 3px, rgba(64, 200, 255, 0.035) 4px);    mix-blend-mode: screen;  }
+
+# ~/.hermes/dashboard-themes/ocean.yamlname: oceanlabel: Ocean Deepdescription: Deep sea blues with coral accents# 3-layer palette (accepts {hex, alpha} or bare hex)palette:  background:    hex: "#0a1628"    alpha: 1.0  midground:    hex: "#a8d0ff"    alpha: 1.0  foreground:    hex: "#ffffff"    alpha: 0.0  warmGlow: "rgba(255, 107, 107, 0.35)"  noiseOpacity: 0.7typography:  fontSans: "Poppins, system-ui, sans-serif"  fontMono: "Fira Code, ui-monospace, monospace"  fontDisplay: "Poppins, system-
+
+mkdir -p ~/.hermes/plugins/my-plugin/dashboard/dist
+
+// ~/.hermes/plugins/my-plugin/dashboard/manifest.json{  "name": "my-plugin",  "label": "My Plugin",  "icon": "Sparkles",  "version": "1.0.0",  "tab": {    "path": "/my-plugin",    "position": "after:skills"  },  "entry": "dist/index.js"}
+
+// ~/.hermes/plugins/my-plugin/dashboard/dist/index.js(function () {  "use strict";  const SDK = window.__HERMES_PLUGIN_SDK__;  const { React } = SDK;  const { Card, CardHeader, CardTitle, CardContent } = SDK.components;  function MyPage() {    return React.createElement(Card, null,      React.createElement(CardHeader, null,        React.createElement(CardTitle, null, "My Plugin"),      ),      React.createElement(CardContent, null,        React.createElement("p", { className: "text-sm text-mute
+
+~/.hermes/plugins/my-plugin/├── plugin.yaml              # optional — existing CLI/gateway plugin manifest├── __init__.py              # optional — existing CLI/gateway hooks└── dashboard/               # dashboard extension    ├── manifest.json        # required — tab config, icon, entry point    ├── dist/    │   ├── index.js         # required — pre-built JS bundle (IIFE)    │   └── style.css        # optional — custom CSS    └── plugin_api.py        # optional — backend API routes (FastAPI)
+
+{  "name": "my-plugin",  "label": "My Plugin",  "description": "What this plugin does",  "icon": "Sparkles",  "version": "1.0.0",  "tab": {    "path": "/my-plugin",    "position": "after:skills",    "override": "/",    "hidden": false  },  "slots": ["sidebar", "header-left"],  "entry": "dist/index.js",  "css": "dist/style.css",  "api": "plugin_api.py"}
+
+const SDK = window.__HERMES_PLUGIN_SDK__;// React + hooksSDK.React                    // the React instanceSDK.hooks.useStateSDK.hooks.useEffectSDK.hooks.useCallbackSDK.hooks.useMemoSDK.hooks.useRefSDK.hooks.useContextSDK.hooks.createContext// UI components (shadcn/ui primitives)SDK.components.CardSDK.components.CardHeaderSDK.components.CardTitleSDK.components.CardContentSDK.components.BadgeSDK.components.ButtonSDK.components.InputSDK.components.LabelSDK.components.SelectSDK.components.SelectOpt
+
+SDK.fetchJSON("/api/plugins/my-plugin/data")  .then((data) => console.log(data))  .catch((err) => console.error("API call failed:", err));
+
+// Agent statusSDK.api.getStatus().then((s) => console.log("Version:", s.version));// Recent sessionsSDK.api.getSessions(10).then((resp) => console.log(resp.sessions.length));
+
+window.__HERMES_PLUGINS__.registerSlot("my-plugin", "sidebar", MySidebar);window.__HERMES_PLUGINS__.registerSlot("my-plugin", "header-left", MyCrest);
+
+function PinnedSessionsBanner() {  return React.createElement(Card, null,    React.createElement(CardContent, { className: "py-2 text-xs" },      "Pinned note injected by my-plugin"),  );}window.__HERMES_PLUGINS__.registerSlot("my-plugin", "sessions:top", PinnedSessionsBanner);
+
+{  "name": "my-home",  "label": "Home",  "tab": {    "path": "/my-home",    "override": "/",    "position": "end"  },  "entry": "dist/index.js"}
+
+// ~/.hermes/plugins/session-notes/dashboard/manifest.json{  "name": "session-notes",  "label": "Session Notes",  "tab": { "path": "/session-notes", "hidden": true },  "slots": ["sessions:top"],  "entry": "dist/index.js"}
+
+// ~/.hermes/plugins/session-notes/dashboard/dist/index.js(function () {  const SDK = window.__HERMES_PLUGIN_SDK__;  const { React } = SDK;  const { Card, CardContent } = SDK.components;  function Banner() {    return React.createElement(Card, null,      React.createElement(CardContent, { className: "py-2 text-xs" },        "Remember to label important sessions before archiving."),    );  }  // Placeholder for the hidden tab.  window.__HERMES_PLUGINS__.register("session-notes", function () { ret
+
+{  "name": "header-crest",  "label": "Header Crest",  "tab": {    "path": "/header-crest",    "position": "end",    "hidden": true  },  "slots": ["header-left"],  "entry": "dist/index.js"}
+
+# ~/.hermes/plugins/my-plugin/dashboard/plugin_api.pyfrom fastapi import APIRouterrouter = APIRouter()@router.get("/data")async def get_data():    return {"items": ["one", "two", "three"]}@router.post("/action")async def do_action(body: dict):    return {"ok": True, "received": body}
+
+from fastapi import APIRouterfrom hermes_state import SessionDBfrom hermes_cli.config import load_configrouter = APIRouter()@router.get("/session-count")async def session_count():    db = SessionDB()    try:        count = len(db.list_sessions(limit=9999))        return {"count": count}    finally:        db.close()@router.get("/config-snapshot")async def config_snapshot():    cfg = load_config()    return {"model": cfg.get("model", {})}
+
+{  "css": "dist/style.css"}
+
+/* dist/style.css */.my-plugin-chart {  border: 1px solid var(--color-border);  background: var(--color-card);  color: var(--color-card-foreground);  padding: 1rem;}.my-plugin-chart:hover {  border-color: var(--color-ring);}
+
+# Force a rescan without restartcurl http://127.0.0.1:9119/api/dashboard/plugins/rescan
+
+# Themecp plugins/strike-freedom-cockpit/theme/strike-freedom.yaml \   ~/.hermes/dashboard-themes/# Plugincp -r plugins/strike-freedom-cockpit ~/.hermes/plugins/
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/fallback-providers
+TITLE: Fallback Providers | Hermes Agent
+H1: Fallback Providers
+TEXT:
+On this page
+
+Hermes Agent has three layers of resilience that keep your sessions running when providers hit issues:
+
+Credential pools
+ — rotate across multiple API keys for the 
+same
+ provider (tried first)
+
+Primary model fallback
+ — automatically switches to a 
+different
+ provider
+:model
+ when your main model fails
+
+Auxiliary task fallback
+ — independent provider resolution for side tasks like vision, compression, and web extraction
+
+Credential pools handle same-provider rotation (e.g., multiple OpenRouter keys). This page covers cross-provider fallback. Both are optional and work independently.
+
+Primary Model Fallback
+​
+
+When your main LLM provider encounters errors — rate limits, server overload, auth failures, connection drops — Hermes can automatically switch to a backup provider
+:model
+ pair mid-session without losing your conversation.
+
+Configuration
+​
+
+The easiest path is the interactive manager:
+
+hermes fallback
+
+hermes fallback
+ reuses the provider picker from 
+hermes model
+ — same provider list, same credential prompts, same validation. Press 
+a
+ to add a fallback, 
+↑
+/
+↓
+ to reorder, 
+d
+ to remove, 
+q
+ to save and exit. Changes persist under 
+model.fallback_providers
+ in 
+config.yaml
+.
+
+If you'd rather edit the YAML directly, add a 
+fallback_model
+ section to 
+~/.hermes/config.yaml
+:
+
+fallback_model
+:
+
+provider
+:
+ openrouter
+
+model
+:
+ anthropic/claude
+-
+sonnet
+-
+4
+
+Both 
+provider
+ and 
+model
+ are 
+required
+. If either is missing, the fallback is disabled.
+
+fallback_model
+ vs 
+fallback_providers
+fallback_model
+ (singular) is the legacy single-fallback key — Hermes still honors it for back-compat. 
+fallback_providers
+ (plural, list) supports multiple fallbacks tried in order; 
+hermes fallback
+ writes to this key. When both are set, Hermes merges them with 
+fallback_providers
+ taking priority.
+
+Supported Providers
+​
+
+Provider
+Value
+Requirements
+AI Gateway
+ai-gateway
+AI_GATEWAY_API_KEY
+OpenRouter
+openrouter
+OPENROUTER_API_KEY
+Nous Portal
+nous
+hermes auth
+ (OAuth)
+OpenAI Codex
+openai-codex
+hermes model
+ (ChatGPT OAuth)
+GitHub Copilot
+copilot
+COPILOT_GITHUB_TOKEN
+, 
+GH_TOKEN
+, or 
+GITHUB_TOKEN
+GitHub Copilot ACP
+copilot-acp
+External process (editor integration)
+Anthropic
+anthropic
+ANTHROPIC_API_KEY
+ or Claude Code credentials
+z.ai / GLM
+zai
+GLM_API_KEY
+Kimi / Moonshot
+kimi-coding
+KIMI_API_KEY
+MiniMax
+minimax
+MINIMAX_API_KEY
+MiniMax (China)
+minimax-cn
+MINIMAX_CN_API_KEY
+DeepSeek
+deepseek
+DEEPSEEK_API_KEY
+NVIDIA NIM
+nvidia
+NVIDIA_API_KEY
+ (optional: 
+NVIDIA_BASE_URL
+)
+GMI Cloud
+gmi
+GMI_API_KEY
+ (optional: 
+GMI_BASE_URL
+)
+StepFun
+stepfun
+STEPFUN_API_KEY
+ (optional: 
+STEPFUN_BASE_URL
+)
+Ollama Cloud
+ollama-cloud
+OLLAMA_API_KEY
+Google Gemini (OAuth)
+google-gemini-cli
+hermes model
+ (Google OAuth; optional: 
+HERMES_GEMINI_PROJECT_ID
+)
+Google AI Studio
+gemini
+GOOGLE_API_KEY
+ (alias: 
+GEMINI_API_KEY
+)
+xAI (Grok)
+xai
+ (alias 
+grok
+)
+XAI_API_KEY
+ (optional: 
+XAI_BASE_URL
+)
+AWS Bedrock
+bedrock
+Standard boto3 auth (
+AWS_REGION
+ + 
+AWS_PROFILE
+ or 
+AWS_ACCESS_KEY_ID
+)
+Qwen Portal (OAuth)
+qwen-oauth
+hermes model
+ (Qwen Portal OAuth; optional: 
+HERMES_QWEN_BASE_URL
+)
+MiniMax (OAuth)
+minimax-oauth
+hermes model
+ (MiniMax portal OAuth)
+OpenCode Zen
+opencode-zen
+OPENCODE_ZEN_API_KEY
+OpenCode Go
+opencode-go
+OPENCODE_GO_API_KEY
+Kilo Code
+kilocode
+KILOCODE_API_KEY
+Xiaomi MiMo
+xiaomi
+XIAOMI_API_KEY
+Arcee AI
+arcee
+ARCEEAI_API_KEY
+GMI Cloud
+gmi
+GMI_API_KEY
+Alibaba / DashScope
+alibaba
+DASHSCOPE_API_KEY
+Alibaba Coding Plan
+alibaba-coding-plan
+ALIBABA_CODING_PLAN_API_KEY
+ (falls back to 
+DASHSCOPE_API_KEY
+)
+Kimi / Moonshot (China)
+kimi-coding-cn
+KIMI_CN_API_KEY
+StepFun
+stepfun
+STEPFUN_API_KEY
+Tencent TokenHub
+tencent-tokenhub
+TOKENHUB_API_KEY
+Azure AI Foundry
+azure-foundry
+AZURE_FOUNDRY_API_KEY
+ + 
+AZURE_FOUNDRY_BASE_URL
+LM Studio (local)
+lmstudio
+LM_API_KEY
+ (or none for local) + 
+LM_BASE_URL
+Hugging Face
+huggingface
+HF_TOKEN
+Custom endpoint
+custom
+base_url
+ + 
+key_env
+ (see below)
+
+Custom Endpoint Fallback
+​
+
+For a custom OpenAI-compatible endpoint, add 
+base_url
+ and optionally 
+key_env
+:
+
+fallback_model
+:
+
+provider
+:
+ custom
+
+model
+:
+ my
+-
+local
+-
+model
+
+base_url
+:
+ http
+:
+//localhost
+:
+8000/v1
+
+key_env
+:
+ MY_LOCAL_KEY 
+# env var name containing the API key
+
+When Fallback Triggers
+​
+
+The fallback activates automatically when the primary model fails with:
+
+Rate limits
+ (HTTP 429) — after exhausting retry attempts
+
+Server errors
+ (HTTP 500, 502, 503) — after exhausting retry attempts
+
+Auth failures
+ (HTTP 401, 403) — immediately (no point retrying)
+
+Not found
+ (HTTP 404) — immediately
+
+Invalid responses
+ — when the API returns malformed or empty responses repeatedly
+
+When triggered, Hermes:
+
+Resolves credentials for the fallback provider
+
+Builds a new API client
+
+Swaps the model, provider, and client in-place
+
+Resets the retry counter and continues the conversation
+
+The switch is seamless — your conversation history, tool calls, and context are preserved. The agent continues from exactly where it left off, just using a different model.
+
+Per-Turn, Not Per-Session
+Fallback is 
+turn-scoped
+: each new user message starts with the primary model restored. If the primary fails mid-turn, fallback activates for that turn only. On the next message, Hermes tries the primary again. Within a single turn, fallback activates at most once — if the fallback also fails, normal error handling takes over (retries, then error message). This prevents cascading failover loops within a turn while giving the primary model a fresh chance every turn.
+
+Examples
+​
+
+OpenRouter as fallback for Anthropic native:
+
+model
+:
+
+provider
+:
+ anthropic
+
+default
+:
+ claude
+-
+sonnet
+-
+4
+-
+6
+fallback_model
+:
+
+provider
+:
+ openrouter
+
+model
+:
+ anthropic/claude
+-
+sonnet
+-
+4
+
+Nous Portal as fallback for OpenRouter:
+
+model
+:
+
+provider
+:
+ openrouter
+
+default
+:
+ anthropic/claude
+-
+opus
+-
+4
+fallback_model
+:
+
+provider
+:
+ nous
+
+model
+:
+ nous
+-
+hermes
+-
+3
+
+Local model as fallback for cloud:
+
+fallback_model
+:
+
+provider
+:
+ custom
+
+model
+:
+ llama
+-
+3.1
+-
+70b
+
+base_url
+:
+ http
+:
+//localhost
+:
+8000/v1
+
+key_env
+:
+ LOCAL_API_KEY
+
+Codex OAuth as fallback:
+
+fallback_model
+:
+
+provider
+:
+ openai
+-
+codex
+
+model
+:
+ gpt
+-
+5.3
+-
+codex
+
+Where Fallback Works
+​
+
+Context
+Fallback Supported
+CLI sessions
+✔
+Messaging gateway (Telegram, Discord, etc.)
+✔
+Subagent delegation
+✘ (subagents do not inherit fallback config)
+Cron jobs
+✘ (run with a fixed provider)
+Auxiliary tasks (vision, compression)
+✘ (use their own provider chain — see below)
+
+tip
+There are no environment variables for 
+fallback_model
+ — it is configured exclusively through 
+config.yaml
+. This is intentional: fallback configuration is a deliberate choice, not something a stale shell export should override.
+
+Auxiliary Task Fallback
+​
+
+Hermes uses separate lightweight models for side tasks. Each task has its own provider resolution chain that acts as a built-in fallback system.
+
+Tasks with Independent Provider Resolution
+​
+
+Task
+What It Does
+Config Key
+Vision
+Image analysis, browser screenshots
+auxiliary.vision
+Web Extract
+Web page summarization
+auxiliary.web_extract
+Compression
+Context compression summaries
+auxiliary.compression
+Session Search
+Past session summarization
+auxiliary.session_search
+Skills Hub
+Skill search and discovery
+auxiliary.skills_hub
+MCP
+MCP helper operations
+auxiliary.mcp
+Approval
+Smart command-approval classification
+auxiliary.approval
+Title Generation
+Session title summaries
+auxiliary.title_generation
+Triage Specifier
+hermes kanban specify
+ / dashboard ✨ button — fleshes out a one-liner triage task into a real spec
+auxiliary.triage_specifier
+
+Auto-Detection Chain
+​
+
+When a task's provider is set to 
+"auto"
+ (the default), Hermes tries providers in order until one works:
+
+For text tasks (compression, web extract, etc.):
+
+OpenRouter → Nous Portal → Custom endpoint → Codex OAuth →
+API-key providers (z.ai, Kimi, MiniMax, Xiaomi MiMo, Hugging Face, Anthropic) → give up
+
+For vision tasks:
+
+Main provider (if vision-capable) → OpenRouter → Nous Portal →
+Codex OAuth → Anthropic → Custom endpoint → give up
+
+If the resolved provider fails at call time, Hermes also has an internal retry: if the provider is not OpenRouter and no explicit 
+base_url
+ is set, it tries OpenRouter as a last-resort fallback.
+
+Configuring Auxiliary Providers
+​
+
+Each task can be configured independently in 
+config.yaml
+:
+
+auxiliary
+:
+
+vision
+:
+
+provider
+:
+
+"auto"
+
+# auto | openrouter | nous | codex | main | anthropic
+
+model
+:
+
+""
+
+# e.g. "openai/gpt-4o"
+
+base_url
+:
+
+""
+
+# direct endpoint (takes precedence over provider)
+
+api_key
+:
+
+""
+
+# API key for base_url
+
+web_extract
+:
+
+provider
+:
+
+"auto"
+
+model
+:
+
+""
+
+compression
+:
+
+provider
+:
+
+"auto"
+
+model
+:
+
+""
+
+session_search
+:
+
+provider
+:
+
+"auto"
+
+model
+:
+
+""
+
+timeout
+:
+
+30
+
+max_concurrency
+:
+
+3
+
+extra_body
+:
+
+{
+}
+
+skills_hub
+:
+
+provider
+:
+
+"auto"
+
+model
+:
+
+""
+
+mcp
+:
+
+provider
+:
+
+"auto"
+
+model
+:
+
+""
+
+Every task above follows the same 
+provider / model / base_url
+ pattern. Context compression is configured under 
+auxiliary.compression
+:
+
+auxiliary
+:
+
+compression
+:
+
+provider
+:
+ main 
+# Same provider options as other auxiliary tasks
+
+model
+:
+ google/gemini
+-
+3
+-
+flash
+-
+preview
+
+base_url
+:
+
+null
+
+# Custom OpenAI-compatible endpoint
+
+And the fallback model uses:
+
+fallback_model
+:
+
+provider
+:
+ openrouter
+
+model
+:
+ anthropic/claude
+-
+sonnet
+-
+4
+
+# base_url: http://localhost:8000/v1 # Optional custom endpoint
+
+For 
+auxiliary.session_search
+, Hermes also supports:
+
+max_concurrency
+ to limit how many session summaries run at once
+
+extra_body
+ to pass provider-specific OpenAI-compatible request fields through on the summarization calls
+
+Example:
+
+auxiliary
+:
+
+session_search
+:
+
+provider
+:
+ main
+
+model
+:
+ glm
+-
+4.5
+-
+air
+
+max_concurrency
+:
+
+2
+
+extra_body
+:
+
+enable_thinking
+:
+
+false
+
+If your provider does not support a native OpenAI-compatible reasoning-control field, 
+extra_body
+ will not help for that part; in that case 
+max_concurrency
+ is still useful for reducing request-burst 429s.
+
+All three — auxiliary, compression, fallback — work the same way: set 
+provider
+ to pick who handles the request, 
+model
+ to pick which model, and 
+base_url
+ to point at a custom endpoint (overrides provider).
+
+Provider Options for Auxiliary Tasks
+​
+
+These options apply to 
+auxiliary:
+, 
+compression:
+, and 
+fallback_model:
+ configs only — 
+"main"
+ is 
+not
+ a valid value for your top-level 
+model.provider
+. For custom endpoints, use 
+provider: custom
+ in your 
+model:
+ section (see 
+AI Providers
+).
+
+Provider
+Description
+Requirements
+"auto"
+Try providers in order until one works (default)
+At least one provider configured
+"openrouter"
+Force OpenRouter
+OPENROUTER_API_KEY
+"nous"
+Force Nous Portal
+hermes auth
+"codex"
+Force Codex OAuth
+hermes model
+ → Codex
+"main"
+Use whatever provider the main agent uses (auxiliary tasks only)
+Active main provider configured
+"anthropic"
+Force Anthropic native
+ANTHROPIC_API_KEY
+ or Claude Code credentials
+
+Direct Endpoint Override
+​
+
+For any auxiliary task, setting 
+base_url
+ bypasses provider resolution entirely and sends requests directly to that endpoint:
+
+auxiliary
+:
+
+vision
+:
+
+base_url
+:
+
+"http://localhost:1234/v1"
+
+api_key
+:
+
+"local-key"
+
+model
+:
+
+"qwen2.5-vl"
+
+base_url
+ takes precedence over 
+provider
+. Hermes uses the configured 
+api_key
+ for authentication, falling back to 
+OPENAI_API_KEY
+ if not set. It does 
+not
+ reuse 
+OPENROUTER_API_KEY
+ for custom endpoints.
+
+Context Compression Fallback
+​
+
+Context compression uses the 
+auxiliary.compression
+ config block to control which model and provider handles summarization:
+
+auxiliary
+:
+
+compression
+:
+
+provider
+:
+
+"auto"
+
+# auto | openrouter | nous | main
+
+model
+:
+
+"google/gemini-3-flash-preview"
+
+Legacy migration
+Older configs with 
+compression.summary_model
+ / 
+compression.summary_provider
+ / 
+compression.summary_base_url
+ are automatically migrated to 
+auxiliary.compression.*
+ on first load (config version 17).
+
+If no provider is available for compression, Hermes drops middle conversation turns without generating a summary rather than failing the session.
+
+Delegation Provider Override
+​
+
+Subagents spawned by 
+delegate_task
+ do 
+not
+ use the primary fallback model. However, they can be routed to a different provider
+:model
+ pair for cost optimization:
+
+delegation
+:
+
+provider
+:
+
+"openrouter"
+
+# override provider for all subagents
+
+model
+:
+
+"google/gemini-3-flash-preview"
+
+# override model
+
+# base_url: "http://localhost:1234/v1" # or use a direct endpoint
+
+# api_key: "local-key"
+
+See 
+Subagent Delegation
+ for full configuration details.
+
+Cron Job Providers
+​
+
+Cron jobs run with whatever provider is configured at execution time. They do not support a fallback model. To use a different provider for cron jobs, configure 
+provider
+ and 
+model
+ overrides on the cron job itself:
+
+cronjob
+(
+ action
+=
+"create"
+,
+ schedule
+=
+"every 2h"
+,
+ prompt
+=
+"Check server status"
+,
+ provider
+=
+"openrouter"
+,
+ model
+=
+"google/gemini-3-flash-preview"
+)
+
+See 
+Scheduled Tasks (Cron)
+ for full configuration details.
+
+Summary
+​
+
+Feature
+Fallback Mechanism
+Config Location
+Main agent model
+fallback_model
+ in config.yaml — per-turn failover on errors (primary restored each turn)
+fallback_model:
+ (top-level)
+Vision
+Auto-detection chain + internal OpenRouter retry
+auxiliary.vision
+Web extraction
+Auto-detection chain + internal OpenRouter retry
+auxiliary.web_extract
+Context compression
+Auto-detection chain, degrades to no-summary if unavailable
+auxiliary.compression
+Session search
+Auto-detection chain
+auxiliary.session_search
+Skills hub
+Auto-detection chain
+auxiliary.skills_hub
+MCP helpers
+Auto-detection chain
+auxiliary.mcp
+Approval classification
+Auto-detection chain
+auxiliary.approval
+Title generation
+Auto-detection chain
+auxiliary.title_generation
+Triage specifier
+Auto-detection chain
+auxiliary.triage_specifier
+Delegation
+Provider override only (no automatic fallback)
+delegation.provider
+ / 
+delegation.model
+Cron jobs
+Per-job provider override only (no automatic fallback)
+Per-job 
+provider
+ / 
+model
+========================================
+CODE_BLOCKS:
+hermes fallback
+
+fallback_model:  provider: openrouter  model: anthropic/claude-sonnet-4
+
+fallback_model:  provider: custom  model: my-local-model  base_url: http://localhost:8000/v1  key_env: MY_LOCAL_KEY              # env var name containing the API key
+
+model:  provider: anthropic  default: claude-sonnet-4-6fallback_model:  provider: openrouter  model: anthropic/claude-sonnet-4
+
+model:  provider: openrouter  default: anthropic/claude-opus-4fallback_model:  provider: nous  model: nous-hermes-3
+
+fallback_model:  provider: custom  model: llama-3.1-70b  base_url: http://localhost:8000/v1  key_env: LOCAL_API_KEY
+
+fallback_model:  provider: openai-codex  model: gpt-5.3-codex
+
+OpenRouter → Nous Portal → Custom endpoint → Codex OAuth →API-key providers (z.ai, Kimi, MiniMax, Xiaomi MiMo, Hugging Face, Anthropic) → give up
+
+Main provider (if vision-capable) → OpenRouter → Nous Portal →Codex OAuth → Anthropic → Custom endpoint → give up
+
+auxiliary:  vision:    provider: "auto"              # auto | openrouter | nous | codex | main | anthropic    model: ""                     # e.g. "openai/gpt-4o"    base_url: ""                  # direct endpoint (takes precedence over provider)    api_key: ""                   # API key for base_url  web_extract:    provider: "auto"    model: ""  compression:    provider: "auto"    model: ""  session_search:    provider: "auto"    model: ""    timeout: 30    max_concurrency: 3    extra_body: {
+
+auxiliary:  compression:    provider: main                                    # Same provider options as other auxiliary tasks    model: google/gemini-3-flash-preview    base_url: null                                    # Custom OpenAI-compatible endpoint
+
+fallback_model:  provider: openrouter  model: anthropic/claude-sonnet-4  # base_url: http://localhost:8000/v1               # Optional custom endpoint
+
+auxiliary:  session_search:    provider: main    model: glm-4.5-air    max_concurrency: 2    extra_body:      enable_thinking: false
+
+auxiliary:  vision:    base_url: "http://localhost:1234/v1"    api_key: "local-key"    model: "qwen2.5-vl"
+
+auxiliary:  compression:    provider: "auto"                              # auto | openrouter | nous | main    model: "google/gemini-3-flash-preview"
+
+delegation:  provider: "openrouter"                      # override provider for all subagents  model: "google/gemini-3-flash-preview"      # override model  # base_url: "http://localhost:1234/v1"      # or use a direct endpoint  # api_key: "local-key"
+
+cronjob(    action="create",    schedule="every 2h",    prompt="Check server status",    provider="openrouter",    model="google/gemini-3-flash-preview")
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/goals
+TITLE: Persistent Goals | Hermes Agent
+H1: Persistent Goals (/goal)
+TEXT:
+On this page
+
+/goal
+ gives Hermes a standing objective that survives across turns. After every turn a lightweight judge model checks whether the goal is satisfied by the assistant's last response. If not, Hermes automatically feeds a continuation prompt back into the same session and keeps working — until the goal is achieved, you pause or clear it, or the turn budget runs out.
+
+It's our take on the 
+Ralph loop
+, directly inspired by 
+Codex CLI 0.128.0's 
+/goal
+ by Eric Traut (OpenAI). The core idea — keep a goal alive across turns and don't stop until it's achieved — is theirs. The implementation here is independent and adapted to Hermes' architecture.
+
+When to use it
+​
+
+Use 
+/goal
+ for tasks where you want Hermes to iterate on its own without you re-prompting every turn:
+
+"Fix every lint error in 
+src/
+ and verify 
+ruff check
+ passes"
+
+"Port feature X from repo Y, including tests, and get CI green"
+
+"Investigate why session IDs sometimes drift on mid-run compression and write up a report"
+
+"Build a small CLI to rename files by their EXIF dates, then test it against the photos/ folder"
+
+Tasks where the agent does one turn and stops don't need 
+/goal
+. Tasks where 
+you'd otherwise have to say "keep going" three times
+ are where this shines.
+
+Quick start
+​
+
+/goal Fix every failing test in tests/hermes_cli/ and make sure scripts/run_tests.sh passes for that directory
+
+What you'll see:
+
+Goal accepted
+ — 
+⊙ Goal set (20-turn budget): <your goal>
+
+Turn 1 runs
+ — Hermes starts working as if you'd sent the goal as a normal message.
+
+Judge runs
+ — after the turn, the judge model decides 
+done
+ or 
+continue
+.
+
+Loop fires if needed
+ — if 
+continue
+, you'll see 
+↻ Continuing toward goal (1/20): <judge's reason>
+ and Hermes takes the next step automatically.
+
+Terminates
+ — eventually you see either 
+✓ Goal achieved: <reason>
+ or 
+⏸ Goal paused — N/20 turns used
+.
+
+Commands
+​
+
+Command
+What it does
+/goal <text>
+Set (or replace) the standing goal. Kicks off the first turn immediately so you don't need to send a separate message.
+/goal
+ or 
+/goal status
+Show the current goal, its status, and turns used.
+/goal pause
+Stop the auto-continuation loop without clearing the goal.
+/goal resume
+Resume the loop (resets the turn counter back to zero).
+/goal clear
+Drop the goal entirely.
+
+Works identically on the CLI and every gateway platform (Telegram, Discord, Slack, Matrix, Signal, WhatsApp, SMS, iMessage, Webhook, API server, and the web dashboard).
+
+Behavior details
+​
+
+The judge
+​
+
+After every turn, Hermes calls an auxiliary model with:
+
+The standing goal text
+
+The agent's most recent final response (last ~4 KB of text)
+
+A system prompt telling the judge to reply with strict JSON: 
+{"done": <bool>, "reason": "<one-sentence rationale>"}
+
+The judge is deliberately conservative: it marks a goal 
+done
+ only when the response 
+explicitly
+ confirms the goal is complete, when the final deliverable is clearly produced, or when the goal is unachievable/blocked (treated as DONE with a block reason so we don't burn budget on impossible tasks).
+
+Fail-open semantics
+​
+
+If the judge errors (network blip, malformed response, unavailable aux client), Hermes treats the verdict as 
+continue
+ — a broken judge never wedges progress. The 
+turn budget
+ is the real backstop.
+
+Turn budget
+​
+
+Default is 20 continuation turns (
+goals.max_turns
+ in 
+config.yaml
+). When the budget is hit, Hermes auto-pauses and tells you exactly how to proceed:
+
+⏸ Goal paused — 20/20 turns used. Use /goal resume to keep going, or /goal clear to stop.
+
+/goal resume
+ resets the counter to zero, so you can keep going in measured chunks.
+
+User messages always preempt
+​
+
+Any real message you send while a goal is active takes priority over the continuation loop. On the CLI your message lands in 
+_pending_input
+ ahead of the queued continuation; on the gateway it goes through the adapter FIFO the same way. The judge runs again after your turn — so if your message happens to complete the goal, the judge will catch it and stop.
+
+Mid-run safety (gateway)
+​
+
+While an agent is already running, 
+/goal status
+, 
+/goal pause
+, and 
+/goal clear
+ are safe to run — they only touch control-plane state and don't interrupt the current turn. Setting a 
+new
+ goal mid-run (
+/goal <new text>
+) is rejected with a message telling you to 
+/stop
+ first, so the old continuation can't race the new one.
+
+Persistence
+​
+
+Goal state lives in 
+SessionDB.state_meta
+ keyed by 
+goal:<session_id>
+. That means 
+/resume
+ picks up right where you left off — set a goal, close your laptop, come back tomorrow, 
+/resume
+, and the goal is still standing exactly as you left it (active, paused, or done).
+
+Prompt cache
+​
+
+The continuation prompt is a plain user-role message appended to history. It does 
+not
+ mutate the system prompt, swap toolsets, or touch the conversation in any way that invalidates Hermes' prompt cache. Running a 20-turn goal costs the same cache-wise as 20 turns of normal conversation.
+
+Configuration
+​
+
+Add to 
+~/.hermes/config.yaml
+:
+
+goals
+:
+
+# Max continuation turns before Hermes auto-pauses and asks you to
+
+# /goal resume. Default 20. Lower this if you want tighter loops;
+
+# raise it for long-running refactors.
+
+max_turns
+:
+
+20
+
+Choosing the judge model
+​
+
+The judge uses the 
+goal_judge
+ auxiliary task. By default it resolves to your main model (see 
+Auxiliary Models
+). If you want to route the judge to a cheap fast model to keep costs down, add an override:
+
+auxiliary
+:
+
+goal_judge
+:
+
+provider
+:
+ openrouter
+
+model
+:
+ google/gemini
+-
+3
+-
+flash
+-
+preview
+
+The judge call is small (~200 output tokens) and runs once per turn, so a cheap fast model is usually the right call.
+
+Example walkthrough
+​
+
+You: /goal Create four files /tmp/note_{1..4}.txt, one per turn, each containing its number as text
+ ⊙ Goal set (20-turn budget): Create four files /tmp/note_{1..4}.txt, one per turn, each containing its number as text
+Hermes: Creating /tmp/note_1.txt now.
+ 💻 echo "1" > /tmp/note_1.txt (0.1s)
+ I've created /tmp/note_1.txt with the content "1". I'll continue with the remaining files on the next turn as you specified.
+ ↻ Continuing toward goal (1/20): Only 1 of 4 files has been created; 3 files remain.
+Hermes: [Continuing toward your standing goal]
+ 💻 echo "2" > /tmp/note_2.txt (0.1s)
+ Created /tmp/note_2.txt. Two more to go.
+ ↻ Continuing toward goal (2/20): 2 of 4 files created; 2 remain.
+Hermes: [Continuing toward your standing goal]
+ 💻 echo "3" > /tmp/note_3.txt (0.1s)
+ Created /tmp/note_3.txt.
+ ↻ Continuing toward goal (3/20): 3 of 4 files created; 1 remains.
+Hermes: [Continuing toward your standing goal]
+ 💻 echo "4" > /tmp/note_4.txt (0.1s)
+ All four files have been created: /tmp/note_1.txt through /tmp/note_4.txt, each containing its number.
+ ✓ Goal achieved: All four files were created with the specified content, completing the goal.
+You: _
+
+Four turns, one 
+/goal
+ invocation, zero "keep going" prompts from you.
+
+When the judge gets it wrong
+​
+
+No judge is perfect. Two failure modes to watch for:
+
+False negative — judge says continue when the goal is actually done.
+ The turn budget catches this. You'll see 
+⏸ Goal paused
+ and can 
+/goal clear
+ or just send a new message.
+
+False positive — judge says done when work remains.
+ You'll see 
+✓ Goal achieved
+ but you know better. Send a follow-up message to continue, or re-set the goal more precisely: 
+/goal <more specific text>
+. The judge's system prompt is deliberately conservative to make false positives rarer than false negatives.
+
+If you find a judge verdict unconvincing, the reason text in the 
+↻ Continuing toward goal
+ or 
+✓ Goal achieved
+ line tells you exactly what the judge saw. That's usually enough to diagnose whether the goal text was ambiguous or the model's response was.
+
+Attribution
+​
+
+/goal
+ is Hermes' take on the 
+Ralph loop
+ pattern. The user-facing design — keep a goal alive across turns, don't stop until it's achieved, with create/pause/resume/clear controls — was popularised and shipped in 
+Codex CLI 0.128.0
+ by Eric Traut on OpenAI's Codex team. Our implementation is independent (central 
+CommandDef
+ registry, 
+SessionDB.state_meta
+ persistence, auxiliary-client judge, adapter-FIFO continuation on the gateway side) but the idea is theirs. Credit where credit's due.
+========================================
+CODE_BLOCKS:
+/goal Fix every failing test in tests/hermes_cli/ and make sure scripts/run_tests.sh passes for that directory
+
+⏸ Goal paused — 20/20 turns used. Use /goal resume to keep going, or /goal clear to stop.
+
+goals:  # Max continuation turns before Hermes auto-pauses and asks you to  # /goal resume. Default 20. Lower this if you want tighter loops;  # raise it for long-running refactors.  max_turns: 20
+
+auxiliary:  goal_judge:    provider: openrouter    model: google/gemini-3-flash-preview
+
+You: /goal Create four files /tmp/note_{1..4}.txt, one per turn, each containing its number as text  ⊙ Goal set (20-turn budget): Create four files /tmp/note_{1..4}.txt, one per turn, each containing its number as textHermes: Creating /tmp/note_1.txt now.  💻 echo "1" > /tmp/note_1.txt   (0.1s)  I've created /tmp/note_1.txt with the content "1". I'll continue with the remaining files on the next turn as you specified.  ↻ Continuing toward goal (1/20): Only 1 of 4 files has been created; 3 files r
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/honcho
+TITLE: Honcho Memory | Hermes Agent
+H1: Honcho Memory
+TEXT:
+On this page
+
+Honcho
+ is an AI-native memory backend that adds dialectic reasoning and deep user modeling on top of Hermes's built-in memory system. Instead of simple key-value storage, Honcho maintains a running model of who the user is — their preferences, communication style, goals, and patterns — by reasoning about conversations after they happen.
+
+Honcho is a Memory Provider Plugin
+Honcho is integrated into the 
+Memory Providers
+ system. All features below are available through the unified memory provider interface.
+
+What Honcho Adds
+​
+
+Capability
+Built-in Memory
+Honcho
+Cross-session persistence
+✔ File-based MEMORY.md/USER.md
+✔ Server-side with API
+User profile
+✔ Manual agent curation
+✔ Automatic dialectic reasoning
+Session summary
+—
+✔ Session-scoped context injection
+Multi-agent isolation
+—
+✔ Per-peer profile separation
+Observation modes
+—
+✔ Unified or directional observation
+Conclusions (derived insights)
+—
+✔ Server-side reasoning about patterns
+Search across history
+✔ FTS5 session search
+✔ Semantic search over conclusions
+
+Dialectic reasoning
+: After each conversation turn (gated by 
+dialecticCadence
+), Honcho analyzes the exchange and derives insights about the user's preferences, habits, and goals. These accumulate over time, giving the agent a deepening understanding that goes beyond what the user explicitly stated. The dialectic supports multi-pass depth (1–3 passes) with automatic cold/warm prompt selection — cold start queries focus on general user facts while warm queries prioritize session-scoped context.
+
+Session-scoped context
+: Base context now includes the session summary alongside the user representation and peer card. This gives the agent awareness of what has already been discussed in the current session, reducing repetition and enabling continuity.
+
+Multi-agent profiles
+: When multiple Hermes instances talk to the same user (e.g., a coding assistant and a personal assistant), Honcho maintains separate "peer" profiles. Each peer sees only its own observations and conclusions, preventing cross-contamination of context.
+
+Setup
+​
+
+hermes memory setup 
+# select "honcho" from the provider list
+
+Or configure manually:
+
+# ~/.hermes/config.yaml
+memory
+:
+
+provider
+:
+ honcho
+
+echo
+ "HONCHO_API_KEY
+=
+*** 
+>>
+ ~/.hermes/.env
+
+Get an API key at 
+honcho.dev
+.
+
+Architecture
+​
+
+Two-Layer Context Injection
+​
+
+Every turn (in 
+hybrid
+ or 
+context
+ mode), Honcho assembles two layers of context injected into the system prompt:
+
+Base context
+ — session summary, user representation, user peer card, AI self-representation, and AI identity card. Refreshed on 
+contextCadence
+. This is the "who is this user" layer.
+
+Dialectic supplement
+ — LLM-synthesized reasoning about the user's current state and needs. Refreshed on 
+dialecticCadence
+. This is the "what matters right now" layer.
+
+Both layers are concatenated and truncated to the 
+contextTokens
+ budget (if set).
+
+Cold/Warm Prompt Selection
+​
+
+The dialectic automatically selects between two prompt strategies:
+
+Cold start
+ (no base context yet): General query — "Who is this person? What are their preferences, goals, and working style?"
+
+Warm session
+ (base context exists): Session-scoped query — "Given what's been discussed in this session so far, what context about this user is most relevant?"
+
+This happens automatically based on whether base context has been populated.
+
+Three Orthogonal Config Knobs
+​
+
+Cost and depth are controlled by three independent knobs:
+
+Knob
+Controls
+Default
+contextCadence
+Turns between 
+context()
+ API calls (base layer refresh)
+1
+dialecticCadence
+Turns between 
+peer.chat()
+ LLM calls (dialectic layer refresh)
+2
+ (recommended 1–5)
+dialecticDepth
+Number of 
+.chat()
+ passes per dialectic invocation (1–3)
+1
+
+These are orthogonal — you can have frequent context refreshes with infrequent dialectic, or deep multi-pass dialectic at low frequency. Example: 
+contextCadence: 1, dialecticCadence: 5, dialecticDepth: 2
+ refreshes base context every turn, runs dialectic every 5 turns, and each dialectic run makes 2 passes.
+
+Dialectic Depth (Multi-Pass)
+​
+
+When 
+dialecticDepth
+ > 1, each dialectic invocation runs multiple 
+.chat()
+ passes:
+
+Pass 0
+: Cold or warm prompt (see above)
+
+Pass 1
+: Self-audit — identifies gaps in the initial assessment and synthesizes evidence from recent sessions
+
+Pass 2
+: Reconciliation — checks for contradictions between prior passes and produces a final synthesis
+
+Each pass uses a proportional reasoning level (lighter early passes, base level for the main pass). Override per-pass levels with 
+dialecticDepthLevels
+ — e.g., 
+["minimal", "medium", "high"]
+ for a depth-3 run.
+
+Passes bail out early if the prior pass returned strong signal (long, structured output), so depth 3 doesn't always mean 3 LLM calls.
+
+Session-Start Prewarm
+​
+
+On session init, Honcho fires a dialectic call in the background at the full configured 
+dialecticDepth
+ and hands the result directly to turn 1's context assembly. A single-pass prewarm on a cold peer often returns thin output — multi-pass depth runs the audit/reconcile cycle before the user ever speaks. If prewarm hasn't landed by turn 1, turn 1 falls back to a synchronous call with a bounded timeout.
+
+Query-Adaptive Reasoning Level
+​
+
+The auto-injected dialectic scales 
+dialecticReasoningLevel
+ by query length: +1 level at ≥120 chars, +2 at ≥400, clamped at 
+reasoningLevelCap
+ (default 
+"high"
+). Disable with 
+reasoningHeuristic: false
+ to pin every auto call to 
+dialecticReasoningLevel
+. Available levels: 
+minimal
+, 
+low
+, 
+medium
+, 
+high
+, 
+max
+.
+
+Configuration Options
+​
+
+Honcho is configured in 
+~/.honcho/config.json
+ (global) or 
+$HERMES_HOME/honcho.json
+ (profile-local). The setup wizard handles this for you.
+
+Full Config Reference
+​
+
+Key
+Default
+Description
+contextTokens
+null
+ (uncapped)
+Token budget for auto-injected context per turn. Set to an integer (e.g. 1200) to cap. Truncates at word boundaries
+contextCadence
+1
+Minimum turns between 
+context()
+ API calls (base layer refresh)
+dialecticCadence
+2
+Minimum turns between 
+peer.chat()
+ LLM calls (dialectic layer). Recommended 1–5. In 
+tools
+ mode, irrelevant — model calls explicitly
+dialecticDepth
+1
+Number of 
+.chat()
+ passes per dialectic invocation. Clamped to 1–3
+dialecticDepthLevels
+null
+Optional array of reasoning levels per pass, e.g. 
+["minimal", "low", "medium"]
+. Overrides proportional defaults
+dialecticReasoningLevel
+'low'
+Base reasoning level: 
+minimal
+, 
+low
+, 
+medium
+, 
+high
+, 
+max
+dialecticDynamic
+true
+When 
+true
+, model can override reasoning level per-call via tool param
+dialecticMaxChars
+600
+Max chars of dialectic result injected into system prompt
+recallMode
+'hybrid'
+hybrid
+ (auto-inject + tools), 
+context
+ (inject only), 
+tools
+ (tools only)
+writeFrequency
+'async'
+When to flush messages: 
+async
+ (background thread), 
+turn
+ (sync), 
+session
+ (batch on end), or integer N
+saveMessages
+true
+Whether to persist messages to Honcho API
+observationMode
+'directional'
+directional
+ (all on) or 
+unified
+ (shared pool). Override with 
+observation
+ object for granular control
+messageMaxChars
+25000
+Max chars per message sent via 
+add_messages()
+. Chunked if exceeded
+dialecticMaxInputChars
+10000
+Max chars for dialectic query input to 
+peer.chat()
+sessionStrategy
+'per-directory'
+per-directory
+, 
+per-repo
+, 
+per-session
+, or 
+global
+
+Session strategy
+ controls how Honcho sessions map to your work:
+
+per-session
+ — each 
+hermes
+ run gets a fresh session. Clean starts, memory via tools. Recommended for new users.
+
+per-directory
+ — one Honcho session per working directory. Context accumulates across runs.
+
+per-repo
+ — one session per git repository.
+
+global
+ — single session across all directories.
+
+Recall mode
+ controls how memory flows into conversations:
+
+hybrid
+ — context auto-injected into system prompt AND tools available (model decides when to query).
+
+context
+ — auto-injection only, tools hidden.
+
+tools
+ — tools only, no auto-injection. Agent must explicitly call 
+honcho_reasoning
+, 
+honcho_search
+, etc.
+
+Settings per recall mode:
+
+Setting
+hybrid
+context
+tools
+writeFrequency
+flushes messages
+flushes messages
+flushes messages
+contextCadence
+gates base context refresh
+gates base context refresh
+irrelevant — no injection
+dialecticCadence
+gates auto LLM calls
+gates auto LLM calls
+irrelevant — model calls explicitly
+dialecticDepth
+multi-pass per invocation
+multi-pass per invocation
+irrelevant — model calls explicitly
+contextTokens
+caps injection
+caps injection
+irrelevant — no injection
+dialecticDynamic
+gates model override
+N/A (no tools)
+gates model override
+
+In 
+tools
+ mode, the model is fully in control — it calls 
+honcho_reasoning
+ when it wants, at whatever 
+reasoning_level
+ it picks. Cadence and budget settings only apply to modes with auto-injection (
+hybrid
+ and 
+context
+).
+
+Observation (Directional vs. Unified)
+​
+
+Honcho models a conversation as peers exchanging messages. Each peer has two observation toggles that map 1:1 to Honcho's 
+SessionPeerConfig
+:
+
+Toggle
+Effect
+observeMe
+Honcho builds a representation of this peer from its own messages
+observeOthers
+This peer observes the other peer's messages (feeds cross-peer reasoning)
+
+Two peers × two toggles = four flags. 
+observationMode
+ is a shorthand preset:
+
+Preset
+User flags
+AI flags
+Semantics
+"directional"
+ (default)
+me: on, others: on
+me: on, others: on
+Full mutual observation. Enables cross-peer dialectic — "what does the AI know about the user, based on what the user said and the AI replied."
+"unified"
+me: on, others: off
+me: off, others: on
+Shared-pool semantics — the AI observes the user's messages only, the user peer only self-models. Single-observer pool.
+
+Override the preset with an explicit 
+observation
+ block for per-peer control:
+
+"observation"
+:
+
+{
+
+"user"
+:
+
+{
+
+"observeMe"
+:
+
+true
+,
+
+"observeOthers"
+:
+
+true
+
+}
+,
+
+"ai"
+:
+
+{
+
+"observeMe"
+:
+
+true
+,
+
+"observeOthers"
+:
+
+false
+
+}
+}
+
+Common patterns:
+
+Intent
+Config
+Full observation (most users)
+"observationMode": "directional"
+AI shouldn't re-model the user from its own replies
+"ai": {"observeMe": true, "observeOthers": false}
+Strong persona the AI peer shouldn't update from self-observation
+"ai": {"observeMe": false, "observeOthers": true}
+
+Server-side toggles set via the 
+Honcho dashboard
+ win over local defaults — Hermes syncs them back at session init.
+
+Tools
+​
+
+When Honcho is active as the memory provider, five tools become available:
+
+Tool
+Purpose
+honcho_profile
+Read or update peer card — pass 
+card
+ (list of facts) to update, omit to read
+honcho_search
+Semantic search over context — raw excerpts, no LLM synthesis
+honcho_context
+Full session context — summary, representation, card, recent messages
+honcho_reasoning
+Synthesized answer from Honcho's LLM — pass 
+reasoning_level
+ (minimal/low/medium/high/max) to control depth
+honcho_conclude
+Create or delete conclusions — pass 
+conclusion
+ to create, 
+delete_id
+ to remove (PII only)
+
+CLI Commands
+​
+
+hermes honcho status 
+# Connection status, config, and key settings
+hermes honcho setup 
+# Interactive setup wizard
+hermes honcho strategy 
+# Show or set session strategy
+hermes honcho peer 
+# Update peer names for multi-agent setups
+hermes honcho mode 
+# Show or set recall mode
+hermes honcho tokens 
+# Show or set context token budget
+hermes honcho identity 
+# Show Honcho peer identity
+hermes honcho 
+sync
+
+# Sync host blocks for all profiles
+hermes honcho 
+enable
+
+# Enable Honcho
+hermes honcho disable 
+# Disable Honcho
+
+Migrating from 
+hermes honcho
+​
+
+If you previously used the standalone 
+hermes honcho setup
+:
+
+Your existing configuration (
+honcho.json
+ or 
+~/.honcho/config.json
+) is preserved
+
+Your server-side data (memories, conclusions, user profiles) is intact
+
+Set 
+memory.provider: honcho
+ in config.yaml to reactivate
+
+No re-login or re-setup needed. Run 
+hermes memory setup
+ and select "honcho" — the wizard detects your existing config.
+
+Full Documentation
+​
+
+See 
+Memory Providers — Honcho
+ for the complete reference.
+========================================
+CODE_BLOCKS:
+hermes memory setup    # select "honcho" from the provider list
+
+# ~/.hermes/config.yamlmemory:  provider: honcho
+
+echo "HONCHO_API_KEY=*** >> ~/.hermes/.env
+
+"observation": {  "user": { "observeMe": true,  "observeOthers": true },  "ai":   { "observeMe": true,  "observeOthers": false }}
+
+hermes honcho status          # Connection status, config, and key settingshermes honcho setup           # Interactive setup wizardhermes honcho strategy        # Show or set session strategyhermes honcho peer            # Update peer names for multi-agent setupshermes honcho mode            # Show or set recall modehermes honcho tokens          # Show or set context token budgethermes honcho identity        # Show Honcho peer identityhermes honcho sync            # Sync host blocks for all prof
+================================================================================
+

@@ -1,0 +1,5027 @@
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/built-in-plugins
+TITLE: Built-in Plugins | Hermes Agent
+H1: Built-in Plugins
+TEXT:
+On this page
+
+Hermes ships a small set of plugins bundled with the repository. They live under 
+<repo>/plugins/<name>/
+ and load automatically alongside user-installed plugins in 
+~/.hermes/plugins/
+. They use the same plugin surface as third-party plugins — hooks, tools, slash commands — just maintained in-tree.
+
+See the 
+Plugins
+ page for the general plugin system, and 
+Build a Hermes Plugin
+ to write your own.
+
+How discovery works
+​
+
+The 
+PluginManager
+ scans four sources, in order:
+
+Bundled
+ — 
+<repo>/plugins/<name>/
+ (what this page documents)
+
+User
+ — 
+~/.hermes/plugins/<name>/
+
+Project
+ — 
+./.hermes/plugins/<name>/
+ (requires 
+HERMES_ENABLE_PROJECT_PLUGINS=1
+)
+
+Pip entry points
+ — 
+hermes_agent.plugins
+
+On name collision, later sources win — a user plugin named 
+disk-cleanup
+ would replace the bundled one.
+
+plugins/memory/
+ and 
+plugins/context_engine/
+ are deliberately excluded from bundled scanning. Those directories use their own discovery paths because memory providers and context engines are single-select providers configured through 
+hermes memory setup
+ / 
+context.engine
+ in config.
+
+Bundled plugins are opt-in
+​
+
+Bundled plugins ship disabled. Discovery finds them (they appear in 
+hermes plugins list
+ and the interactive 
+hermes plugins
+ UI), but none load until you explicitly enable them:
+
+hermes plugins 
+enable
+ disk-cleanup
+
+Or via 
+~/.hermes/config.yaml
+:
+
+plugins
+:
+
+enabled
+:
+
+-
+ disk
+-
+cleanup
+
+This is the same mechanism user-installed plugins use. Bundled plugins are never auto-enabled — not on fresh install, not for existing users upgrading to a newer Hermes. You always opt in explicitly.
+
+To turn a bundled plugin off again:
+
+hermes plugins disable disk-cleanup
+# or: remove it from plugins.enabled in config.yaml
+
+Currently shipped
+​
+
+The repo ships these bundled plugins under 
+plugins/
+. All are opt-in — enable them via 
+hermes plugins enable <name>
+.
+
+Plugin
+Kind
+Purpose
+disk-cleanup
+hooks + slash command
+Auto-track ephemeral files and clean them on session end
+observability/langfuse
+hooks
+Trace turns / LLM calls / tools to 
+Langfuse
+spotify
+backend (7 tools)
+Native Spotify playback, queue, search, playlists, albums, library
+google_meet
+standalone
+Join Meet calls, live-caption transcription, optional realtime duplex audio
+image_gen/openai
+image backend
+OpenAI 
+gpt-image-2
+ image generation backend (alternative to FAL)
+image_gen/openai-codex
+image backend
+OpenAI image generation via Codex OAuth
+image_gen/xai
+image backend
+xAI 
+grok-2-image
+ backend
+hermes-achievements
+dashboard tab
+Steam-style collectible badges generated from your real Hermes session history
+example-dashboard
+dashboard example
+Reference dashboard plugin for 
+Extending the Dashboard
+strike-freedom-cockpit
+dashboard skin
+Sample custom dashboard skin
+
+Memory providers (
+plugins/memory/*
+) and context engines (
+plugins/context_engine/*
+) are listed separately on 
+Memory Providers
+ — they're managed through 
+hermes memory
+ and 
+hermes plugins
+ respectively. The full per-plugin detail for the two long-running hooks-based plugins follows.
+
+disk-cleanup
+​
+
+Auto-tracks and removes ephemeral files created during sessions — test scripts, temp outputs, cron logs, stale chrome profiles — without requiring the agent to remember to call a tool.
+
+How it works:
+
+Hook
+Behaviour
+post_tool_call
+When 
+write_file
+ / 
+terminal
+ / 
+patch
+ creates a file matching 
+test_*
+, 
+tmp_*
+, or 
+*.test.*
+ inside 
+HERMES_HOME
+ or 
+/tmp/hermes-*
+, track it silently as 
+test
+ / 
+temp
+ / 
+cron-output
+.
+on_session_end
+If any test files were auto-tracked during the turn, run the safe 
+quick
+ cleanup and log a one-line summary. Stays silent otherwise.
+
+Deletion rules:
+
+Category
+Threshold
+Confirmation
+test
+every session end
+Never
+temp
+>7 days since tracked
+Never
+cron-output
+>14 days since tracked
+Never
+empty dirs under HERMES_HOME
+always
+Never
+research
+>30 days, beyond 10 newest
+Always (deep only)
+chrome-profile
+>14 days since tracked
+Always (deep only)
+files >500 MB
+never auto
+Always (deep only)
+
+Slash command
+ — 
+/disk-cleanup
+ available in both CLI and gateway sessions:
+
+/disk-cleanup status # breakdown + top-10 largest
+/disk-cleanup dry-run # preview without deleting
+/disk-cleanup quick # run safe cleanup now
+/disk-cleanup deep # quick + list items needing confirmation
+/disk-cleanup track <path> <category> # manual tracking
+/disk-cleanup forget <path> # stop tracking (does not delete)
+
+State
+ — everything lives at 
+$HERMES_HOME/disk-cleanup/
+:
+
+File
+Contents
+tracked.json
+Tracked paths with category, size, and timestamp
+tracked.json.bak
+Atomic-write backup of the above
+cleanup.log
+Append-only audit trail of every track / skip / reject / delete
+
+Safety
+ — cleanup only ever touches paths under 
+HERMES_HOME
+ or 
+/tmp/hermes-*
+. Windows mounts (
+/mnt/c/...
+) are rejected. Well-known top-level state dirs (
+logs/
+, 
+memories/
+, 
+sessions/
+, 
+cron/
+, 
+cache/
+, 
+skills/
+, 
+plugins/
+, 
+disk-cleanup/
+ itself) are never removed even when empty — a fresh install does not get gutted on first session end.
+
+Enabling:
+
+hermes plugins enable disk-cleanup
+ (or check the box in 
+hermes plugins
+).
+
+Disabling again:
+
+hermes plugins disable disk-cleanup
+.
+
+observability/langfuse
+​
+
+Traces Hermes turns, LLM calls, and tool invocations to 
+Langfuse
+ — an open-source LLM observability platform. One span per turn, one generation per API call, one tool observation per tool call. Usage totals, per-type token counts, and cost estimates come out of Hermes' canonical 
+agent.usage_pricing
+ numbers, so the Langfuse dashboard sees the same breakdown (input / output / 
+cache_read_input_tokens
+ / 
+cache_creation_input_tokens
+ / 
+reasoning_tokens
+) that appears in 
+hermes logs
+.
+
+The plugin is fail-open: no SDK installed, no credentials, or a transient Langfuse error — all turn into a silent no-op in the hook. The agent loop is never impacted.
+
+Setup (interactive — recommended):
+
+hermes tools 
+# → Langfuse Observability → Cloud or Self-Hosted
+
+The wizard collects your keys, 
+pip install
+s the 
+langfuse
+ SDK, and adds 
+observability/langfuse
+ to 
+plugins.enabled
+ for you. Restart Hermes and the next turn ships a trace.
+
+Setup (manual):
+
+pip 
+install
+ langfuse
+hermes plugins 
+enable
+ observability/langfuse
+
+Then put the credentials in 
+~/.hermes/.env
+:
+
+HERMES_LANGFUSE_PUBLIC_KEY
+=
+pk-lf-
+..
+.
+HERMES_LANGFUSE_SECRET_KEY
+=
+sk-lf-
+..
+.
+HERMES_LANGFUSE_BASE_URL
+=
+https://cloud.langfuse.com 
+# or your self-hosted URL
+
+How it works:
+
+Hook
+Behaviour
+pre_api_request
+ / 
+pre_llm_call
+Open (or reuse) a per-turn root span "Hermes turn". Start a 
+generation
+ child observation for this API call with serialized recent messages as input.
+post_api_request
+ / 
+post_llm_call
+Close the generation, attach 
+usage_details
+, 
+cost_details
+, 
+finish_reason
+, assistant output + tool calls. If no tool calls and non-empty content, close the turn.
+pre_tool_call
+Start a 
+tool
+ child observation with sanitized 
+args
+.
+post_tool_call
+Close the tool observation with sanitized 
+result
+. 
+read_file
+ payloads get summarized (head + tail + omitted-line count) so a huge file read stays under 
+HERMES_LANGFUSE_MAX_CHARS
+.
+
+Session grouping keys off the Hermes session ID (or task ID for sub-agents) via 
+langfuse.propagate_attributes
+, so everything in a single 
+hermes chat
+ session lives under one Langfuse session.
+
+Verify:
+
+hermes plugins list 
+# observability/langfuse should show "enabled"
+hermes chat 
+-q
+
+"hello"
+
+# check the Langfuse UI for a "Hermes turn" trace
+
+Optional tuning
+ (in 
+.env
+):
+
+Variable
+Default
+Purpose
+HERMES_LANGFUSE_ENV
+—
+Environment tag on traces (
+production
+, 
+staging
+, …)
+HERMES_LANGFUSE_RELEASE
+—
+Release/version tag
+HERMES_LANGFUSE_SAMPLE_RATE
+1.0
+Sampling rate passed to the SDK (0.0–1.0)
+HERMES_LANGFUSE_MAX_CHARS
+12000
+Per-field truncation for message content / tool args / tool results
+HERMES_LANGFUSE_DEBUG
+false
+Verbose plugin logging to 
+agent.log
+
+Hermes-prefixed and standard SDK env vars (
+LANGFUSE_PUBLIC_KEY
+, 
+LANGFUSE_SECRET_KEY
+, 
+LANGFUSE_BASE_URL
+) are both accepted — Hermes-prefixed wins when both are set.
+
+Performance:
+ the Langfuse client is cached after the first hook call. If credentials or SDK are missing, that decision is also cached — subsequent hooks fast-return without re-checking env vars or reloading config.
+
+Disabling:
+
+hermes plugins disable observability/langfuse
+. The plugin module is still discovered, but no module code runs until you re-enable.
+
+google_meet
+​
+
+Lets the agent 
+join, transcribe, and participate in Google Meet calls
+ — take notes on a meeting, summarize the back-and-forth after, follow up on specific points, and (optionally) speak replies back into the call via TTS.
+
+What it adds:
+
+A headless virtual participant that joins a Meet URL using browser automation
+
+Live transcription of the meeting audio via the configured STT provider
+
+A 
+meet_summarize
+ / 
+meet_speak
+ / 
+meet_followup
+ toolset the agent invokes to act on what it heard
+
+Post-meeting artifacts (transcript, speaker-attributed notes, action items) saved under 
+~/.hermes/cache/google_meet/<meeting_id>/
+
+Setup:
+
+hermes plugins 
+enable
+ google_meet
+# Prompts you to sign in via the plugin's OAuth flow on first use —
+# needs a Google account with Meet access. Host approval may be required
+# if the meeting enforces "only invited participants can join".
+
+Usage from chat:
+
+"Join meet.google.com/abc-defg-hij and take notes. After the call, send me a summary with action items."
+
+The agent kicks off the meeting join, streams the transcription back into its context as the call proceeds, and produces a structured summary when the meeting ends (or when you tell it to stop).
+
+When to use it:
+ recurring standups where you want a bot to transcribe + summarize for async attendees; deposition-style interviews where you want structured notes; any case where you'd otherwise need Fireflies / Otter / Grain. When you'd rather not have an AI listening in — don't enable it.
+
+Disabling:
+
+hermes plugins disable google_meet
+. Any cached transcripts and recordings stay in 
+~/.hermes/cache/google_meet/
+ until you remove them.
+
+hermes-achievements
+​
+
+Adds a 
+Steam-style achievements tab to the dashboard
+ — 60+ collectible, tiered badges generated from your real Hermes session history. Tool-chain feats, debugging patterns, vibe-coding streaks, skill/memory usage, model/provider variety, lifestyle quirks (weekend and night sessions). Originally authored by 
+@PCinkusz
+ as an external plugin; brought in-tree so it stays in lockstep with Hermes feature changes.
+
+How it works:
+
+Scans your entire 
+~/.hermes/state.db
+ session history on the dashboard backend
+
+Per-session stats are cached by 
+(started_at, last_active)
+ fingerprint, so only new or changed sessions re-analyze on subsequent scans
+
+First-ever scan runs in a background thread — the dashboard never blocks waiting for it, even on databases with thousands of sessions
+
+Unlock state is persisted to 
+$HERMES_HOME/plugins/hermes-achievements/state.json
+
+Tier progression:
+ Copper → Silver → Gold → Diamond → Olympian. Each card exposes a "What counts" section listing the exact metric being tracked.
+
+Achievement states:
+
+State
+Meaning
+Unlocked
+At least one tier achieved
+Discovered
+Known achievement, progress visible, not yet earned
+Secret
+Hidden until Hermes detects the first related signal in your history
+
+API
+ — routes mount under 
+/api/plugins/hermes-achievements/
+:
+
+Endpoint
+Purpose
+GET /achievements
+Full catalog with per-badge unlock state (returns a pending placeholder while the first cold scan is running)
+GET /scan-status
+State of the background scanner: 
+idle
+ / 
+running
+ / 
+failed
+, last duration, run count
+GET /recent-unlocks
+Twenty most recently unlocked badges, newest first
+GET /sessions/{id}/badges
+Badges earned primarily in one specific session
+POST /rescan
+Manual synchronous rescan (blocks; use when the user clicks the rescan button)
+POST /reset-state
+Clear unlock history and cached snapshot
+
+State files
+ — live under 
+$HERMES_HOME/plugins/hermes-achievements/
+:
+
+File
+Contents
+state.json
+Unlock history: which badges you've earned and when. Stable across Hermes updates.
+scan_snapshot.json
+Last completed scan payload (served immediately on dashboard load)
+scan_checkpoint.json
+Per-session stats cache keyed by fingerprint (makes warm rescans fast)
+
+Performance notes:
+
+Cold scan on ~8,000 sessions takes a few minutes. It runs in a background thread on first dashboard request; the UI sees a pending placeholder and polls 
+/scan-status
+.
+
+Incremental results during a cold scan
+ — the scanner publishes a partial snapshot every ~250 sessions so each dashboard refresh shows more badges unlocked as the scan progresses. No minute-long stare at zeros.
+
+Warm rescan reuses per-session stats for every session whose 
+started_at
+ + 
+last_active
+ fingerprint matches the checkpoint — completes in seconds even on large histories.
+
+The in-memory snapshot TTL is 120s; stale requests serve the old snapshot immediately and kick a background refresh. You never wait on a spinner just because TTL expired.
+
+Enabling:
+ Nothing to enable — 
+hermes-achievements
+ is a dashboard-only plugin (no lifecycle hooks, no model-visible tools). It auto-registers as a tab in 
+hermes dashboard
+ on first launch. The 
+plugins.enabled
+ config only gates lifecycle/tool plugins; dashboard plugins are discovered purely via their 
+dashboard/manifest.json
+.
+
+Opting out:
+ Delete or rename 
+plugins/hermes-achievements/dashboard/manifest.json
+, or override it with a user plugin of the same name in 
+~/.hermes/plugins/hermes-achievements/
+ that ships no dashboard. The plugin's state files under 
+$HERMES_HOME/plugins/hermes-achievements/
+ survive — reinstalling preserves your unlock history.
+
+Adding a bundled plugin
+​
+
+Bundled plugins are written exactly like any other Hermes plugin — see 
+Build a Hermes Plugin
+. The only differences are:
+
+Directory lives at 
+<repo>/plugins/<name>/
+ instead of 
+~/.hermes/plugins/<name>/
+
+Manifest source is reported as 
+bundled
+ in 
+hermes plugins list
+
+User plugins with the same name override the bundled version
+
+A plugin is a good candidate for bundling when:
+
+It has no optional dependencies (or they're already 
+pip install .[all]
+ deps)
+
+The behaviour benefits most users and is opt-out rather than opt-in
+
+The logic ties into lifecycle hooks that the agent would otherwise have to remember to invoke
+
+It complements a core capability without expanding the model-visible tool surface
+
+Counter-examples — things that should stay as user-installable plugins, not bundled: third-party integrations with API keys, niche workflows, large dependency trees, anything that would meaningfully change agent behaviour by default.
+========================================
+CODE_BLOCKS:
+hermes plugins enable disk-cleanup
+
+plugins:  enabled:    - disk-cleanup
+
+hermes plugins disable disk-cleanup# or: remove it from plugins.enabled in config.yaml
+
+/disk-cleanup status                     # breakdown + top-10 largest/disk-cleanup dry-run                    # preview without deleting/disk-cleanup quick                      # run safe cleanup now/disk-cleanup deep                       # quick + list items needing confirmation/disk-cleanup track <path> <category>    # manual tracking/disk-cleanup forget <path>              # stop tracking (does not delete)
+
+hermes tools          # → Langfuse Observability → Cloud or Self-Hosted
+
+pip install langfusehermes plugins enable observability/langfuse
+
+HERMES_LANGFUSE_PUBLIC_KEY=pk-lf-...HERMES_LANGFUSE_SECRET_KEY=sk-lf-...HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com   # or your self-hosted URL
+
+hermes plugins list                 # observability/langfuse should show "enabled"hermes chat -q "hello"              # check the Langfuse UI for a "Hermes turn" trace
+
+hermes plugins enable google_meet# Prompts you to sign in via the plugin's OAuth flow on first use —# needs a Google account with Meet access. Host approval may be required# if the meeting enforces "only invited participants can join".
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/code-execution
+TITLE: Code Execution | Hermes Agent
+H1: Code Execution (Programmatic Tool Calling)
+TEXT:
+On this page
+
+The 
+execute_code
+ tool lets the agent write Python scripts that call Hermes tools programmatically, collapsing multi-step workflows into a single LLM turn. The script runs in a child process on the agent host, communicating with Hermes over a Unix domain socket RPC.
+
+How It Works
+​
+
+The agent writes a Python script using 
+from hermes_tools import ...
+
+Hermes generates a 
+hermes_tools.py
+ stub module with RPC functions
+
+Hermes opens a Unix domain socket and starts an RPC listener thread
+
+The script runs in a child process — tool calls travel over the socket back to Hermes
+
+Only the script's 
+print()
+ output is returned to the LLM; intermediate tool results never enter the context window
+
+# The agent can write scripts like:
+from
+ hermes_tools 
+import
+ web_search
+,
+ web_extract
+results 
+=
+ web_search
+(
+"Python 3.13 features"
+,
+ limit
+=
+5
+)
+for
+ r 
+in
+ results
+[
+"data"
+]
+[
+"web"
+]
+:
+ content 
+=
+ web_extract
+(
+[
+r
+[
+"url"
+]
+]
+)
+
+# ... filter and process ...
+print
+(
+summary
+)
+
+Available tools inside scripts:
+
+web_search
+, 
+web_extract
+, 
+read_file
+, 
+write_file
+, 
+search_files
+, 
+patch
+, 
+terminal
+ (foreground only).
+
+When the Agent Uses This
+​
+
+The agent uses 
+execute_code
+ when there are:
+
+3+ tool calls
+ with processing logic between them
+
+Bulk data filtering or conditional branching
+
+Loops over results
+
+The key benefit: intermediate tool results never enter the context window — only the final 
+print()
+ output comes back, dramatically reducing token usage.
+
+Practical Examples
+​
+
+Data Processing Pipeline
+​
+
+from
+ hermes_tools 
+import
+ search_files
+,
+ read_file
+import
+ json
+# Find all config files and extract database settings
+matches 
+=
+ search_files
+(
+"database"
+,
+ path
+=
+"."
+,
+ file_glob
+=
+"*.yaml"
+,
+ limit
+=
+20
+)
+configs 
+=
+
+[
+]
+for
+
+match
+
+in
+ matches
+.
+get
+(
+"matches"
+,
+
+[
+]
+)
+:
+ content 
+=
+ read_file
+(
+match
+[
+"path"
+]
+)
+ configs
+.
+append
+(
+{
+"file"
+:
+
+match
+[
+"path"
+]
+,
+
+"preview"
+:
+ content
+[
+"content"
+]
+[
+:
+200
+]
+}
+)
+print
+(
+json
+.
+dumps
+(
+configs
+,
+ indent
+=
+2
+)
+)
+
+Multi-Step Web Research
+​
+
+from
+ hermes_tools 
+import
+ web_search
+,
+ web_extract
+import
+ json
+# Search, extract, and summarize in one turn
+results 
+=
+ web_search
+(
+"Rust async runtime comparison 2025"
+,
+ limit
+=
+5
+)
+summaries 
+=
+
+[
+]
+for
+ r 
+in
+ results
+[
+"data"
+]
+[
+"web"
+]
+:
+ page 
+=
+ web_extract
+(
+[
+r
+[
+"url"
+]
+]
+)
+
+for
+ p 
+in
+ page
+.
+get
+(
+"results"
+,
+
+[
+]
+)
+:
+
+if
+ p
+.
+get
+(
+"content"
+)
+:
+ summaries
+.
+append
+(
+{
+
+"title"
+:
+ r
+[
+"title"
+]
+,
+
+"url"
+:
+ r
+[
+"url"
+]
+,
+
+"excerpt"
+:
+ p
+[
+"content"
+]
+[
+:
+500
+]
+
+}
+)
+print
+(
+json
+.
+dumps
+(
+summaries
+,
+ indent
+=
+2
+)
+)
+
+Bulk File Refactoring
+​
+
+from
+ hermes_tools 
+import
+ search_files
+,
+ read_file
+,
+ patch
+# Find all Python files using deprecated API and fix them
+matches 
+=
+ search_files
+(
+"old_api_call"
+,
+ path
+=
+"src/"
+,
+ file_glob
+=
+"*.py"
+)
+fixed 
+=
+
+0
+for
+
+match
+
+in
+ matches
+.
+get
+(
+"matches"
+,
+
+[
+]
+)
+:
+ result 
+=
+ patch
+(
+ path
+=
+match
+[
+"path"
+]
+,
+ old_string
+=
+"old_api_call("
+,
+ new_string
+=
+"new_api_call("
+,
+ replace_all
+=
+True
+
+)
+
+if
+
+"error"
+
+not
+
+in
+
+str
+(
+result
+)
+:
+ fixed 
++=
+
+1
+print
+(
+f"Fixed 
+{
+fixed
+}
+ files out of 
+{
+len
+(
+matches
+.
+get
+(
+'matches'
+,
+
+[
+]
+)
+)
+}
+ matches"
+)
+
+Build and Test Pipeline
+​
+
+from
+ hermes_tools 
+import
+ terminal
+,
+ read_file
+import
+ json
+# Run tests, parse results, and report
+result 
+=
+ terminal
+(
+"cd /project && python -m pytest --tb=short -q 2>&1"
+,
+ timeout
+=
+120
+)
+output 
+=
+ result
+.
+get
+(
+"output"
+,
+
+""
+)
+# Parse test output
+passed 
+=
+ output
+.
+count
+(
+" passed"
+)
+failed 
+=
+ output
+.
+count
+(
+" failed"
+)
+errors 
+=
+ output
+.
+count
+(
+" error"
+)
+report 
+=
+
+{
+
+"passed"
+:
+ passed
+,
+
+"failed"
+:
+ failed
+,
+
+"errors"
+:
+ errors
+,
+
+"exit_code"
+:
+ result
+.
+get
+(
+"exit_code"
+,
+
+-
+1
+)
+,
+
+"summary"
+:
+ output
+[
+-
+500
+:
+]
+
+if
+
+len
+(
+output
+)
+
+>
+
+500
+
+else
+ output
+}
+print
+(
+json
+.
+dumps
+(
+report
+,
+ indent
+=
+2
+)
+)
+
+Execution Mode
+​
+
+execute_code
+ has two execution modes controlled by 
+code_execution.mode
+ in 
+~/.hermes/config.yaml
+:
+
+Mode
+Working directory
+Python interpreter
+project
+ (default)
+The session's working directory (same as 
+terminal()
+)
+Active 
+VIRTUAL_ENV
+ / 
+CONDA_PREFIX
+ python, falling back to Hermes's own python
+strict
+A temp staging directory isolated from the user's project
+sys.executable
+ (Hermes's own python)
+
+When to leave it on 
+project
+:
+ you want 
+import pandas
+, 
+from my_project import foo
+, or relative paths like 
+open(".env")
+ to work the same way they do in 
+terminal()
+. This is almost always what you want.
+
+When to flip to 
+strict
+:
+ you need maximum reproducibility — you want the same interpreter every session regardless of which venv the user activated, and you want scripts quarantined from the project tree (no risk of accidentally reading project files through a relative path).
+
+# ~/.hermes/config.yaml
+code_execution
+:
+
+mode
+:
+ project 
+# or "strict"
+
+Fallback behavior in 
+project
+ mode: if 
+VIRTUAL_ENV
+ / 
+CONDA_PREFIX
+ is unset, broken, or points at a Python older than 3.8, the resolver falls back cleanly to 
+sys.executable
+ — it never leaves the agent without a working interpreter.
+
+Security-critical invariants are identical across both modes:
+
+environment scrubbing (API keys, tokens, credentials stripped)
+
+tool whitelist (scripts cannot call 
+execute_code
+ recursively, 
+delegate_task
+, or MCP tools)
+
+resource limits (timeout, stdout cap, tool-call cap)
+
+Switching mode changes where scripts run and which interpreter runs them, not what credentials they can see or which tools they can call.
+
+Resource Limits
+​
+
+Resource
+Limit
+Notes
+Timeout
+5 minutes (300s)
+Script is killed with SIGTERM, then SIGKILL after 5s grace
+Stdout
+50 KB
+Output truncated with 
+[output truncated at 50KB]
+ notice
+Stderr
+10 KB
+Included in output on non-zero exit for debugging
+Tool calls
+50 per execution
+Error returned when limit reached
+
+All limits are configurable via 
+config.yaml
+:
+
+# In ~/.hermes/config.yaml
+code_execution
+:
+
+mode
+:
+ project 
+# project (default) | strict
+
+timeout
+:
+
+300
+
+# Max seconds per script (default: 300)
+
+max_tool_calls
+:
+
+50
+
+# Max tool calls per execution (default: 50)
+
+How Tool Calls Work Inside Scripts
+​
+
+When your script calls a function like 
+web_search("query")
+:
+
+The call is serialized to JSON and sent over a Unix domain socket to the parent process
+
+The parent dispatches through the standard 
+handle_function_call
+ handler
+
+The result is sent back over the socket
+
+The function returns the parsed result
+
+This means tool calls inside scripts behave identically to normal tool calls — same rate limits, same error handling, same capabilities. The only restriction is that 
+terminal()
+ is foreground-only (no 
+background
+ or 
+pty
+ parameters).
+
+Error Handling
+​
+
+When a script fails, the agent receives structured error information:
+
+Non-zero exit code
+: stderr is included in the output so the agent sees the full traceback
+
+Timeout
+: Script is killed and the agent sees 
+"Script timed out after 300s and was killed."
+
+Interruption
+: If the user sends a new message during execution, the script is terminated and the agent sees 
+[execution interrupted — user sent a new message]
+
+Tool call limit
+: When the 50-call limit is hit, subsequent tool calls return an error message
+
+The response always includes 
+status
+ (success/error/timeout/interrupted), 
+output
+, 
+tool_calls_made
+, and 
+duration_seconds
+.
+
+Security
+​
+
+Security Model
+The child process runs with a 
+minimal environment
+. API keys, tokens, and credentials are stripped by default. The script accesses tools exclusively via the RPC channel — it cannot read secrets from environment variables unless explicitly allowed.
+
+Environment variables containing 
+KEY
+, 
+TOKEN
+, 
+SECRET
+, 
+PASSWORD
+, 
+CREDENTIAL
+, 
+PASSWD
+, or 
+AUTH
+ in their names are excluded. Only safe system variables (
+PATH
+, 
+HOME
+, 
+LANG
+, 
+SHELL
+, 
+PYTHONPATH
+, 
+VIRTUAL_ENV
+, etc.) are passed through.
+
+Skill Environment Variable Passthrough
+​
+
+When a skill declares 
+required_environment_variables
+ in its frontmatter, those variables are 
+automatically passed through
+ to both 
+execute_code
+ and 
+terminal
+ child processes after the skill is loaded. This lets skills use their declared API keys without weakening the security posture for arbitrary code.
+
+For non-skill use cases, you can explicitly allowlist variables in 
+config.yaml
+:
+
+terminal
+:
+
+env_passthrough
+:
+
+-
+ MY_CUSTOM_KEY
+
+-
+ ANOTHER_TOKEN
+
+See the 
+Security guide
+ for full details.
+
+Hermes always writes the script and the auto-generated 
+hermes_tools.py
+ RPC stub into a temp staging directory that is cleaned up after execution. In 
+strict
+ mode the script also 
+runs
+ there; in 
+project
+ mode it runs in the session's working directory (the staging directory stays on 
+PYTHONPATH
+ so imports still resolve). The child process runs in its own process group so it can be cleanly killed on timeout or interruption.
+
+execute_code vs terminal
+​
+
+Use Case
+execute_code
+terminal
+Multi-step workflows with tool calls between
+✅
+❌
+Simple shell command
+❌
+✅
+Filtering/processing large tool outputs
+✅
+❌
+Running a build or test suite
+❌
+✅
+Looping over search results
+✅
+❌
+Interactive/background processes
+❌
+✅
+Needs API keys in environment
+⚠️ Only via 
+passthrough
+✅ (most pass through)
+
+Rule of thumb:
+ Use 
+execute_code
+ when you need to call Hermes tools programmatically with logic between calls. Use 
+terminal
+ for running shell commands, builds, and processes.
+
+Platform Support
+​
+
+Code execution requires Unix domain sockets and is available on 
+Linux and macOS only
+. It is automatically disabled on Windows — the agent falls back to regular sequential tool calls.
+========================================
+CODE_BLOCKS:
+# The agent can write scripts like:from hermes_tools import web_search, web_extractresults = web_search("Python 3.13 features", limit=5)for r in results["data"]["web"]:    content = web_extract([r["url"]])    # ... filter and process ...print(summary)
+
+from hermes_tools import search_files, read_fileimport json# Find all config files and extract database settingsmatches = search_files("database", path=".", file_glob="*.yaml", limit=20)configs = []for match in matches.get("matches", []):    content = read_file(match["path"])    configs.append({"file": match["path"], "preview": content["content"][:200]})print(json.dumps(configs, indent=2))
+
+from hermes_tools import web_search, web_extractimport json# Search, extract, and summarize in one turnresults = web_search("Rust async runtime comparison 2025", limit=5)summaries = []for r in results["data"]["web"]:    page = web_extract([r["url"]])    for p in page.get("results", []):        if p.get("content"):            summaries.append({                "title": r["title"],                "url": r["url"],                "excerpt": p["content"][:500]            })print(json.dumps(summaries, 
+
+from hermes_tools import search_files, read_file, patch# Find all Python files using deprecated API and fix themmatches = search_files("old_api_call", path="src/", file_glob="*.py")fixed = 0for match in matches.get("matches", []):    result = patch(        path=match["path"],        old_string="old_api_call(",        new_string="new_api_call(",        replace_all=True    )    if "error" not in str(result):        fixed += 1print(f"Fixed {fixed} files out of {len(matches.get('matches', []))} matc
+
+from hermes_tools import terminal, read_fileimport json# Run tests, parse results, and reportresult = terminal("cd /project && python -m pytest --tb=short -q 2>&1", timeout=120)output = result.get("output", "")# Parse test outputpassed = output.count(" passed")failed = output.count(" failed")errors = output.count(" error")report = {    "passed": passed,    "failed": failed,    "errors": errors,    "exit_code": result.get("exit_code", -1),    "summary": output[-500:] if len(output) > 500 else out
+
+# ~/.hermes/config.yamlcode_execution:  mode: project   # or "strict"
+
+# In ~/.hermes/config.yamlcode_execution:  mode: project      # project (default) | strict  timeout: 300       # Max seconds per script (default: 300)  max_tool_calls: 50 # Max tool calls per execution (default: 50)
+
+terminal:  env_passthrough:    - MY_CUSTOM_KEY    - ANOTHER_TOKEN
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/computer-use
+TITLE: Computer Use (macOS) | Hermes Agent
+H1: Computer Use (macOS)
+TEXT:
+On this page
+
+Hermes Agent can drive your Mac's desktop — clicking, typing, scrolling,
+dragging — in the 
+background
+. Your cursor doesn't move, keyboard focus
+doesn't change, and macOS doesn't switch Spaces on you. You and the agent
+co-work on the same machine.
+
+Unlike most computer-use integrations, this works with 
+any tool-capable
+model
+ — Claude, GPT, Gemini, or an open model on a local vLLM endpoint.
+There's no Anthropic-native schema to worry about.
+
+How it works
+​
+
+The 
+computer_use
+ toolset speaks MCP over stdio to 
+cua-driver
+,
+a macOS driver that uses SkyLight private SPIs (
+SLEventPostToPid
+,
+
+SLPSPostEventRecordTo
+) and the 
+_AXObserverAddNotificationAndCheckRemote
+
+accessibility SPI to:
+
+Post synthesized events directly to target processes — no HID event tap,
+no cursor warp.
+
+Flip AppKit active-state without raising windows — no Space switching.
+
+Keep Chromium/Electron accessibility trees alive when windows are
+occluded.
+
+That combination is what OpenAI's Codex "background computer-use" ships.
+cua-driver is the open-source equivalent.
+
+Enabling
+​
+
+Run 
+hermes tools
+, pick 
+🖱️ Computer Use (macOS)
+ → 
+cua-driver (background)
+.
+
+The setup runs the upstream installer:
+
+curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/install.sh
+.
+
+Grant macOS permissions when prompted:
+
+System Settings → Privacy & Security → Accessibility
+ → allow the
+terminal (or Hermes app).
+
+System Settings → Privacy & Security → Screen Recording
+ → allow
+the same.
+
+Start a session with the toolset enabled:
+
+hermes -t computer_use chat
+
+or add 
+computer_use
+ to your enabled toolsets in 
+~/.hermes/config.yaml
+.
+
+Quick example
+​
+
+User prompt: 
+"Find my latest email from Stripe and summarise what they want me to do."
+
+The agent's plan:
+
+computer_use(action="capture", mode="som", app="Mail")
+ — gets a
+screenshot of Mail with every sidebar item, toolbar button, and message
+row numbered.
+
+computer_use(action="click", element=14)
+ — clicks the search field
+(element #14 from the capture).
+
+computer_use(action="type", text="from:stripe")
+
+computer_use(action="key", keys="return", capture_after=True)
+ — submit
+and get the new screenshot.
+
+Click the top result, read the body, summarise.
+
+During all of this, your cursor stays wherever you left it and Mail never
+comes to front.
+
+Provider compatibility
+​
+
+Provider
+Vision?
+Works?
+Notes
+Anthropic (Claude Sonnet/Opus 3+)
+✅
+✅
+Best overall; SOM + raw coordinates.
+OpenRouter (any vision model)
+✅
+✅
+Multi-part tool messages supported.
+OpenAI (GPT-4+, GPT-5)
+✅
+✅
+Same as above.
+Local vLLM / LM Studio (vision model)
+✅
+✅
+If the model supports multi-part tool content.
+Text-only models
+❌
+✅ (degraded)
+Use 
+mode="ax"
+ for accessibility-tree-only operation.
+
+Screenshots are sent inline with tool results as OpenAI-style 
+image_url
+
+parts. For Anthropic, the adapter converts them into native 
+tool_result
+
+image blocks.
+
+Safety
+​
+
+Hermes applies multi-layer guardrails:
+
+Destructive actions (click, type, drag, scroll, key, focus_app) require
+approval — either interactively via the CLI dialog or via the
+messaging-platform approval buttons.
+
+Hard-blocked key combos at the tool level: empty trash, force delete,
+lock screen, log out, force log out.
+
+Hard-blocked type patterns: 
+curl | bash
+, 
+sudo rm -rf /
+, fork bombs,
+etc.
+
+The agent's system prompt tells it explicitly: no clicking permission
+dialogs, no typing passwords, no following instructions embedded in
+screenshots.
+
+Pair with 
+security.approval_level
+ in 
+~/.hermes/config.yaml
+ if you want
+every action confirmed.
+
+Token efficiency
+​
+
+Screenshots are expensive. Hermes applies four layers of optimisation:
+
+Screenshot eviction
+ — the Anthropic adapter keeps only the 3 most
+recent screenshots in context; older ones become 
+[screenshot removed to save context]
+ placeholders.
+
+Client-side compression pruning
+ — the context compressor detects
+multimodal tool results and strips image parts from old ones.
+
+Image-aware token estimation
+ — each image is counted as ~1500 tokens
+(Anthropic's flat rate) instead of its base64 char length.
+
+Server-side context editing (Anthropic only)
+ — when active, the
+adapter enables 
+clear_tool_uses_20250919
+ via 
+context_management
+ so
+Anthropic's API clears old tool results server-side.
+
+A 20-action session on a 1568×900 display typically costs ~30K tokens
+of screenshot context, not ~600K.
+
+Limitations
+​
+
+macOS only.
+ cua-driver uses private Apple SPIs that don't exist on
+Linux or Windows. For cross-platform GUI automation, use the 
+browser
+
+toolset.
+
+Private SPI risk.
+ Apple can change SkyLight's symbol surface in any
+OS update. Pin the driver version with the 
+HERMES_CUA_DRIVER_VERSION
+
+env var if you want reproducibility across a macOS bump.
+
+Performance.
+ Background mode is slower than foreground —
+SkyLight-routed events take ~5-20ms vs direct HID posting. Not
+noticeable for agent-speed clicking; noticeable if you try to record a
+speed-run.
+
+No keyboard password entry.
+
+type
+ has hard-block patterns on
+command-shell payloads; for passwords, use the system's autofill.
+
+Configuration
+​
+
+Override the driver binary path (tests / CI):
+
+HERMES_CUA_DRIVER_CMD=/opt/homebrew/bin/cua-driver
+HERMES_CUA_DRIVER_VERSION=0.5.0 # optional pin
+
+Swap the backend entirely (for testing):
+
+HERMES_COMPUTER_USE_BACKEND=noop # records calls, no side effects
+
+Troubleshooting
+​
+
+computer_use backend unavailable: cua-driver is not installed
+ — Run
+
+hermes tools
+ and enable Computer Use.
+
+Clicks seem to have no effect
+ — Capture and verify. A modal you
+didn't see may be blocking input. Dismiss it with 
+escape
+ or the close
+button.
+
+Element indices are stale
+ — SOM indices are only valid until the
+next 
+capture
+. Re-capture after any state-changing action.
+
+"blocked pattern in type text"
+ — The text you tried to 
+type
+
+matches the dangerous-shell-pattern list. Break the command up or
+reconsider.
+
+See also
+​
+
+Universal skill: 
+macos-computer-use
+
+cua-driver source (trycua/cua)
+
+Browser automation
+ for cross-platform web tasks.
+========================================
+CODE_BLOCKS:
+hermes -t computer_use chat
+
+HERMES_CUA_DRIVER_CMD=/opt/homebrew/bin/cua-driverHERMES_CUA_DRIVER_VERSION=0.5.0    # optional pin
+
+HERMES_COMPUTER_USE_BACKEND=noop   # records calls, no side effects
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/context-files
+TITLE: Context Files | Hermes Agent
+H1: Context Files
+TEXT:
+On this page
+
+Hermes Agent automatically discovers and loads context files that shape how it behaves. Some are project-local and discovered from your working directory. 
+SOUL.md
+ is now global to the Hermes instance and is loaded from 
+HERMES_HOME
+ only.
+
+Supported Context Files
+​
+
+File
+Purpose
+Discovery
+.hermes.md
+ / 
+HERMES.md
+Project instructions (highest priority)
+Walks to git root
+AGENTS.md
+Project instructions, conventions, architecture
+CWD at startup + subdirectories progressively
+CLAUDE.md
+Claude Code context files (also detected)
+CWD at startup + subdirectories progressively
+SOUL.md
+Global personality and tone customization for this Hermes instance
+HERMES_HOME/SOUL.md
+ only
+.cursorrules
+Cursor IDE coding conventions
+CWD only
+.cursor/rules/*.mdc
+Cursor IDE rule modules
+CWD only
+
+Priority system
+Only 
+one
+ project context type is loaded per session (first match wins): 
+.hermes.md
+ → 
+AGENTS.md
+ → 
+CLAUDE.md
+ → 
+.cursorrules
+. 
+SOUL.md
+ is always loaded independently as the agent identity (slot #1).
+
+AGENTS.md
+​
+
+AGENTS.md
+ is the primary project context file. It tells the agent how your project is structured, what conventions to follow, and any special instructions.
+
+Progressive Subdirectory Discovery
+​
+
+At session start, Hermes loads the 
+AGENTS.md
+ from your working directory into the system prompt. As the agent navigates into subdirectories during the session (via 
+read_file
+, 
+terminal
+, 
+search_files
+, etc.), it 
+progressively discovers
+ context files in those directories and injects them into the conversation at the moment they become relevant.
+
+my-project/
+├── AGENTS.md ← Loaded at startup (system prompt)
+├── frontend/
+│ └── AGENTS.md ← Discovered when agent reads frontend/ files
+├── backend/
+│ └── AGENTS.md ← Discovered when agent reads backend/ files
+└── shared/
+ └── AGENTS.md ← Discovered when agent reads shared/ files
+
+This approach has two advantages over loading everything at startup:
+
+No system prompt bloat
+ — subdirectory hints only appear when needed
+
+Prompt cache preservation
+ — the system prompt stays stable across turns
+
+Each subdirectory is checked at most once per session. The discovery also walks up parent directories, so reading 
+backend/src/main.py
+ will discover 
+backend/AGENTS.md
+ even if 
+backend/src/
+ has no context file of its own.
+
+info
+Subdirectory context files go through the same 
+security scan
+ as startup context files. Malicious files are blocked.
+
+Example AGENTS.md
+​
+
+#
+ Project Context
+This is a Next.js 14 web application with a Python FastAPI backend.
+##
+ Architecture
+-
+ Frontend: Next.js 14 with App Router in 
+`/frontend`
+-
+ Backend: FastAPI in 
+`/backend`
+, uses SQLAlchemy ORM
+-
+ Database: PostgreSQL 16
+-
+ Deployment: Docker Compose on a Hetzner VPS
+##
+ Conventions
+-
+ Use TypeScript strict mode for all frontend code
+-
+ Python code follows PEP 8, use type hints everywhere
+-
+ All API endpoints return JSON with 
+`{data, error, meta}`
+ shape
+-
+ Tests go in 
+`__tests__/`
+ directories (frontend) or 
+`tests/`
+ (backend)
+##
+ Important Notes
+-
+ Never modify migration files directly — use Alembic commands
+-
+ The 
+`.env.local`
+ file has real API keys, don't commit it
+-
+ Frontend port is 3000, backend is 8000, DB is 5432
+
+SOUL.md
+​
+
+SOUL.md
+ controls the agent's personality, tone, and communication style. See the 
+Personality
+ page for full details.
+
+Location:
+
+~/.hermes/SOUL.md
+
+or 
+$HERMES_HOME/SOUL.md
+ if you run Hermes with a custom home directory
+
+Important details:
+
+Hermes seeds a default 
+SOUL.md
+ automatically if one does not exist yet
+
+Hermes loads 
+SOUL.md
+ only from 
+HERMES_HOME
+
+Hermes does not probe the working directory for 
+SOUL.md
+
+If the file is empty, nothing from 
+SOUL.md
+ is added to the prompt
+
+If the file has content, the content is injected verbatim after scanning and truncation
+
+.cursorrules
+​
+
+Hermes is compatible with Cursor IDE's 
+.cursorrules
+ file and 
+.cursor/rules/*.mdc
+ rule modules. If these files exist in your project root and no higher-priority context file (
+.hermes.md
+, 
+AGENTS.md
+, or 
+CLAUDE.md
+) is found, they're loaded as the project context.
+
+This means your existing Cursor conventions automatically apply when using Hermes.
+
+How Context Files Are Loaded
+​
+
+At startup (system prompt)
+​
+
+Context files are loaded by 
+build_context_files_prompt()
+ in 
+agent/prompt_builder.py
+:
+
+Scan working directory
+ — checks for 
+.hermes.md
+ → 
+AGENTS.md
+ → 
+CLAUDE.md
+ → 
+.cursorrules
+ (first match wins)
+
+Content is read
+ — each file is read as UTF-8 text
+
+Security scan
+ — content is checked for prompt injection patterns
+
+Truncation
+ — files exceeding 20,000 characters are head/tail truncated (70% head, 20% tail, with a marker in the middle)
+
+Assembly
+ — all sections are combined under a 
+# Project Context
+ header
+
+Injection
+ — the assembled content is added to the system prompt
+
+During the session (progressive discovery)
+​
+
+SubdirectoryHintTracker
+ in 
+agent/subdirectory_hints.py
+ watches tool call arguments for file paths:
+
+Path extraction
+ — after each tool call, file paths are extracted from arguments (
+path
+, 
+workdir
+, shell commands)
+
+Ancestor walk
+ — the directory and up to 5 parent directories are checked (stopping at already-visited directories)
+
+Hint loading
+ — if an 
+AGENTS.md
+, 
+CLAUDE.md
+, or 
+.cursorrules
+ is found, it's loaded (first match per directory)
+
+Security scan
+ — same prompt injection scan as startup files
+
+Truncation
+ — capped at 8,000 characters per file
+
+Injection
+ — appended to the tool result, so the model sees it in context naturally
+
+The final prompt section looks roughly like:
+
+# Project Context
+The following project context files have been loaded and should be followed:
+## AGENTS.md
+[Your AGENTS.md content here]
+## .cursorrules
+[Your .cursorrules content here]
+[Your SOUL.md content here]
+
+Notice that SOUL content is inserted directly, without extra wrapper text.
+
+Security: Prompt Injection Protection
+​
+
+All context files are scanned for potential prompt injection before being included. The scanner checks for:
+
+Instruction override attempts
+: "ignore previous instructions", "disregard your rules"
+
+Deception patterns
+: "do not tell the user"
+
+System prompt overrides
+: "system prompt override"
+
+Hidden HTML comments
+: 
+<!-- ignore instructions -->
+
+Hidden div elements
+: 
+<div style="display:none">
+
+Credential exfiltration
+: 
+curl ... $API_KEY
+
+Secret file access
+: 
+cat .env
+, 
+cat credentials
+
+Invisible characters
+: zero-width spaces, bidirectional overrides, word joiners
+
+If any threat pattern is detected, the file is blocked:
+
+[BLOCKED: AGENTS.md contained potential prompt injection (prompt_injection). Content not loaded.]
+
+warning
+This scanner protects against common injection patterns, but it's not a substitute for reviewing context files in shared repositories. Always validate AGENTS.md content in projects you didn't author.
+
+Size Limits
+​
+
+Limit
+Value
+Max chars per file
+20,000 (~7,000 tokens)
+Head truncation ratio
+70%
+Tail truncation ratio
+20%
+Truncation marker
+10% (shows char counts and suggests using file tools)
+
+When a file exceeds 20,000 characters, the truncation message reads:
+
+[...truncated AGENTS.md: kept 14000+4000 of 25000 chars. Use file tools to read the full file.]
+
+Tips for Effective Context Files
+​
+
+Best practices for AGENTS.md
+
+Keep it concise
+ — stay well under 20K chars; the agent reads it every turn
+
+Structure with headers
+ — use 
+##
+ sections for architecture, conventions, important notes
+
+Include concrete examples
+ — show preferred code patterns, API shapes, naming conventions
+
+Mention what NOT to do
+ — "never modify migration files directly"
+
+List key paths and ports
+ — the agent uses these for terminal commands
+
+Update as the project evolves
+ — stale context is worse than no context
+
+Per-Subdirectory Context
+​
+
+For monorepos, put subdirectory-specific instructions in nested AGENTS.md files:
+
+<!-- frontend/AGENTS.md -->
+#
+ Frontend Context
+-
+ Use 
+`pnpm`
+ not 
+`npm`
+ for package management
+-
+ Components go in 
+`src/components/`
+, pages in 
+`src/app/`
+-
+ Use Tailwind CSS, never inline styles
+-
+ Run tests with 
+`pnpm test`
+
+<!-- backend/AGENTS.md -->
+#
+ Backend Context
+-
+ Use 
+`poetry`
+ for dependency management
+-
+ Run the dev server with 
+`poetry run uvicorn main:app --reload`
+-
+ All endpoints need OpenAPI docstrings
+-
+ Database models are in 
+`models/`
+, schemas in 
+`schemas/`
+========================================
+CODE_BLOCKS:
+my-project/├── AGENTS.md              ← Loaded at startup (system prompt)├── frontend/│   └── AGENTS.md          ← Discovered when agent reads frontend/ files├── backend/│   └── AGENTS.md          ← Discovered when agent reads backend/ files└── shared/    └── AGENTS.md          ← Discovered when agent reads shared/ files
+
+# Project ContextThis is a Next.js 14 web application with a Python FastAPI backend.## Architecture- Frontend: Next.js 14 with App Router in `/frontend`- Backend: FastAPI in `/backend`, uses SQLAlchemy ORM- Database: PostgreSQL 16- Deployment: Docker Compose on a Hetzner VPS## Conventions- Use TypeScript strict mode for all frontend code- Python code follows PEP 8, use type hints everywhere- All API endpoints return JSON with `{data, error, meta}` shape- Tests go in `__tests__/` directories (fro
+
+# Project ContextThe following project context files have been loaded and should be followed:## AGENTS.md[Your AGENTS.md content here]## .cursorrules[Your .cursorrules content here][Your SOUL.md content here]
+
+[BLOCKED: AGENTS.md contained potential prompt injection (prompt_injection). Content not loaded.]
+
+[...truncated AGENTS.md: kept 14000+4000 of 25000 chars. Use file tools to read the full file.]
+
+<!-- frontend/AGENTS.md --># Frontend Context- Use `pnpm` not `npm` for package management- Components go in `src/components/`, pages in `src/app/`- Use Tailwind CSS, never inline styles- Run tests with `pnpm test`
+
+<!-- backend/AGENTS.md --># Backend Context- Use `poetry` for dependency management- Run the dev server with `poetry run uvicorn main:app --reload`- All endpoints need OpenAPI docstrings- Database models are in `models/`, schemas in `schemas/`
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/context-references
+TITLE: Context References | Hermes Agent
+H1: Context References
+TEXT:
+On this page
+
+Type 
+@
+ followed by a reference to inject content directly into your message. Hermes expands the reference inline and appends the content under an 
+--- Attached Context ---
+ section.
+
+Supported References
+​
+
+Syntax
+Description
+@file:path/to/file.py
+Inject file contents
+@file:path/to/file.py:10-25
+Inject specific line range (1-indexed, inclusive)
+@folder:path/to/dir
+Inject directory tree listing with file metadata
+@diff
+Inject 
+git diff
+ (unstaged working tree changes)
+@staged
+Inject 
+git diff --staged
+ (staged changes)
+@git:5
+Inject last N commits with patches (max 10)
+@url:https://example.com
+Fetch and inject web page content
+
+Usage Examples
+​
+
+Review @file:src/main.py and suggest improvements
+What changed? @diff
+Compare @file:old_config.yaml and @file:new_config.yaml
+What's in @folder:src/components?
+Summarize this article @url:https://arxiv.org/abs/2301.00001
+
+Multiple references work in a single message:
+
+Check @file:main.py, and also @file:test.py.
+
+Trailing punctuation (
+,
+, 
+.
+, 
+;
+, 
+!
+, 
+?
+) is automatically stripped from reference values.
+
+CLI Tab Completion
+​
+
+In the interactive CLI, typing 
+@
+ triggers autocomplete:
+
+@
+ shows all reference types (
+@diff
+, 
+@staged
+, 
+@file:
+, 
+@folder:
+, 
+@git:
+, 
+@url:
+)
+
+@file:
+ and 
+@folder:
+ trigger filesystem path completion with file size metadata
+
+Bare 
+@
+ followed by partial text shows matching files and folders from the current directory
+
+Line Ranges
+​
+
+The 
+@file:
+ reference supports line ranges for precise content injection:
+
+@file:src/main.py:42 # Single line 42
+@file:src/main.py:10-25 # Lines 10 through 25 (inclusive)
+
+Lines are 1-indexed. Invalid ranges are silently ignored (full file is returned).
+
+Size Limits
+​
+
+Context references are bounded to prevent overwhelming the model's context window:
+
+Threshold
+Value
+Behavior
+Soft limit
+25% of context length
+Warning appended, expansion proceeds
+Hard limit
+50% of context length
+Expansion refused, original message returned unchanged
+Folder entries
+200 files max
+Excess entries replaced with 
+- ...
+Git commits
+10 max
+@git:N
+ clamped to range [1, 10]
+
+Security
+​
+
+Sensitive Path Blocking
+​
+
+These paths are always blocked from 
+@file:
+ references to prevent credential exposure:
+
+SSH keys and config: 
+~/.ssh/id_rsa
+, 
+~/.ssh/id_ed25519
+, 
+~/.ssh/authorized_keys
+, 
+~/.ssh/config
+
+Shell profiles: 
+~/.bashrc
+, 
+~/.zshrc
+, 
+~/.profile
+, 
+~/.bash_profile
+, 
+~/.zprofile
+
+Credential files: 
+~/.netrc
+, 
+~/.pgpass
+, 
+~/.npmrc
+, 
+~/.pypirc
+
+Hermes env: 
+$HERMES_HOME/.env
+
+These directories are fully blocked (any file inside):
+
+~/.ssh/
+, 
+~/.aws/
+, 
+~/.gnupg/
+, 
+~/.kube/
+, 
+$HERMES_HOME/skills/.hub/
+
+Path Traversal Protection
+​
+
+All paths are resolved relative to the working directory. References that resolve outside the allowed workspace root are rejected.
+
+Binary File Detection
+​
+
+Binary files are detected via MIME type and null-byte scanning. Known text extensions (
+.py
+, 
+.md
+, 
+.json
+, 
+.yaml
+, 
+.toml
+, 
+.js
+, 
+.ts
+, etc.) bypass MIME-based detection. Binary files are rejected with a warning.
+
+Platform Availability
+​
+
+Context references are primarily a 
+CLI feature
+. They work in the interactive CLI where 
+@
+ triggers tab completion and references are expanded before the message is sent to the agent.
+
+In 
+messaging platforms
+ (Telegram, Discord, etc.), the 
+@
+ syntax is not expanded by the gateway — messages are passed through as-is. The agent itself can still reference files via the 
+read_file
+, 
+search_files
+, and 
+web_extract
+ tools.
+
+Interaction with Context Compression
+​
+
+When conversation context is compressed, the expanded reference content is included in the compression summary. This means:
+
+Large file contents injected via 
+@file:
+ contribute to context usage
+
+If the conversation is later compressed, the file content is summarized (not preserved verbatim)
+
+For very large files, consider using line ranges (
+@file:main.py:100-200
+) to inject only relevant sections
+
+Common Patterns
+​
+
+# Code review workflow
+Review @diff and check for security issues
+# Debug with context
+This test is failing. Here's the test @file:tests/test_auth.py
+and the implementation @file:src/auth.py:50-80
+# Project exploration
+What does this project do? @folder:src @file:README.md
+# Research
+Compare the approaches in @url:https://arxiv.org/abs/2301.00001
+and @url:https://arxiv.org/abs/2301.00002
+
+Error Handling
+​
+
+Invalid references produce inline warnings rather than failures:
+
+Condition
+Behavior
+File not found
+Warning: "file not found"
+Binary file
+Warning: "binary files are not supported"
+Folder not found
+Warning: "folder not found"
+Git command fails
+Warning with git stderr
+URL returns no content
+Warning: "no content extracted"
+Sensitive path
+Warning: "path is a sensitive credential file"
+Path outside workspace
+Warning: "path is outside the allowed workspace"
+========================================
+CODE_BLOCKS:
+Review @file:src/main.py and suggest improvementsWhat changed? @diffCompare @file:old_config.yaml and @file:new_config.yamlWhat's in @folder:src/components?Summarize this article @url:https://arxiv.org/abs/2301.00001
+
+Check @file:main.py, and also @file:test.py.
+
+@file:src/main.py:42        # Single line 42@file:src/main.py:10-25     # Lines 10 through 25 (inclusive)
+
+# Code review workflowReview @diff and check for security issues# Debug with contextThis test is failing. Here's the test @file:tests/test_auth.pyand the implementation @file:src/auth.py:50-80# Project explorationWhat does this project do? @folder:src @file:README.md# ResearchCompare the approaches in @url:https://arxiv.org/abs/2301.00001and @url:https://arxiv.org/abs/2301.00002
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/credential-pools
+TITLE: Credential Pools | Hermes Agent
+H1: Credential Pools
+TEXT:
+On this page
+
+Credential pools let you register multiple API keys or OAuth tokens for the same provider. When one key hits a rate limit or billing quota, Hermes automatically rotates to the next healthy key — keeping your session alive without switching providers.
+
+This is different from 
+fallback providers
+, which switch to a 
+different
+ provider entirely. Credential pools are same-provider rotation; fallback providers are cross-provider failover. Pools are tried first — if all pool keys are exhausted, 
+then
+ the fallback provider activates.
+
+How It Works
+​
+
+Your request
+ → Pick key from pool (round_robin / least_used / fill_first / random)
+ → Send to provider
+ → 429 rate limit?
+ → Retry same key once (transient blip)
+ → Second 429 → rotate to next pool key
+ → All keys exhausted → fallback_model (different provider)
+ → 402 billing error?
+ → Immediately rotate to next pool key (24h cooldown)
+ → 401 auth expired?
+ → Try refreshing the token (OAuth)
+ → Refresh failed → rotate to next pool key
+ → Success → continue normally
+
+Quick Start
+​
+
+If you already have an API key set in 
+.env
+, Hermes auto-discovers it as a 1-key pool. To benefit from pooling, add more keys:
+
+# Add a second OpenRouter key
+hermes auth 
+add
+ openrouter --api-key sk-or-v1-your-second-key
+# Add a second Anthropic key
+hermes auth 
+add
+ anthropic 
+--type
+ api-key --api-key sk-ant-api03-your-second-key
+# Add an Anthropic OAuth credential (requires Claude Max plan + extra usage credits)
+hermes auth 
+add
+ anthropic 
+--type
+ oauth
+# Opens browser for OAuth login
+
+Check your pools:
+
+hermes auth list
+
+Output:
+
+openrouter (2 credentials):
+ #1 OPENROUTER_API_KEY api_key env:OPENROUTER_API_KEY ←
+ #2 backup-key api_key manual
+anthropic (3 credentials):
+ #1 hermes_pkce oauth hermes_pkce ←
+ #2 claude_code oauth claude_code
+ #3 ANTHROPIC_API_KEY api_key env:ANTHROPIC_API_KEY
+
+The 
+←
+ marks the currently selected credential.
+
+Interactive Management
+​
+
+Run 
+hermes auth
+ with no subcommand for an interactive wizard:
+
+hermes auth
+
+This shows your full pool status and offers a menu:
+
+What would you like to do?
+ 1. Add a credential
+ 2. Remove a credential
+ 3. Reset cooldowns for a provider
+ 4. Set rotation strategy for a provider
+ 5. Exit
+
+For providers that support both API keys and OAuth (Anthropic, Nous, Codex), the add flow asks which type:
+
+anthropic supports both API keys and OAuth login.
+ 1. API key (paste a key from the provider dashboard)
+ 2. OAuth login (authenticate via browser)
+Type [1/2]:
+
+CLI Commands
+​
+
+Command
+Description
+hermes auth
+Interactive pool management wizard
+hermes auth list
+Show all pools and credentials
+hermes auth list <provider>
+Show a specific provider's pool
+hermes auth add <provider>
+Add a credential (prompts for type and key)
+hermes auth add <provider> --type api-key --api-key <key>
+Add an API key non-interactively
+hermes auth add <provider> --type oauth
+Add an OAuth credential via browser login
+hermes auth remove <provider> <index>
+Remove credential by 1-based index
+hermes auth reset <provider>
+Clear all cooldowns/exhaustion status
+
+Rotation Strategies
+​
+
+Configure via 
+hermes auth
+ → "Set rotation strategy" or in 
+config.yaml
+:
+
+credential_pool_strategies
+:
+
+openrouter
+:
+ round_robin
+
+anthropic
+:
+ least_used
+
+Strategy
+Behavior
+fill_first
+ (default)
+Use the first healthy key until it's exhausted, then move to the next
+round_robin
+Cycle through keys evenly, rotating after each selection
+least_used
+Always pick the key with the lowest request count
+random
+Random selection among healthy keys
+
+Error Recovery
+​
+
+The pool handles different errors differently:
+
+Error
+Behavior
+Cooldown
+429 Rate Limit
+Retry same key once (transient). Second consecutive 429 rotates to next key
+1 hour
+402 Billing/Quota
+Immediately rotate to next key
+24 hours
+401 Auth Expired
+Try refreshing the OAuth token first. Rotate only if refresh fails
+—
+All keys exhausted
+Fall through to 
+fallback_model
+ if configured
+—
+
+The 
+has_retried_429
+ flag resets on every successful API call, so a single transient 429 doesn't trigger rotation.
+
+Custom Endpoint Pools
+​
+
+Custom OpenAI-compatible endpoints (Together.ai, RunPod, local servers) get their own pools, keyed by the endpoint name from 
+custom_providers
+ in config.yaml.
+
+When you set up a custom endpoint via 
+hermes model
+, it auto-generates a name like "Together.ai" or "Local (localhost:8080)". This name becomes the pool key.
+
+# After setting up a custom endpoint via hermes model:
+hermes auth list
+# Shows:
+# Together.ai (1 credential):
+# #1 config key api_key config:Together.ai ←
+# Add a second key for the same endpoint:
+hermes auth 
+add
+ Together.ai --api-key sk-together-second-key
+
+Custom endpoint pools are stored in 
+auth.json
+ under 
+credential_pool
+ with a 
+custom:
+ prefix:
+
+{
+
+"credential_pool"
+:
+
+{
+
+"openrouter"
+:
+
+[
+...
+]
+,
+
+"custom:together.ai"
+:
+
+[
+...
+]
+
+}
+}
+
+Auto-Discovery
+​
+
+Hermes automatically discovers credentials from multiple sources and seeds the pool on startup:
+
+Source
+Example
+Auto-seeded?
+Environment variables
+OPENROUTER_API_KEY
+, 
+ANTHROPIC_API_KEY
+Yes
+OAuth tokens (auth.json)
+Codex device code, Nous device code
+Yes
+Claude Code credentials
+~/.claude/.credentials.json
+Yes (Anthropic)
+Hermes PKCE OAuth
+~/.hermes/auth.json
+Yes (Anthropic)
+Custom endpoint config
+model.api_key
+ in config.yaml
+Yes (custom endpoints)
+Manual entries
+Added via 
+hermes auth add
+Persisted in auth.json
+
+Auto-seeded entries are updated on each pool load — if you remove an env var, its pool entry is automatically pruned. Manual entries (added via 
+hermes auth add
+) are never auto-pruned.
+
+Delegation & Subagent Sharing
+​
+
+When the agent spawns subagents via 
+delegate_task
+, the parent's credential pool is automatically shared with children:
+
+Same provider
+ — the child receives the parent's full pool, enabling key rotation on rate limits
+
+Different provider
+ — the child loads that provider's own pool (if configured)
+
+No pool configured
+ — the child falls back to the inherited single API key
+
+This means subagents benefit from the same rate-limit resilience as the parent, with no extra configuration needed. Per-task credential leasing ensures children don't conflict with each other when rotating keys concurrently.
+
+Thread Safety
+​
+
+The credential pool uses a threading lock for all state mutations (
+select()
+, 
+mark_exhausted_and_rotate()
+, 
+try_refresh_current()
+, 
+mark_used()
+). This ensures safe concurrent access when the gateway handles multiple chat sessions simultaneously.
+
+Architecture
+​
+
+For the full data flow diagram, see 
+docs/credential-pool-flow.excalidraw
+ in the repository.
+
+The credential pool integrates at the provider resolution layer:
+
+agent/credential_pool.py
+ — Pool manager: storage, selection, rotation, cooldowns
+
+hermes_cli/auth_commands.py
+ — CLI commands and interactive wizard
+
+hermes_cli/runtime_provider.py
+ — Pool-aware credential resolution
+
+run_agent.py
+ — Error recovery: 429/402/401 → pool rotation → fallback
+
+Storage
+​
+
+Pool state is stored in 
+~/.hermes/auth.json
+ under the 
+credential_pool
+ key:
+
+{
+
+"version"
+:
+
+1
+,
+
+"credential_pool"
+:
+
+{
+
+"openrouter"
+:
+
+[
+
+{
+
+"id"
+:
+
+"abc123"
+,
+
+"label"
+:
+
+"OPENROUTER_API_KEY"
+,
+
+"auth_type"
+:
+
+"api_key"
+,
+
+"priority"
+:
+
+0
+,
+
+"source"
+:
+
+"env:OPENROUTER_API_KEY"
+,
+
+"access_token"
+:
+
+"sk-or-v1-..."
+,
+
+"last_status"
+:
+
+"ok"
+,
+
+"request_count"
+:
+
+142
+
+}
+
+]
+
+}
+,
+}
+
+Strategies are stored in 
+config.yaml
+ (not 
+auth.json
+):
+
+credential_pool_strategies
+:
+
+openrouter
+:
+ round_robin
+
+anthropic
+:
+ least_used
+========================================
+CODE_BLOCKS:
+Your request  → Pick key from pool (round_robin / least_used / fill_first / random)  → Send to provider  → 429 rate limit?      → Retry same key once (transient blip)      → Second 429 → rotate to next pool key      → All keys exhausted → fallback_model (different provider)  → 402 billing error?      → Immediately rotate to next pool key (24h cooldown)  → 401 auth expired?      → Try refreshing the token (OAuth)      → Refresh failed → rotate to next pool key  → Success → continue normally
+
+# Add a second OpenRouter keyhermes auth add openrouter --api-key sk-or-v1-your-second-key# Add a second Anthropic keyhermes auth add anthropic --type api-key --api-key sk-ant-api03-your-second-key# Add an Anthropic OAuth credential (requires Claude Max plan + extra usage credits)hermes auth add anthropic --type oauth# Opens browser for OAuth login
+
+hermes auth list
+
+openrouter (2 credentials):  #1  OPENROUTER_API_KEY   api_key env:OPENROUTER_API_KEY ←  #2  backup-key           api_key manualanthropic (3 credentials):  #1  hermes_pkce          oauth   hermes_pkce ←  #2  claude_code          oauth   claude_code  #3  ANTHROPIC_API_KEY    api_key env:ANTHROPIC_API_KEY
+
+hermes auth
+
+What would you like to do?  1. Add a credential  2. Remove a credential  3. Reset cooldowns for a provider  4. Set rotation strategy for a provider  5. Exit
+
+anthropic supports both API keys and OAuth login.  1. API key (paste a key from the provider dashboard)  2. OAuth login (authenticate via browser)Type [1/2]:
+
+credential_pool_strategies:  openrouter: round_robin  anthropic: least_used
+
+# After setting up a custom endpoint via hermes model:hermes auth list# Shows:#   Together.ai (1 credential):#     #1  config key    api_key config:Together.ai ←# Add a second key for the same endpoint:hermes auth add Together.ai --api-key sk-together-second-key
+
+{  "credential_pool": {    "openrouter": [...],    "custom:together.ai": [...]  }}
+
+{  "version": 1,  "credential_pool": {    "openrouter": [      {        "id": "abc123",        "label": "OPENROUTER_API_KEY",        "auth_type": "api_key",        "priority": 0,        "source": "env:OPENROUTER_API_KEY",        "access_token": "sk-or-v1-...",        "last_status": "ok",        "request_count": 142      }    ]  },}
+
+credential_pool_strategies:  openrouter: round_robin  anthropic: least_used
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/cron
+TITLE: Scheduled Tasks (Cron) | Hermes Agent
+H1: Scheduled Tasks (Cron)
+TEXT:
+On this page
+
+Schedule tasks to run automatically with natural language or cron expressions. Hermes exposes cron management through a single 
+cronjob
+ tool with action-style operations instead of separate schedule/list/remove tools.
+
+What cron can do now
+​
+
+Cron jobs can:
+
+schedule one-shot or recurring tasks
+
+pause, resume, edit, trigger, and remove jobs
+
+attach zero, one, or multiple skills to a job
+
+deliver results back to the origin chat, local files, or configured platform targets
+
+run in fresh agent sessions with the normal static tool list
+
+run in 
+no-agent mode
+ — a script on a schedule, its stdout delivered verbatim, zero LLM involvement (see the 
+no-agent mode
+ section below)
+
+All of this is available to Hermes itself through the 
+cronjob
+ tool, so you can create, pause, edit, and remove jobs by asking in plain language — no CLI required.
+
+warning
+Cron-run sessions cannot recursively create more cron jobs. Hermes disables cron management tools inside cron executions to prevent runaway scheduling loops.
+
+Creating scheduled tasks
+​
+
+In chat with 
+/cron
+​
+
+/cron 
+add
+ 30m 
+"Remind me to check the build"
+/cron 
+add
+
+"every 2h"
+
+"Check server status"
+/cron 
+add
+
+"every 1h"
+
+"Summarize new feed items"
+
+--skill
+ blogwatcher
+/cron 
+add
+
+"every 1h"
+
+"Use both skills and combine the result"
+
+--skill
+ blogwatcher 
+--skill
+ maps
+
+From the standalone CLI
+​
+
+hermes 
+cron
+ create 
+"every 2h"
+
+"Check server status"
+hermes 
+cron
+ create 
+"every 1h"
+
+"Summarize new feed items"
+
+--skill
+ blogwatcher
+hermes 
+cron
+ create 
+"every 1h"
+
+"Use both skills and combine the result"
+
+\
+
+--skill
+ blogwatcher 
+\
+
+--skill
+ maps 
+\
+
+--name
+
+"Skill combo"
+
+Through natural conversation
+​
+
+Ask Hermes normally:
+
+Every morning at 9am, check Hacker News for AI news and send me a summary on Telegram.
+
+Hermes will use the unified 
+cronjob
+ tool internally.
+
+Skill-backed cron jobs
+​
+
+A cron job can load one or more skills before it runs the prompt.
+
+Single skill
+​
+
+cronjob
+(
+ action
+=
+"create"
+,
+ skill
+=
+"blogwatcher"
+,
+ prompt
+=
+"Check the configured feeds and summarize anything new."
+,
+ schedule
+=
+"0 9 * * *"
+,
+ name
+=
+"Morning feeds"
+,
+)
+
+Multiple skills
+​
+
+Skills are loaded in order. The prompt becomes the task instruction layered on top of those skills.
+
+cronjob
+(
+ action
+=
+"create"
+,
+ skills
+=
+[
+"blogwatcher"
+,
+
+"maps"
+]
+,
+ prompt
+=
+"Look for new local events and interesting nearby places, then combine them into one short brief."
+,
+ schedule
+=
+"every 6h"
+,
+ name
+=
+"Local brief"
+,
+)
+
+This is useful when you want a scheduled agent to inherit reusable workflows without stuffing the full skill text into the cron prompt itself.
+
+Running a job inside a project directory
+​
+
+Cron jobs default to running detached from any repo — no 
+AGENTS.md
+, 
+CLAUDE.md
+, or 
+.cursorrules
+ is loaded, and the terminal / file / code-exec tools run from whatever working directory the gateway started in. Pass 
+--workdir
+ (CLI) or 
+workdir=
+ (tool call) to change that:
+
+# Standalone CLI (schedule and prompt are positional)
+hermes 
+cron
+ create 
+"every 1d at 09:00"
+
+\
+
+"Audit open PRs, summarize CI health, and post to #eng"
+
+\
+
+--workdir
+ /home/me/projects/acme
+
+# From a chat, via the cronjob tool
+cronjob
+(
+ action
+=
+"create"
+,
+ schedule
+=
+"every 1d at 09:00"
+,
+ workdir
+=
+"/home/me/projects/acme"
+,
+ prompt
+=
+"Audit open PRs, summarize CI health, and post to #eng"
+,
+)
+
+When 
+workdir
+ is set:
+
+AGENTS.md
+, 
+CLAUDE.md
+, and 
+.cursorrules
+ from that directory are injected into the system prompt (same discovery order as the interactive CLI)
+
+terminal
+, 
+read_file
+, 
+write_file
+, 
+patch
+, 
+search_files
+, and 
+execute_code
+ all use that directory as their working directory (via 
+TERMINAL_CWD
+)
+
+The path must be an absolute directory that exists — relative paths and missing directories are rejected at create / update time
+
+Pass 
+--workdir ""
+ (or 
+workdir=""
+ via the tool) on edit to clear it and restore the old behaviour
+
+Serialization
+Jobs with a 
+workdir
+ run sequentially on the scheduler tick, not in the parallel pool. This is deliberate — 
+TERMINAL_CWD
+ is process-global, so two workdir jobs running at the same time would corrupt each other's cwd. Workdir-less jobs still run in parallel as before.
+
+Editing jobs
+​
+
+You do not need to delete and recreate jobs just to change them.
+
+Chat
+​
+
+/cron edit 
+<
+job_id
+>
+
+--schedule
+
+"every 4h"
+/cron edit 
+<
+job_id
+>
+
+--prompt
+
+"Use the revised task"
+/cron edit 
+<
+job_id
+>
+
+--skill
+ blogwatcher 
+--skill
+ maps
+/cron edit 
+<
+job_id
+>
+ --remove-skill blogwatcher
+/cron edit 
+<
+job_id
+>
+ --clear-skills
+
+Standalone CLI
+​
+
+hermes 
+cron
+ edit 
+<
+job_id
+>
+
+--schedule
+
+"every 4h"
+hermes 
+cron
+ edit 
+<
+job_id
+>
+
+--prompt
+
+"Use the revised task"
+hermes 
+cron
+ edit 
+<
+job_id
+>
+
+--skill
+ blogwatcher 
+--skill
+ maps
+hermes 
+cron
+ edit 
+<
+job_id
+>
+ --add-skill maps
+hermes 
+cron
+ edit 
+<
+job_id
+>
+ --remove-skill blogwatcher
+hermes 
+cron
+ edit 
+<
+job_id
+>
+ --clear-skills
+
+Notes:
+
+repeated 
+--skill
+ replaces the job's attached skill list
+
+--add-skill
+ appends to the existing list without replacing it
+
+--remove-skill
+ removes specific attached skills
+
+--clear-skills
+ removes all attached skills
+
+Lifecycle actions
+​
+
+Cron jobs now have a fuller lifecycle than just create/remove.
+
+Chat
+​
+
+/cron list
+/cron pause 
+<
+job_id
+>
+/cron resume 
+<
+job_id
+>
+/cron run 
+<
+job_id
+>
+/cron remove 
+<
+job_id
+>
+
+Standalone CLI
+​
+
+hermes 
+cron
+ list
+hermes 
+cron
+ pause 
+<
+job_id
+>
+hermes 
+cron
+ resume 
+<
+job_id
+>
+hermes 
+cron
+ run 
+<
+job_id
+>
+hermes 
+cron
+ remove 
+<
+job_id
+>
+hermes 
+cron
+ status
+hermes 
+cron
+ tick
+
+What they do:
+
+pause
+ — keep the job but stop scheduling it
+
+resume
+ — re-enable the job and compute the next future run
+
+run
+ — trigger the job on the next scheduler tick
+
+remove
+ — delete it entirely
+
+How it works
+​
+
+Cron execution is handled by the gateway daemon.
+ The gateway ticks the scheduler every 60 seconds, running any due jobs in isolated agent sessions.
+
+hermes gateway 
+install
+
+# Install as a user service
+sudo
+ hermes gateway 
+install
+
+--system
+
+# Linux: boot-time system service for servers
+hermes gateway 
+# Or run in foreground
+hermes 
+cron
+ list
+hermes 
+cron
+ status
+
+Gateway scheduler behavior
+​
+
+On each tick Hermes:
+
+loads jobs from 
+~/.hermes/cron/jobs.json
+
+checks 
+next_run_at
+ against the current time
+
+starts a fresh 
+AIAgent
+ session for each due job
+
+optionally injects one or more attached skills into that fresh session
+
+runs the prompt to completion
+
+delivers the final response
+
+updates run metadata and the next scheduled time
+
+A file lock at 
+~/.hermes/cron/.tick.lock
+ prevents overlapping scheduler ticks from double-running the same job batch.
+
+Delivery options
+​
+
+When scheduling jobs, you specify where the output goes:
+
+Option
+Description
+Example
+"origin"
+Back to where the job was created
+Default on messaging platforms
+"local"
+Save to local files only (
+~/.hermes/cron/output/
+)
+Default on CLI
+"telegram"
+Telegram home channel
+Uses 
+TELEGRAM_HOME_CHANNEL
+"telegram:123456"
+Specific Telegram chat by ID
+Direct delivery
+"telegram:-100123:17585"
+Specific Telegram topic
+chat_id:thread_id
+ format
+"discord"
+Discord home channel
+Uses 
+DISCORD_HOME_CHANNEL
+"discord:#engineering"
+Specific Discord channel
+By channel name
+"slack"
+Slack home channel
+"whatsapp"
+WhatsApp home
+"signal"
+Signal
+"matrix"
+Matrix home room
+"mattermost"
+Mattermost home channel
+"email"
+Email
+"sms"
+SMS via Twilio
+"homeassistant"
+Home Assistant
+"dingtalk"
+DingTalk
+"feishu"
+Feishu/Lark
+"wecom"
+WeCom
+"weixin"
+Weixin (WeChat)
+"bluebubbles"
+BlueBubbles (iMessage)
+"qqbot"
+QQ Bot (Tencent QQ)
+"all"
+Fan out to every connected home channel
+Resolved at fire time
+"telegram,discord"
+Fan out to a specific set of channels
+Comma-separated list
+"origin,all"
+Deliver to the origin 
+plus
+ every other connected channel
+Combine any tokens
+
+The agent's final response is automatically delivered. You do not need to call 
+send_message
+ in the cron prompt.
+
+Routing intent (
+all
+)
+​
+
+all
+ lets you ship one cron job to every messaging channel you have configured, without having to enumerate them by name. It is 
+resolved at fire time
+, so a job created before you wired up Telegram will pick up Telegram on the next tick after you set 
+TELEGRAM_HOME_CHANNEL
+.
+
+Semantics: 
+all
+ expands to every platform with a configured home channel. Zero is fine; the job simply produces no delivery targets and is recorded as a delivery failure upstream.
+
+all
+ composes with explicit targets. 
+origin,all
+ delivers to the origin chat 
+plus
+ every other connected home channel, de-duplicating by 
+(platform, chat_id, thread_id)
+.
+
+Response wrapping
+​
+
+By default, delivered cron output is wrapped with a header and footer so the recipient knows it came from a scheduled task:
+
+Cronjob Response: Morning feeds
+-------------
+<agent output here>
+Note: The agent cannot see this message, and therefore cannot respond to it.
+
+To deliver the raw agent output without the wrapper, set 
+cron.wrap_response
+ to 
+false
+:
+
+# ~/.hermes/config.yaml
+cron
+:
+
+wrap_response
+:
+
+false
+
+Silent suppression
+​
+
+If the agent's final response starts with 
+[SILENT]
+, delivery is suppressed entirely. The output is still saved locally for audit (in 
+~/.hermes/cron/output/
+), but no message is sent to the delivery target.
+
+This is useful for monitoring jobs that should only report when something is wrong:
+
+Check if nginx is running. If everything is healthy, respond with only [SILENT].
+Otherwise, report the issue.
+
+Failed jobs always deliver regardless of the 
+[SILENT]
+ marker — only successful runs can be silenced.
+
+Script timeout
+​
+
+Pre-run scripts (attached via the 
+script
+ parameter) have a default timeout of 120 seconds. If your scripts need longer — for example, to include randomized delays that avoid bot-like timing patterns — you can increase this:
+
+# ~/.hermes/config.yaml
+cron
+:
+
+script_timeout_seconds
+:
+
+300
+
+# 5 minutes
+
+Or set the 
+HERMES_CRON_SCRIPT_TIMEOUT
+ environment variable. The resolution order is: env var → config.yaml → 120s default.
+
+No-agent mode (script-only jobs)
+​
+
+For recurring jobs that don't need LLM reasoning — classic watchdogs, disk/memory alerts, heartbeats, CI pings — pass 
+no_agent=True
+ at creation time. The scheduler runs your script on schedule and delivers its stdout directly, skipping the agent entirely:
+
+hermes 
+cron
+ create 
+"every 5m"
+
+\
+ --no-agent 
+\
+
+--script
+ memory-watchdog.sh 
+\
+
+--deliver
+ telegram 
+\
+
+--name
+
+"memory-watchdog"
+
+Semantics:
+
+Script stdout (trimmed) → delivered verbatim as the message.
+
+Empty stdout → silent tick
+, no delivery. This is the watchdog pattern: "only say something when something is wrong".
+
+Non-zero exit or timeout → an error alert is delivered, so a broken watchdog can't fail silently.
+
+{"wakeAgent": false}
+ on the last line → silent tick (same gate LLM jobs use).
+
+No tokens, no model, no provider fallback — the job never touches the inference layer.
+
+.sh
+ / 
+.bash
+ files run under 
+/bin/bash
+; anything else under the current Python interpreter (
+sys.executable
+). Scripts must live in 
+~/.hermes/scripts/
+ (same sandboxing rule as the pre-run script gate).
+
+The agent sets these up for you
+​
+
+The 
+cronjob
+ tool's schema exposes 
+no_agent
+ to Hermes directly, so you can describe a watchdog in chat and let the agent wire it up:
+
+Ping me on Telegram if RAM is over 85%, every 5 minutes.
+
+Hermes will write the check script to 
+~/.hermes/scripts/
+ via 
+write_file
+, then call:
+
+cronjob
+(
+action
+=
+"create"
+,
+ schedule
+=
+"every 5m"
+,
+ script
+=
+"memory-watchdog.sh"
+,
+ no_agent
+=
+True
+,
+ deliver
+=
+"telegram"
+,
+ name
+=
+"memory-watchdog"
+)
+
+It picks 
+no_agent=True
+ automatically when the message content is fully determined by the script (watchdogs, threshold alerts, heartbeats). The same tool also lets the agent pause, resume, edit, and remove jobs — so the whole lifecycle is chat-driven without anyone touching the CLI.
+
+See the 
+Script-Only Cron Jobs guide
+ for worked examples.
+
+Chaining jobs with 
+context_from
+​
+
+Cron jobs run in isolated sessions with no memory of previous runs. But sometimes one job's output is exactly what the next job needs. The 
+context_from
+ parameter wires that connection automatically — Job B's prompt gets Job A's most recent output prepended as context at runtime.
+
+# Job 1: Collect raw data
+cronjob
+(
+ action
+=
+"create"
+,
+ prompt
+=
+"Fetch the top 10 AI/ML stories from Hacker News. Save them to ~/.hermes/data/briefs/raw.md in markdown format with title, URL, and score."
+,
+ schedule
+=
+"0 7 * * *"
+,
+ name
+=
+"AI News Collector"
+,
+)
+# Job 2: Triage — receives Job 1's output as context
+# Get Job 1's ID from: cronjob(action="list")
+cronjob
+(
+ action
+=
+"create"
+,
+ prompt
+=
+"Read ~/.hermes/data/briefs/raw.md. Score each story 1–10 for engagement potential and novelty. Output the top 5 to ~/.hermes/data/briefs/ranked.md."
+,
+ schedule
+=
+"30 7 * * *"
+,
+ context_from
+=
+"<job1_id>"
+,
+ name
+=
+"AI News Triage"
+,
+)
+# Job 3: Ship — receives Job 2's output as context
+cronjob
+(
+ action
+=
+"create"
+,
+ prompt
+=
+"Read ~/.hermes/data/briefs/ranked.md. Write 3 tweet drafts (hook + body + hashtags). Deliver to telegram:7976161601."
+,
+ schedule
+=
+"0 8 * * *"
+,
+ context_from
+=
+"<job2_id>"
+,
+ name
+=
+"AI News Brief"
+,
+)
+
+How it works:
+
+When Job 2 fires, Hermes reads Job 1's most recent output from 
+~/.hermes/cron/output/{job1_id}/*.md
+
+That output is prepended to Job 2's prompt automatically
+
+Job 2 doesn't need to hardcode "read this file" — it receives the content as context
+
+The chain can be any length: Job 1 → Job 2 → Job 3 → ...
+
+What 
+context_from
+ accepts:
+
+Format
+Example
+Single job ID (string)
+context_from="a1b2c3d4"
+Multiple job IDs (list)
+context_from=["job_a", "job_b"]
+
+Outputs are concatenated in the order listed.
+
+When to use it:
+
+Multi-stage pipelines (collect → filter → format → deliver)
+
+Dependent tasks where step N's work depends on step N−1's output
+
+Fan-out/fan-in patterns where one job aggregates results from several others
+
+Provider recovery
+​
+
+Cron jobs inherit your configured fallback providers and credential pool rotation. If the primary API key is rate-limited or the provider returns an error, the cron agent can:
+
+Fall back to an alternate provider
+ if you have 
+fallback_providers
+ (or the legacy 
+fallback_model
+) configured in 
+config.yaml
+
+Rotate to the next credential
+ in your 
+credential pool
+ for the same provider
+
+This means cron jobs that run at high frequency or during peak hours are more resilient — a single rate-limited key won't fail the entire run.
+
+Schedule formats
+​
+
+The agent's final response is automatically delivered — you do 
+not
+ need to include 
+send_message
+ in the cron prompt for that same destination. If a cron run calls 
+send_message
+ to the exact target the scheduler will already deliver to, Hermes skips that duplicate send and tells the model to put the user-facing content in the final response instead. Use 
+send_message
+ only for additional or different targets.
+
+Relative delays (one-shot)
+​
+
+30m → Run once in 30 minutes
+2h → Run once in 2 hours
+1d → Run once in 1 day
+
+Intervals (recurring)
+​
+
+every 30m → Every 30 minutes
+every 2h → Every 2 hours
+every 1d → Every day
+
+Cron expressions
+​
+
+0 9 * * * → Daily at 9:00 AM
+0 9 * * 1-5 → Weekdays at 9:00 AM
+0 */6 * * * → Every 6 hours
+30 8 1 * * → First of every month at 8:30 AM
+0 0 * * 0 → Every Sunday at midnight
+
+ISO timestamps
+​
+
+2026-03-15T09:00:00 → One-time at March 15, 2026 9:00 AM
+
+Repeat behavior
+​
+
+Schedule type
+Default repeat
+Behavior
+One-shot (
+30m
+, timestamp)
+1
+Runs once
+Interval (
+every 2h
+)
+forever
+Runs until removed
+Cron expression
+forever
+Runs until removed
+
+You can override it:
+
+cronjob
+(
+ action
+=
+"create"
+,
+ prompt
+=
+"..."
+,
+ schedule
+=
+"every 2h"
+,
+ repeat
+=
+5
+,
+)
+
+Managing jobs programmatically
+​
+
+The agent-facing API is one tool:
+
+cronjob
+(
+action
+=
+"create"
+,
+
+.
+.
+.
+)
+cronjob
+(
+action
+=
+"list"
+)
+cronjob
+(
+action
+=
+"update"
+,
+ job_id
+=
+"..."
+)
+cronjob
+(
+action
+=
+"pause"
+,
+ job_id
+=
+"..."
+)
+cronjob
+(
+action
+=
+"resume"
+,
+ job_id
+=
+"..."
+)
+cronjob
+(
+action
+=
+"run"
+,
+ job_id
+=
+"..."
+)
+cronjob
+(
+action
+=
+"remove"
+,
+ job_id
+=
+"..."
+)
+
+For 
+update
+, pass 
+skills=[]
+ to remove all attached skills.
+
+Toolsets available to cron jobs
+​
+
+Cron runs each job in a fresh agent session with no chat platform attached. By default the cron agent gets 
+the toolset you configured for the 
+cron
+ platform in 
+hermes tools
+ — not the CLI default, not everything under the sun.
+
+hermes tools
+# → pick the "cron" platform in the curses UI
+# → toggle toolsets on/off just like you would for Telegram/Discord/etc.
+
+Tighter per-job control is available via the 
+enabled_toolsets
+ field on 
+cronjob.create
+ (or on an existing job via 
+cronjob.update
+):
+
+cronjob(action="create", name="weekly-news-summary",
+ schedule="every sunday 9am",
+ enabled_toolsets=["web", "file"], # just web + file, no terminal/browser/etc.
+ prompt="Summarize this week's AI news: ...")
+
+When 
+enabled_toolsets
+ is set on a job it wins; otherwise the 
+hermes tools
+ cron-platform config wins; otherwise Hermes falls back to the built-in defaults. This matters for cost control: carrying 
+moa
+, 
+browser
+, 
+delegation
+ into every tiny "fetch news" job bloats the tool-schema prompt on every LLM call.
+
+Skipping the agent entirely: 
+wakeAgent
+​
+
+If your cron job attaches a pre-check script (via 
+script=
+), the script can decide at runtime whether Hermes should even invoke the agent. Emit a final stdout line of the form:
+
+{"wakeAgent": false}
+
+…and cron skips the agent run entirely for this tick. Useful for frequent polls (every 1–5 min) that only need to wake the LLM when state actually changed — otherwise you pay for zero-content agent turns over and over.
+
+# pre-check script
+import
+ json
+,
+ sys
+latest 
+=
+ fetch_latest_issue_count
+(
+)
+prev 
+=
+ read_state
+(
+"issue_count"
+)
+if
+ latest 
+==
+ prev
+:
+
+print
+(
+json
+.
+dumps
+(
+{
+"wakeAgent"
+:
+
+False
+}
+)
+)
+
+# skip this tick
+ sys
+.
+exit
+(
+0
+)
+write_state
+(
+"issue_count"
+,
+ latest
+)
+print
+(
+json
+.
+dumps
+(
+{
+"wakeAgent"
+:
+
+True
+,
+
+"context"
+:
+
+{
+"new_issues"
+:
+ latest 
+-
+ prev
+}
+}
+)
+)
+
+When 
+wakeAgent
+ is omitted, the default is 
+true
+ (wake the agent as usual).
+
+Chaining jobs: 
+context_from
+​
+
+A cron job can consume the most recent successful output of one or more other jobs by listing their names (or IDs) in 
+context_from
+:
+
+cronjob(action="create", name="daily-digest",
+ schedule="every day 7am",
+ context_from=["ai-news-fetch", "github-prs-fetch"],
+ prompt="Write the daily digest using the outputs above.")
+
+The referenced jobs' most recent completed outputs are injected above the prompt as context for this run. Each upstream entry must be a valid job ID or name (see 
+cronjob action="list"
+). Note: chaining reads the 
+most recent completed
+ output — it does not wait for upstream jobs that are running in the same tick.
+
+Job storage
+​
+
+Jobs are stored in 
+~/.hermes/cron/jobs.json
+. Output from job runs is saved to 
+~/.hermes/cron/output/{job_id}/{timestamp}.md
+.
+
+Jobs may store 
+model
+ and 
+provider
+ as 
+null
+. When those fields are omitted, Hermes resolves them at execution time from the global configuration. They only appear in the job record when a per-job override is set.
+
+The storage uses atomic file writes so interrupted writes do not leave a partially written job file behind.
+
+Self-contained prompts still matter
+​
+
+Important
+Cron jobs run in a completely fresh agent session. The prompt must contain everything the agent needs that is not already provided by attached skills.
+
+BAD:
+
+"Check on that server issue"
+
+GOOD:
+
+"SSH into server 192.168.1.100 as user 'deploy', check if nginx is running with 'systemctl status nginx', and verify https://example.com returns HTTP 200."
+
+Security
+​
+
+Scheduled task prompts are scanned for prompt-injection and credential-exfiltration patterns at creation and update time. Prompts containing invisible Unicode tricks, SSH backdoor attempts, or obvious secret-exfiltration payloads are blocked.
+========================================
+CODE_BLOCKS:
+/cron add 30m "Remind me to check the build"/cron add "every 2h" "Check server status"/cron add "every 1h" "Summarize new feed items" --skill blogwatcher/cron add "every 1h" "Use both skills and combine the result" --skill blogwatcher --skill maps
+
+hermes cron create "every 2h" "Check server status"hermes cron create "every 1h" "Summarize new feed items" --skill blogwatcherhermes cron create "every 1h" "Use both skills and combine the result" \  --skill blogwatcher \  --skill maps \  --name "Skill combo"
+
+Every morning at 9am, check Hacker News for AI news and send me a summary on Telegram.
+
+cronjob(    action="create",    skill="blogwatcher",    prompt="Check the configured feeds and summarize anything new.",    schedule="0 9 * * *",    name="Morning feeds",)
+
+cronjob(    action="create",    skills=["blogwatcher", "maps"],    prompt="Look for new local events and interesting nearby places, then combine them into one short brief.",    schedule="every 6h",    name="Local brief",)
+
+# Standalone CLI (schedule and prompt are positional)hermes cron create "every 1d at 09:00" \  "Audit open PRs, summarize CI health, and post to #eng" \  --workdir /home/me/projects/acme
+
+# From a chat, via the cronjob toolcronjob(    action="create",    schedule="every 1d at 09:00",    workdir="/home/me/projects/acme",    prompt="Audit open PRs, summarize CI health, and post to #eng",)
+
+/cron edit <job_id> --schedule "every 4h"/cron edit <job_id> --prompt "Use the revised task"/cron edit <job_id> --skill blogwatcher --skill maps/cron edit <job_id> --remove-skill blogwatcher/cron edit <job_id> --clear-skills
+
+hermes cron edit <job_id> --schedule "every 4h"hermes cron edit <job_id> --prompt "Use the revised task"hermes cron edit <job_id> --skill blogwatcher --skill mapshermes cron edit <job_id> --add-skill mapshermes cron edit <job_id> --remove-skill blogwatcherhermes cron edit <job_id> --clear-skills
+
+/cron list/cron pause <job_id>/cron resume <job_id>/cron run <job_id>/cron remove <job_id>
+
+hermes cron listhermes cron pause <job_id>hermes cron resume <job_id>hermes cron run <job_id>hermes cron remove <job_id>hermes cron statushermes cron tick
+
+hermes gateway install     # Install as a user servicesudo hermes gateway install --system   # Linux: boot-time system service for servershermes gateway             # Or run in foregroundhermes cron listhermes cron status
+
+Cronjob Response: Morning feeds-------------<agent output here>Note: The agent cannot see this message, and therefore cannot respond to it.
+
+# ~/.hermes/config.yamlcron:  wrap_response: false
+
+Check if nginx is running. If everything is healthy, respond with only [SILENT].Otherwise, report the issue.
+
+# ~/.hermes/config.yamlcron:  script_timeout_seconds: 300   # 5 minutes
+
+hermes cron create "every 5m" \  --no-agent \  --script memory-watchdog.sh \  --deliver telegram \  --name "memory-watchdog"
+
+Ping me on Telegram if RAM is over 85%, every 5 minutes.
+
+cronjob(action="create", schedule="every 5m",        script="memory-watchdog.sh", no_agent=True,        deliver="telegram", name="memory-watchdog")
+
+# Job 1: Collect raw datacronjob(    action="create",    prompt="Fetch the top 10 AI/ML stories from Hacker News. Save them to ~/.hermes/data/briefs/raw.md in markdown format with title, URL, and score.",    schedule="0 7 * * *",    name="AI News Collector",)# Job 2: Triage — receives Job 1's output as context# Get Job 1's ID from: cronjob(action="list")cronjob(    action="create",    prompt="Read ~/.hermes/data/briefs/raw.md. Score each story 1–10 for engagement potential and novelty. Output th
+
+30m     → Run once in 30 minutes2h      → Run once in 2 hours1d      → Run once in 1 day
+
+every 30m    → Every 30 minutesevery 2h     → Every 2 hoursevery 1d     → Every day
+
+0 9 * * *       → Daily at 9:00 AM0 9 * * 1-5     → Weekdays at 9:00 AM0 */6 * * *     → Every 6 hours30 8 1 * *      → First of every month at 8:30 AM0 0 * * 0       → Every Sunday at midnight
+
+2026-03-15T09:00:00    → One-time at March 15, 2026 9:00 AM
+
+cronjob(    action="create",    prompt="...",    schedule="every 2h",    repeat=5,)
+
+cronjob(action="create", ...)cronjob(action="list")cronjob(action="update", job_id="...")cronjob(action="pause", job_id="...")cronjob(action="resume", job_id="...")cronjob(action="run", job_id="...")cronjob(action="remove", job_id="...")
+
+hermes tools# → pick the "cron" platform in the curses UI# → toggle toolsets on/off just like you would for Telegram/Discord/etc.
+
+cronjob(action="create", name="weekly-news-summary",        schedule="every sunday 9am",        enabled_toolsets=["web", "file"],      # just web + file, no terminal/browser/etc.        prompt="Summarize this week's AI news: ...")
+
+{"wakeAgent": false}
+
+# pre-check scriptimport json, syslatest = fetch_latest_issue_count()prev = read_state("issue_count")if latest == prev:    print(json.dumps({"wakeAgent": False}))   # skip this tick    sys.exit(0)write_state("issue_count", latest)print(json.dumps({"wakeAgent": True, "context": {"new_issues": latest - prev}}))
+
+cronjob(action="create", name="daily-digest",        schedule="every day 7am",        context_from=["ai-news-fetch", "github-prs-fetch"],        prompt="Write the daily digest using the outputs above.")
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/curator
+TITLE: Curator | Hermes Agent
+H1: Curator
+TEXT:
+On this page
+
+The curator is a background maintenance pass for 
+agent-created skills
+. It tracks how often each skill is viewed, used, and patched, moves long-unused skills through 
+active → stale → archived
+ states, and periodically spawns a short auxiliary-model review that proposes consolidations or patches drift.
+
+It exists so that skills created via the 
+self-improvement loop
+ don't pile up forever. Every time the agent solves a novel problem and saves a skill, that skill lands in 
+~/.hermes/skills/
+. Without maintenance, you end up with dozens of narrow near-duplicates that pollute the catalog and waste tokens.
+
+The curator 
+never touches
+ bundled skills (shipped with the repo) or hub-installed skills (from 
+agentskills.io
+). It only reviews skills the agent itself authored. It also 
+never auto-deletes
+ — the worst outcome is archival into 
+~/.hermes/skills/.archive/
+, which is recoverable.
+
+Tracks 
+issue #7816
+.
+
+How it runs
+​
+
+The curator is triggered by an inactivity check, not a cron daemon. On CLI session start, and on a recurring tick inside the gateway's cron-ticker thread, Hermes checks whether:
+
+Enough time has passed since the last curator run (
+interval_hours
+, default 
+7 days
+), and
+
+The agent has been idle long enough (
+min_idle_hours
+, default 
+2 hours
+).
+
+If both are true, it spawns a background fork of 
+AIAgent
+ — the same pattern used by the memory/skill self-improvement nudges. The fork runs in its own prompt cache and never touches the active conversation.
+
+First-run behavior
+On a brand-new install (or the first time a pre-curator install ticks after 
+hermes update
+), the curator 
+does not run immediately
+. The first observation seeds 
+last_run_at
+ to "now" and defers the first real pass by one full 
+interval_hours
+. This gives you a full interval to review your skill library, pin anything important, or opt out entirely before the curator ever touches it.
+If you want to see what the curator 
+would
+ do before it runs for real, run 
+hermes curator run --dry-run
+ — it produces the same review report without mutating the library.
+
+A run has two phases:
+
+Automatic transitions
+ (deterministic, no LLM). Skills unused for 
+stale_after_days
+ (30) become 
+stale
+; skills unused for 
+archive_after_days
+ (90) are moved to 
+~/.hermes/skills/.archive/
+.
+
+LLM review
+ (single aux-model pass, 
+max_iterations=8
+). The forked agent surveys the agent-created skills, can read any of them with 
+skill_view
+, and decides per-skill whether to keep, patch (via 
+skill_manage
+), consolidate overlapping ones, or archive via the terminal tool.
+
+Pinned skills are off-limits to both the curator's auto-transitions and the agent's own 
+skill_manage
+ tool. See 
+Pinning a skill
+ below.
+
+Configuration
+​
+
+All settings live in 
+config.yaml
+ under 
+curator:
+ (not 
+.env
+ — this isn't a secret). Defaults:
+
+curator
+:
+
+enabled
+:
+
+true
+
+interval_hours
+:
+
+168
+
+# 7 days
+
+min_idle_hours
+:
+
+2
+
+stale_after_days
+:
+
+30
+
+archive_after_days
+:
+
+90
+
+To disable entirely, set 
+curator.enabled: false
+.
+
+Running the review on a cheaper aux model
+​
+
+The curator's LLM review pass is a regular auxiliary task slot — 
+auxiliary.curator
+ — alongside Vision, Compression, Session Search, etc. "Auto" means "use my main chat model"; override the slot to pin a specific provider + model for the review pass instead.
+
+Easiest — 
+hermes model
+:
+
+hermes model 
+# → "Auxiliary models — side-task routing"
+
+# → pick "Curator" → pick provider → pick model
+
+The same picker is available in the web dashboard under the 
+Models
+ tab.
+
+Direct config.yaml (equivalent):
+
+auxiliary
+:
+
+curator
+:
+
+provider
+:
+ openrouter
+
+model
+:
+ google/gemini
+-
+3
+-
+flash
+-
+preview
+
+timeout
+:
+
+600
+
+# generous — reviews can take several minutes
+
+Leaving 
+provider: auto
+ (the default) routes the review pass through whatever your main chat model is, matching the behavior of every other auxiliary task.
+
+Legacy config
+Earlier releases used a one-off 
+curator.auxiliary.{provider,model}
+ block. That path still works but emits a deprecation log line — please migrate to 
+auxiliary.curator
+ above so the curator shares the same plumbing (
+hermes model
+, dashboard Models tab, 
+base_url
+, 
+api_key
+, 
+timeout
+, 
+extra_body
+) as every other aux task.
+
+CLI
+​
+
+hermes curator status 
+# last run, counts, pinned list, LRU top 5
+hermes curator run 
+# trigger a review now (blocks until the LLM pass finishes)
+hermes curator run 
+--background
+
+# fire-and-forget: start the LLM pass in a background thread
+hermes curator run --dry-run 
+# preview only — report without any mutations
+hermes curator backup 
+# take a manual snapshot of ~/.hermes/skills/
+hermes curator rollback 
+# restore from the newest snapshot
+hermes curator rollback 
+--list
+
+# list available snapshots
+hermes curator rollback 
+--id
+
+<
+ts
+>
+
+# restore a specific snapshot
+hermes curator rollback 
+-y
+
+# skip the confirmation prompt
+hermes curator pause 
+# stop runs until resumed
+hermes curator resume
+hermes curator pin 
+<
+skill
+>
+
+# never auto-transition this skill
+hermes curator unpin 
+<
+skill
+>
+hermes curator restore 
+<
+skill
+>
+
+# move an archived skill back to active
+
+Backups and rollback
+​
+
+Before every real curator pass, Hermes takes a tar.gz snapshot of 
+~/.hermes/skills/
+ at 
+~/.hermes/skills/.curator_backups/<utc-iso>/skills.tar.gz
+. If a pass archives or consolidates something you didn't want touched, you can undo the whole run with one command:
+
+hermes curator rollback 
+# restore newest snapshot (with confirmation)
+hermes curator rollback 
+-y
+
+# skip the prompt
+hermes curator rollback 
+--list
+
+# see all snapshots with reason + size
+
+The rollback itself is reversible: before replacing the skills tree, Hermes takes another snapshot tagged 
+pre-rollback to <target-id>
+, so a mistaken rollback can be undone by rolling forward to that one with 
+--id
+.
+
+You can also take manual snapshots at any time with 
+hermes curator backup --reason "before-refactor"
+. The 
+--reason
+ string lands in the snapshot's 
+manifest.json
+ and is shown in 
+--list
+.
+
+Snapshots are pruned to 
+curator.backup.keep
+ (default 5) to keep disk usage bounded:
+
+curator
+:
+
+backup
+:
+
+enabled
+:
+
+true
+
+keep
+:
+
+5
+
+Set 
+curator.backup.enabled: false
+ to disable automatic snapshotting. The manual 
+hermes curator backup
+ command still works when backups are disabled only if you set 
+enabled: true
+ first — the flag gates both paths symmetrically so there's no way to accidentally skip the pre-run snapshot on mutating runs.
+
+hermes curator status
+ also lists the five least-recently-used skills — a quick way to see what's likely to become stale next.
+
+The same subcommands are available as the 
+/curator
+ slash command inside a running session (CLI or gateway platforms).
+
+What "agent-created" means
+​
+
+A skill is considered agent-created if its name is 
+not
+ in:
+
+~/.hermes/skills/.bundled_manifest
+ (skills copied from the repo on install), and
+
+~/.hermes/skills/.hub/lock.json
+ (skills installed via 
+hermes skills install
+).
+
+Everything else in 
+~/.hermes/skills/
+ is fair game for the curator. This includes:
+
+Skills the agent saved via 
+skill_manage(action="create")
+ during a conversation.
+
+Skills you created manually with a hand-written 
+SKILL.md
+.
+
+Skills added via external skill directories you've pointed Hermes at.
+
+Your hand-written skills look the same as agent-saved ones
+Provenance here is 
+binary
+ (bundled/hub vs. everything else). The curator cannot tell a hand-authored skill you rely on for private workflows apart from a skill the self-improvement loop saved mid-session. Both land in the "agent-created" bucket.
+Before the first real pass (7 days after installation by default), take a moment to:
+
+Run 
+hermes curator run --dry-run
+ to see exactly what the curator would propose.
+
+Use 
+hermes curator pin <name>
+ to fence off anything you don't want touched.
+
+Or set 
+curator.enabled: false
+ in 
+config.yaml
+ if you'd rather manage the library yourself.
+
+Archives are always recoverable via 
+hermes curator restore <name>
+, but it's easier to pin up-front than to chase down a consolidation after the fact.
+
+If you want to protect a specific skill from ever being touched — for example a hand-authored skill you rely on — use 
+hermes curator pin <name>
+. See the next section.
+
+Pinning a skill
+​
+
+Pinning protects a skill from deletion — both the curator's automated archive passes and the agent's 
+skill_manage(action="delete")
+ tool call. Once a skill is pinned:
+
+The 
+curator
+ skips it during auto-transitions (
+active → stale → archived
+), and its LLM review pass is instructed to leave it alone.
+
+The 
+agent's 
+skill_manage
+ tool
+ refuses 
+delete
+ on it, pointing the user at 
+hermes curator unpin <name>
+. Patches and edits still go through, so the agent can improve a pinned skill's content as pitfalls come up without a pin/unpin/re-pin dance.
+
+Pin and unpin with:
+
+hermes curator pin 
+<
+skill
+>
+hermes curator unpin 
+<
+skill
+>
+
+The flag is stored as 
+"pinned": true
+ on the skill's entry in 
+~/.hermes/skills/.usage.json
+, so it survives across sessions.
+
+Only 
+agent-created
+ skills can be pinned — bundled and hub-installed skills are never subject to curator mutation in the first place, and 
+hermes curator pin
+ will refuse with an explanatory message if you try.
+
+If you want a stronger guarantee than "no deletion" — for instance, freezing a skill's content entirely while the agent still reads it — edit 
+~/.hermes/skills/<name>/SKILL.md
+ directly with your editor. The pin guards tool-driven deletion, not your own filesystem access.
+
+Usage telemetry
+​
+
+The curator maintains a sidecar at 
+~/.hermes/skills/.usage.json
+ with one entry per skill:
+
+{
+
+"my-skill"
+:
+
+{
+
+"use_count"
+:
+
+12
+,
+
+"view_count"
+:
+
+34
+,
+
+"last_used_at"
+:
+
+"2026-04-24T18:12:03Z"
+,
+
+"last_viewed_at"
+:
+
+"2026-04-23T09:44:17Z"
+,
+
+"patch_count"
+:
+
+3
+,
+
+"last_patched_at"
+:
+
+"2026-04-20T22:01:55Z"
+,
+
+"created_at"
+:
+
+"2026-03-01T14:20:00Z"
+,
+
+"state"
+:
+
+"active"
+,
+
+"pinned"
+:
+
+false
+,
+
+"archived_at"
+:
+
+null
+
+}
+}
+
+Counters increment when:
+
+view_count
+: the agent calls 
+skill_view
+ on the skill.
+
+use_count
+: the skill is loaded into a conversation's prompt.
+
+patch_count
+: 
+skill_manage patch/edit/write_file/remove_file
+ runs on the skill.
+
+Bundled and hub-installed skills are explicitly excluded from telemetry writes.
+
+Per-run reports
+​
+
+Every curator run writes a timestamped directory under 
+~/.hermes/logs/curator/
+:
+
+~/.hermes/logs/curator/
+└── 20260429-111512/
+ ├── run.json # machine-readable: full fidelity, stats, LLM output
+ └── REPORT.md # human-readable summary
+
+REPORT.md
+ is a quick way to see what a given run did — which skills transitioned, what the LLM reviewer said, which skills it patched. Good for auditing without having to grep 
+agent.log
+.
+
+Restoring an archived skill
+​
+
+If the curator archived something you still want:
+
+hermes curator restore 
+<
+skill-name
+>
+
+This moves the skill back from 
+~/.hermes/skills/.archive/
+ to the active tree and resets its state to 
+active
+. The restore refuses if a bundled or hub-installed skill has since been installed under the same name (would shadow upstream).
+
+Disabling per environment
+​
+
+The curator is on by default. To turn it off:
+
+For one profile only:
+ edit 
+~/.hermes/config.yaml
+ (or the active profile's config) and set 
+curator.enabled: false
+.
+
+For just one run:
+
+hermes curator pause
+ — the pause persists across sessions; use 
+resume
+ to re-enable.
+
+The curator also refuses to run if 
+min_idle_hours
+ hasn't elapsed, so on an active dev machine it naturally only runs during quiet stretches.
+
+See also
+​
+
+Skills System
+ — how skills work in general and the self-improvement loop that creates them
+
+Memory
+ — a parallel background review that maintains long-term memory
+
+Bundled Skills Catalog
+
+Issue #7816
+ — original proposal and design discussion
+========================================
+CODE_BLOCKS:
+curator:  enabled: true  interval_hours: 168          # 7 days  min_idle_hours: 2  stale_after_days: 30  archive_after_days: 90
+
+hermes model                   # → "Auxiliary models — side-task routing"                               # → pick "Curator" → pick provider → pick model
+
+auxiliary:  curator:    provider: openrouter    model: google/gemini-3-flash-preview    timeout: 600               # generous — reviews can take several minutes
+
+hermes curator status         # last run, counts, pinned list, LRU top 5hermes curator run            # trigger a review now (blocks until the LLM pass finishes)hermes curator run --background  # fire-and-forget: start the LLM pass in a background threadhermes curator run --dry-run  # preview only — report without any mutationshermes curator backup         # take a manual snapshot of ~/.hermes/skills/hermes curator rollback       # restore from the newest snapshothermes curator rollback --list  
+
+hermes curator rollback        # restore newest snapshot (with confirmation)hermes curator rollback -y     # skip the prompthermes curator rollback --list # see all snapshots with reason + size
+
+curator:  backup:    enabled: true    keep: 5
+
+hermes curator pin <skill>hermes curator unpin <skill>
+
+{  "my-skill": {    "use_count": 12,    "view_count": 34,    "last_used_at": "2026-04-24T18:12:03Z",    "last_viewed_at": "2026-04-23T09:44:17Z",    "patch_count": 3,    "last_patched_at": "2026-04-20T22:01:55Z",    "created_at": "2026-03-01T14:20:00Z",    "state": "active",    "pinned": false,    "archived_at": null  }}
+
+~/.hermes/logs/curator/└── 20260429-111512/    ├── run.json      # machine-readable: full fidelity, stats, LLM output    └── REPORT.md     # human-readable summary
+
+hermes curator restore <skill-name>
+================================================================================
+

@@ -1,0 +1,5368 @@
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/configuring-models
+TITLE: Configuring Models | Hermes Agent
+H1: Configuring Models
+TEXT:
+On this page
+
+Hermes uses two kinds of model slots:
+
+Main model
+ — what the agent thinks with. Every user message, every tool-call loop, every streamed response goes through this model.
+
+Auxiliary models
+ — smaller side-jobs the agent offloads. Context compression, vision (image analysis), web-page summarization, session search, approval scoring, MCP tool routing, session-title generation, and skill search. Each has its own slot and can be overridden independently.
+
+This page covers configuring both from the dashboard. If you prefer config files or the CLI, jump to 
+Alternative methods
+ at the bottom.
+
+The Models page
+​
+
+Open the dashboard and click 
+Models
+ in the sidebar. You get two sections:
+
+Model Settings
+ — the top panel, where you assign models to slots.
+
+Usage analytics
+ — ranked cards showing every model that ran a session in the selected period, with token counts, cost, and capability badges.
+
+The top card is the 
+Model Settings
+ panel. The main row always shows what the agent will spin up for new sessions. Click 
+Change
+ to open the picker.
+
+Setting the main model
+​
+
+Click 
+Change
+ on the Main model row:
+
+The picker has two columns:
+
+Left
+ — authenticated providers. Only providers you've set up (API key set, OAuth'd, or defined as a custom endpoint) show up here. If a provider is missing, head to 
+Keys
+ and add its credential.
+
+Right
+ — the curated model list for the selected provider. These are the agentic models Hermes recommends for that provider, not the raw 
+/models
+ dump (which on OpenRouter includes 400+ models including TTS, image generators, and rerankers).
+
+Type in the filter box to narrow by provider name, slug, or model ID.
+
+Pick a model, hit 
+Switch
+, and Hermes writes it to 
+~/.hermes/config.yaml
+ under the 
+model
+ section. 
+This applies to new sessions only
+ — any chat tab you already have open keeps running whatever model it started with. To hot-swap the current chat, use the 
+/model
+ slash command inside it.
+
+Setting auxiliary models
+​
+
+Click 
+Show auxiliary
+ to reveal the eight task slots:
+
+Every auxiliary task defaults to 
+auto
+ — meaning Hermes uses your main model for that job too. Override a specific task when you want a cheaper or faster model for a side-job.
+
+Common override patterns
+​
+
+Task
+When to override
+Title Gen
+Almost always. A $0.10/M flash model writes session titles as well as Opus. Default config sets this to 
+google/gemini-3-flash-preview
+ on OpenRouter.
+Vision
+When your main model is a coding model without vision (e.g. Kimi, DeepSeek). Point it at 
+google/gemini-2.5-flash
+ or 
+gpt-4o-mini
+.
+Compression
+When you're burning reasoning tokens on Opus/M2.7 just to summarize context. A fast chat model does the job at 1/50th the cost.
+Session Search
+When recall queries fan out — default max_concurrency is 3. A cheap model keeps the bill predictable.
+Approval
+For 
+approval_mode: smart
+ — a fast/cheap model (haiku, flash, gpt-5-mini) decides whether to auto-approve low-risk commands. Expensive models here are waste.
+Web Extract
+When you use 
+web_extract
+ heavily. Same logic as compression — summarization doesn't need reasoning.
+Skills Hub
+hermes skills search
+ uses this. Usually fine at 
+auto
+.
+MCP
+MCP tool routing. Usually fine at 
+auto
+.
+
+Per-task override
+​
+
+Click 
+Change
+ on any auxiliary row. Same picker opens, same behavior — pick provider + model, hit Switch. The row updates to show 
+provider · model
+ instead of 
+auto (use main model)
+.
+
+Reset all to auto
+​
+
+If you've over-tuned and want to start over, click 
+Reset all to auto
+ at the top of the auxiliary section. Every slot goes back to using your main model.
+
+The "Use as" shortcut
+​
+
+Every model card on the page has a 
+Use as
+ dropdown. This is the fast path — pick a model you see in your analytics, click 
+Use as
+, and assign it to the main slot or any specific auxiliary task in one click:
+
+The dropdown has:
+
+Main model
+ — same as clicking Change on the main row.
+
+All auxiliary tasks
+ — assigns this model to all 8 aux slots at once. Useful when you just want every side-job on a cheap flash model.
+
+Individual task options
+ — Vision, Web Extract, Compression, etc. The currently-assigned model for each task is marked 
+current
+.
+
+Cards are badged with 
+main
+ or 
+aux · <task>
+ when they're currently assigned to something — so you can see at a glance which of your historical models are wired in where.
+
+What gets written to 
+config.yaml
+​
+
+When you save via the dashboard, Hermes writes to 
+~/.hermes/config.yaml
+:
+
+Main model:
+
+model
+:
+
+provider
+:
+ openrouter
+
+default
+:
+ anthropic/claude
+-
+opus
+-
+4.7
+
+base_url
+:
+
+''
+
+# cleared on provider switch
+
+api_mode
+:
+ chat_completions
+
+Auxiliary override (example — vision on gemini-flash):
+
+auxiliary
+:
+
+vision
+:
+
+provider
+:
+ openrouter
+
+model
+:
+ google/gemini
+-
+2.5
+-
+flash
+
+base_url
+:
+
+''
+
+api_key
+:
+
+''
+
+timeout
+:
+
+120
+
+extra_body
+:
+
+{
+}
+
+download_timeout
+:
+
+30
+
+Auxiliary on auto (default):
+
+auxiliary
+:
+
+compression
+:
+
+provider
+:
+ auto
+
+model
+:
+
+''
+
+base_url
+:
+
+''
+
+# ... other fields unchanged
+
+provider: auto
+ with 
+model: ''
+ tells Hermes to use the main model for that task.
+
+When does it take effect?
+​
+
+CLI
+ (
+hermes chat
+): next 
+hermes chat
+ invocation.
+
+Gateway
+ (Telegram, Discord, Slack, etc.): next 
+new
+ session. Existing sessions keep their model. Restart the gateway (
+hermes gateway restart
+) if you want to force all sessions to pick up the change.
+
+Dashboard chat tab
+ (
+/chat
+): next new PTY. The currently-open chat keeps its model — use 
+/model
+ inside it to hot-swap.
+
+Changes never invalidate prompt caches on running sessions. That's deliberate: swapping the main model inside a session requires a cache reset (the system prompt contains model-specific content), and we reserve that for the explicit 
+/model
+ slash command inside chat.
+
+Troubleshooting
+​
+
+"No authenticated providers" in the picker
+​
+
+Hermes lists a provider only if it has a working credential. Check 
+Keys
+ in the sidebar — you should see one of: an API key, a successful OAuth, or a custom endpoint URL. If the provider you want isn't there, run 
+hermes setup
+ to wire it up, or go to 
+Keys
+ and add the env var.
+
+Main model didn't change in my running chat
+​
+
+Expected. The dashboard writes 
+config.yaml
+, which new sessions read. The currently-open chat is a live agent process — it keeps whatever model it was spawned with. Use 
+/model <name>
+ inside the chat to hot-swap that specific session.
+
+Auxiliary override "didn't take effect"
+​
+
+Three things to check:
+
+Did you start a new session?
+ Existing chats don't re-read config.
+
+Is 
+provider
+ set to something other than 
+auto
+?
+ If the field shows 
+auto
+, the task is still using your main model. Click 
+Change
+ and pick a real provider.
+
+Is the provider authenticated?
+ If you assigned 
+minimax
+ to a task but don't have a MiniMax API key, that task falls back to the openrouter default and logs a warning in 
+agent.log
+.
+
+I picked a model but Hermes switched providers on me
+​
+
+On OpenRouter (or any aggregator), bare model names resolve 
+within
+ the aggregator first. So 
+claude-sonnet-4
+ on OpenRouter becomes 
+anthropic/claude-sonnet-4.6
+, staying on your OpenRouter auth. But if you typed 
+claude-sonnet-4
+ on a native Anthropic auth, it would stay as 
+claude-sonnet-4-6
+. If you see an unexpected provider switch, check that your current provider is what you expect — the picker always shows the current main at the top of the dialog.
+
+Alternative methods
+​
+
+CLI slash command
+​
+
+Inside any 
+hermes chat
+ session:
+
+/model gpt-5.4 --provider openrouter # session-only
+/model gpt-5.4 --provider openrouter --global # also persists to config.yaml
+
+--global
+ does the same thing the dashboard's 
+Change
+ button does, plus it switches the running session in-place.
+
+Custom aliases
+​
+
+Define your own short names for models you reach for often, then use 
+/model <alias>
+ in the CLI or any messaging platform:
+
+# ~/.hermes/config.yaml
+model_aliases
+:
+
+fav
+:
+
+model
+:
+ claude
+-
+sonnet
+-
+4.6
+
+provider
+:
+ anthropic
+
+grok
+:
+
+model
+:
+ grok
+-
+4
+
+provider
+:
+ x
+-
+ai
+
+Or from the shell (short form, 
+provider/model
+):
+
+hermes config 
+set
+ model.aliases.fav anthropic/claude-opus-4.6
+hermes config 
+set
+ model.aliases.grok x-ai/grok-4
+
+Then 
+/model fav
+ or 
+/model grok
+ in chat. User aliases shadow built-in short names (
+sonnet
+, 
+kimi
+, 
+opus
+, etc.). See 
+Custom model aliases
+ for the full reference.
+
+hermes model
+ subcommand
+​
+
+hermes model list 
+# list authenticated providers + models
+hermes model 
+set
+ anthropic/claude-opus-4.7 
+--provider
+ openrouter
+
+Direct config edit
+​
+
+Edit 
+~/.hermes/config.yaml
+ and restart whatever reads it. See the 
+Configuration reference
+ for the full schema.
+
+REST API
+​
+
+The dashboard uses three endpoints. Useful for scripting:
+
+# List authenticated providers + curated model lists
+curl
+
+-H
+
+"X-Hermes-Session-Token: 
+$TOKEN
+"
+ http://localhost:PORT/api/model/options
+# Read current main + auxiliary assignments
+curl
+
+-H
+
+"X-Hermes-Session-Token: 
+$TOKEN
+"
+ http://localhost:PORT/api/model/auxiliary
+# Set the main model
+curl
+
+-X
+ POST 
+-H
+
+"Content-Type: application/json"
+
+-H
+
+"X-Hermes-Session-Token: 
+$TOKEN
+"
+
+\
+
+-d
+
+'{"scope":"main","provider":"openrouter","model":"anthropic/claude-opus-4.7"}'
+
+\
+ http://localhost:PORT/api/model/set
+# Override a single auxiliary task
+curl
+
+-X
+ POST 
+-H
+
+"Content-Type: application/json"
+
+-H
+
+"X-Hermes-Session-Token: 
+$TOKEN
+"
+
+\
+
+-d
+
+'{"scope":"auxiliary","task":"vision","provider":"openrouter","model":"google/gemini-2.5-flash"}'
+
+\
+ http://localhost:PORT/api/model/set
+# Assign one model to every auxiliary task
+curl
+
+-X
+ POST 
+-H
+
+"Content-Type: application/json"
+
+-H
+
+"X-Hermes-Session-Token: 
+$TOKEN
+"
+
+\
+
+-d
+
+'{"scope":"auxiliary","task":"","provider":"openrouter","model":"google/gemini-2.5-flash"}'
+
+\
+ http://localhost:PORT/api/model/set
+# Reset all auxiliary tasks to auto
+curl
+
+-X
+ POST 
+-H
+
+"Content-Type: application/json"
+
+-H
+
+"X-Hermes-Session-Token: 
+$TOKEN
+"
+
+\
+
+-d
+
+'{"scope":"auxiliary","task":"__reset__","provider":"","model":""}'
+
+\
+ http://localhost:PORT/api/model/set
+
+The session token is injected into the dashboard HTML at startup and rotates on every server restart. Grab it from the browser devtools (
+window.__HERMES_SESSION_TOKEN__
+) if you're scripting against a running dashboard.
+========================================
+CODE_BLOCKS:
+model:  provider: openrouter  default: anthropic/claude-opus-4.7  base_url: ''        # cleared on provider switch  api_mode: chat_completions
+
+auxiliary:  vision:    provider: openrouter    model: google/gemini-2.5-flash    base_url: ''    api_key: ''    timeout: 120    extra_body: {}    download_timeout: 30
+
+auxiliary:  compression:    provider: auto    model: ''    base_url: ''    # ... other fields unchanged
+
+/model gpt-5.4 --provider openrouter             # session-only/model gpt-5.4 --provider openrouter --global    # also persists to config.yaml
+
+# ~/.hermes/config.yamlmodel_aliases:  fav:    model: claude-sonnet-4.6    provider: anthropic  grok:    model: grok-4    provider: x-ai
+
+hermes config set model.aliases.fav anthropic/claude-opus-4.6hermes config set model.aliases.grok x-ai/grok-4
+
+hermes model list                   # list authenticated providers + modelshermes model set anthropic/claude-opus-4.7 --provider openrouter
+
+# List authenticated providers + curated model listscurl -H "X-Hermes-Session-Token: $TOKEN" http://localhost:PORT/api/model/options# Read current main + auxiliary assignmentscurl -H "X-Hermes-Session-Token: $TOKEN" http://localhost:PORT/api/model/auxiliary# Set the main modelcurl -X POST -H "Content-Type: application/json" -H "X-Hermes-Session-Token: $TOKEN" \  -d '{"scope":"main","provider":"openrouter","model":"anthropic/claude-opus-4.7"}' \  http://localhost:PORT/api/model/set# Override a si
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/docker
+TITLE: Docker | Hermes Agent
+H1: Hermes Agent — Docker
+TEXT:
+On this page
+
+There are two distinct ways Docker intersects with Hermes Agent:
+
+Running Hermes IN Docker
+ — the agent itself runs inside a container (this page's primary focus)
+
+Docker as a terminal backend
+ — the agent runs on your host but executes every command inside a single, persistent Docker sandbox container that survives across tool calls, 
+/new
+, and subagents for the life of the Hermes process (see 
+Configuration → Docker Backend
+)
+
+This page covers option 1. The container stores all user data (config, API keys, sessions, skills, memories) in a single directory mounted from the host at 
+/opt/data
+. The image itself is stateless and can be upgraded by pulling a new version without losing any configuration.
+
+Quick start
+​
+
+If this is your first time running Hermes Agent, create a data directory on the host and start the container interactively to run the setup wizard:
+
+mkdir
+
+-p
+ ~/.hermes
+docker
+ run 
+-it
+
+--rm
+
+\
+
+-v
+ ~/.hermes:/opt/data 
+\
+ nousresearch/hermes-agent setup
+
+This drops you into the setup wizard, which will prompt you for your API keys and write them to 
+~/.hermes/.env
+. You only need to do this once. It is highly recommended to set up a chat system for the gateway to work with at this point.
+
+Running in gateway mode
+​
+
+Once configured, run the container in the background as a persistent gateway (Telegram, Discord, Slack, WhatsApp, etc.):
+
+docker
+ run 
+-d
+
+\
+
+--name
+ hermes 
+\
+
+--restart
+ unless-stopped 
+\
+
+-v
+ ~/.hermes:/opt/data 
+\
+
+-p
+
+8642
+:8642 
+\
+ nousresearch/hermes-agent gateway run
+
+Port 8642 exposes the gateway's 
+OpenAI-compatible API server
+ and health endpoint. It's optional if you only use chat platforms (Telegram, Discord, etc.), but required if you want the dashboard or external tools to reach the gateway.
+
+Note: the API server is gated on 
+API_SERVER_ENABLED=true
+. To expose it beyond 
+127.0.0.1
+ inside the container, also set 
+API_SERVER_HOST=0.0.0.0
+ and an 
+API_SERVER_KEY
+ (minimum 8 characters — generate one with 
+openssl rand -hex 32
+). Example:
+
+docker
+ run 
+-d
+
+\
+
+--name
+ hermes 
+\
+
+--restart
+ unless-stopped 
+\
+
+-v
+ ~/.hermes:/opt/data 
+\
+
+-p
+
+8642
+:8642 
+\
+
+-e
+
+API_SERVER_ENABLED
+=
+true 
+\
+
+-e
+
+API_SERVER_HOST
+=
+0.0
+.0.0 
+\
+
+-e
+
+API_SERVER_KEY
+=
+your_api_key_here 
+\
+
+-e
+
+API_SERVER_CORS_ORIGINS
+=
+'*'
+
+\
+ nousresearch/hermes-agent gateway run
+
+Opening any port on an internet facing machine is a security risk. You should not do it unless you understand the risks.
+
+Running the dashboard
+​
+
+The built-in web dashboard runs as an optional side-process inside the same container as the gateway. Set 
+HERMES_DASHBOARD=1
+ and expose port 
+9119
+ alongside the gateway's 
+8642
+:
+
+docker
+ run 
+-d
+
+\
+
+--name
+ hermes 
+\
+
+--restart
+ unless-stopped 
+\
+
+-v
+ ~/.hermes:/opt/data 
+\
+
+-p
+
+8642
+:8642 
+\
+
+-p
+
+9119
+:9119 
+\
+
+-e
+
+HERMES_DASHBOARD
+=
+1
+
+\
+ nousresearch/hermes-agent gateway run
+
+The entrypoint starts 
+hermes dashboard
+ in the background (running as the non-root 
+hermes
+ user) before 
+exec
+-ing the main command. Dashboard output is prefixed with 
+[dashboard]
+ in 
+docker logs
+ so it's easy to separate from gateway logs.
+
+Environment variable
+Description
+Default
+HERMES_DASHBOARD
+Set to 
+1
+ (or 
+true
+ / 
+yes
+) to launch the dashboard alongside the main command
+(unset — dashboard not started)
+HERMES_DASHBOARD_HOST
+Bind address for the dashboard HTTP server
+0.0.0.0
+HERMES_DASHBOARD_PORT
+Port for the dashboard HTTP server
+9119
+HERMES_DASHBOARD_TUI
+Set to 
+1
+ to expose the in-browser Chat tab (embedded 
+hermes --tui
+ via PTY/WebSocket)
+(unset)
+
+The default 
+HERMES_DASHBOARD_HOST=0.0.0.0
+ is required for the host to reach the dashboard through the published port; the entrypoint automatically passes 
+--insecure
+ to 
+hermes dashboard
+ in that case. Override to 
+127.0.0.1
+ if you want to restrict the dashboard to in-container access only (e.g. behind a reverse proxy in a sidecar).
+
+note
+The dashboard side-process is 
+not supervised
+ — if it crashes, it stays down until the container restarts. Running it as a separate container is not supported: the dashboard's gateway-liveness detection requires a shared PID namespace with the gateway process.
+
+Running interactively (CLI chat)
+​
+
+To open an interactive chat session against a running data directory:
+
+docker
+ run 
+-it
+
+--rm
+
+\
+
+-v
+ ~/.hermes:/opt/data 
+\
+ nousresearch/hermes-agent
+
+Or if you have already opened a terminal in your running container (via Docker Desktop for instance), just run:
+
+/opt/hermes/.venv/bin/hermes
+
+Persistent volumes
+​
+
+The 
+/opt/data
+ volume is the single source of truth for all Hermes state. It maps to your host's 
+~/.hermes/
+ directory and contains:
+
+Path
+Contents
+.env
+API keys and secrets
+config.yaml
+All Hermes configuration
+SOUL.md
+Agent personality/identity
+sessions/
+Conversation history
+memories/
+Persistent memory store
+skills/
+Installed skills
+cron/
+Scheduled job definitions
+hooks/
+Event hooks
+logs/
+Runtime logs
+skins/
+Custom CLI skins
+
+warning
+Never run two Hermes 
+gateway
+ containers against the same data directory simultaneously — session files and memory stores are not designed for concurrent write access.
+
+Multi-profile support
+​
+
+Hermes supports 
+multiple profiles
+ — separate 
+~/.hermes/
+ directories that let you run independent agents (different SOUL, skills, memory, sessions, credentials) from a single installation. 
+When running under Docker, using Hermes' built-in multi-profile feature is not recommended.
+
+Instead, the recommended pattern is 
+one container per profile
+, with each container bind-mounting its own host directory as 
+/opt/data
+:
+
+# Work profile
+docker
+ run 
+-d
+
+\
+
+--name
+ hermes-work 
+\
+
+--restart
+ unless-stopped 
+\
+
+-v
+ ~/.hermes-work:/opt/data 
+\
+
+-p
+
+8642
+:8642 
+\
+ nousresearch/hermes-agent gateway run
+# Personal profile
+docker
+ run 
+-d
+
+\
+
+--name
+ hermes-personal 
+\
+
+--restart
+ unless-stopped 
+\
+
+-v
+ ~/.hermes-personal:/opt/data 
+\
+
+-p
+
+8643
+:8642 
+\
+ nousresearch/hermes-agent gateway run
+
+Why separate containers over profiles in Docker:
+
+Isolation
+ — each container has its own filesystem, process table, and resource limits. A crash, dependency change, or runaway session in one profile can't affect another.
+
+Independent lifecycle
+ — upgrade, restart, pause, or roll back each agent separately (
+docker restart hermes-work
+ leaves 
+hermes-personal
+ untouched).
+
+Clean port and network separation
+ — each gateway binds its own host port; there's no risk of cross-talk between chat platforms or API servers.
+
+Simpler mental model
+ — the container 
+is
+ the profile. Backups, migrations, and permissions all follow the bind-mounted directory, with no extra 
+--profile
+ flags to remember.
+
+Avoids concurrent-write risk
+ — the warning above about never running two gateways against the same data directory still applies to profiles within a single container.
+
+In Docker Compose, this just means declaring one service per profile with distinct 
+container_name
+, 
+volumes
+, and 
+ports
+:
+
+services
+:
+
+hermes-work
+:
+
+image
+:
+ nousresearch/hermes
+-
+agent
+:
+latest
+
+container_name
+:
+ hermes
+-
+work
+
+restart
+:
+ unless
+-
+stopped
+
+command
+:
+ gateway run
+
+ports
+:
+
+-
+
+"8642:8642"
+
+volumes
+:
+
+-
+ ~/.hermes
+-
+work
+:
+/opt/data
+
+hermes-personal
+:
+
+image
+:
+ nousresearch/hermes
+-
+agent
+:
+latest
+
+container_name
+:
+ hermes
+-
+personal
+
+restart
+:
+ unless
+-
+stopped
+
+command
+:
+ gateway run
+
+ports
+:
+
+-
+
+"8643:8642"
+
+volumes
+:
+
+-
+ ~/.hermes
+-
+personal
+:
+/opt/data
+
+Environment variable forwarding
+​
+
+API keys are read from 
+/opt/data/.env
+ inside the container. You can also pass environment variables directly:
+
+docker
+ run 
+-it
+
+--rm
+
+\
+
+-v
+ ~/.hermes:/opt/data 
+\
+
+-e
+
+ANTHROPIC_API_KEY
+=
+"sk-ant-..."
+
+\
+
+-e
+
+OPENAI_API_KEY
+=
+"sk-..."
+
+\
+ nousresearch/hermes-agent
+
+Direct 
+-e
+ flags override values from 
+.env
+. This is useful for CI/CD or secrets-manager integrations where you don't want keys on disk.
+
+Docker Compose example
+​
+
+For persistent deployment with both the gateway and dashboard, a 
+docker-compose.yaml
+ is convenient:
+
+services
+:
+
+hermes
+:
+
+image
+:
+ nousresearch/hermes
+-
+agent
+:
+latest
+
+container_name
+:
+ hermes
+
+restart
+:
+ unless
+-
+stopped
+
+command
+:
+ gateway run
+
+ports
+:
+
+-
+
+"8642:8642"
+
+# gateway API
+
+-
+
+"9119:9119"
+
+# dashboard (only reached when HERMES_DASHBOARD=1)
+
+volumes
+:
+
+-
+ ~/.hermes
+:
+/opt/data
+
+environment
+:
+
+-
+ HERMES_DASHBOARD=1
+
+# Uncomment to forward specific env vars instead of using .env file:
+
+# - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+# - OPENAI_API_KEY=${OPENAI_API_KEY}
+
+# - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+
+deploy
+:
+
+resources
+:
+
+limits
+:
+
+memory
+:
+ 4G
+
+cpus
+:
+
+"2.0"
+
+Start with 
+docker compose up -d
+ and view logs with 
+docker compose logs -f
+. Dashboard output is prefixed with 
+[dashboard]
+ so it's easy to filter from gateway logs.
+
+Resource limits
+​
+
+The Hermes container needs moderate resources. Recommended minimums:
+
+Resource
+Minimum
+Recommended
+Memory
+1 GB
+2–4 GB
+CPU
+1 core
+2 cores
+Disk (data volume)
+500 MB
+2+ GB (grows with sessions/skills)
+
+Browser automation (Playwright/Chromium) is the most memory-hungry feature. If you don't need browser tools, 1 GB is sufficient. With browser tools active, allocate at least 2 GB.
+
+Set limits in Docker:
+
+docker
+ run 
+-d
+
+\
+
+--name
+ hermes 
+\
+
+--restart
+ unless-stopped 
+\
+
+--memory
+=
+4g 
+--cpus
+=
+2
+
+\
+
+-v
+ ~/.hermes:/opt/data 
+\
+ nousresearch/hermes-agent gateway run
+
+What the Dockerfile does
+​
+
+The official image is based on 
+debian:13.4
+ and includes:
+
+Python 3 with all Hermes dependencies (
+uv pip install -e ".[all]"
+)
+
+Node.js + npm (for browser automation and WhatsApp bridge)
+
+Playwright with Chromium (
+npx playwright install --with-deps chromium --only-shell
+)
+
+ripgrep, ffmpeg, git, and tini as system utilities
+
+docker-cli
+ — so agents running inside the container can drive the host's Docker daemon (bind-mount 
+/var/run/docker.sock
+ to opt in) for 
+docker build
+, 
+docker run
+, container inspection, etc.
+
+openssh-client
+ — enables the 
+SSH terminal backend
+ from inside the container. The SSH backend shells out to the system 
+ssh
+ binary; without this, it failed silently in containerized installs.
+
+The WhatsApp bridge (
+scripts/whatsapp-bridge/
+)
+
+The entrypoint script (
+docker/entrypoint.sh
+) bootstraps the data volume on first run:
+
+Creates the directory structure (
+sessions/
+, 
+memories/
+, 
+skills/
+, etc.)
+
+Copies 
+.env.example
+ → 
+.env
+ if no 
+.env
+ exists
+
+Copies default 
+config.yaml
+ if missing
+
+Copies default 
+SOUL.md
+ if missing
+
+Syncs bundled skills using a manifest-based approach (preserves user edits)
+
+Optionally launches 
+hermes dashboard
+ as a background side-process when 
+HERMES_DASHBOARD=1
+ (see 
+Running the dashboard
+)
+
+Then runs 
+hermes
+ with whatever arguments you pass
+
+warning
+Do not override the image entrypoint unless you keep 
+/opt/hermes/docker/entrypoint.sh
+ in the command chain. The entrypoint drops root privileges to the 
+hermes
+ user before gateway state files are created. Starting 
+hermes gateway run
+ as root inside the official image is refused by default because it can leave root-owned files in 
+/opt/data
+ and break later dashboard or gateway starts. Set 
+HERMES_ALLOW_ROOT_GATEWAY=1
+ only when you intentionally accept that risk.
+
+Upgrading
+​
+
+Pull the latest image and recreate the container. Your data directory is untouched.
+
+docker
+ pull nousresearch/hermes-agent:latest
+docker
+
+rm
+
+-f
+ hermes
+docker
+ run 
+-d
+
+\
+
+--name
+ hermes 
+\
+
+--restart
+ unless-stopped 
+\
+
+-v
+ ~/.hermes:/opt/data 
+\
+ nousresearch/hermes-agent gateway run
+
+Or with Docker Compose:
+
+docker
+ compose pull
+docker
+ compose up 
+-d
+
+Skills and credential files
+​
+
+When using Docker as the execution environment (not the methods above, but when the agent runs commands inside a Docker sandbox — see 
+Configuration → Docker Backend
+), Hermes reuses a single long-lived container for all tool calls and automatically bind-mounts the skills directory (
+~/.hermes/skills/
+) and any credential files declared by skills into that container as read-only volumes. Skill scripts, templates, and references are available inside the sandbox without manual configuration, and because the container persists for the life of the Hermes process, any dependencies you install or files you write stay around for the next tool call.
+
+The same syncing happens for SSH and Modal backends — skills and credential files are uploaded via rsync or the Modal mount API before each command.
+
+Connecting to local inference servers (vLLM, Ollama, etc.)
+​
+
+When running Hermes in Docker and your inference server (vLLM, Ollama, text-generation-inference, etc.) is also running on the host or in another container, networking requires extra attention.
+
+Docker Compose (recommended)
+​
+
+Put both services on the same Docker network. This is the most reliable approach:
+
+services
+:
+
+vllm
+:
+
+image
+:
+ vllm/vllm
+-
+openai
+:
+latest
+
+container_name
+:
+ vllm
+
+command
+:
+
+>
+ --model Qwen/Qwen2.5-7B-Instruct
+ --served-model-name my-model
+ --host 0.0.0.0
+ --port 8000
+
+ports
+:
+
+-
+
+"8000:8000"
+
+networks
+:
+
+-
+ hermes
+-
+net
+
+deploy
+:
+
+resources
+:
+
+reservations
+:
+
+devices
+:
+
+-
+
+capabilities
+:
+
+[
+gpu
+]
+
+hermes
+:
+
+image
+:
+ nousresearch/hermes
+-
+agent
+:
+latest
+
+container_name
+:
+ hermes
+
+restart
+:
+ unless
+-
+stopped
+
+command
+:
+ gateway run
+
+ports
+:
+
+-
+
+"8642:8642"
+
+volumes
+:
+
+-
+ ~/.hermes
+:
+/opt/data
+
+networks
+:
+
+-
+ hermes
+-
+net
+networks
+:
+
+hermes-net
+:
+
+driver
+:
+ bridge
+
+Then in your 
+~/.hermes/config.yaml
+, use the 
+container name
+ as the hostname:
+
+model
+:
+
+provider
+:
+ custom
+
+model
+:
+ my
+-
+model
+
+base_url
+:
+ http
+:
+//vllm
+:
+8000/v1
+
+api_key
+:
+
+"none"
+
+Key points
+
+Use the 
+container name
+ (
+vllm
+) as the hostname — not 
+localhost
+ or 
+127.0.0.1
+, which refer to the Hermes container itself.
+
+The 
+model
+ value must match the 
+--served-model-name
+ you passed to vLLM.
+
+Set 
+api_key
+ to any non-empty string (vLLM requires the header but doesn't validate it by default).
+
+Do 
+not
+ include a trailing slash in 
+base_url
+.
+
+Standalone Docker run (no Compose)
+​
+
+If your inference server runs directly on the host (not in Docker), use 
+host.docker.internal
+ on macOS/Windows, or 
+--network host
+ on Linux:
+
+macOS / Windows:
+
+docker
+ run 
+-d
+
+\
+
+--name
+ hermes 
+\
+
+-v
+ ~/.hermes:/opt/data 
+\
+
+-p
+
+8642
+:8642 
+\
+ nousresearch/hermes-agent gateway run
+
+# config.yaml
+model
+:
+
+provider
+:
+ custom
+
+model
+:
+ my
+-
+model
+
+base_url
+:
+ http
+:
+//host.docker.internal
+:
+8000/v1
+
+api_key
+:
+
+"none"
+
+Linux (host networking):
+
+docker
+ run 
+-d
+
+\
+
+--name
+ hermes 
+\
+
+--network
+
+host
+
+\
+
+-v
+ ~/.hermes:/opt/data 
+\
+ nousresearch/hermes-agent gateway run
+
+# config.yaml
+model
+:
+
+provider
+:
+ custom
+
+model
+:
+ my
+-
+model
+
+base_url
+:
+ http
+:
+//127.0.0.1
+:
+8000/v1
+
+api_key
+:
+
+"none"
+
+With 
+--network host
+, the 
+-p
+ flag is ignored — all container ports are directly exposed on the host.
+
+Verifying connectivity
+​
+
+From inside the Hermes container, confirm the inference server is reachable:
+
+docker
+
+exec
+ hermes 
+curl
+
+-s
+ http://vllm:8000/v1/models
+
+You should see a JSON response listing your served model. If this fails, check:
+
+Both containers are on the same Docker network (
+docker network inspect hermes-net
+)
+
+The inference server is listening on 
+0.0.0.0
+, not 
+127.0.0.1
+
+The port number matches
+
+Ollama
+​
+
+Ollama works the same way. If Ollama runs on the host, use 
+host.docker.internal:11434
+ (macOS/Windows) or 
+127.0.0.1:11434
+ (Linux with 
+--network host
+). If Ollama runs in its own container on the same Docker network:
+
+model
+:
+
+provider
+:
+ custom
+
+model
+:
+ llama3
+
+base_url
+:
+ http
+:
+//ollama
+:
+11434/v1
+
+api_key
+:
+
+"none"
+
+Troubleshooting
+​
+
+Container exits immediately
+​
+
+Check logs: 
+docker logs hermes
+. Common causes:
+
+Missing or invalid 
+.env
+ file — run interactively first to complete setup
+
+Port conflicts if running with exposed ports
+
+"Permission denied" errors
+​
+
+The container's entrypoint drops privileges to the non-root 
+hermes
+ user (UID 10000) via 
+gosu
+. If your host 
+~/.hermes/
+ is owned by a different UID, set 
+HERMES_UID
+/
+HERMES_GID
+ to match your host user, or ensure the data directory is writable:
+
+chmod
+
+-R
+
+755
+ ~/.hermes
+
+Browser tools not working
+​
+
+Playwright needs shared memory. Add 
+--shm-size=1g
+ to your Docker run command:
+
+docker
+ run 
+-d
+
+\
+
+--name
+ hermes 
+\
+ --shm-size
+=
+1g 
+\
+
+-v
+ ~/.hermes:/opt/data 
+\
+ nousresearch/hermes-agent gateway run
+
+Gateway not reconnecting after network issues
+​
+
+The 
+--restart unless-stopped
+ flag handles most transient failures. If the gateway is stuck, restart the container:
+
+docker
+ restart hermes
+
+Checking container health
+​
+
+docker
+ logs 
+--tail
+
+50
+ hermes 
+# Recent logs
+docker
+ run 
+-it
+
+--rm
+ nousresearch/hermes-agent:latest version 
+# Verify version
+docker
+ stats hermes 
+# Resource usage
+========================================
+CODE_BLOCKS:
+mkdir -p ~/.hermesdocker run -it --rm \  -v ~/.hermes:/opt/data \  nousresearch/hermes-agent setup
+
+docker run -d \  --name hermes \  --restart unless-stopped \  -v ~/.hermes:/opt/data \  -p 8642:8642 \  nousresearch/hermes-agent gateway run
+
+docker run -d \  --name hermes \  --restart unless-stopped \  -v ~/.hermes:/opt/data \  -p 8642:8642 \  -e API_SERVER_ENABLED=true \  -e API_SERVER_HOST=0.0.0.0 \  -e API_SERVER_KEY=your_api_key_here \  -e API_SERVER_CORS_ORIGINS='*' \  nousresearch/hermes-agent gateway run
+
+docker run -d \  --name hermes \  --restart unless-stopped \  -v ~/.hermes:/opt/data \  -p 8642:8642 \  -p 9119:9119 \  -e HERMES_DASHBOARD=1 \  nousresearch/hermes-agent gateway run
+
+docker run -it --rm \  -v ~/.hermes:/opt/data \  nousresearch/hermes-agent
+
+/opt/hermes/.venv/bin/hermes
+
+# Work profiledocker run -d \  --name hermes-work \  --restart unless-stopped \  -v ~/.hermes-work:/opt/data \  -p 8642:8642 \  nousresearch/hermes-agent gateway run# Personal profiledocker run -d \  --name hermes-personal \  --restart unless-stopped \  -v ~/.hermes-personal:/opt/data \  -p 8643:8642 \  nousresearch/hermes-agent gateway run
+
+services:  hermes-work:    image: nousresearch/hermes-agent:latest    container_name: hermes-work    restart: unless-stopped    command: gateway run    ports:      - "8642:8642"    volumes:      - ~/.hermes-work:/opt/data  hermes-personal:    image: nousresearch/hermes-agent:latest    container_name: hermes-personal    restart: unless-stopped    command: gateway run    ports:      - "8643:8642"    volumes:      - ~/.hermes-personal:/opt/data
+
+docker run -it --rm \  -v ~/.hermes:/opt/data \  -e ANTHROPIC_API_KEY="sk-ant-..." \  -e OPENAI_API_KEY="sk-..." \  nousresearch/hermes-agent
+
+services:  hermes:    image: nousresearch/hermes-agent:latest    container_name: hermes    restart: unless-stopped    command: gateway run    ports:      - "8642:8642"   # gateway API      - "9119:9119"   # dashboard (only reached when HERMES_DASHBOARD=1)    volumes:      - ~/.hermes:/opt/data    environment:      - HERMES_DASHBOARD=1      # Uncomment to forward specific env vars instead of using .env file:      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+
+docker run -d \  --name hermes \  --restart unless-stopped \  --memory=4g --cpus=2 \  -v ~/.hermes:/opt/data \  nousresearch/hermes-agent gateway run
+
+docker pull nousresearch/hermes-agent:latestdocker rm -f hermesdocker run -d \  --name hermes \  --restart unless-stopped \  -v ~/.hermes:/opt/data \  nousresearch/hermes-agent gateway run
+
+docker compose pulldocker compose up -d
+
+services:  vllm:    image: vllm/vllm-openai:latest    container_name: vllm    command: >      --model Qwen/Qwen2.5-7B-Instruct      --served-model-name my-model      --host 0.0.0.0      --port 8000    ports:      - "8000:8000"    networks:      - hermes-net    deploy:      resources:        reservations:          devices:            - capabilities: [gpu]  hermes:    image: nousresearch/hermes-agent:latest    container_name: hermes    restart: unless-stopped    command: gateway run    ports:     
+
+model:  provider: custom  model: my-model  base_url: http://vllm:8000/v1  api_key: "none"
+
+docker run -d \  --name hermes \  -v ~/.hermes:/opt/data \  -p 8642:8642 \  nousresearch/hermes-agent gateway run
+
+# config.yamlmodel:  provider: custom  model: my-model  base_url: http://host.docker.internal:8000/v1  api_key: "none"
+
+docker run -d \  --name hermes \  --network host \  -v ~/.hermes:/opt/data \  nousresearch/hermes-agent gateway run
+
+# config.yamlmodel:  provider: custom  model: my-model  base_url: http://127.0.0.1:8000/v1  api_key: "none"
+
+docker exec hermes curl -s http://vllm:8000/v1/models
+
+model:  provider: custom  model: llama3  base_url: http://ollama:11434/v1  api_key: "none"
+
+chmod -R 755 ~/.hermes
+
+docker run -d \  --name hermes \  --shm-size=1g \  -v ~/.hermes:/opt/data \  nousresearch/hermes-agent gateway run
+
+docker restart hermes
+
+docker logs --tail 50 hermes          # Recent logsdocker run -it --rm nousresearch/hermes-agent:latest version     # Verify versiondocker stats hermes                    # Resource usage
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/acp
+TITLE: ACP Editor Integration | Hermes Agent
+H1: ACP Editor Integration
+TEXT:
+On this page
+
+Hermes Agent can run as an ACP server, letting ACP-compatible editors talk to Hermes over stdio and render:
+
+chat messages
+
+tool activity
+
+file diffs
+
+terminal commands
+
+approval prompts
+
+streamed thinking / response chunks
+
+ACP is a good fit when you want Hermes to behave like an editor-native coding agent instead of a standalone CLI or messaging bot.
+
+What Hermes exposes in ACP mode
+​
+
+Hermes runs with a curated 
+hermes-acp
+ toolset designed for editor workflows. It includes:
+
+file tools: 
+read_file
+, 
+write_file
+, 
+patch
+, 
+search_files
+
+terminal tools: 
+terminal
+, 
+process
+
+web/browser tools
+
+memory, todo, session search
+
+skills
+
+execute_code and delegate_task
+
+vision
+
+It intentionally excludes things that do not fit typical editor UX, such as messaging delivery and cronjob management.
+
+Installation
+​
+
+Install Hermes normally, then add the ACP extra:
+
+pip 
+install
+
+-e
+
+'.[acp]'
+
+This installs the 
+agent-client-protocol
+ dependency and enables:
+
+hermes acp
+
+hermes-acp
+
+python -m acp_adapter
+
+Launching the ACP server
+​
+
+Any of the following starts Hermes in ACP mode:
+
+hermes acp
+
+hermes-acp
+
+python 
+-m
+ acp_adapter
+
+Hermes logs to stderr so stdout remains reserved for ACP JSON-RPC traffic.
+
+Editor setup
+​
+
+VS Code
+​
+
+Install the 
+ACP Client
+ extension.
+
+To connect:
+
+Open the ACP Client panel from the Activity Bar.
+
+Select 
+Hermes Agent
+ from the built-in agent list.
+
+Connect and start chatting.
+
+If you want to define Hermes manually, add it through VS Code settings under 
+acp.agents
+:
+
+{
+
+"acp.agents"
+:
+
+{
+
+"Hermes Agent"
+:
+
+{
+
+"command"
+:
+
+"hermes"
+,
+
+"args"
+:
+
+[
+"acp"
+]
+
+}
+
+}
+}
+
+Zed
+​
+
+Example settings snippet:
+
+{
+
+"agent_servers"
+:
+
+{
+
+"hermes-agent"
+:
+
+{
+
+"type"
+:
+
+"custom"
+,
+
+"command"
+:
+
+"hermes"
+,
+
+"args"
+:
+
+[
+"acp"
+]
+,
+
+}
+,
+
+}
+,
+}
+
+JetBrains
+​
+
+Use an ACP-compatible plugin and point it at:
+
+/path/to/hermes-agent/acp_registry
+
+Registry manifest
+​
+
+The ACP registry manifest lives at:
+
+acp_registry/agent.json
+
+It advertises a command-based agent whose launch command is:
+
+hermes acp
+
+Configuration and credentials
+​
+
+ACP mode uses the same Hermes configuration as the CLI:
+
+~/.hermes/.env
+
+~/.hermes/config.yaml
+
+~/.hermes/skills/
+
+~/.hermes/state.db
+
+Provider resolution uses Hermes' normal runtime resolver, so ACP inherits the currently configured provider and credentials.
+
+Session behavior
+​
+
+ACP sessions are tracked by the ACP adapter's in-memory session manager while the server is running.
+
+Each session stores:
+
+session ID
+
+working directory
+
+selected model
+
+current conversation history
+
+cancel event
+
+The underlying 
+AIAgent
+ still uses Hermes' normal persistence/logging paths, but ACP 
+list/load/resume/fork
+ are scoped to the currently running ACP server process.
+
+Working directory behavior
+​
+
+ACP sessions bind the editor's cwd to the Hermes task ID so file and terminal tools run relative to the editor workspace, not the server process cwd.
+
+Approvals
+​
+
+Dangerous terminal commands can be routed back to the editor as approval prompts. ACP approval options are simpler than the CLI flow:
+
+allow once
+
+allow always
+
+deny
+
+On timeout or error, the approval bridge denies the request.
+
+Troubleshooting
+​
+
+ACP agent does not appear in the editor
+​
+
+Check:
+
+the editor is pointed at the correct 
+acp_registry/
+ path
+
+Hermes is installed and on your PATH
+
+the ACP extra is installed (
+pip install -e '.[acp]'
+)
+
+ACP starts but immediately errors
+​
+
+Try these checks:
+
+hermes doctor
+hermes status
+hermes acp
+
+Missing credentials
+​
+
+ACP mode does not have its own login flow. It uses Hermes' existing provider setup. Configure credentials with:
+
+hermes model
+
+or by editing 
+~/.hermes/.env
+.
+
+See also
+​
+
+ACP Internals
+
+Provider Runtime Resolution
+
+Tools Runtime
+========================================
+CODE_BLOCKS:
+pip install -e '.[acp]'
+
+hermes acp
+
+hermes-acp
+
+python -m acp_adapter
+
+{  "acp.agents": {    "Hermes Agent": {      "command": "hermes",      "args": ["acp"]    }  }}
+
+{  "agent_servers": {    "hermes-agent": {      "type": "custom",      "command": "hermes",      "args": ["acp"],    },  },}
+
+/path/to/hermes-agent/acp_registry
+
+acp_registry/agent.json
+
+hermes acp
+
+hermes doctorhermes statushermes acp
+
+hermes model
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server
+TITLE: API Server | Hermes Agent
+H1: API Server
+TEXT:
+On this page
+
+The API server exposes hermes-agent as an OpenAI-compatible HTTP endpoint. Any frontend that speaks the OpenAI format — Open WebUI, LobeChat, LibreChat, NextChat, ChatBox, and hundreds more — can connect to hermes-agent and use it as a backend.
+
+Your agent handles requests with its full toolset (terminal, file operations, web search, memory, skills) and returns the final response. When streaming, tool progress indicators appear inline so frontends can show what the agent is doing.
+
+Quick Start
+​
+
+1. Enable the API server
+​
+
+Add to 
+~/.hermes/.env
+:
+
+API_SERVER_ENABLED
+=
+true
+API_SERVER_KEY
+=
+change-me-local-dev
+# Optional: only if a browser must call Hermes directly
+# API_SERVER_CORS_ORIGINS=http://localhost:3000
+
+2. Start the gateway
+​
+
+hermes gateway
+
+You'll see:
+
+[API Server] API server listening on http://127.0.0.1:8642
+
+3. Connect a frontend
+​
+
+Point any OpenAI-compatible client at 
+http://localhost:8642/v1
+:
+
+# Test with curl
+curl
+ http://localhost:8642/v1/chat/completions 
+\
+
+-H
+
+"Authorization: Bearer change-me-local-dev"
+
+\
+
+-H
+
+"Content-Type: application/json"
+
+\
+
+-d
+
+'{"model": "hermes-agent", "messages": [{"role": "user", "content": "Hello!"}]}'
+
+Or connect Open WebUI, LobeChat, or any other frontend — see the 
+Open WebUI integration guide
+ for step-by-step instructions.
+
+Endpoints
+​
+
+POST /v1/chat/completions
+​
+
+Standard OpenAI Chat Completions format. Stateless — the full conversation is included in each request via the 
+messages
+ array.
+
+Request:
+
+{
+
+"model"
+:
+
+"hermes-agent"
+,
+
+"messages"
+:
+
+[
+
+{
+"role"
+:
+
+"system"
+,
+
+"content"
+:
+
+"You are a Python expert."
+}
+,
+
+{
+"role"
+:
+
+"user"
+,
+
+"content"
+:
+
+"Write a fibonacci function"
+}
+
+]
+,
+
+"stream"
+:
+
+false
+}
+
+Response:
+
+{
+
+"id"
+:
+
+"chatcmpl-abc123"
+,
+
+"object"
+:
+
+"chat.completion"
+,
+
+"created"
+:
+
+1710000000
+,
+
+"model"
+:
+
+"hermes-agent"
+,
+
+"choices"
+:
+
+[
+{
+
+"index"
+:
+
+0
+,
+
+"message"
+:
+
+{
+"role"
+:
+
+"assistant"
+,
+
+"content"
+:
+
+"Here's a fibonacci function..."
+}
+,
+
+"finish_reason"
+:
+
+"stop"
+
+}
+]
+,
+
+"usage"
+:
+
+{
+"prompt_tokens"
+:
+
+50
+,
+
+"completion_tokens"
+:
+
+200
+,
+
+"total_tokens"
+:
+
+250
+}
+}
+
+Inline image input:
+ user messages may send 
+content
+ as an array of 
+text
+ and 
+image_url
+ parts. Both remote 
+http(s)
+ URLs and 
+data:image/...
+ URLs are supported:
+
+{
+
+"model"
+:
+
+"hermes-agent"
+,
+
+"messages"
+:
+
+[
+
+{
+
+"role"
+:
+
+"user"
+,
+
+"content"
+:
+
+[
+
+{
+"type"
+:
+
+"text"
+,
+
+"text"
+:
+
+"What is in this image?"
+}
+,
+
+{
+"type"
+:
+
+"image_url"
+,
+
+"image_url"
+:
+
+{
+"url"
+:
+
+"https://example.com/cat.png"
+,
+
+"detail"
+:
+
+"high"
+}
+}
+
+]
+
+}
+
+]
+}
+
+Uploaded files (
+file
+ / 
+input_file
+ / 
+file_id
+) and non-image 
+data:
+ URLs return 
+400 unsupported_content_type
+.
+
+Streaming
+ (
+"stream": true
+): Returns Server-Sent Events (SSE) with token-by-token response chunks. For 
+Chat Completions
+, the stream uses standard 
+chat.completion.chunk
+ events plus Hermes' custom 
+hermes.tool.progress
+ event for tool-start UX. For 
+Responses
+, the stream uses OpenAI Responses event types such as 
+response.created
+, 
+response.output_text.delta
+, 
+response.output_item.added
+, 
+response.output_item.done
+, and 
+response.completed
+.
+
+Tool progress in streams
+:
+
+Chat Completions
+: Hermes emits 
+event: hermes.tool.progress
+ for tool-start visibility without polluting persisted assistant text.
+
+Responses
+: Hermes emits spec-native 
+function_call
+ and 
+function_call_output
+ output items during the SSE stream, so clients can render structured tool UI in real time.
+
+POST /v1/responses
+​
+
+OpenAI Responses API format. Supports server-side conversation state via 
+previous_response_id
+ — the server stores full conversation history (including tool calls and results) so multi-turn context is preserved without the client managing it.
+
+Request:
+
+{
+
+"model"
+:
+
+"hermes-agent"
+,
+
+"input"
+:
+
+"What files are in my project?"
+,
+
+"instructions"
+:
+
+"You are a helpful coding assistant."
+,
+
+"store"
+:
+
+true
+}
+
+Response:
+
+{
+
+"id"
+:
+
+"resp_abc123"
+,
+
+"object"
+:
+
+"response"
+,
+
+"status"
+:
+
+"completed"
+,
+
+"model"
+:
+
+"hermes-agent"
+,
+
+"output"
+:
+
+[
+
+{
+"type"
+:
+
+"function_call"
+,
+
+"name"
+:
+
+"terminal"
+,
+
+"arguments"
+:
+
+"{\"command\": \"ls\"}"
+,
+
+"call_id"
+:
+
+"call_1"
+}
+,
+
+{
+"type"
+:
+
+"function_call_output"
+,
+
+"call_id"
+:
+
+"call_1"
+,
+
+"output"
+:
+
+"README.md src/ tests/"
+}
+,
+
+{
+"type"
+:
+
+"message"
+,
+
+"role"
+:
+
+"assistant"
+,
+
+"content"
+:
+
+[
+{
+"type"
+:
+
+"output_text"
+,
+
+"text"
+:
+
+"Your project has..."
+}
+]
+}
+
+]
+,
+
+"usage"
+:
+
+{
+"input_tokens"
+:
+
+50
+,
+
+"output_tokens"
+:
+
+200
+,
+
+"total_tokens"
+:
+
+250
+}
+}
+
+Inline image input:
+
+input[].content
+ can contain 
+input_text
+ and 
+input_image
+ parts. Both remote URLs and 
+data:image/...
+ URLs are supported:
+
+{
+
+"model"
+:
+
+"hermes-agent"
+,
+
+"input"
+:
+
+[
+
+{
+
+"role"
+:
+
+"user"
+,
+
+"content"
+:
+
+[
+
+{
+"type"
+:
+
+"input_text"
+,
+
+"text"
+:
+
+"Describe this screenshot."
+}
+,
+
+{
+"type"
+:
+
+"input_image"
+,
+
+"image_url"
+:
+
+"data:image/png;base64,iVBORw0K..."
+}
+
+]
+
+}
+
+]
+}
+
+Uploaded files (
+input_file
+ / 
+file_id
+) and non-image 
+data:
+ URLs return 
+400 unsupported_content_type
+.
+
+Multi-turn with previous_response_id
+​
+
+Chain responses to maintain full context (including tool calls) across turns:
+
+{
+
+"input"
+:
+
+"Now show me the README"
+,
+
+"previous_response_id"
+:
+
+"resp_abc123"
+}
+
+The server reconstructs the full conversation from the stored response chain — all previous tool calls and results are preserved. Chained requests also share the same session, so multi-turn conversations appear as a single entry in the dashboard and session history.
+
+Named conversations
+​
+
+Use the 
+conversation
+ parameter instead of tracking response IDs:
+
+{
+"input"
+:
+
+"Hello"
+,
+
+"conversation"
+:
+
+"my-project"
+}
+{
+"input"
+:
+
+"What's in src/?"
+,
+
+"conversation"
+:
+
+"my-project"
+}
+{
+"input"
+:
+
+"Run the tests"
+,
+
+"conversation"
+:
+
+"my-project"
+}
+
+The server automatically chains to the latest response in that conversation. Like the 
+/title
+ command for gateway sessions.
+
+GET /v1/responses/{id}
+​
+
+Retrieve a previously stored response by ID.
+
+DELETE /v1/responses/{id}
+​
+
+Delete a stored response.
+
+GET /v1/models
+​
+
+Lists the agent as an available model. The advertised model name defaults to the 
+profile
+ name (or 
+hermes-agent
+ for the default profile). Required by most frontends for model discovery.
+
+GET /v1/capabilities
+​
+
+Returns a machine-readable description of the API server's stable surface for external UIs, orchestrators, and plugin bridges.
+
+{
+
+"object"
+:
+
+"hermes.api_server.capabilities"
+,
+
+"platform"
+:
+
+"hermes-agent"
+,
+
+"model"
+:
+
+"hermes-agent"
+,
+
+"auth"
+:
+
+{
+"type"
+:
+
+"bearer"
+,
+
+"required"
+:
+
+true
+}
+,
+
+"features"
+:
+
+{
+
+"chat_completions"
+:
+
+true
+,
+
+"responses_api"
+:
+
+true
+,
+
+"run_submission"
+:
+
+true
+,
+
+"run_status"
+:
+
+true
+,
+
+"run_events_sse"
+:
+
+true
+,
+
+"run_stop"
+:
+
+true
+
+}
+}
+
+Use this endpoint when integrating dashboards, browser UIs, or control planes so they can discover whether the running Hermes version supports runs, streaming, cancellation, and session continuity without depending on private Python internals.
+
+GET /health
+​
+
+Health check. Returns 
+{"status": "ok"}
+. Also available at 
+GET /v1/health
+ for OpenAI-compatible clients that expect the 
+/v1/
+ prefix.
+
+GET /health/detailed
+​
+
+Extended health check that also reports active sessions, running agents, and resource usage. Useful for monitoring/observability tooling.
+
+Runs API (streaming-friendly alternative)
+​
+
+In addition to 
+/v1/chat/completions
+ and 
+/v1/responses
+, the server exposes a 
+runs
+ API for long-form sessions where the client wants to subscribe to progress events instead of managing streaming themselves.
+
+POST /v1/runs
+​
+
+Create a new agent run. Returns a 
+run_id
+ that can be used to subscribe to progress events.
+
+{
+
+"run_id"
+:
+
+"run_abc123"
+,
+
+"status"
+:
+
+"started"
+}
+
+Runs accept a simple 
+input
+ string and optional 
+session_id
+, 
+instructions
+, 
+conversation_history
+, or 
+previous_response_id
+. When 
+session_id
+ is provided, Hermes surfaces it in the run status so external UIs can correlate runs with their own conversation IDs.
+
+GET /v1/runs/{run_id}
+​
+
+Poll the current run state. This is useful for dashboards that need status without holding an SSE connection open, or for UIs that reconnect after navigation.
+
+{
+
+"object"
+:
+
+"hermes.run"
+,
+
+"run_id"
+:
+
+"run_abc123"
+,
+
+"status"
+:
+
+"completed"
+,
+
+"session_id"
+:
+
+"space-session"
+,
+
+"model"
+:
+
+"hermes-agent"
+,
+
+"output"
+:
+
+"Done."
+,
+
+"usage"
+:
+
+{
+"input_tokens"
+:
+
+50
+,
+
+"output_tokens"
+:
+
+200
+,
+
+"total_tokens"
+:
+
+250
+}
+}
+
+Statuses are retained briefly after terminal states (
+completed
+, 
+failed
+, or 
+cancelled
+) for polling and UI reconciliation.
+
+GET /v1/runs/{run_id}/events
+​
+
+Server-Sent Events stream of the run's tool-call progress, token deltas, and lifecycle events. Designed for dashboards and thick clients that want to attach/detach without losing state.
+
+POST /v1/runs/{run_id}/stop
+​
+
+Interrupt a running agent turn. The endpoint returns immediately with 
+{"status": "stopping"}
+ while Hermes asks the active agent to stop at the next safe interruption point.
+
+Jobs API (background scheduled work)
+​
+
+The server exposes a lightweight jobs CRUD surface for managing scheduled / background agent runs from a remote client. All endpoints are gated behind the same bearer auth.
+
+GET /api/jobs
+​
+
+List all scheduled jobs.
+
+POST /api/jobs
+​
+
+Create a new scheduled job. Body accepts the same shape as 
+hermes cron
+ — prompt, schedule, skills, provider override, delivery target.
+
+GET /api/jobs/{job_id}
+​
+
+Fetch a single job's definition and last-run state.
+
+PATCH /api/jobs/{job_id}
+​
+
+Update fields on an existing job (prompt, schedule, etc.). Partial updates are merged.
+
+DELETE /api/jobs/{job_id}
+​
+
+Remove a job. Also cancels any in-flight run.
+
+POST /api/jobs/{job_id}/pause
+​
+
+Pause a job without deleting it. Next-scheduled-run timestamps are suspended until resumed.
+
+POST /api/jobs/{job_id}/resume
+​
+
+Resume a previously paused job.
+
+POST /api/jobs/{job_id}/run
+​
+
+Trigger the job to run immediately, out of schedule.
+
+System Prompt Handling
+​
+
+When a frontend sends a 
+system
+ message (Chat Completions) or 
+instructions
+ field (Responses API), hermes-agent 
+layers it on top
+ of its core system prompt. Your agent keeps all its tools, memory, and skills — the frontend's system prompt adds extra instructions.
+
+This means you can customize behavior per-frontend without losing capabilities:
+
+Open WebUI system prompt: "You are a Python expert. Always include type hints."
+
+The agent still has terminal, file tools, web search, memory, etc.
+
+Authentication
+​
+
+Bearer token auth via the 
+Authorization
+ header:
+
+Authorization: Bearer ***
+
+Configure the key via 
+API_SERVER_KEY
+ env var. If you need a browser to call Hermes directly, also set 
+API_SERVER_CORS_ORIGINS
+ to an explicit allowlist.
+
+Security
+The API server gives full access to hermes-agent's toolset, 
+including terminal commands
+. When binding to a non-loopback address like 
+0.0.0.0
+, 
+API_SERVER_KEY
+ is 
+required
+. Also keep 
+API_SERVER_CORS_ORIGINS
+ narrow to control browser access.
+The default bind address (
+127.0.0.1
+) is for local-only use. Browser access is disabled by default; enable it only for explicit trusted origins.
+
+Configuration
+​
+
+Environment Variables
+​
+
+Variable
+Default
+Description
+API_SERVER_ENABLED
+false
+Enable the API server
+API_SERVER_PORT
+8642
+HTTP server port
+API_SERVER_HOST
+127.0.0.1
+Bind address (localhost only by default)
+API_SERVER_KEY
+(none)
+Bearer token for auth
+API_SERVER_CORS_ORIGINS
+(none)
+Comma-separated allowed browser origins
+API_SERVER_MODEL_NAME
+(profile name)
+Model name on 
+/v1/models
+. Defaults to profile name, or 
+hermes-agent
+ for default profile.
+
+config.yaml
+​
+
+# Not yet supported — use environment variables.
+# config.yaml support coming in a future release.
+
+Security Headers
+​
+
+All responses include security headers:
+
+X-Content-Type-Options: nosniff
+ — prevents MIME type sniffing
+
+Referrer-Policy: no-referrer
+ — prevents referrer leakage
+
+CORS
+​
+
+The API server does 
+not
+ enable browser CORS by default.
+
+For direct browser access, set an explicit allowlist:
+
+API_SERVER_CORS_ORIGINS
+=
+http://localhost:3000,http://127.0.0.1:3000
+
+When CORS is enabled:
+
+Preflight responses
+ include 
+Access-Control-Max-Age: 600
+ (10 minute cache)
+
+SSE streaming responses
+ include CORS headers so browser EventSource clients work correctly
+
+Idempotency-Key
+ is an allowed request header — clients can send it for deduplication (responses are cached by key for 5 minutes)
+
+Most documented frontends such as Open WebUI connect server-to-server and do not need CORS at all.
+
+Compatible Frontends
+​
+
+Any frontend that supports the OpenAI API format works. Tested/documented integrations:
+
+Frontend
+Stars
+Connection
+Open WebUI
+126k
+Full guide available
+LobeChat
+73k
+Custom provider endpoint
+LibreChat
+34k
+Custom endpoint in librechat.yaml
+AnythingLLM
+56k
+Generic OpenAI provider
+NextChat
+87k
+BASE_URL env var
+ChatBox
+39k
+API Host setting
+Jan
+26k
+Remote model config
+HF Chat-UI
+8k
+OPENAI_BASE_URL
+big-AGI
+7k
+Custom endpoint
+OpenAI Python SDK
+—
+OpenAI(base_url="http://localhost:8642/v1")
+curl
+—
+Direct HTTP requests
+
+Multi-User Setup with Profiles
+​
+
+To give multiple users their own isolated Hermes instance (separate config, memory, skills), use 
+profiles
+:
+
+# Create a profile per user
+hermes profile create alice
+hermes profile create bob
+# Configure each profile's API server on a different port
+hermes 
+-p
+ alice config 
+set
+ API_SERVER_ENABLED 
+true
+hermes 
+-p
+ alice config 
+set
+ API_SERVER_PORT 
+8643
+hermes 
+-p
+ alice config 
+set
+ API_SERVER_KEY alice-secret
+hermes 
+-p
+ bob config 
+set
+ API_SERVER_ENABLED 
+true
+hermes 
+-p
+ bob config 
+set
+ API_SERVER_PORT 
+8644
+hermes 
+-p
+ bob config 
+set
+ API_SERVER_KEY bob-secret
+# Start each profile's gateway
+hermes 
+-p
+ alice gateway 
+&
+hermes 
+-p
+ bob gateway 
+&
+
+Each profile's API server automatically advertises the profile name as the model ID:
+
+http://localhost:8643/v1/models
+ → model 
+alice
+
+http://localhost:8644/v1/models
+ → model 
+bob
+
+In Open WebUI, add each as a separate connection. The model dropdown shows 
+alice
+ and 
+bob
+ as distinct models, each backed by a fully isolated Hermes instance. See the 
+Open WebUI guide
+ for details.
+
+Limitations
+​
+
+Response storage
+ — stored responses (for 
+previous_response_id
+) are persisted in SQLite and survive gateway restarts. Max 100 stored responses (LRU eviction).
+
+No file upload
+ — inline images are supported on both 
+/v1/chat/completions
+ and 
+/v1/responses
+, but uploaded files (
+file
+, 
+input_file
+, 
+file_id
+) and non-image document inputs are not supported through the API.
+
+Model field is cosmetic
+ — the 
+model
+ field in requests is accepted but the actual LLM model used is configured server-side in config.yaml.
+
+Proxy Mode
+​
+
+The API server also serves as the backend for 
+gateway proxy mode
+. When another Hermes gateway instance is configured with 
+GATEWAY_PROXY_URL
+ pointing at this API server, it forwards all messages here instead of running its own agent. This enables split deployments — for example, a Docker container handling Matrix E2EE that relays to a host-side agent.
+
+See 
+Matrix Proxy Mode
+ for the full setup guide.
+========================================
+CODE_BLOCKS:
+API_SERVER_ENABLED=trueAPI_SERVER_KEY=change-me-local-dev# Optional: only if a browser must call Hermes directly# API_SERVER_CORS_ORIGINS=http://localhost:3000
+
+hermes gateway
+
+[API Server] API server listening on http://127.0.0.1:8642
+
+# Test with curlcurl http://localhost:8642/v1/chat/completions \  -H "Authorization: Bearer change-me-local-dev" \  -H "Content-Type: application/json" \  -d '{"model": "hermes-agent", "messages": [{"role": "user", "content": "Hello!"}]}'
+
+{  "model": "hermes-agent",  "messages": [    {"role": "system", "content": "You are a Python expert."},    {"role": "user", "content": "Write a fibonacci function"}  ],  "stream": false}
+
+{  "id": "chatcmpl-abc123",  "object": "chat.completion",  "created": 1710000000,  "model": "hermes-agent",  "choices": [{    "index": 0,    "message": {"role": "assistant", "content": "Here's a fibonacci function..."},    "finish_reason": "stop"  }],  "usage": {"prompt_tokens": 50, "completion_tokens": 200, "total_tokens": 250}}
+
+{  "model": "hermes-agent",  "messages": [    {      "role": "user",      "content": [        {"type": "text", "text": "What is in this image?"},        {"type": "image_url", "image_url": {"url": "https://example.com/cat.png", "detail": "high"}}      ]    }  ]}
+
+{  "model": "hermes-agent",  "input": "What files are in my project?",  "instructions": "You are a helpful coding assistant.",  "store": true}
+
+{  "id": "resp_abc123",  "object": "response",  "status": "completed",  "model": "hermes-agent",  "output": [    {"type": "function_call", "name": "terminal", "arguments": "{\"command\": \"ls\"}", "call_id": "call_1"},    {"type": "function_call_output", "call_id": "call_1", "output": "README.md src/ tests/"},    {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Your project has..."}]}  ],  "usage": {"input_tokens": 50, "output_tokens": 200, "total_tokens": 25
+
+{  "model": "hermes-agent",  "input": [    {      "role": "user",      "content": [        {"type": "input_text", "text": "Describe this screenshot."},        {"type": "input_image", "image_url": "data:image/png;base64,iVBORw0K..."}      ]    }  ]}
+
+{  "input": "Now show me the README",  "previous_response_id": "resp_abc123"}
+
+{"input": "Hello", "conversation": "my-project"}{"input": "What's in src/?", "conversation": "my-project"}{"input": "Run the tests", "conversation": "my-project"}
+
+{  "object": "hermes.api_server.capabilities",  "platform": "hermes-agent",  "model": "hermes-agent",  "auth": {"type": "bearer", "required": true},  "features": {    "chat_completions": true,    "responses_api": true,    "run_submission": true,    "run_status": true,    "run_events_sse": true,    "run_stop": true  }}
+
+{  "run_id": "run_abc123",  "status": "started"}
+
+{  "object": "hermes.run",  "run_id": "run_abc123",  "status": "completed",  "session_id": "space-session",  "model": "hermes-agent",  "output": "Done.",  "usage": {"input_tokens": 50, "output_tokens": 200, "total_tokens": 250}}
+
+Authorization: Bearer ***
+
+# Not yet supported — use environment variables.# config.yaml support coming in a future release.
+
+API_SERVER_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+
+# Create a profile per userhermes profile create alicehermes profile create bob# Configure each profile's API server on a different porthermes -p alice config set API_SERVER_ENABLED truehermes -p alice config set API_SERVER_PORT 8643hermes -p alice config set API_SERVER_KEY alice-secrethermes -p bob config set API_SERVER_ENABLED truehermes -p bob config set API_SERVER_PORT 8644hermes -p bob config set API_SERVER_KEY bob-secret# Start each profile's gatewayhermes -p alice gateway &hermes -p bob g
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/batch-processing
+TITLE: Batch Processing | Hermes Agent
+H1: Batch Processing
+TEXT:
+On this page
+
+Batch processing lets you run the Hermes agent across hundreds or thousands of prompts in parallel, generating structured trajectory data. This is primarily used for 
+training data generation
+ — producing ShareGPT-format trajectories with tool usage statistics that can be used for fine-tuning or evaluation.
+
+Overview
+​
+
+The batch runner (
+batch_runner.py
+) processes a JSONL dataset of prompts, running each through a full agent session with tool access. Each prompt gets its own isolated environment. The output is structured trajectory data with full conversation history, tool call statistics, and reasoning coverage metrics.
+
+Quick Start
+​
+
+# Basic batch run
+python batch_runner.py 
+\
+
+--dataset_file
+=
+data/prompts.jsonl 
+\
+
+--batch_size
+=
+10
+
+\
+
+--run_name
+=
+my_first_run 
+\
+
+--model
+=
+anthropic/claude-sonnet-4.6 
+\
+
+--num_workers
+=
+4
+# Resume an interrupted run
+python batch_runner.py 
+\
+
+--dataset_file
+=
+data/prompts.jsonl 
+\
+
+--batch_size
+=
+10
+
+\
+
+--run_name
+=
+my_first_run 
+\
+
+--resume
+# List available toolset distributions
+python batch_runner.py 
+--list_distributions
+
+Dataset Format
+​
+
+The input dataset is a JSONL file (one JSON object per line). Each entry must have a 
+prompt
+ field:
+
+{"prompt": "Write a Python function that finds the longest palindromic substring"}
+{"prompt": "Create a REST API endpoint for user authentication using Flask"}
+{"prompt": "Debug this error: TypeError: cannot unpack non-iterable NoneType object"}
+
+Entries can optionally include:
+
+image
+ or 
+docker_image
+: A container image to use for this prompt's sandbox (works with Docker, Modal, and Singularity backends)
+
+cwd
+: Working directory override for the task's terminal session
+
+Configuration Options
+​
+
+Parameter
+Default
+Description
+--dataset_file
+(required)
+Path to JSONL dataset
+--batch_size
+(required)
+Prompts per batch
+--run_name
+(required)
+Name for this run (used for output dir and checkpointing)
+--distribution
+"default"
+Toolset distribution to sample from
+--model
+claude-sonnet-4.6
+Model to use
+--base_url
+https://openrouter.ai/api/v1
+API base URL
+--api_key
+(env var)
+API key for model
+--max_turns
+10
+Maximum tool-calling iterations per prompt
+--num_workers
+4
+Parallel worker processes
+--resume
+false
+Resume from checkpoint
+--verbose
+false
+Enable verbose logging
+--max_samples
+all
+Only process first N samples from dataset
+--max_tokens
+model default
+Maximum tokens per model response
+
+Provider Routing (OpenRouter)
+​
+
+Parameter
+Description
+--providers_allowed
+Comma-separated providers to allow (e.g., 
+"anthropic,openai"
+)
+--providers_ignored
+Comma-separated providers to ignore (e.g., 
+"together,deepinfra"
+)
+--providers_order
+Comma-separated preferred provider order
+--provider_sort
+Sort by 
+"price"
+, 
+"throughput"
+, or 
+"latency"
+
+Reasoning Control
+​
+
+Parameter
+Description
+--reasoning_effort
+Effort level: 
+none
+, 
+minimal
+, 
+low
+, 
+medium
+, 
+high
+, 
+xhigh
+--reasoning_disabled
+Completely disable reasoning/thinking tokens
+
+Advanced Options
+​
+
+Parameter
+Description
+--ephemeral_system_prompt
+System prompt used during execution but NOT saved to trajectories
+--log_prefix_chars
+Characters to show in log previews (default: 100)
+--prefill_messages_file
+Path to JSON file with prefill messages for few-shot priming
+
+Toolset Distributions
+​
+
+Each prompt gets a randomly sampled set of toolsets from a 
+distribution
+. This ensures training data covers diverse tool combinations. Use 
+--list_distributions
+ to see all available distributions.
+
+In the current implementation, distributions assign a probability to 
+each individual toolset
+. The sampler flips each toolset independently, then guarantees that at least one toolset is enabled. This is different from a hand-authored table of prebuilt combinations.
+
+Output Format
+​
+
+All output goes to 
+data/<run_name>/
+:
+
+data/my_run/
+├── trajectories.jsonl # Combined final output (all batches merged)
+├── batch_0.jsonl # Individual batch results
+├── batch_1.jsonl
+├── ...
+├── checkpoint.json # Resume checkpoint
+└── statistics.json # Aggregate tool usage stats
+
+Trajectory Format
+​
+
+Each line in 
+trajectories.jsonl
+ is a JSON object:
+
+{
+
+"prompt_index"
+:
+
+42
+,
+
+"conversations"
+:
+
+[
+
+{
+"from"
+:
+
+"human"
+,
+
+"value"
+:
+
+"Write a function..."
+}
+,
+
+{
+"from"
+:
+
+"gpt"
+,
+
+"value"
+:
+
+"I'll create that function..."
+,
+
+"tool_calls"
+:
+
+[
+...
+]
+}
+,
+
+{
+"from"
+:
+
+"tool"
+,
+
+"value"
+:
+
+"..."
+}
+,
+
+{
+"from"
+:
+
+"gpt"
+,
+
+"value"
+:
+
+"Here's the completed function..."
+}
+
+]
+,
+
+"metadata"
+:
+
+{
+
+"batch_num"
+:
+
+2
+,
+
+"timestamp"
+:
+
+"2026-01-15T10:30:00"
+,
+
+"model"
+:
+
+"anthropic/claude-sonnet-4.6"
+
+}
+,
+
+"completed"
+:
+
+true
+,
+
+"partial"
+:
+
+false
+,
+
+"api_calls"
+:
+
+3
+,
+
+"toolsets_used"
+:
+
+[
+"terminal"
+,
+
+"file"
+]
+,
+
+"tool_stats"
+:
+
+{
+
+"terminal"
+:
+
+{
+"count"
+:
+
+2
+,
+
+"success"
+:
+
+2
+,
+
+"failure"
+:
+
+0
+}
+,
+
+"read_file"
+:
+
+{
+"count"
+:
+
+1
+,
+
+"success"
+:
+
+1
+,
+
+"failure"
+:
+
+0
+}
+
+}
+,
+
+"tool_error_counts"
+:
+
+{
+
+"terminal"
+:
+
+0
+,
+
+"read_file"
+:
+
+0
+
+}
+}
+
+The 
+conversations
+ field uses a ShareGPT-like format with 
+from
+ and 
+value
+ fields. Tool stats are normalized to include all possible tools with zero defaults, ensuring consistent schema across entries for HuggingFace datasets compatibility.
+
+Checkpointing
+​
+
+The batch runner has robust checkpointing for fault tolerance:
+
+Checkpoint file:
+ Saved after each batch completes, tracking which prompt indices are done
+
+Content-based resume:
+ On 
+--resume
+, the runner scans existing batch files and matches completed prompts by their actual text content (not just indices), enabling recovery even if the dataset order changes
+
+Failed prompts:
+ Only successfully completed prompts are marked as done — failed prompts will be retried on resume
+
+Batch merging:
+ On completion, all batch files (including from previous runs) are merged into a single 
+trajectories.jsonl
+
+How Resume Works
+​
+
+Scan all 
+batch_*.jsonl
+ files for completed prompts (by content matching)
+
+Filter the dataset to exclude already-completed prompts
+
+Re-batch the remaining prompts
+
+Process only the remaining prompts
+
+Merge all batch files (old + new) into final output
+
+Quality Filtering
+​
+
+The batch runner applies automatic quality filtering:
+
+No-reasoning filter:
+ Samples where zero assistant turns contain reasoning (no 
+<REASONING_SCRATCHPAD>
+ or native thinking tokens) are discarded
+
+Corrupted entry filter:
+ Entries with hallucinated tool names (not in the valid tool list) are filtered out during the final merge
+
+Reasoning statistics:
+ Tracks percentage of turns with/without reasoning across the entire run
+
+Statistics
+​
+
+After completion, the runner prints comprehensive statistics:
+
+Tool usage:
+ Call counts, success/failure rates per tool
+
+Reasoning coverage:
+ Percentage of assistant turns with reasoning
+
+Samples discarded:
+ Count of samples filtered for lacking reasoning
+
+Duration:
+ Total processing time
+
+Statistics are also saved to 
+statistics.json
+ for programmatic analysis.
+
+Use Cases
+​
+
+Training Data Generation
+​
+
+Generate diverse tool-use trajectories for fine-tuning:
+
+python batch_runner.py 
+\
+
+--dataset_file
+=
+data/coding_prompts.jsonl 
+\
+
+--batch_size
+=
+20
+
+\
+
+--run_name
+=
+coding_v1 
+\
+
+--model
+=
+anthropic/claude-sonnet-4.6 
+\
+
+--num_workers
+=
+8
+
+\
+
+--distribution
+=
+default 
+\
+
+--max_turns
+=
+15
+
+Model Evaluation
+​
+
+Evaluate how well a model uses tools across standardized prompts:
+
+python batch_runner.py 
+\
+
+--dataset_file
+=
+data/eval_suite.jsonl 
+\
+
+--batch_size
+=
+10
+
+\
+
+--run_name
+=
+eval_gpt4 
+\
+
+--model
+=
+openai/gpt-4o 
+\
+
+--num_workers
+=
+4
+
+\
+
+--max_turns
+=
+10
+
+Per-Prompt Container Images
+​
+
+For benchmarks requiring specific environments, each prompt can specify its own container image:
+
+{"prompt": "Install numpy and compute eigenvalues of a 3x3 matrix", "image": "python:3.11-slim"}
+{"prompt": "Compile this Rust program and run it", "image": "rust:1.75"}
+{"prompt": "Set up a Node.js Express server", "image": "node:20-alpine", "cwd": "/app"}
+
+The batch runner verifies Docker images are accessible before running each prompt.
+========================================
+CODE_BLOCKS:
+# Basic batch runpython batch_runner.py \    --dataset_file=data/prompts.jsonl \    --batch_size=10 \    --run_name=my_first_run \    --model=anthropic/claude-sonnet-4.6 \    --num_workers=4# Resume an interrupted runpython batch_runner.py \    --dataset_file=data/prompts.jsonl \    --batch_size=10 \    --run_name=my_first_run \    --resume# List available toolset distributionspython batch_runner.py --list_distributions
+
+{"prompt": "Write a Python function that finds the longest palindromic substring"}{"prompt": "Create a REST API endpoint for user authentication using Flask"}{"prompt": "Debug this error: TypeError: cannot unpack non-iterable NoneType object"}
+
+data/my_run/├── trajectories.jsonl    # Combined final output (all batches merged)├── batch_0.jsonl         # Individual batch results├── batch_1.jsonl├── ...├── checkpoint.json       # Resume checkpoint└── statistics.json       # Aggregate tool usage stats
+
+{  "prompt_index": 42,  "conversations": [    {"from": "human", "value": "Write a function..."},    {"from": "gpt", "value": "I'll create that function...",     "tool_calls": [...]},    {"from": "tool", "value": "..."},    {"from": "gpt", "value": "Here's the completed function..."}  ],  "metadata": {    "batch_num": 2,    "timestamp": "2026-01-15T10:30:00",    "model": "anthropic/claude-sonnet-4.6"  },  "completed": true,  "partial": false,  "api_calls": 3,  "toolsets_used": ["terminal", "file"
+
+python batch_runner.py \    --dataset_file=data/coding_prompts.jsonl \    --batch_size=20 \    --run_name=coding_v1 \    --model=anthropic/claude-sonnet-4.6 \    --num_workers=8 \    --distribution=default \    --max_turns=15
+
+python batch_runner.py \    --dataset_file=data/eval_suite.jsonl \    --batch_size=10 \    --run_name=eval_gpt4 \    --model=openai/gpt-4o \    --num_workers=4 \    --max_turns=10
+
+{"prompt": "Install numpy and compute eigenvalues of a 3x3 matrix", "image": "python:3.11-slim"}{"prompt": "Compile this Rust program and run it", "image": "rust:1.75"}{"prompt": "Set up a Node.js Express server", "image": "node:20-alpine", "cwd": "/app"}
+================================================================================
+
+
+================================================================================
+URL: https://hermes-agent.nousresearch.com/docs/user-guide/features/browser
+TITLE: Browser Automation | Hermes Agent
+H1: Browser Automation
+TEXT:
+On this page
+
+Hermes Agent includes a full browser automation toolset with multiple backend options:
+
+Browserbase cloud mode
+ via 
+Browserbase
+ for managed cloud browsers and anti-bot tooling
+
+Browser Use cloud mode
+ via 
+Browser Use
+ as an alternative cloud browser provider
+
+Firecrawl cloud mode
+ via 
+Firecrawl
+ for cloud browsers with built-in scraping
+
+Camofox local mode
+ via 
+Camofox
+ for local anti-detection browsing (Firefox-based fingerprint spoofing)
+
+Local Chrome via CDP
+ — connect browser tools to your own Chrome instance using 
+/browser connect
+
+Local browser mode
+ via the 
+agent-browser
+ CLI and a local Chromium installation
+
+In all modes, the agent can navigate websites, interact with page elements, fill forms, and extract information.
+
+Overview
+​
+
+Pages are represented as 
+accessibility trees
+ (text-based snapshots), making them ideal for LLM agents. Interactive elements get ref IDs (like 
+@e1
+, 
+@e2
+) that the agent uses for clicking and typing.
+
+Key capabilities:
+
+Multi-provider cloud execution
+ — Browserbase, Browser Use, or Firecrawl — no local browser needed
+
+Local Chrome integration
+ — attach to your running Chrome via CDP for hands-on browsing
+
+Built-in stealth
+ — random fingerprints, CAPTCHA solving, residential proxies (Browserbase)
+
+Session isolation
+ — each task gets its own browser session
+
+Automatic cleanup
+ — inactive sessions are closed after a timeout
+
+Vision analysis
+ — screenshot + AI analysis for visual understanding
+
+Setup
+​
+
+Nous Subscribers
+If you have a paid 
+Nous Portal
+ subscription, you can use browser automation through the 
+Tool Gateway
+ without any separate API keys. Run 
+hermes model
+ or 
+hermes tools
+ to enable it.
+
+Browserbase cloud mode
+​
+
+To use Browserbase-managed cloud browsers, add:
+
+# Add to ~/.hermes/.env
+BROWSERBASE_API_KEY
+=
+***
+BROWSERBASE_PROJECT_ID
+=
+your-project-id-here
+
+Get your credentials at 
+browserbase.com
+.
+
+Browser Use cloud mode
+​
+
+To use Browser Use as your cloud browser provider, add:
+
+# Add to ~/.hermes/.env
+BROWSER_USE_API_KEY
+=
+***
+
+Get your API key at 
+browser-use.com
+. Browser Use provides a cloud browser via its REST API. If both Browserbase and Browser Use credentials are set, Browserbase takes priority.
+
+Firecrawl cloud mode
+​
+
+To use Firecrawl as your cloud browser provider, add:
+
+# Add to ~/.hermes/.env
+FIRECRAWL_API_KEY
+=
+fc-***
+
+Get your API key at 
+firecrawl.dev
+. Then select Firecrawl as your browser provider:
+
+hermes setup tools
+# → Browser Automation → Firecrawl
+
+Optional settings:
+
+# Self-hosted Firecrawl instance (default: https://api.firecrawl.dev)
+FIRECRAWL_API_URL
+=
+http://localhost:3002
+# Session TTL in seconds (default: 300)
+FIRECRAWL_BROWSER_TTL
+=
+600
+
+Hybrid routing: cloud for public URLs, local for LAN/localhost
+​
+
+When a cloud provider is configured, Hermes auto-spawns a 
+local Chromium sidecar
+
+for URLs that resolve to a private/loopback/LAN address (
+localhost
+, 
+127.0.0.1
+,
+
+192.168.x.x
+, 
+10.x.x.x
+, 
+172.16-31.x.x
+, 
+*.local
+, 
+*.lan
+, 
+*.internal
+,
+IPv6 loopback 
+::1
+, link-local 
+169.254.x.x
+). Public URLs continue to use the
+cloud provider in the same conversation.
+
+This solves the common "I'm developing locally but using Browserbase" workflow —
+the agent can screenshot your dashboard at 
+http://localhost:3000
+ AND scrape
+
+https://github.com
+ without you switching providers or disabling the SSRF guard.
+The cloud provider never sees the private URL.
+
+The feature is 
+on by default
+. To disable it (all URLs go to the configured
+cloud provider, as before):
+
+# ~/.hermes/config.yaml
+browser
+:
+
+cloud_provider
+:
+ browserbase
+
+auto_local_for_private_urls
+:
+
+false
+
+With auto-routing disabled, private URLs are rejected with
+
+"Blocked: URL targets a private or internal address"
+ unless you also set
+
+browser.allow_private_urls: true
+ (which lets the cloud provider attempt them —
+usually won't work since Browserbase etc. can't reach your LAN).
+
+Requirements: the local sidecar uses the same 
+agent-browser
+ CLI as pure local
+mode, so you need it installed (
+hermes setup tools → Browser Automation
+
+auto-installs it). Post-navigation redirects from a public URL onto a private
+address are still blocked (you can't use a redirect-to-internal trick to reach
+your LAN through the public path).
+
+Camofox local mode
+​
+
+Camofox
+ is a self-hosted Node.js server wrapping Camoufox (a Firefox fork with C++ fingerprint spoofing). It provides local anti-detection browsing without cloud dependencies.
+
+# Clone the Camofox browser server first
+git
+ clone https://github.com/jo-inc/camofox-browser
+cd
+ camofox-browser
+# Build and start with Docker using the default container settings
+# (auto-detects arch: aarch64 on M1/M2, x86_64 on Intel)
+make
+ up
+# Stop and remove the default container
+make
+ down
+# Force a clean rebuild (for example, after upgrading VERSION/RELEASE)
+make
+ reset
+# Just download binaries without building
+make
+ fetch
+# Override arch or version explicitly
+make
+ up 
+ARCH
+=
+x86_64
+make
+ up 
+VERSION
+=
+135.0
+.1 
+RELEASE
+=
+beta.24
+
+make up
+ starts the default container immediately. If you want custom runtime settings such as a larger Node heap, VNC, or a persistent profile directory, build the image first and then run it yourself:
+
+# Build the image without starting the default container
+make
+ build
+# Start with persistence, VNC live view, and a larger Node heap
+mkdir
+
+-p
+ ~/.camofox-docker
+docker
+ run 
+-d
+
+\
+
+--name
+ camofox-browser 
+\
+
+--restart
+ unless-stopped 
+\
+
+-p
+
+9377
+:9377 
+\
+
+-p
+
+6080
+:6080 
+\
+
+-p
+
+5901
+:5900 
+\
+
+-e
+
+CAMOFOX_PORT
+=
+9377
+
+\
+
+-e
+
+ENABLE_VNC
+=
+1
+
+\
+
+-e
+
+VNC_BIND
+=
+0.0
+.0.0 
+\
+
+-e
+
+VNC_RESOLUTION
+=
+1920x1080 
+\
+
+-e
+
+MAX_OLD_SPACE_SIZE
+=
+2048
+
+\
+
+-v
+ ~/.camofox-docker:/root/.camofox 
+\
+ camofox-browser:135.0.1-aarch64
+
+With VNC enabled, the browser runs in headed mode and can be watched live in your browser at 
+http://localhost:6080
+ (noVNC). You can also connect a native VNC client to 
+localhost:5901
+.
+
+If you already ran 
+make up
+, stop and remove that default container before starting the custom one:
+
+make
+ down
+# then run the custom docker run command above
+
+Then set in 
+~/.hermes/.env
+:
+
+CAMOFOX_URL
+=
+http://localhost:9377
+
+Or configure via 
+hermes tools
+ → Browser Automation → Camofox.
+
+When 
+CAMOFOX_URL
+ is set, all browser tools automatically route through Camofox instead of Browserbase or agent-browser.
+
+Persistent browser sessions
+​
+
+By default, each Camofox session gets a random identity — cookies and logins don't survive across agent restarts. To enable persistent browser sessions, add the following to 
+~/.hermes/config.yaml
+:
+
+browser
+:
+
+camofox
+:
+
+managed_persistence
+:
+
+true
+
+Then fully restart Hermes so the new config is picked up.
+
+Nested path matters
+Hermes reads 
+browser.camofox.managed_persistence
+, 
+not
+ a top-level 
+managed_persistence
+. A common mistake is writing:
+# ❌ Wrong — Hermes ignores this
+managed_persistence
+:
+
+true
+If the flag is placed at the wrong path, Hermes silently falls back to a random ephemeral 
+userId
+ and your login state will be lost on every session.
+
+What Hermes does
+​
+
+Sends a deterministic profile-scoped 
+userId
+ to Camofox so the server can reuse the same Firefox profile across sessions.
+
+Skips server-side context destruction on cleanup, so cookies and logins survive between agent tasks.
+
+Scopes the 
+userId
+ to the active Hermes profile, so different Hermes profiles get different browser profiles (profile isolation).
+
+What Hermes does not do
+​
+
+It does not force persistence on the Camofox server. Hermes only sends a stable 
+userId
+; the server must honor it by mapping that 
+userId
+ to a persistent Firefox profile directory.
+
+If your Camofox server build treats every request as ephemeral (e.g. always calls 
+browser.newContext()
+ without loading a stored profile), Hermes cannot make those sessions persist. Make sure you are running a Camofox build that implements userId-based profile persistence.
+
+Verify it's working
+​
+
+Start Hermes and your Camofox server.
+
+Open Google (or any login site) in a browser task and sign in manually.
+
+End the browser task normally.
+
+Start a new browser task.
+
+Open the same site again — you should still be signed in.
+
+If step 5 logs you out, the Camofox server isn't honoring the stable 
+userId
+. Double-check your config path, confirm you fully restarted Hermes after editing 
+config.yaml
+, and verify your Camofox server version supports persistent per-user profiles.
+
+Where state lives
+​
+
+Hermes derives the stable 
+userId
+ from the profile-scoped directory 
+~/.hermes/browser_auth/camofox/
+ (or the equivalent under 
+$HERMES_HOME
+ for non-default profiles). The actual browser profile data lives on the Camofox server side, keyed by that 
+userId
+. To fully reset a persistent profile, clear it on the Camofox server and remove the corresponding Hermes profile's state directory.
+
+VNC live view
+​
+
+When Camofox runs in headed mode (with a visible browser window), it exposes a VNC port in its health check response. Hermes automatically discovers this and includes the VNC URL in navigation responses, so the agent can share a link for you to watch the browser live.
+
+Local Chrome via CDP (
+/browser connect
+)
+​
+
+Instead of a cloud provider, you can attach Hermes browser tools to your own running Chrome instance via the Chrome DevTools Protocol (CDP). This is useful when you want to see what the agent is doing in real-time, interact with pages that require your own cookies/sessions, or avoid cloud browser costs.
+
+note
+/browser connect
+ is an 
+interactive-CLI slash command
+ — it is not dispatched by the gateway. If you try to run it inside a WebUI, Telegram, Discord, or other gateway chat, the message will be sent to the agent as plain text and the command will not execute. Start Hermes from the terminal (
+hermes
+ or 
+hermes chat
+) and issue 
+/browser connect
+ there.
+
+In the CLI, use:
+
+/browser connect # Connect to Chrome at ws://localhost:9222
+/browser connect ws://host:port # Connect to a specific CDP endpoint
+/browser status # Check current connection
+/browser disconnect # Detach and return to cloud/local mode
+
+If Chrome isn't already running with remote debugging, Hermes will attempt to auto-launch it with 
+--remote-debugging-port=9222
+.
+
+tip
+To start Chrome manually with CDP enabled, use a dedicated user-data-dir so the debug port actually comes up even if Chrome is already running with your normal profile:
+# Linux
+google-chrome 
+\
+ --remote-debugging-port
+=
+9222
+
+\
+ --user-data-dir
+=
+$HOME
+/.hermes/chrome-debug 
+\
+ --no-first-run 
+\
+ --no-default-browser-check 
+&
+# macOS
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+\
+ --remote-debugging-port
+=
+9222
+
+\
+ --user-data-dir
+=
+"
+$HOME
+/.hermes/chrome-debug"
+
+\
+ --no-first-run 
+\
+ --no-default-browser-check 
+&
+Then launch the Hermes CLI and run 
+/browser connect
+.
+Why 
+--user-data-dir
+?
+ Without it, launching Chrome while a regular Chrome instance is already running typically opens a new window on the existing process — and that existing process was not started with 
+--remote-debugging-port
+, so port 9222 never opens. A dedicated user-data-dir forces a fresh Chrome process where the debug port actually listens. 
+--no-first-run --no-default-browser-check
+ skips the first-launch wizard for the fresh profile.
+
+When connected via CDP, all browser tools (
+browser_navigate
+, 
+browser_click
+, etc.) operate on your live Chrome instance instead of spinning up a cloud session.
+
+WSL2 + Windows Chrome: prefer MCP over 
+/browser connect
+​
+
+If Hermes runs inside WSL2 but the Chrome window you want to control runs on the Windows host, 
+/browser connect
+ is often not the best path.
+
+Why:
+
+/browser connect
+ expects Hermes itself to reach a usable CDP endpoint
+
+modern Chrome live-debugging sessions often expose a host-local endpoint that is not directly reachable from WSL the same way a classic 
+9222
+ port is
+
+even when Windows Chrome is debuggable, the cleanest integration is often to let a Windows-side browser MCP server attach to Chrome and let Hermes talk to that MCP server
+
+For that setup, prefer 
+chrome-devtools-mcp
+ through Hermes MCP support.
+
+See the MCP guide for the practical setup:
+
+Use MCP with Hermes
+
+Local browser mode
+​
+
+If you do 
+not
+ set any cloud credentials and don't use 
+/browser connect
+, Hermes can still use the browser tools through a local Chromium install driven by 
+agent-browser
+.
+
+Optional Environment Variables
+​
+
+# Residential proxies for better CAPTCHA solving (default: "true")
+BROWSERBASE_PROXIES
+=
+true
+# Advanced stealth with custom Chromium — requires Scale Plan (default: "false")
+BROWSERBASE_ADVANCED_STEALTH
+=
+false
+# Session reconnection after disconnects — requires paid plan (default: "true")
+BROWSERBASE_KEEP_ALIVE
+=
+true
+# Custom session timeout in milliseconds (default: project default)
+# Examples: 600000 (10min), 1800000 (30min)
+BROWSERBASE_SESSION_TIMEOUT
+=
+600000
+# Inactivity timeout before auto-cleanup in seconds (default: 120)
+BROWSER_INACTIVITY_TIMEOUT
+=
+120
+
+Install agent-browser CLI
+​
+
+npm
+
+install
+
+-g
+ agent-browser
+# Or install locally in the repo:
+npm
+
+install
+
+info
+The 
+browser
+ toolset must be included in your config's 
+toolsets
+ list or enabled via 
+hermes config set toolsets '["hermes-cli", "browser"]'
+.
+
+Available Tools
+​
+
+browser_navigate
+​
+
+Navigate to a URL. Must be called before any other browser tool. Initializes the Browserbase session.
+
+Navigate to https://github.com/NousResearch
+
+tip
+For simple information retrieval, prefer 
+web_search
+ or 
+web_extract
+ — they are faster and cheaper. Use browser tools when you need to 
+interact
+ with a page (click buttons, fill forms, handle dynamic content).
+
+browser_snapshot
+​
+
+Get a text-based snapshot of the current page's accessibility tree. Returns interactive elements with ref IDs like 
+@e1
+, 
+@e2
+ for use with 
+browser_click
+ and 
+browser_type
+.
+
+full=false
+ (default): Compact view showing only interactive elements
+
+full=true
+: Complete page content
+
+Snapshots over 8000 characters are automatically summarized by an LLM.
+
+browser_click
+​
+
+Click an element identified by its ref ID from the snapshot.
+
+Click @e5 to press the "Sign In" button
+
+browser_type
+​
+
+Type text into an input field. Clears the field first, then types the new text.
+
+Type "hermes agent" into the search field @e3
+
+browser_scroll
+​
+
+Scroll the page up or down to reveal more content.
+
+Scroll down to see more results
+
+browser_press
+​
+
+Press a keyboard key. Useful for submitting forms or navigation.
+
+Press Enter to submit the form
+
+Supported keys: 
+Enter
+, 
+Tab
+, 
+Escape
+, 
+ArrowDown
+, 
+ArrowUp
+, and more.
+
+browser_back
+​
+
+Navigate back to the previous page in browser history.
+
+browser_get_images
+​
+
+List all images on the current page with their URLs and alt text. Useful for finding images to analyze.
+
+browser_vision
+​
+
+Take a screenshot and analyze it with vision AI. Use this when text snapshots don't capture important visual information — especially useful for CAPTCHAs, complex layouts, or visual verification challenges.
+
+The screenshot is saved persistently and the file path is returned alongside the AI analysis. On messaging platforms (Telegram, Discord, Slack, WhatsApp), you can ask the agent to share the screenshot — it will be sent as a native photo attachment via the 
+MEDIA:
+ mechanism.
+
+What does the chart on this page show?
+
+Screenshots are stored in 
+~/.hermes/cache/screenshots/
+ and automatically cleaned up after 24 hours.
+
+browser_console
+​
+
+Get browser console output (log/warn/error messages) and uncaught JavaScript exceptions from the current page. Essential for detecting silent JS errors that don't appear in the accessibility tree.
+
+Check the browser console for any JavaScript errors
+
+Use 
+clear=True
+ to clear the console after reading, so subsequent calls only show new messages.
+
+browser_cdp
+​
+
+Raw Chrome DevTools Protocol passthrough — the escape hatch for browser operations not covered by the other tools. Use for native dialog handling, iframe-scoped evaluation, cookie/network control, or any CDP verb the agent needs.
+
+Only available when a CDP endpoint is reachable at session start
+ — meaning 
+/browser connect
+ has attached to a running Chrome, or 
+browser.cdp_url
+ is set in 
+config.yaml
+. The default local agent-browser mode, Camofox, and cloud providers (Browserbase, Browser Use, Firecrawl) do not currently expose CDP to this tool — cloud providers have per-session CDP URLs but live-session routing is a follow-up.
+
+CDP method reference:
+
+https://chromedevtools.github.io/devtools-protocol/
+ — the agent can 
+web_extract
+ a specific method's page to look up parameters and return shape.
+
+Common patterns:
+
+# List tabs (browser-level, no target_id)
+browser_cdp(method="Target.getTargets")
+# Handle a native JS dialog on a tab
+browser_cdp(method="Page.handleJavaScriptDialog",
+ params={"accept": true, "promptText": ""},
+ target_id="<tabId>")
+# Evaluate JS in a specific tab
+browser_cdp(method="Runtime.evaluate",
+ params={"expression": "document.title", "returnByValue": true},
+ target_id="<tabId>")
+# Get all cookies
+browser_cdp(method="Network.getAllCookies")
+
+Browser-level methods (
+Target.*
+, 
+Browser.*
+, 
+Storage.*
+) omit 
+target_id
+. Page-level methods (
+Page.*
+, 
+Runtime.*
+, 
+DOM.*
+, 
+Emulation.*
+) require a 
+target_id
+ from 
+Target.getTargets
+. Each stateless call is independent — sessions do not persist between calls.
+
+Cross-origin iframes:
+ pass 
+frame_id
+ (from 
+browser_snapshot.frame_tree.children[]
+ where 
+is_oopif=true
+) to route the CDP call through the supervisor's live session for that iframe. This is how 
+Runtime.evaluate
+ inside a cross-origin iframe works on Browserbase, where stateless CDP connections would hit signed-URL expiry. Example:
+
+browser_cdp(
+ method="Runtime.evaluate",
+ params={"expression": "document.title", "returnByValue": True},
+ frame_id="<frame_id from browser_snapshot>",
+)
+
+Same-origin iframes don't need 
+frame_id
+ — use 
+document.querySelector('iframe').contentDocument
+ from a top-level 
+Runtime.evaluate
+ instead.
+
+browser_dialog
+​
+
+Responds to a native JS dialog (
+alert
+ / 
+confirm
+ / 
+prompt
+ / 
+beforeunload
+). Before this tool existed, dialogs would silently block the page's JavaScript thread and subsequent 
+browser_*
+ calls would hang or throw; now the agent sees pending dialogs in 
+browser_snapshot
+ output and responds explicitly.
+
+Workflow:
+
+Call 
+browser_snapshot
+. If a dialog is blocking the page, it shows up as 
+pending_dialogs: [{"id": "d-1", "type": "alert", "message": "..."}]
+.
+
+Call 
+browser_dialog(action="accept")
+ or 
+browser_dialog(action="dismiss")
+. For 
+prompt()
+ dialogs, pass 
+prompt_text="..."
+ to supply the response.
+
+Re-snapshot — 
+pending_dialogs
+ is empty; the page's JS thread has resumed.
+
+Detection happens automatically
+ via a persistent CDP supervisor — one WebSocket per task that subscribes to Page/Runtime/Target events. The supervisor also populates a 
+frame_tree
+ field in the snapshot so the agent can see the iframe structure of the current page, including cross-origin (OOPIF) iframes.
+
+Availability matrix:
+
+Backend
+Detection via 
+pending_dialogs
+Response (
+browser_dialog
+ tool)
+Local Chrome via 
+/browser connect
+ or 
+browser.cdp_url
+✓
+✓ full workflow
+Browserbase
+✓
+✓ full workflow (via injected XHR bridge)
+Camofox / default local agent-browser
+✗
+✗ (no CDP endpoint)
+
+How it works on Browserbase.
+ Browserbase's CDP proxy auto-dismisses real native dialogs server-side within ~10ms, so we can't use 
+Page.handleJavaScriptDialog
+. The supervisor injects a small script via 
+Page.addScriptToEvaluateOnNewDocument
+ that overrides 
+window.alert
+/
+confirm
+/
+prompt
+ with a synchronous XHR. We intercept those XHRs via 
+Fetch.enable
+ — the page's JS thread stays blocked on the XHR until we call 
+Fetch.fulfillRequest
+ with the agent's response. 
+prompt()
+ return values round-trip back into page JS unchanged.
+
+Dialog policy
+ is configured in 
+config.yaml
+ under 
+browser.dialog_policy
+:
+
+Policy
+Behavior
+must_respond
+ (default)
+Capture, surface in snapshot, wait for explicit 
+browser_dialog()
+ call. Safety auto-dismiss after 
+browser.dialog_timeout_s
+ (default 300s) so a buggy agent can't stall forever.
+auto_dismiss
+Capture, dismiss immediately. Agent still sees the dialog in 
+browser_state
+ history but doesn't have to act.
+auto_accept
+Capture, accept immediately. Useful when navigating pages with aggressive 
+beforeunload
+ prompts.
+
+Frame tree
+ inside 
+browser_snapshot.frame_tree
+ is capped to 30 frames and OOPIF depth 2 to keep payloads bounded on ad-heavy pages. A 
+truncated: true
+ flag surfaces when limits were hit; agents needing the full tree can use 
+browser_cdp
+ with 
+Page.getFrameTree
+.
+
+Practical Examples
+​
+
+Filling Out a Web Form
+​
+
+User: Sign up for an account on example.com with my email john@example.com
+Agent workflow:
+1. browser_navigate("https://example.com/signup")
+2. browser_snapshot() → sees form fields with refs
+3. browser_type(ref="@e3", text="john@example.com")
+4. browser_type(ref="@e5", text="SecurePass123")
+5. browser_click(ref="@e8") → clicks "Create Account"
+6. browser_snapshot() → confirms success
+
+Researching Dynamic Content
+​
+
+User: What are the top trending repos on GitHub right now?
+Agent workflow:
+1. browser_navigate("https://github.com/trending")
+2. browser_snapshot(full=true) → reads trending repo list
+3. Returns formatted results
+
+Session Recording
+​
+
+Automatically record browser sessions as WebM video files:
+
+browser
+:
+
+record_sessions
+:
+
+true
+
+# default: false
+
+When enabled, recording starts automatically on the first 
+browser_navigate
+ and saves to 
+~/.hermes/browser_recordings/
+ when the session closes. Works in both local and cloud (Browserbase) modes. Recordings older than 72 hours are automatically cleaned up.
+
+Stealth Features
+​
+
+Browserbase provides automatic stealth capabilities:
+
+Feature
+Default
+Notes
+Basic Stealth
+Always on
+Random fingerprints, viewport randomization, CAPTCHA solving
+Residential Proxies
+On
+Routes through residential IPs for better access
+Advanced Stealth
+Off
+Custom Chromium build, requires Scale Plan
+Keep Alive
+On
+Session reconnection after network hiccups
+
+note
+If paid features aren't available on your plan, Hermes automatically falls back — first disabling 
+keepAlive
+, then proxies — so browsing still works on free plans.
+
+Session Management
+​
+
+Each task gets an isolated browser session via Browserbase
+
+Sessions are automatically cleaned up after inactivity (default: 2 minutes)
+
+A background thread checks every 30 seconds for stale sessions
+
+Emergency cleanup runs on process exit to prevent orphaned sessions
+
+Sessions are released via the Browserbase API (
+REQUEST_RELEASE
+ status)
+
+Limitations
+​
+
+Text-based interaction
+ — relies on accessibility tree, not pixel coordinates
+
+Snapshot size
+ — large pages may be truncated or LLM-summarized at 8000 characters
+
+Session timeout
+ — cloud sessions expire based on your provider's plan settings
+
+Cost
+ — cloud sessions consume provider credits; sessions are automatically cleaned up when the conversation ends or after inactivity. Use 
+/browser connect
+ for free local browsing.
+
+No file downloads
+ — cannot download files from the browser
+========================================
+CODE_BLOCKS:
+# Add to ~/.hermes/.envBROWSERBASE_API_KEY=***BROWSERBASE_PROJECT_ID=your-project-id-here
+
+# Add to ~/.hermes/.envBROWSER_USE_API_KEY=***
+
+# Add to ~/.hermes/.envFIRECRAWL_API_KEY=fc-***
+
+hermes setup tools# → Browser Automation → Firecrawl
+
+# Self-hosted Firecrawl instance (default: https://api.firecrawl.dev)FIRECRAWL_API_URL=http://localhost:3002# Session TTL in seconds (default: 300)FIRECRAWL_BROWSER_TTL=600
+
+# ~/.hermes/config.yamlbrowser:  cloud_provider: browserbase  auto_local_for_private_urls: false
+
+# Clone the Camofox browser server firstgit clone https://github.com/jo-inc/camofox-browsercd camofox-browser# Build and start with Docker using the default container settings# (auto-detects arch: aarch64 on M1/M2, x86_64 on Intel)make up# Stop and remove the default containermake down# Force a clean rebuild (for example, after upgrading VERSION/RELEASE)make reset# Just download binaries without buildingmake fetch# Override arch or version explicitlymake up ARCH=x86_64make up VERSION=135.0.1 REL
+
+# Build the image without starting the default containermake build# Start with persistence, VNC live view, and a larger Node heapmkdir -p ~/.camofox-dockerdocker run -d \  --name camofox-browser \  --restart unless-stopped \  -p 9377:9377 \  -p 6080:6080 \  -p 5901:5900 \  -e CAMOFOX_PORT=9377 \  -e ENABLE_VNC=1 \  -e VNC_BIND=0.0.0.0 \  -e VNC_RESOLUTION=1920x1080 \  -e MAX_OLD_SPACE_SIZE=2048 \  -v ~/.camofox-docker:/root/.camofox \  camofox-browser:135.0.1-aarch64
+
+make down# then run the custom docker run command above
+
+CAMOFOX_URL=http://localhost:9377
+
+browser:  camofox:    managed_persistence: true
+
+# ❌ Wrong — Hermes ignores thismanaged_persistence: true
+
+/browser connect              # Connect to Chrome at ws://localhost:9222/browser connect ws://host:port  # Connect to a specific CDP endpoint/browser status               # Check current connection/browser disconnect            # Detach and return to cloud/local mode
+
+# Linuxgoogle-chrome \  --remote-debugging-port=9222 \  --user-data-dir=$HOME/.hermes/chrome-debug \  --no-first-run \  --no-default-browser-check &# macOS"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \  --remote-debugging-port=9222 \  --user-data-dir="$HOME/.hermes/chrome-debug" \  --no-first-run \  --no-default-browser-check &
+
+# Residential proxies for better CAPTCHA solving (default: "true")BROWSERBASE_PROXIES=true# Advanced stealth with custom Chromium — requires Scale Plan (default: "false")BROWSERBASE_ADVANCED_STEALTH=false# Session reconnection after disconnects — requires paid plan (default: "true")BROWSERBASE_KEEP_ALIVE=true# Custom session timeout in milliseconds (default: project default)# Examples: 600000 (10min), 1800000 (30min)BROWSERBASE_SESSION_TIMEOUT=600000# Inactivity timeout before auto-cleanup in se
+
+npm install -g agent-browser# Or install locally in the repo:npm install
+
+Navigate to https://github.com/NousResearch
+
+Click @e5 to press the "Sign In" button
+
+Type "hermes agent" into the search field @e3
+
+Scroll down to see more results
+
+Press Enter to submit the form
+
+What does the chart on this page show?
+
+Check the browser console for any JavaScript errors
+
+# List tabs (browser-level, no target_id)browser_cdp(method="Target.getTargets")# Handle a native JS dialog on a tabbrowser_cdp(method="Page.handleJavaScriptDialog",            params={"accept": true, "promptText": ""},            target_id="<tabId>")# Evaluate JS in a specific tabbrowser_cdp(method="Runtime.evaluate",            params={"expression": "document.title", "returnByValue": true},            target_id="<tabId>")# Get all cookiesbrowser_cdp(method="Network.getAllCookies")
+
+browser_cdp(  method="Runtime.evaluate",  params={"expression": "document.title", "returnByValue": True},  frame_id="<frame_id from browser_snapshot>",)
+
+User: Sign up for an account on example.com with my email john@example.comAgent workflow:1. browser_navigate("https://example.com/signup")2. browser_snapshot()  → sees form fields with refs3. browser_type(ref="@e3", text="john@example.com")4. browser_type(ref="@e5", text="SecurePass123")5. browser_click(ref="@e8")  → clicks "Create Account"6. browser_snapshot()  → confirms success
+
+User: What are the top trending repos on GitHub right now?Agent workflow:1. browser_navigate("https://github.com/trending")2. browser_snapshot(full=true)  → reads trending repo list3. Returns formatted results
+
+browser:  record_sessions: true  # default: false
+================================================================================
+

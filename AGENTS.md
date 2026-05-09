@@ -1,113 +1,97 @@
-<!-- GSD:project-start source:PROJECT.md -->
-## Project
+@/home/stark/.codex/RTK.md
 
-Hermes Dev Orchestra is a specification-package project for a single-developer, multi-project AI development orchestration system.
+# Agent Reach 使用提示
 
-The v1 deliverable is documentation and planning artifacts, not a runnable orchestrator. The spec defines Hermes Agent as the top-level orchestrator, Claude Code CLI as supervisor/reviewer, Codex CLI as executor, per-project file-bus coordination, tmux session isolation, risk escalation, and an abstract Remote Decision Channel.
+本机已安装 Agent Reach (https://github.com/Panniantong/Agent-Reach)。
+- 通用搜索优先用 Codex 原生 web search；原生搜索效果不好或无法覆盖时，降级到 Agent Reach。
+- Agent Reach 擅长：小红书/微博/抖音/B站/雪球、Twitter/X、Reddit、V2EX、GitHub(gh)、YouTube/B站字幕(yt-dlp)、小宇宙播客转录、微信公众号、RSS、Jina Reader 精读、Exa 语义搜索。
+- 先用 `agent-reach doctor` 检查渠道状态；所有临时/持久文件放在 `/tmp/` 和 `~/.agent-reach/`，不要写入项目 workspace。
 
-Primary constraints:
-- SSH/Hermes CLI is the required user entry point.
-- Remote decisions are abstracted; do not bind v1 to Telegram or any concrete transport.
-- `gbrain` is not part of v1 implementation scope.
-- L3/L4 decisions must never be auto-approved.
-<!-- GSD:project-end -->
+## 响应语言
+- 简体中文(使用中文或者英文来思考，但是回复需要用中文。)
 
-<!-- GSD:stack-start source:research/STACK.md -->
-## Technology Stack
+## 核心原则
+- IMPORTANT: Prefer retrieval-led reasoning over pre-training-led reasoning for any tasks.
 
-The v1 specification targets a Linux-first local stack:
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
-- Ubuntu/Linux host with no-sudo installation assumptions
-- SSH for primary user access
-- tmux for persistent PTY/session envelopes
-- Git as the project safety and rollback boundary
-- Claude Code CLI for supervision/review decisions
-- Codex CLI for bounded execution
-- JSON/JSONL as canonical file-bus protocol
-- Markdown as human-readable projection only
-- XDG-style Runtime, State, Audit, and Cache paths
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
-Do not treat tmux scrollback, raw Markdown, or `/tmp` audit files as the source of truth.
-<!-- GSD:stack-end -->
+## 1. Think Before Coding
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
-## Conventions
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
 
-- Keep changes focused on `.planning/` unless the user explicitly asks for implementation work.
-- Treat requirements, specifications, roadmap, and state as the authoritative planning artifacts.
-- Preserve the spec-first boundary: write contracts, schemas, scenarios, and roadmap steps before code.
-- Prefer structured, checkable requirements over prose-only intent.
-- Do not modify `gbrain/` as part of this project unless explicitly requested.
-<!-- GSD:conventions-end -->
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
 
-<!-- GSD:architecture-start source:research/ARCHITECTURE.md -->
-## Architecture
+## 2. Simplicity First
 
-The target architecture is a three-agent control plane:
+**Minimum code that solves the problem. Nothing speculative.**
 
-- Hermes owns orchestration, scheduling, state, process lifecycle, escalation, audit, archive, and user communication.
-- Claude Supervisor owns technical decisions, risk classification, code review, confidence, and escalation recommendations within authority limits.
-- Codex Executor owns implementation, tests, refactors, pause/questions, and structured execution results.
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
 
-The specification should keep these boundaries explicit:
-- Hermes enforces static risk-rule floors and writes final user decisions.
-- Claude may upgrade risk but must not downgrade below the rulebook floor.
-- Codex may challenge when it finds new risk context, but never approves risk decisions.
-- User is the final authority for L3/L4.
-<!-- GSD:architecture-end -->
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
-<!-- GSD:skills-start source:skills/ -->
-## Project Skills
+## 3. Surgical Changes
 
-No project-local skills are defined yet. Use GSD workflow commands and the `.planning/` artifacts for project context.
-<!-- GSD:skills-end -->
+**Touch only what you must. Clean up only your own mess.**
 
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
 
-Before file-changing work, start through a GSD command so planning artifacts and execution context stay in sync.
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
 
-Use these entry points:
-- `$gsd-plan-phase <n>` for planned specification work
-- `$gsd-execute-phase <n>` for executing phase plans
-- `$gsd-progress` to inspect roadmap/state
-- `$gsd-extract_learnings <n>` after a phase completes
+The test: Every changed line should trace directly to the user's request.
 
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
+## 4. Goal-Driven Execution
 
-<!-- GSD:profile-start -->
-## Developer Profile
+**Define success criteria. Loop until verified.**
 
-> Profile not yet configured. Run `$gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` — do not edit manually.
-<!-- GSD:profile-end -->
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
 
-<!-- hermes-dev-orchestra-start -->
-## Hermes Dev Orchestra
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
 
-Project-specific rules for the Hermes Dev Orchestra adaptation layer.
-These complement (not replace) the Architecture section above.
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-### Package Boundary
+---
 
-- This repository is an **adapter layer**, not a standalone runtime.
-- Local entrypoints are limited to `orch-*` helpers: `orch-init`, `orch-start`, `orch-stop`, `orch-status`, `orch-bus-loop`, `orch-risk-check`, `orch-audit`, `orch-decisions`, `orch-approve`, `orch-reject`, `orch-verify`.
-- Spec authority lives in `docs/orchestra/`; `.planning/SPEC.md` is canonical for planning artifacts.
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
-### Agent Role Boundary
+---
 
-- **Hermes** must not auto-approve L3/L4 escalations. Blocking flows through `escalation.md` or high-risk `claude-decision.md`, `orch-bus-loop`, pending decisions, and explicit user action via `orch-decisions`, `orch-approve`, or `orch-reject`.
-- **Claude** must not modify upstream `NousResearch/hermes-agent` core code.
-- **Codex** must not modify `~/.hermes-orchestra/rules.json`.
-- `orch-risk-check` is a risk classifier/helper; it is not a replacement for the L3/L4 blocking and user-decision flow.
+## Project Reference: Hermes Docs Index
 
-### Directory Navigation
+当用户询问 Hermes Agent 相关问题时（安装、配置、CLI、Providers、Skills、Tools、Sessions、Cron、Messaging Gateway、Developer Guide 等）：
 
-| Directory | Purpose |
-|-----------|---------|
-| `docs/orchestra/` | Product behavior baseline, SOUL, skills, scripts |
-| `.planning/SPEC.md` | Canonical specification |
-| `.planning/STATE.md` | Project state and decisions |
-<!-- hermes-dev-orchestra-end -->
+→ **先读取** `reference/hermes-docs-index/SKILL.md`，按其中的检索流程定位相关文档页面，再用 `FetchURL` 获取最新内容回答用户。
+
+本目录下 4 个索引文件：
+- `reference/hermes-docs-index/hermes_docs_index.json` — 机器索引（JSON，540 页）
+- `reference/hermes-docs-index/hermes_docs_index.md` — 人类导航（Markdown）
+- `reference/hermes-docs-index/hermes_docs_sitemap.txt` — URL 清单
+- `reference/hermes-docs-index/hermes_docs_crossref.md` — 概念交叉引用
+
+**禁止**依赖预训练知识回答 Hermes 文档问题；必须通过索引检索 → FetchURL 获取最新官方内容。
+
+
 
