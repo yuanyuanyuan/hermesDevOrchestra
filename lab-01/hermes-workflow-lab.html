@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes 多项目 AI 开发工作流 — 交互实验室</title>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        surface: '#161b22',
+        border: '#30363d',
+      }
+    }
+  }
+}
+</script>
+<style>
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  [x-cloak] { display: none !important; }
+  .role-pm { color: #60a5fa; }
+  .role-orch { color: #c084fc; }
+  .role-impl { color: #34d399; }
+  .role-rev { color: #fbbf24; }
+  .role-qa { color: #f472b6; }
+  .role-devops { color: #fb923c; }
+  .role-sre { color: #f87171; }
+  .role-research { color: #22d3ee; }
+  .status-triage { color: #9ca3af; }
+  .status-ready { color: #34d399; }
+  .status-running { color: #60a5fa; }
+  .status-blocked { color: #fbbf24; }
+  .status-done { color: #34d399; }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-200 font-mono h-screen flex flex-col overflow-hidden">
+
+<!-- ==================== CONFIG ==================== -->
+<script>
+const CONFIG = {
+  title: 'Hermes 多项目 AI 开发工作流',
+  subtitle: 'Phase 19 设计落地 — 端到端流程 / 风险拦截 / 架构总览',
+  tabs: ['端到端流程', '三级风险拦截', '架构总览'],
+  panelLabels: ['流程视图', '上下文面板'],
+  // 统一 steps，通过 step.tab 字段区分归属，引擎用 filter 取当前 tab 的步骤
+  steps: [
+    // ===== Tab 0: 端到端流程（Phase 1-6）=====
+    { tab: 0, codeLine: -1,
+      flow: '<div class="text-gray-400">等待需求提交...</div>',
+      context: '<div class="text-gray-500">Jacky（一人公司 CEO）管理 5-6 个项目，同时运行多个 Kanban Board</div>',
+      explain: '场景设定：Project Alpha — Rust + Axum + PostgreSQL。用户反馈"每次重启浏览器都要重新登录"' },
+    { tab: 0, codeLine: 0,
+      flow: '<div><span class="role-pm font-bold">PM</span> 被唤醒 → 读取 AGENTS.md → 技术发现</div><div class="mt-2 text-gray-400 text-xs">按需深入：Cargo.toml → src/routes/users.rs:45-72 → src/middleware/mod.rs:8-15</div><div class="mt-1 text-emerald-400 text-xs">输出：8 项代码证据，具体到文件:行号</div>',
+      context: '<div class="text-gray-300">PM profile 职责：需求澄清、技术研判、任务拆解</div><div class="mt-1 text-gray-500 text-xs">Toolsets: kanban, memory, clarify, file_read</div>',
+      explain: 'Phase 1 第1步：自动技术发现。从入口出发，按需深入，输出含代码证据的技术发现报告' },
+    { tab: 0, codeLine: 1,
+      flow: '<div><span class="role-pm font-bold">PM</span> 执行一次一问逐步收缩澄清（Q1→Q11）</div><div class="mt-2 grid grid-cols-2 gap-2 text-xs text-gray-400"><div>Q1 核心目标 → "7天免登录"</div><div>Q2 用户群体 → "外部客户"</div><div>Q3 时间压力 → "1-2周"</div><div>Q4 登录方式 → "邮箱+密码"</div><div>Q5 处理方式 → "替换session"</div><div>Q6 过期交互 → "静默刷新"</div></div>',
+      context: '<div class="text-amber-400">⭐ 推荐标签 + 大白话理由 + "其他"选项</div><div class="mt-1 text-gray-500 text-xs">若选"其他"→追加一轮细化；收敛上限防止无限澄清</div>',
+      explain: 'Phase 1 第2步：动态顺序一次一问。每个问题带推荐标签和大白话理由，逐步收缩不确定性' },
+    { tab: 0, codeLine: 2,
+      flow: '<div><span class="role-pm font-bold">PM</span> 可行性检查 → 发现冲突 → 主动沟通</div><div class="mt-2 text-red-400 text-xs">冲突：范围(完整认证+密码重置) vs 时间(本周) = 不可行</div><div class="mt-1 text-emerald-400 text-xs">解决：Jacky 选择缩小范围 → 冲突消除</div>',
+      context: '<div class="text-gray-300">持续可行性检查 + 冲突沟通 + 阻塞升级</div><div class="mt-1 text-gray-500 text-xs">所有判断必须有代码证据，任何角色可无歧义理解</div>',
+      explain: 'Phase 1 第3步：可行性检查。需求 vs 代码现实的冲突必须主动沟通，不能沉默执行' },
+    { tab: 0, codeLine: 3,
+      flow: '<div><span class="role-pm font-bold">PM</span> 判断：涉及从未用过的 JWT 技术栈 → 需要 Research</div><div class="mt-2 text-xs text-gray-400">创建 T0.1: JWT 技术方案调研 → assignee: <span class="role-research font-bold">researcher</span></div>',
+      context: '<div class="text-gray-300">Researcher profile：只分析不写代码</div><div class="mt-1 text-gray-500 text-xs">Toolsets: file_read, web, clarify, kanban, memory</div>',
+      explain: 'Phase 1.5：技术研判（Research + POC）。技术不确定性高时，先调研产出方案文档，再 POC 验证' },
+    { tab: 0, codeLine: 4,
+      flow: '<div><span class="role-research font-bold">Researcher</span> 产出技术方案 → <span class="role-pm font-bold">PM</span> 判断需要 POC</div><div class="mt-2 text-xs text-gray-400">创建 T0.2: JWT RS256 POC 验证 → assignee: <span class="role-impl font-bold">implementer</span></div><div class="mt-1 text-cyan-400 text-xs">POC worktree: .worktrees/poc-jwt-rs256</div>',
+      context: '<div class="text-gray-300">Implementer 在独立 worktree 中验证技术可行性</div><div class="mt-1 text-gray-500 text-xs">POC 成功 → 正式实现；POC 失败 → block + 换方案 / 升级用户 / 放弃</div>',
+      explain: 'POC 在隔离 worktree 执行，不影响主分支。POC 失败的风险必须文档化并升级' },
+    { tab: 0, codeLine: 5,
+      flow: '<div><span class="role-pm font-bold">PM</span> 读取需求文档 + 技术方案 → 拆解为 4 个子任务</div><div class="mt-2 grid grid-cols-2 gap-2 text-xs"><div class="text-gray-300">T1 → <span class="role-impl font-bold">implementer</span>: 实现 JWT 模块</div><div class="text-gray-300">T2 → <span class="role-impl font-bold">implementer</span>: 编写测试</div><div class="text-gray-300">T3 → <span class="role-rev font-bold">reviewer</span>: 审查代码</div><div class="text-gray-300">T4 → <span class="role-impl font-bold">implementer</span>: 修复问题</div></div><div class="mt-1 text-gray-500 text-xs">依赖链: T1 → (T2 ∥ T3) → T4</div>',
+      context: '<div class="text-gray-300">Orchestrator 接管：按状态机路由表派发任务</div><div class="mt-1 text-gray-500 text-xs">所有通信经由 Orchestrator 中转，支持审计追踪</div>',
+      explain: 'Phase 2：任务拆解 + 派发。PM 拆解，Orchestrator 按状态机路由表自动派发' },
+    { tab: 0, codeLine: 6,
+      flow: '<div><span class="role-impl font-bold">Implementer</span> TDD 强制流程（RED→GREEN）</div><div class="mt-2 text-xs text-gray-400">1. 基线检查: cargo test --lib → 必须通过</div><div class="text-xs text-gray-400">2. 行为 A RED: test_valid_login → 失败</div><div class="text-xs text-gray-400">3. 行为 A GREEN: 最简实现 → 通过</div><div class="text-xs text-gray-400">4. 行为 B/C 同理...</div><div class="text-xs text-gray-400">5. 全量回归: 15/15 passed</div>',
+      context: '<div class="text-gray-300">Implementer SOUL.md 规则：</div><div class="mt-1 text-xs text-gray-400">- 不做架构决策 → 必须 kanban_block</div><div class="text-xs text-gray-400">- 只执行编码，不做选型判断</div><div class="text-xs text-gray-400">- 每个行为必须有 RED→GREEN 证据</div>',
+      explain: 'Phase 3：TDD 强制编码。从验收标准推导行为清单，每个行为执行严格的 RED→GREEN 循环' },
+    { tab: 0, codeLine: 7,
+      flow: '<div>T1 done → T2 / T3 并行 promoted to ready</div><div class="mt-2 text-xs"><span class="role-rev font-bold">Reviewer</span> 审查发现 1 个 high 严重级问题：</div><div class="mt-1 text-red-400 text-xs">src/auth/jwt.rs: token 过期时间硬编码，应可配置</div><div class="mt-1 text-amber-400 text-xs">approved: false → 进入 T4 修复流程</div>',
+      context: '<div class="text-gray-300">Reviewer 硬门禁 + 严格只读</div><div class="mt-1 text-xs text-gray-400">- Toolsets 白名单：file_read, kanban_read, kanban_block...</div><div class="text-xs text-gray-400">- terminal 写操作被技术性拦截（dry-run）</div><div class="text-xs text-gray-400">- 审查不通过 → 代码无法进入下游</div>',
+      explain: 'Phase 4：并行测试 + 审查。Reviewer 是硬门禁，审查不通过则阻断流程。Reviewer 只能报告问题，不能自行修复' },
+    { tab: 0, codeLine: 8,
+      flow: '<div><span class="role-impl font-bold">Implementer</span> 读取 Reviewer handoff → TDD 修复</div><div class="mt-2 text-xs text-gray-400">RED: test_token_expiry_is_configurable → 失败</div><div class="text-xs text-gray-400">GREEN: 改为环境变量配置 → 通过</div><div class="mt-2 text-emerald-400 text-xs">回归: 15/15 passed</div>',
+      context: '<div class="text-gray-300">修复后自我进化：</div><div class="mt-1 text-xs text-cyan-400">memory add: "JWT token 过期时间应可配置"</div><div class="text-xs text-purple-400">skill_manage create: jwt-auth-checklist</div>',
+      explain: 'Phase 5：修复 + 自我进化。经验自动沉淀为 memory 和 skill，进入三层架构的知识资产管理' },
+    { tab: 0, codeLine: 9,
+      flow: '<div><span class="role-devops font-bold">DevOps</span> 三层部署：dev/test → staging → production</div><div class="mt-2 grid grid-cols-3 gap-2 text-xs"><div class="text-emerald-400">✅ dev/test 自动部署</div><div class="text-amber-400">⏸ staging 需用户批准</div><div class="text-amber-400">⏸ production 需 UAT 通过后批准</div></div>',
+      context: '<div class="text-gray-300">部署验证门控：</div><div class="mt-1 text-xs text-gray-400">dev/test → staging: 测试 + E2E + 性能基准</div><div class="text-xs text-gray-400">staging → production: 测试 + E2E（无性能）</div><div class="text-xs text-gray-400">production: 冒烟测试 + 自动 git tag</div>',
+      explain: 'Phase 5.6：三层环境部署。dev/test 自动，staging/production 必须用户显式批准，每层有验证门控和自动回滚' },
+    { tab: 0, codeLine: 10,
+      flow: '<div class="text-emerald-400 text-lg font-bold">Project Alpha 全部任务完成 ✅</div><div class="mt-2 text-xs text-gray-300">变更: src/auth/jwt.rs, src/auth/routes.rs, config/default.toml</div><div class="text-xs text-gray-300">测试: 15/15 通过 | 经验: 2 条 memory, 1 个新 skill</div><div class="mt-2 text-xs text-gray-500">Jacky 审核决策 → 合并到 main → 最终反思</div>',
+      context: '<div class="text-gray-300">Orchestrator 汇总完成 → Gateway 推送通知用户</div><div class="mt-1 text-gray-500 text-xs">用户确认后代码合并到 main，任务归档</div>',
+      explain: 'Phase 6：完成通知 + 用户审核决策。Jacky 作为最终仲裁者，确认合并与发布' },
+
+    // ===== Tab 1: 三级风险拦截 =====
+    { tab: 1, codeLine: -1,
+      flow: '<div class="text-gray-400">Risk Policy Engine 三层纵深拦截机制</div><div class="mt-2 grid grid-cols-3 gap-3 text-xs"><div class="bg-gray-900 border border-gray-700 rounded p-2"><div class="text-emerald-400 font-bold mb-1">L1 · Worker 自行决定</div><div class="text-gray-400">代码实现细节、变量命名</div><div class="text-gray-500 mt-1">直接执行 · 秒级</div></div><div class="bg-gray-900 border border-gray-700 rounded p-2"><div class="text-amber-400 font-bold mb-1">L2 · Reviewer 决策</div><div class="text-gray-400">技术方案、API 设计</div><div class="text-gray-500 mt-1">kanban_block → 秒~分钟</div></div><div class="bg-gray-900 border border-gray-700 rounded p-2"><div class="text-red-400 font-bold mb-1">L3 · 用户决策</div><div class="text-gray-400">安全凭证、破坏性重构、产品方向</div><div class="text-gray-500 mt-1">clarify() · 分钟~小时</div></div></div>',
+      context: '<div class="text-gray-300">三层实现：</div><div class="mt-1 text-xs text-gray-400">1. Toolsets 白名单（主防线）</div><div class="text-xs text-gray-400">2. SOUL.md 软约束（LLM 级）</div><div class="text-xs text-gray-400">3. Plugin pre_tool_call 硬拦截（Plugin 级）</div>',
+      explain: '声明式风险策略引擎：policies/risk.yaml 按 pattern 匹配将命令归入 L1/L2/L3' },
+    { tab: 1, codeLine: 0,
+      flow: '<div><span class="role-impl font-bold">Implementer</span> 执行 L1 操作：变量重命名</div><div class="mt-2 text-xs text-gray-400">pattern: "变量重命名" → level: L1</div><div class="mt-1 text-emerald-400 text-xs">→ 直接执行，无需审批</div>',
+      context: '<div class="text-gray-300">L1 决策：Worker 自行决定</div><div class="mt-1 text-gray-500 text-xs">低影响、可回退的操作，由 Worker 根据 SOUL.md 规则直接判断</div>',
+      explain: 'L1 场景：代码实现细节、变量命名、注释补充等低风险操作' },
+    { tab: 1, codeLine: 1,
+      flow: '<div><span class="role-impl font-bold">Implementer</span> 遇到技术选型：RS256 vs HS256?</div><div class="mt-2 text-xs text-gray-400">不在 task body 已明确，不在 risk policy 已规则化</div><div class="mt-1 text-amber-400 text-xs">→ kanban_block(reason="reviewer-needed: ...")</div>',
+      context: '<div class="text-gray-300">L2 决策：Reviewer 审查</div><div class="mt-1 text-gray-500 text-xs">Dispatcher 检测到 "reviewer-needed:" 前缀 → 自动创建高优先级 Reviewer 子任务</div>',
+      explain: 'L2 场景：技术方案、API 设计等需要专业判断但不涉及安全/破坏性变更的决策' },
+    { tab: 1, codeLine: 2,
+      flow: '<div><span class="role-impl font-bold">Implementer</span> 尝试执行：<span class="text-red-400 font-bold">git push --force</span></div><div class="mt-2 text-xs text-gray-400">Risk Policy: pattern "git push --force" → level: L3</div><div class="mt-1 bg-red-500/10 border border-red-500/30 rounded p-2 text-red-400 text-xs">❌ 命令被 Plugin pre_tool_call hook 硬拦截</div>',
+      context: '<div class="text-gray-300">L3 硬拦截流程：</div><div class="mt-1 text-xs text-gray-400">1. Plugin 拦截 → kanban_block()</div><div class="text-xs text-gray-400">2. Gateway 推送决策请求给用户</div><div class="text-xs text-gray-400">3. 用户通过 CLI/Gateway 响应</div><div class="text-xs text-gray-400">4. Dispatcher unblock 恢复 Worker</div>',
+      explain: 'L3 场景：安全凭证、破坏性重构、git push --force 等高风险操作，必须用户明确批准' },
+    { tab: 1, codeLine: 3,
+      flow: '<div><span class="role-rev font-bold">Reviewer</span> 尝试写操作：<span class="text-red-400 font-bold">rm test.txt</span></div><div class="mt-2 text-xs text-gray-400">Reviewer toolsets 白名单已禁用 file_write / terminal(写)</div><div class="mt-1 text-amber-400 text-xs">→ 白名单层拦截：toolset 未 enable，直接失败</div><div class="mt-1 text-red-400 text-xs">→ R8 兜底：若白名单放行，Read-Only Terminal Proxy 技术性拦截</div>',
+      context: '<div class="text-gray-300">Reviewer 纵深防御体系：</div><div class="mt-1 text-xs text-gray-400">① Toolsets 白名单（主防线）</div><div class="text-xs text-gray-400">② SOUL.md "只读" prompt 约束（软约束）</div><div class="text-xs text-gray-400">③ R8 Terminal Proxy 技术性拦截（次防线）</div>',
+      explain: 'Reviewer 严格只读：三层防御确保 reviewer 无法修改代码，只能报告问题' },
+    { tab: 1, codeLine: 4,
+      flow: '<div>审计日志记录</div><div class="mt-2 bg-gray-900 border border-gray-700 rounded p-2 text-xs font-mono"><div class="text-gray-500">[2026-05-10T14:32:01Z]</div><div class="text-red-400">L3_INTERCEPTED task=t_042 profile=implementer</div><div class="text-gray-400">  pattern="git push --force"</div><div class="text-gray-400">  command="git push --force origin main"</div><div class="text-amber-400">  action=kanban_block rule_id=R6-L3-003</div><div class="mt-1 text-emerald-400">[2026-05-10T14:35:22Z] USER_APPROVED by=jacky</div></div>',
+      context: '<div class="text-gray-300">所有拦截事件写入审计日志</div><div class="mt-1 text-gray-500 text-xs">L3 项目永远不允许超时自动通过（R6 强制）</div>',
+      explain: '审计追踪：Risk Policy Engine 记录完整的决策轨迹，支持事后溯源' },
+
+    // ===== Tab 2: 架构总览 =====
+    { tab: 2, codeLine: -1,
+      flow: '<div class="grid grid-cols-4 gap-3 text-xs"><div class="bg-gray-900 border border-blue-500/30 rounded p-2 text-center"><div class="role-pm font-bold text-sm">PM</div><div class="text-gray-500 mt-1">需求澄清</div><div class="text-gray-500">任务拆解</div></div><div class="bg-gray-900 border border-purple-500/30 rounded p-2 text-center"><div class="role-orch font-bold text-sm">Orchestrator</div><div class="text-gray-500 mt-1">中枢路由</div><div class="text-gray-500">进度监控</div></div><div class="bg-gray-900 border border-cyan-500/30 rounded p-2 text-center"><div class="role-research font-bold text-sm">Researcher</div><div class="text-gray-500 mt-1">技术调研</div><div class="text-gray-500">方案文档</div></div><div class="bg-gray-900 border border-emerald-500/30 rounded p-2 text-center"><div class="role-impl font-bold text-sm">Implementer</div><div class="text-gray-500 mt-1">TDD 编码</div><div class="text-gray-500">POC 验证</div></div><div class="bg-gray-900 border border-amber-500/30 rounded p-2 text-center"><div class="role-rev font-bold text-sm">Reviewer</div><div class="text-gray-500 mt-1">只读审查</div><div class="text-gray-500">硬门禁</div></div><div class="bg-gray-900 border border-pink-500/30 rounded p-2 text-center"><div class="role-qa font-bold text-sm">QA-Tester</div><div class="text-gray-500 mt-1">功能验收</div><div class="text-gray-500">集成测试</div></div><div class="bg-gray-900 border border-orange-500/30 rounded p-2 text-center"><div class="role-devops font-bold text-sm">DevOps</div><div class="text-gray-500 mt-1">三层部署</div><div class="text-gray-500">验证门控</div></div><div class="bg-gray-900 border border-red-500/30 rounded p-2 text-center"><div class="role-sre font-bold text-sm">SRE-Observer</div><div class="text-gray-500 mt-1">根因分析</div><div class="text-gray-500">人工触发</div></div></div>',
+      context: '<div class="text-gray-300">8 个标准角色（MVP 启用）</div><div class="mt-1 text-gray-500 text-xs">预留：pm-researcher, product-designer, growth-marketer（toolsets: []）</div>',
+      explain: '角色是抽象的，实现可替换。Profile = config.yaml + SOUL.md + skills/ + .env' },
+    { tab: 2, codeLine: 0,
+      flow: '<div>Kanban 状态机</div><div class="mt-2 flex items-center gap-2 text-xs"><span class="status-triage">triage</span><span class="text-gray-600">→</span><span class="text-gray-400">todo</span><span class="text-gray-600">→</span><span class="status-ready font-bold">ready</span><span class="text-gray-600">→</span><span class="status-running font-bold">running</span><span class="text-gray-600">→</span><span class="status-blocked font-bold">blocked</span><span class="text-gray-600">→</span><span class="status-done font-bold">done</span><span class="text-gray-600">→</span><span class="text-gray-500">archived</span></div><div class="mt-2 text-xs text-gray-400">Dispatcher 每 60s 循环：回收超时 claim → 回收崩溃 PID → promote parents → 原子 claim → spawn worker</div>',
+      context: '<div class="text-gray-300">每个项目一个 Board，完全隔离</div><div class="mt-1 text-gray-500 text-xs">独立 SQLite · 独立 workspace · 独立 dispatcher · 任务不可跨 board 引用</div>',
+      explain: 'Kanban 任务管理：状态机驱动任务生命周期，parents 依赖链自动管理任务就绪顺序' },
+    { tab: 2, codeLine: 1,
+      flow: '<div>背压感知任务准入（Backpressure）</div><div class="mt-2 text-xs text-gray-400">ratio = ready_implementer / max(ready_reviewer, 1)</div><div class="mt-2 grid grid-cols-3 gap-2 text-xs"><div class="bg-emerald-500/10 border border-emerald-500/30 rounded p-2"><div class="text-emerald-400 font-bold">ratio ≤ 2.0</div><div class="text-gray-400">正常派发</div></div><div class="bg-amber-500/10 border border-amber-500/30 rounded p-2"><div class="text-amber-400 font-bold">2.0 &lt; ratio ≤ 4.0</div><div class="text-gray-400">降低 spawn 频率</div></div><div class="bg-red-500/10 border border-red-500/30 rounded p-2"><div class="text-red-400 font-bold">ratio &gt; 4.0</div><div class="text-gray-400">暂停 implementer</div></div></div>',
+      context: '<div class="text-gray-300">防止 implementer 压垮 reviewer</div><div class="mt-1 text-gray-500 text-xs">R17 死锁检测：下游 throughput=0 持续 30min → 升级告警</div>',
+      explain: '背压机制：Dispatcher 感知队列深度比，自动调节 spawn 频率，防止积压无限膨胀' },
+    { tab: 2, codeLine: 2,
+      flow: '<div>自我进化三层架构</div><div class="mt-2 grid grid-cols-3 gap-2 text-xs"><div class="bg-gray-900 border border-gray-600 rounded p-2"><div class="text-gray-300 font-bold">锁定层</div><div class="text-gray-500 mt-1">Bundled skills</div><div class="text-gray-500">Hub-installed skills</div><div class="text-gray-500">Pinned skills</div><div class="mt-1 text-red-400">Curator 永不触碰</div></div><div class="bg-gray-900 border border-gray-600 rounded p-2"><div class="text-gray-300 font-bold">可变层</div><div class="text-gray-500 mt-1">Agent-created skills</div><div class="text-gray-500">MEMORY.md</div><div class="text-gray-500">Profile SOUL.md</div><div class="mt-1 text-emerald-400">Curator 定期审查</div></div><div class="bg-gray-900 border border-gray-600 rounded p-2"><div class="text-gray-300 font-bold">事实表</div><div class="text-gray-500 mt-1">Kanban task_runs</div><div class="text-gray-500">Session SQLite</div><div class="text-gray-500">.learnings/ 归档</div><div class="mt-1 text-blue-400">只增不改</div></div></div>',
+      context: '<div class="text-gray-300">经验升级路径：</div><div class="mt-1 text-xs text-gray-400">correction → SOUL.md</div><div class="text-xs text-gray-400">insight → Skill</div><div class="text-xs text-gray-400">best_practice → SOUL.md</div><div class="text-xs text-gray-400">error_fix → Skill pitfall</div>',
+      explain: '自我进化：以 Hermes 原生能力为主，经验自动沉淀，Curator 定期清理合并' },
+    { tab: 2, codeLine: 3,
+      flow: '<div>全链路可观测性：8 层故障定位</div><div class="mt-2 grid grid-cols-4 gap-2 text-xs"><div class="text-gray-400">1. 代码层</div><div class="text-gray-400">2. 审查层</div><div class="text-gray-400">3. 验收层</div><div class="text-gray-400">4. 环境层</div><div class="text-gray-400">5. 资源层</div><div class="text-gray-400">6. 部署层</div><div class="text-gray-400">7. 外部层</div><div class="text-gray-400">8. 策略层</div></div><div class="mt-2 text-xs text-cyan-400">Observability Plugin: post_tool_call + on_session_end hooks → observability_trace.db</div>',
+      context: '<div class="text-gray-300">SRE-Observer：人工升级触发</div><div class="mt-1 text-gray-500 text-xs"> crash/timed_out 由 Hermes 官方自动回收 → ready 重派</div><div class="text-gray-500 text-xs">仅当人工判断需要深度分析时才创建 SRE 任务</div>',
+      explain: '可观测性：零侵入采集工具调用链，8 层模型定位根因，SRE-Observer 输出结构化报告' },
+  ]
+};
+</script>
+
+<!-- ==================== VIEW ==================== -->
+<div x-data="workflowEngine(CONFIG)" class="h-screen flex flex-col overflow-hidden">
+
+  <!-- Header -->
+  <header class="shrink-0 px-6 pt-4 pb-0 border-b border-gray-700">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-xl text-blue-400 font-bold mb-1" x-text="title"></h1>
+        <p class="text-sm text-gray-500 mb-3" x-text="subtitle"></p>
+      </div>
+      <div class="text-xs text-gray-600 text-right">
+        <div>Hermes v0.13.0</div>
+        <div>Phase 19 Design</div>
+      </div>
+    </div>
+    <!-- Tabs -->
+    <div class="flex gap-0.5 border-b-2 border-gray-700">
+      <template x-for="(tab, i) in tabs" :key="i">
+        <button @click="switchTab(i)"
+          class="px-4 py-2 border border-gray-700 border-b-0 rounded-t text-sm transition-colors"
+          :class="activeTab === i
+            ? 'text-blue-400 bg-gray-950 -mb-[2px] z-10 relative'
+            : 'text-gray-500 hover:text-gray-200 bg-surface'"
+          x-text="tab"></button>
+      </template>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 overflow-hidden min-h-0 relative">
+    <template x-for="(tab, ti) in tabs" :key="ti">
+      <div x-show="activeTab === ti" x-cloak
+           x-transition:enter="transition-opacity duration-200"
+           x-transition:enter-start="opacity-0"
+           x-transition:enter-end="opacity-100"
+           class="h-full flex flex-col absolute inset-0">
+
+        <!-- Controls -->
+        <div class="shrink-0 px-6 py-3 flex gap-3 items-center">
+          <button @click="prev()" class="px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
+                  :disabled="current === 0" :class="current === 0 ? 'opacity-40' : ''">◀</button>
+          <button @click="next()" class="px-4 py-2 bg-blue-500 text-gray-950 rounded text-sm font-semibold">下一步 ▶</button>
+          <button @click="togglePlay()" class="px-4 py-2 rounded text-sm border"
+                  :class="isPlaying ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-gray-800 border-gray-700'"
+                  x-text="isPlaying ? '⏸ 暂停' : '▶ 自动'"></button>
+          <button @click="reset()" class="px-4 py-2 bg-red-500 text-white rounded text-sm">重置</button>
+          <span class="text-sm text-gray-500" x-text="progress"></span>
+          <span class="text-xs text-gray-500 ml-2">速度</span>
+          <input type="range" min="200" max="2000" x-model="speed" class="w-24 accent-blue-500">
+        </div>
+
+        <!-- Panels -->
+        <div class="flex-1 grid grid-cols-[2fr_1fr] gap-4 px-6 pb-4 overflow-hidden min-h-0">
+          <!-- 左侧面板：流程视图 -->
+          <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col">
+            <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5 flex justify-between">
+              <span x-text="tabs[activeTab] + ' 视图'"></span>
+              <span class="text-xs text-gray-600 uppercase tracking-wider" x-text="tabStepName"></span>
+            </div>
+            <div class="flex-1 p-4 overflow-y-auto min-h-0">
+              <div class="text-sm leading-7" x-html="step?.flow ?? ''"></div>
+            </div>
+          </div>
+          <!-- 右侧面板组 -->
+          <div class="flex flex-col gap-4 overflow-hidden">
+            <template x-for="(label, pi) in panelLabels" :key="pi">
+              <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col flex-1 min-h-0">
+                <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5"
+                     x-text="label"></div>
+                <div class="flex-1 p-4 overflow-y-auto min-h-0 text-sm" x-html="state(label.toLowerCase())"></div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Explain -->
+        <div class="shrink-0 px-6 py-3 border-t border-gray-700">
+          <div class="border-l-4 border-purple-500 bg-purple-500/5 rounded-r px-4 py-2 text-sm"
+               x-html="step?.explain ?? ''"></div>
+        </div>
+
+      </div>
+    </template>
+  </main>
+</div>
+
+<!-- ==================== ENGINE ==================== -->
+<script>
+function workflowEngine(config) {
+  return {
+    // === 状态 ===
+    current: 0,
+    activeTab: 0,
+    isPlaying: false,
+    speed: 800,
+    timer: null,
+
+    // === 配置注入 ===
+    title: config.title,
+    subtitle: config.subtitle || '',
+    tabs: config.tabs || ['演示'],
+    panelLabels: config.panelLabels || ['上下文'],
+    allSteps: config.steps || [],
+
+    // === 计算属性 ===
+    get tabSteps() {
+      return this.allSteps.filter(s => s.tab === this.activeTab);
+    },
+    get maxStep() { return this.tabSteps.length - 1; },
+    get step() {
+      const s = this.tabSteps[Math.min(this.current, this.maxStep)];
+      return s || {};
+    },
+    get progress() {
+      const name = this.tabStepName;
+      return name ? `${name} · Step ${this.current} / ${this.maxStep}` : `Step ${this.current} / ${this.maxStep}`;
+    },
+    get tabStepName() {
+      const names = ['需求提交', '技术发现', '一次一问澄清', '可行性检查', 'Research 触发', 'POC 验证', '任务拆解', 'TDD 执行', '并行审查', '修复进化', '三层部署', '完成通知', 'L1 自行决定', 'L2 Reviewer', 'L3 硬拦截', 'Reviewer 纵深防御', '审计日志', '8 角色', 'Kanban 状态机', '背压机制', '自我进化', '可观测性'];
+      const globalIndex = this.allSteps.indexOf(this.step);
+      return names[globalIndex] || '';
+    },
+
+    // === 导航 ===
+    next() { if (this.current < this.maxStep) this.current++; },
+    prev() { if (this.current > 0) this.current--; },
+    reset() { this.current = 0; this.stop(); },
+
+    // === Tab 切换 ===
+    switchTab(i) {
+      this.activeTab = i;
+      this.current = 0;
+      this.stop();
+    },
+
+    // === 播放控制 ===
+    play() {
+      if (this.current >= this.maxStep) this.current = 0;
+      this.isPlaying = true;
+      const tick = () => {
+        if (this.current < this.maxStep && this.isPlaying) {
+          this.current++;
+          this.timer = setTimeout(tick, 2200 - this.speed);
+        } else { this.isPlaying = false; }
+      };
+      tick();
+    },
+    stop() { this.isPlaying = false; clearTimeout(this.timer); },
+    togglePlay() { this.isPlaying ? this.stop() : this.play(); },
+
+    // === 面板内容 ===
+    state(name) { return this.step?.[name] ?? '<span class="text-gray-600">—</span>'; }
+  };
+}
+</script>
+
+</body>
+</html>

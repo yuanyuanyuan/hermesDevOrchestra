@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes 多项目 AI 开发工作流 — 交互式全景</title>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: { extend: { colors: { surface: '#161b22', border: '#30363d' } } }
+}
+</script>
+<style>
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  [x-cloak] { display: none !important; }
+  .role-card { transition: all 0.2s; }
+  .role-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+  .phase-arrow { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+  .state-node { transition: all 0.15s; cursor: pointer; }
+  .state-node:hover { filter: brightness(1.3); }
+  .flow-line { stroke-dasharray: 8 4; animation: dash 1s linear infinite; }
+  @keyframes dash { to { stroke-dashoffset: -12; } }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-200 font-mono h-screen flex flex-col overflow-hidden" x-data="workflowApp()">
+
+<!-- Header -->
+<header class="shrink-0 px-6 pt-4 pb-0 border-b border-gray-700">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl text-blue-400 font-bold">Hermes 多项目 AI 开发工作流</h1>
+      <p class="text-sm text-gray-500 mt-1">8 角色编排 · 状态机路由 · 三层风险拦截 · 全链路可观测</p>
+    </div>
+    <div class="text-xs text-gray-600">v1.0 · Phase 19</div>
+  </div>
+  <!-- Tabs -->
+  <div class="flex gap-0.5 border-b-2 border-gray-700 mt-3">
+    <template x-for="(tab, i) in tabs" :key="i">
+      <button @click="activeTab = i"
+        class="px-4 py-2 border border-gray-700 border-b-0 rounded-t text-sm transition-colors whitespace-nowrap"
+        :class="activeTab === i
+          ? 'text-blue-400 bg-gray-950 -mb-[2px] z-10 relative'
+          : 'text-gray-500 hover:text-gray-200 bg-surface'"
+        x-text="tab"></button>
+    </template>
+  </div>
+</header>
+
+<!-- Main -->
+<main class="flex-1 overflow-hidden min-h-0 relative">
+
+  <!-- Tab 0: 架构总览 -->
+  <div x-show="activeTab === 0" x-cloak
+       x-transition:enter="transition-opacity duration-200"
+       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+       class="h-full flex flex-col absolute inset-0 overflow-hidden">
+
+    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+      <!-- 架构图 -->
+      <div class="mb-6">
+        <h2 class="text-base text-blue-400 font-semibold mb-3">系统架构</h2>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-5 text-sm leading-relaxed">
+          <pre class="text-gray-300 whitespace-pre overflow-x-auto">
+┌─────────────────────────────────────────────────────────────────────┐
+│                         User (Jacky)                                │
+│                    L3 决策仲裁 · 最终审批人                           │
+│              CLI ─── Dashboard ─── Gateway(Telegram/Discord)        │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────────────┐
+│                   Hermes Agent v0.13.0 运行时                       │
+│   ┌─────────────────────────────────────────────────────────────┐  │
+│   │  Kanban · Dispatcher · Gateway · Curator · Observability    │  │
+│   └─────────────────────────────────────────────────────────────┘  │
+│                               │                                     │
+│   ┌───────────────────────────▼──────────────────────────────────┐  │
+│   │                    8 个 Profile 角色                          │  │
+│   │                                                              │  │
+│   │   ┌──────┐  ┌──────────────┐  ┌──────────┐                  │  │
+│   │   │  PM  │→│ Orchestrator │→│Researcher │                  │  │
+│   │   │需求分析│  │  中枢路由    │  │ 技术调研  │                  │  │
+│   │   └──┬───┘  └──────┬───────┘  └──────────┘                  │  │
+│   │      │             │                                         │  │
+│   │      │    ┌────────▼────────────────────────┐               │  │
+│   │      │    │     状态机路由表                  │               │  │
+│   │      └────┤ pm_analyzed → impl/researcher   │               │  │
+│   │           │ impl_done → reviewer            │               │  │
+│   │           │ review_pass → qa → devops       │               │  │
+│   │           └────────┬────────────────────────┘               │  │
+│   │                    │                                        │  │
+│   │   ┌────────┐ ┌─────┴─────┐ ┌──────────┐ ┌──────────────┐  │  │
+│   │   │Implementer│ │ Reviewer │ │QA-Tester │ │DevOps-Engineer│ │  │
+│   │   │ 编码/TDD │ │ 只读审查  │ │ 功能验收  │ │  三层部署     │  │  │
+│   │   └────────┘ └───────────┘ └──────────┘ └──────────────┘  │  │
+│   │                                                              │  │
+│   │   ┌──────────────┐  ┌───────────────────────────────────┐  │  │
+│   │   │ SRE-Observer │  │     Risk Policy Engine            │  │  │
+│   │   │  根因分析     │  │  SOUL.md + Plugin hook + CLI 安全 │  │  │
+│   │   └──────────────┘  └───────────────────────────────────┘  │  │
+│   └──────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘</pre>
+        </div>
+      </div>
+
+      <!-- 角色卡片 -->
+      <h2 class="text-base text-blue-400 font-semibold mb-3">角色详情</h2>
+      <div class="grid grid-cols-4 gap-3 mb-6">
+        <template x-for="(role, i) in roles" :key="i">
+          <div class="role-card bg-gray-900 border border-gray-700 rounded-lg p-3 cursor-pointer"
+               @click="selectedRole = selectedRole === i ? -1 : i"
+               :class="selectedRole === i ? 'border-blue-500 ring-1 ring-blue-500/30' : ''">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-lg" x-text="role.icon"></span>
+              <span class="text-sm font-semibold" :class="role.color" x-text="role.name"></span>
+            </div>
+            <p class="text-xs text-gray-400 leading-relaxed" x-text="role.summary"></p>
+            <!-- 展开详情 -->
+            <div x-show="selectedRole === i" x-cloak class="mt-3 pt-3 border-t border-gray-700">
+              <div class="text-xs space-y-2">
+                <div>
+                  <span class="text-emerald-400">能做:</span>
+                  <span class="text-gray-400" x-text="role.canDo"></span>
+                </div>
+                <div>
+                  <span class="text-red-400">不能做:</span>
+                  <span class="text-gray-400" x-text="role.cannotDo"></span>
+                </div>
+                <div>
+                  <span class="text-amber-400">工具:</span>
+                  <span class="text-gray-400" x-text="role.tools"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- 核心原则 -->
+      <h2 class="text-base text-blue-400 font-semibold mb-3">核心设计原则</h2>
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
+          <div class="text-sm text-purple-400 font-semibold mb-1">以官方能力为主</div>
+          <p class="text-xs text-gray-400">Kanban/Profile/Dispatcher/Curator/Memory 均为 Hermes 原生，不重复造轮子</p>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
+          <div class="text-sm text-emerald-400 font-semibold mb-1">角色抽象，实现可替换</div>
+          <p class="text-xs text-gray-400">Profile 定义"谁"，不绑定 CLI/模型。底层可从 Codex 切到 Claude</p>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
+          <div class="text-sm text-amber-400 font-semibold mb-1">三层纵深风险拦截</div>
+          <p class="text-xs text-gray-400">SOUL.md 软约束 → Plugin hook 硬拦截 → CLI 原生安全。L3 永不自动通过</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 1: 端到端流程 -->
+  <div x-show="activeTab === 1" x-cloak
+       x-transition:enter="transition-opacity duration-200"
+       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+       class="h-full flex flex-col absolute inset-0 overflow-hidden">
+
+    <!-- Controls -->
+    <div class="shrink-0 px-6 py-3 flex gap-3 items-center">
+      <button @click="e2ePrev()" class="px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
+              :disabled="e2eStep === 0" :class="e2eStep === 0 ? 'opacity-40' : ''">◀</button>
+      <button @click="e2eNext()" class="px-4 py-2 bg-blue-500 text-gray-950 rounded text-sm font-semibold">下一步 ▶</button>
+      <button @click="e2ePlay()" class="px-4 py-2 rounded text-sm border"
+              :class="e2ePlaying ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-gray-800 border-gray-700'"
+              x-text="e2ePlaying ? '⏸ 暂停' : '▶ 自动'"></button>
+      <button @click="e2eReset()" class="px-4 py-2 bg-red-500/80 text-white rounded text-sm">重置</button>
+      <span class="text-sm text-gray-500" x-text="'Phase ' + e2eData[e2eStep].phase + ' / 6'"></span>
+      <span class="text-xs text-gray-600 ml-2">速度</span>
+      <input type="range" min="300" max="2000" x-model="e2eSpeed" class="w-24 accent-blue-500">
+    </div>
+
+    <!-- Panels -->
+    <div class="flex-1 grid grid-cols-[3fr_2fr] gap-4 px-6 pb-4 overflow-hidden min-h-0">
+      <!-- 左: 流程面板 -->
+      <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col">
+        <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5 flex justify-between">
+          <span x-text="e2eData[e2eStep].title"></span>
+          <span class="text-xs text-gray-600" x-text="e2eData[e2eStep].actor"></span>
+        </div>
+        <div class="flex-1 p-4 overflow-y-auto min-h-0 text-sm">
+          <div class="mb-3">
+            <span class="text-xs px-2 py-0.5 rounded" :class="e2eData[e2eStep].badgeClass" x-text="e2eData[e2eStep].badge"></span>
+          </div>
+          <div class="space-y-2" x-html="e2eData[e2eStep].content"></div>
+        </div>
+      </div>
+
+      <!-- 右: 上下文 + 状态 -->
+      <div class="flex flex-col gap-4 overflow-hidden">
+        <!-- 角色状态 -->
+        <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex-1 min-h-0 flex flex-col">
+          <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5">角色状态</div>
+          <div class="flex-1 p-4 overflow-y-auto min-h-0 text-xs space-y-1.5">
+            <template x-for="(rs, i) in e2eData[e2eStep].roleStates" :key="i">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full shrink-0" :class="rs.active ? 'bg-emerald-400' : 'bg-gray-600'"></span>
+                <span class="text-gray-400" x-text="rs.name"></span>
+                <span class="ml-auto" :class="rs.active ? 'text-emerald-400' : 'text-gray-600'" x-text="rs.status"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+        <!-- 任务状态 -->
+        <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex-1 min-h-0 flex flex-col">
+          <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5">任务状态</div>
+          <div class="flex-1 p-4 overflow-y-auto min-h-0 text-xs space-y-1.5">
+            <template x-for="(ts, i) in e2eData[e2eStep].taskStates" :key="i">
+              <div class="flex items-center gap-2">
+                <span class="px-1.5 py-0.5 rounded text-[10px]" :class="ts.badgeClass" x-text="ts.status"></span>
+                <span class="text-gray-400 truncate" x-text="ts.name"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Explain -->
+    <div class="shrink-0 px-6 py-3 border-t border-gray-700">
+      <div class="border-l-4 border-purple-500 bg-purple-500/5 rounded-r px-4 py-2 text-sm" x-html="e2eData[e2eStep].explain"></div>
+    </div>
+  </div>
+
+  <!-- Tab 2: 任务状态机 -->
+  <div x-show="activeTab === 2" x-cloak
+       x-transition:enter="transition-opacity duration-200"
+       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+       class="h-full flex flex-col absolute inset-0 overflow-hidden">
+
+    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+      <h2 class="text-base text-blue-400 font-semibold mb-4">任务状态机</h2>
+
+      <!-- 状态机可视化 -->
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-6 mb-6">
+        <div class="flex items-center justify-center gap-2 flex-wrap">
+          <template x-for="(state, i) in kanbanStates" :key="i">
+            <div class="flex items-center gap-2">
+              <div class="state-node px-4 py-2 rounded-lg border text-sm font-semibold"
+                   :class="state.id === activeKanbanState
+                     ? 'border-blue-400 bg-blue-500/15 text-blue-400 ring-1 ring-blue-400/30'
+                     : state.color + ' border-gray-600'"
+                   @click="activeKanbanState = state.id">
+                <span x-text="state.label"></span>
+              </div>
+              <span x-show="i < kanbanStates.length - 1" class="text-gray-600 text-lg">→</span>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- 选中状态的详情 -->
+      <div class="grid grid-cols-2 gap-4 mb-6">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
+          <h3 class="text-sm text-emerald-400 font-semibold mb-2" x-text="'含义: ' + currentKanbanState.label"></h3>
+          <p class="text-sm text-gray-400 mb-3" x-text="currentKanbanState.description"></p>
+          <div class="text-xs space-y-1">
+            <div><span class="text-amber-400">触发条件:</span> <span class="text-gray-400" x-text="currentKanbanState.trigger"></span></div>
+            <div><span class="text-purple-400">执行者:</span> <span class="text-gray-400" x-text="currentKanbanState.actor"></span></div>
+          </div>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
+          <h3 class="text-sm text-blue-400 font-semibold mb-2">转换路径</h3>
+          <div class="space-y-2 text-xs">
+            <template x-for="(t, i) in currentKanbanState.transitions" :key="i">
+              <div class="flex items-center gap-2">
+                <span class="text-gray-500" x-text="t.from"></span>
+                <span class="text-gray-600">→</span>
+                <span class="text-emerald-400" x-text="t.to"></span>
+                <span class="text-gray-600 ml-1" x-text="'(' + t.condition + ')'"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- 依赖链示例 -->
+      <h2 class="text-base text-blue-400 font-semibold mb-3">依赖链 (parents) 示例</h2>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 text-sm">
+        <pre class="text-gray-300 whitespace-pre overflow-x-auto">T1 (implementer: 实现认证模块)
+ ├── T2 (implementer: 编写测试)    ← T1 完成后并行就绪
+ └── T3 (reviewer: 审查代码)       ← T1 完成后并行就绪
+      └── T4 (implementer: 修复审查问题)  ← T3 完成后就绪</pre>
+        <div class="mt-3 text-xs text-gray-500">
+          parents 依赖: 子任务在所有 parent 任务 done 之后才从 todo 变为 ready
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 3: 风险策略 -->
+  <div x-show="activeTab === 3" x-cloak
+       x-transition:enter="transition-opacity duration-200"
+       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+       class="h-full flex flex-col absolute inset-0 overflow-hidden">
+
+    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+      <h2 class="text-base text-blue-400 font-semibold mb-4">三层风险拦截决策矩阵</h2>
+
+      <!-- L1/L2/L3 卡片 -->
+      <div class="grid grid-cols-3 gap-4 mb-6">
+        <div class="bg-gray-900 border border-emerald-500/30 rounded-lg p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+            <span class="text-sm text-emerald-400 font-semibold">L1 — Worker 自行决定</span>
+          </div>
+          <p class="text-xs text-gray-400 mb-2">代码实现细节、变量命名、格式调整</p>
+          <div class="text-xs space-y-1">
+            <div><span class="text-gray-500">决策者:</span> <span class="text-gray-400">Worker 自身</span></div>
+            <div><span class="text-gray-500">响应:</span> <span class="text-gray-400">直接执行</span></div>
+            <div><span class="text-gray-500">耗时:</span> <span class="text-gray-400">秒级</span></div>
+          </div>
+        </div>
+        <div class="bg-gray-900 border border-amber-500/30 rounded-lg p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-3 h-3 rounded-full bg-amber-400"></span>
+            <span class="text-sm text-amber-400 font-semibold">L2 — Reviewer 决策</span>
+          </div>
+          <p class="text-xs text-gray-400 mb-2">技术方案选型、API 设计、架构权衡</p>
+          <div class="text-xs space-y-1">
+            <div><span class="text-gray-500">决策者:</span> <span class="text-gray-400">Reviewer (claude -p)</span></div>
+            <div><span class="text-gray-500">响应:</span> <span class="text-gray-400">一次性调用</span></div>
+            <div><span class="text-gray-500">耗时:</span> <span class="text-gray-400">秒~分钟</span></div>
+          </div>
+        </div>
+        <div class="bg-gray-900 border border-red-500/30 rounded-lg p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-3 h-3 rounded-full bg-red-400"></span>
+            <span class="text-sm text-red-400 font-semibold">L3 — 用户决策</span>
+          </div>
+          <p class="text-xs text-gray-400 mb-2">安全凭证、破坏性操作、产品方向</p>
+          <div class="text-xs space-y-1">
+            <div><span class="text-gray-500">决策者:</span> <span class="text-gray-400">用户 (Jacky)</span></div>
+            <div><span class="text-gray-500">响应:</span> <span class="text-gray-400">Gateway 推送 + 等待</span></div>
+            <div><span class="text-gray-500">耗时:</span> <span class="text-gray-400">分钟~小时</span></div>
+            <div class="text-red-400 font-semibold mt-1">永不自动通过</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- L3 升级流程 -->
+      <h2 class="text-base text-blue-400 font-semibold mb-3">L3 升级流程</h2>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-5 mb-6">
+        <div class="flex items-center gap-3 flex-wrap text-sm">
+          <div class="px-3 py-1.5 bg-gray-800 rounded border border-gray-600">Worker 遇到危险命令</div>
+          <span class="text-gray-600">→</span>
+          <div class="px-3 py-1.5 bg-amber-500/10 rounded border border-amber-500/30 text-amber-400">kanban_block()</div>
+          <span class="text-gray-600">→</span>
+          <div class="px-3 py-1.5 bg-gray-800 rounded border border-gray-600">Risk Policy 拦截记录</div>
+          <span class="text-gray-600">→</span>
+          <div class="px-3 py-1.5 bg-blue-500/10 rounded border border-blue-500/30 text-blue-400">Gateway 推送用户</div>
+          <span class="text-gray-600">→</span>
+          <div class="px-3 py-1.5 bg-gray-800 rounded border border-gray-600">用户决策</div>
+          <span class="text-gray-600">→</span>
+          <div class="px-3 py-1.5 bg-emerald-500/10 rounded border border-emerald-500/30 text-emerald-400">unblock + 恢复执行</div>
+        </div>
+      </div>
+
+      <!-- 声明式风险策略 -->
+      <h2 class="text-base text-blue-400 font-semibold mb-3">声明式风险策略 (risk.yaml)</h2>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
+        <pre class="text-sm text-gray-300"><span class="text-purple-400">policies:</span>
+  - <span class="text-amber-400">pattern:</span> <span class="text-emerald-400">"rm -rf /*"</span>
+    <span class="text-amber-400">level:</span> <span class="text-red-400">L3</span>          <span class="text-gray-600"># 永不自动通过</span>
+    <span class="text-amber-400">approver:</span> <span class="text-blue-400">user</span>
+    <span class="text-amber-400">timeout:</span> <span class="text-cyan-400">0</span>
+
+  - <span class="text-amber-400">pattern:</span> <span class="text-emerald-400">"git push --force"</span>
+    <span class="text-amber-400">level:</span> <span class="text-red-400">L3</span>
+    <span class="text-amber-400">approver:</span> <span class="text-blue-400">user</span>
+    <span class="text-amber-400">timeout:</span> <span class="text-cyan-400">300</span>        <span class="text-gray-600"># 5 分钟无响应则 escalate</span>
+
+  - <span class="text-amber-400">pattern:</span> <span class="text-emerald-400">"修改 CI/CD 配置"</span>
+    <span class="text-amber-400">level:</span> <span class="text-amber-400">L2</span>
+    <span class="text-amber-400">approver:</span> <span class="text-blue-400">reviewer</span>
+    <span class="text-amber-400">timeout:</span> <span class="text-cyan-400">600</span>
+
+  - <span class="text-amber-400">pattern:</span> <span class="text-emerald-400">"变量重命名"</span>
+    <span class="text-amber-400">level:</span> <span class="text-emerald-400">L1</span>
+    <span class="text-amber-400">approver:</span> <span class="text-blue-400">self</span></pre>
+      </div>
+
+      <!-- 三层实现 -->
+      <h2 class="text-base text-blue-400 font-semibold mb-3">三层消费方式</h2>
+      <div class="grid grid-cols-3 gap-3">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
+          <div class="text-sm text-red-400 font-semibold mb-1">Plugin 层 (硬拦截)</div>
+          <p class="text-xs text-gray-400">pre_tool_call hook 注入，匹配 L3 规则的命令直接阻塞</p>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
+          <div class="text-sm text-amber-400 font-semibold mb-1">SOUL.md 层 (软约束)</div>
+          <p class="text-xs text-gray-400">Worker 的 SOUL.md 引用 risk.yaml 做 L1/L2 决策依据</p>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
+          <div class="text-sm text-emerald-400 font-semibold mb-1">Toolsets 白名单 (主防线)</div>
+          <p class="text-xs text-gray-400">Reviewer 等角色通过 toolsets 限制可用工具，从源头阻断</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 4: Dispatcher + 背压 -->
+  <div x-show="activeTab === 4" x-cloak
+       x-transition:enter="transition-opacity duration-200"
+       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+       class="h-full flex flex-col absolute inset-0 overflow-hidden">
+
+    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+      <h2 class="text-base text-blue-400 font-semibold mb-4">Dispatcher 循环 (每 60 秒)</h2>
+
+      <!-- 循环步骤 -->
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-5 mb-6">
+        <div class="space-y-3">
+          <div class="flex items-center gap-3">
+            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">1</span>
+            <span class="text-sm">回收超时 claim（worker 卡死）</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">2</span>
+            <span class="text-sm">回收崩溃 worker（PID 不存在）→ 任务回退 ready + rollback++</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">3</span>
+            <span class="text-sm">将 parents 全 done 的 todo 任务提升为 ready</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">4</span>
+            <span class="text-sm">原子性 claim ready 任务</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">5</span>
+            <span class="text-sm">计算背压比率 → 决定是否降速/暂停</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">6</span>
+            <span class="text-sm">按 assignee (profile) spawn worker 进程</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 背压可视化 -->
+      <h2 class="text-base text-blue-400 font-semibold mb-3">背压感知任务准入</h2>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-5 mb-6">
+        <div class="text-sm mb-4">
+          <code class="text-amber-400">ratio = ready_implementer_tasks / max(ready_reviewer_tasks, 1)</code>
+        </div>
+
+        <!-- 交互式背压模拟 -->
+        <div class="mb-4">
+          <label class="text-xs text-gray-500 block mb-2">拖动模拟 implementer 队列深度:</label>
+          <input type="range" min="0" max="20" x-model="bpImpl" class="w-full accent-blue-500">
+          <div class="flex justify-between text-xs text-gray-600 mt-1">
+            <span>0</span><span>10</span><span>20</span>
+          </div>
+        </div>
+        <div class="mb-4">
+          <label class="text-xs text-gray-500 block mb-2">拖动模拟 reviewer 队列深度:</label>
+          <input type="range" min="1" max="10" x-model="bpRev" class="w-full accent-purple-500">
+          <div class="flex justify-between text-xs text-gray-600 mt-1">
+            <span>1</span><span>5</span><span>10</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4 mt-4">
+          <div class="text-center">
+            <div class="text-2xl font-bold" :class="bpRatio <= 2 ? 'text-emerald-400' : bpRatio <= 4 ? 'text-amber-400' : 'text-red-400'" x-text="bpRatio.toFixed(1)"></div>
+            <div class="text-xs text-gray-500">背压比率</div>
+          </div>
+          <div class="text-center">
+            <div class="text-lg font-bold" :class="bpAction === '正常派发' ? 'text-emerald-400' : bpAction === '降速派发' ? 'text-amber-400' : 'text-red-400'" x-text="bpAction"></div>
+            <div class="text-xs text-gray-500">当前策略</div>
+          </div>
+          <div class="text-center">
+            <div class="text-lg font-bold text-blue-400" x-text="bpDetail"></div>
+            <div class="text-xs text-gray-500">执行方式</div>
+          </div>
+        </div>
+
+        <!-- 阈值指示条 -->
+        <div class="mt-4 h-3 bg-gray-800 rounded-full overflow-hidden relative">
+          <div class="h-full rounded-full transition-all duration-300"
+               :class="bpRatio <= 2 ? 'bg-emerald-500' : bpRatio <= 4 ? 'bg-amber-500' : 'bg-red-500'"
+               :style="'width:' + Math.min(bpRatio / 6 * 100, 100) + '%'"></div>
+          <div class="absolute top-0 h-full w-px bg-white/30" style="left: 33.3%"></div>
+          <div class="absolute top-0 h-full w-px bg-white/30" style="left: 66.6%"></div>
+        </div>
+        <div class="flex justify-between text-[10px] text-gray-600 mt-1">
+          <span>ratio ≤ 2: 正常</span>
+          <span>2 &lt; ratio ≤ 4: 降速</span>
+          <span>ratio &gt; 4: 暂停</span>
+        </div>
+      </div>
+
+      <!-- Worker 生命周期 -->
+      <h2 class="text-base text-blue-400 font-semibold mb-3">Worker 生命周期</h2>
+      <div class="grid grid-cols-3 gap-3">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
+          <div class="text-sm text-emerald-400 font-semibold mb-1">正常完成</div>
+          <p class="text-xs text-gray-400">stop_reason: end_turn → 任务 done → handoff → 下游就绪</p>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
+          <div class="text-sm text-amber-400 font-semibold mb-1">Block 等待</div>
+          <p class="text-xs text-gray-400">kanban_block() → blocked → 通知用户 → unblock 后恢复</p>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
+          <div class="text-sm text-red-400 font-semibold mb-1">崩溃/超时</div>
+          <p class="text-xs text-gray-400">PID 消失 → 快照恢复 → 任务回退 ready → rollback++ → 重新派发</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 5: 通信机制 -->
+  <div x-show="activeTab === 5" x-cloak
+       x-transition:enter="transition-opacity duration-200"
+       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+       class="h-full flex flex-col absolute inset-0 overflow-hidden">
+
+    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+      <h2 class="text-base text-blue-400 font-semibold mb-4">Agent 间通信: Kanban Block + Defer</h2>
+
+      <!-- 通信场景表 -->
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
+        <div class="grid grid-cols-3 gap-2 text-xs font-semibold text-gray-500 mb-2">
+          <div>场景</div><div>机制</div><div>说明</div>
+        </div>
+        <div class="space-y-2 text-xs">
+          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">任务分派</div><div class="text-blue-400">Kanban create/claim</div><div class="text-gray-400">Dispatcher 自动</div></div>
+          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">任务完成</div><div class="text-emerald-400">Kanban complete</div><div class="text-gray-400">summary + metadata</div></div>
+          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">任务阻塞</div><div class="text-amber-400">Kanban block</div><div class="text-gray-400">等待用户/Reviewer 输入</div></div>
+          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">依赖等待</div><div class="text-purple-400">Kanban parents</div><div class="text-gray-400">自动 promote</div></div>
+          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">Claude 主动提问</div><div class="text-cyan-400">PreToolUse hook → defer</div><div class="text-gray-400">Worker 退出 → 路由 → 恢复</div></div>
+          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">用户决策</div><div class="text-pink-400">clarify()</div><div class="text-gray-400">Hermes 直接问用户</div></div>
+        </div>
+      </div>
+
+      <!-- 路径 A -->
+      <h2 class="text-base text-emerald-400 font-semibold mb-3">路径 A: Implementer 主动 block（主流程）</h2>
+      <div class="bg-gray-900 border border-emerald-500/20 rounded-lg p-4 mb-4">
+        <div class="flex items-center gap-2 flex-wrap text-sm mb-3">
+          <div class="px-2 py-1 bg-gray-800 rounded border border-gray-600 text-xs">Implementer 遇到 "RS256 vs HS256?"</div>
+          <span class="text-gray-600">→</span>
+          <div class="px-2 py-1 bg-amber-500/10 rounded border border-amber-500/30 text-amber-400 text-xs">kanban_block("reviewer-needed: ...")</div>
+          <span class="text-gray-600">→</span>
+          <div class="px-2 py-1 bg-gray-800 rounded border border-gray-600 text-xs">Dispatcher 创建 Reviewer 子任务</div>
+          <span class="text-gray-600">→</span>
+          <div class="px-2 py-1 bg-blue-500/10 rounded border border-blue-500/30 text-blue-400 text-xs">Reviewer 一次性决策</div>
+          <span class="text-gray-600">→</span>
+          <div class="px-2 py-1 bg-emerald-500/10 rounded border border-emerald-500/30 text-emerald-400 text-xs">unblock + 恢复</div>
+        </div>
+        <div class="text-xs text-gray-500">
+          <span class="text-emerald-400">优点:</span> 零额外基础设施，消息永不丢失（SQLite 持久化），天然支持重试<br>
+          <span class="text-amber-400">触发条件:</span> Implementer 遵守 SOUL.md 指令，主动 block
+        </div>
+      </div>
+
+      <!-- 路径 B -->
+      <h2 class="text-base text-cyan-400 font-semibold mb-3">路径 B: Claude Code AskUserQuestion → defer（兜底）</h2>
+      <div class="bg-gray-900 border border-cyan-500/20 rounded-lg p-4 mb-6">
+        <div class="space-y-2 text-xs text-gray-400">
+          <div>① Claude Code 调用 <span class="text-cyan-400">AskUserQuestion</span> 工具</div>
+          <div>② PreToolUse hook 拦截 → 返回 <span class="text-amber-400">permissionDecision: "defer"</span></div>
+          <div>③ Worker 进程退出，stop_reason: <span class="text-red-400">"tool_deferred"</span></div>
+          <div class="pl-4 text-gray-500">deferred_tool_use 包含完整问题内容（含选项）</div>
+          <div>④ Dispatcher 读取 deferred_tool_use → 路由给 Reviewer 或用户</div>
+          <div>⑤ 拿到答案后 → <span class="text-emerald-400">claude -p --resume &lt;session-id&gt;</span> 恢复 Worker</div>
+          <div>⑥ PreToolUse hook 再次触发 → 返回 <span class="text-emerald-400">allow + answers</span></div>
+          <div>⑦ Worker 继续执行，完全无感知</div>
+        </div>
+        <div class="mt-3 text-xs text-gray-500">
+          <span class="text-cyan-400">优点:</span> 原生 Claude Code 机制，不依赖 prompt 遵守<br>
+          <span class="text-amber-400">限制:</span> defer 仅在 claude -p 非交互模式生效，单次 turn 只能有一个工具调用<br>
+          <span class="text-purple-400">版本要求:</span> Claude Code >= 2.1.89
+        </div>
+      </div>
+
+      <!-- 决策路由 -->
+      <h2 class="text-base text-blue-400 font-semibold mb-3">决策路由优先级</h2>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
+        <pre class="text-sm text-gray-300 whitespace-pre">技术疑问
+    │
+    ├── Implementer 主动调用 kanban_block()?  ──→ <span class="text-emerald-400">路径 A（主流程）</span>
+    │
+    └── Claude 自动调用 AskUserQuestion?      ──→ <span class="text-cyan-400">路径 B（defer 兜底）</span>
+                                                    │
+                                                    ▼
+                                              Dispatcher 读取问题
+                                                    │
+                                                    ├── <span class="text-amber-400">架构/技术选型</span> ──→ Reviewer
+                                                    └── <span class="text-red-400">安全/产品方向</span>  ──→ 用户</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 6: 可观测性 -->
+  <div x-show="activeTab === 6" x-cloak
+       x-transition:enter="transition-opacity duration-200"
+       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+       class="h-full flex flex-col absolute inset-0 overflow-hidden">
+
+    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+      <h2 class="text-base text-blue-400 font-semibold mb-4">全链路可观测性</h2>
+
+      <!-- Observability Plugin -->
+      <h3 class="text-sm text-purple-400 font-semibold mb-2">Observability Plugin（零侵入采集）</h3>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-4">
+        <pre class="text-xs text-gray-300"><span class="text-purple-400">def register(ctx):</span>
+    <span class="text-gray-500"># 1. 采集每个 tool call</span>
+    <span class="text-blue-400">def on_post_tool_call(tool_name, params, result):</span>
+        trace_db.record(
+            task_id=os.environ.get(<span class="text-emerald-400">"HERMES_KANBAN_TASK"</span>),
+            tool_name=tool_name,
+            result_status=<span class="text-emerald-400">"ok"</span> | <span class="text-red-400">"error"</span>,
+            duration_ms=result.get(<span class="text-emerald-400">"_duration_ms"</span>, 0),
+        )
+    ctx.register_hook(<span class="text-emerald-400">"post_tool_call"</span>, on_post_tool_call)
+
+    <span class="text-gray-500"># 2. 会话结束时汇总</span>
+    <span class="text-blue-400">def on_session_end(session_info):</span>
+        trace_db.summarize_session(task_id, session_info)
+    ctx.register_hook(<span class="text-emerald-400">"on_session_end"</span>, on_session_end)</pre>
+      </div>
+
+      <!-- 数据源 -->
+      <h3 class="text-sm text-amber-400 font-semibold mb-2">采集数据源</h3>
+      <div class="grid grid-cols-2 gap-3 mb-6">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs space-y-1">
+          <div><span class="text-blue-400">Tool Call Trace</span> → post_tool_call hook</div>
+          <div><span class="text-blue-400">Session Summary</span> → on_session_end hook</div>
+          <div><span class="text-blue-400">Kanban Runs</span> → 读取 kanban.db</div>
+          <div><span class="text-blue-400">Kanban Events</span> → 状态变迁历史</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs space-y-1">
+          <div><span class="text-blue-400">Worker Logs</span> → 文件系统终端输出</div>
+          <div><span class="text-blue-400">Audit Logs</span> → 风险策略拦截记录</div>
+          <div><span class="text-blue-400">Env Snapshot</span> → git status / df -h</div>
+        </div>
+      </div>
+
+      <!-- 故障定位 8 层模型 -->
+      <h3 class="text-sm text-red-400 font-semibold mb-2">故障定位 8 层模型</h3>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
+        <div class="grid grid-cols-4 gap-2 text-xs">
+          <div class="px-2 py-1.5 bg-red-500/10 rounded border border-red-500/20 text-center">
+            <div class="text-red-400 font-semibold">代码层</div>
+            <div class="text-gray-500 mt-0.5">语法错误/测试失败</div>
+          </div>
+          <div class="px-2 py-1.5 bg-amber-500/10 rounded border border-amber-500/20 text-center">
+            <div class="text-amber-400 font-semibold">审查层</div>
+            <div class="text-gray-500 mt-0.5">Reviewer 拒绝</div>
+          </div>
+          <div class="px-2 py-1.5 bg-blue-500/10 rounded border border-blue-500/20 text-center">
+            <div class="text-blue-400 font-semibold">验收层</div>
+            <div class="text-gray-500 mt-0.5">QA 测试未通过</div>
+          </div>
+          <div class="px-2 py-1.5 bg-purple-500/10 rounded border border-purple-500/20 text-center">
+            <div class="text-purple-400 font-semibold">环境层</div>
+            <div class="text-gray-500 mt-0.5">依赖缺失/配置错误</div>
+          </div>
+          <div class="px-2 py-1.5 bg-pink-500/10 rounded border border-pink-500/20 text-center">
+            <div class="text-pink-400 font-semibold">资源层</div>
+            <div class="text-gray-500 mt-0.5">磁盘满/API 限流</div>
+          </div>
+          <div class="px-2 py-1.5 bg-orange-500/10 rounded border border-orange-500/20 text-center">
+            <div class="text-orange-400 font-semibold">部署层</div>
+            <div class="text-gray-500 mt-0.5">CI/CD 失败</div>
+          </div>
+          <div class="px-2 py-1.5 bg-cyan-500/10 rounded border border-cyan-500/20 text-center">
+            <div class="text-cyan-400 font-semibold">外部层</div>
+            <div class="text-gray-500 mt-0.5">第三方不可用</div>
+          </div>
+          <div class="px-2 py-1.5 bg-gray-500/10 rounded border border-gray-500/20 text-center">
+            <div class="text-gray-400 font-semibold">策略层</div>
+            <div class="text-gray-500 mt-0.5">Risk Policy 拦截</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SRE-Observer 分析流程 -->
+      <h3 class="text-sm text-red-400 font-semibold mb-2">SRE-Observer 分析流程（人工升级触发）</h3>
+      <div class="bg-gray-900 border border-red-500/20 rounded-lg p-4 mb-4">
+        <div class="space-y-2 text-xs text-gray-400">
+          <div>① <span class="text-blue-400">kanban_show()</span> → 读取故障任务基本信息</div>
+          <div>② 查询 <span class="text-cyan-400">trace.db</span> → 最近 3 次 run 的 tool call 序列</div>
+          <div>③ 读取 <span class="text-amber-400">worker logs</span> → 终端错误输出与堆栈</div>
+          <div>④ 读取 <span class="text-purple-400">task_events</span> → 状态变迁时间线</div>
+          <div>⑤ 读取 <span class="text-red-400">audit logs</span> → 策略拦截记录</div>
+          <div>⑥ 对比 <span class="text-emerald-400">parent handoff</span> → 上游交付物是否携带缺陷</div>
+          <div>⑦ 综合生成 <span class="text-blue-400">根因报告</span></div>
+        </div>
+      </div>
+
+      <!-- 根因报告 Schema -->
+      <h3 class="text-sm text-emerald-400 font-semibold mb-2">根因报告 Metadata Schema</h3>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-4">
+        <pre class="text-xs text-gray-300">{
+  <span class="text-amber-400">"root_cause_category"</span>: <span class="text-emerald-400">"environment|code|deployment|external|policy"</span>,
+  <span class="text-amber-400">"confidence"</span>: <span class="text-emerald-400">"high|medium|low"</span>,
+  <span class="text-amber-400">"symptom"</span>: <span class="text-emerald-400">"deploy.sh exited 1: DATABASE_URL not set"</span>,
+  <span class="text-amber-400">"root_cause"</span>: <span class="text-emerald-400">"生产环境缺少环境变量"</span>,
+  <span class="text-amber-400">"responsible_profile"</span>: <span class="text-emerald-400">"devops-engineer"</span>,
+  <span class="text-amber-400">"upstream_fault"</span>: <span class="text-cyan-400">null</span>,
+  <span class="text-amber-400">"recommended_action"</span>: <span class="text-emerald-400">"补全 DATABASE_URL 后重新部署"</span>,
+  <span class="text-amber-400">"trace_anchor"</span>: <span class="text-emerald-400">"tool_call_#3 terminal(deploy.sh) exited 1"</span>
+}</pre>
+      </div>
+
+      <!-- 触发条件 -->
+      <h3 class="text-sm text-amber-400 font-semibold mb-2">SRE 触发条件</h3>
+      <div class="grid grid-cols-3 gap-3">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs">
+          <div class="text-red-400 font-semibold mb-1">任务崩溃</div>
+          <div class="text-gray-400">outcome = crashed / timed_out / gave_up</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs">
+          <div class="text-amber-400 font-semibold mb-1">反复回滚</div>
+          <div class="text-gray-400">rollback_count >= 2</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs">
+          <div class="text-purple-400 font-semibold mb-1">QA 阻塞</div>
+          <div class="text-gray-400">block reason 含 regression / critical_bug / security_flaw</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 7: 多项目管理 -->
+  <div x-show="activeTab === 7" x-cloak
+       x-transition:enter="transition-opacity duration-200"
+       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+       class="h-full flex flex-col absolute inset-0 overflow-hidden">
+
+    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+      <h2 class="text-base text-blue-400 font-semibold mb-4">多项目并行管理 (10+ 项目)</h2>
+
+      <!-- Board 隔离 -->
+      <h3 class="text-sm text-purple-400 font-semibold mb-2">Board 隔离架构</h3>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
+        <pre class="text-sm text-gray-300 whitespace-pre">Hermes Gateway (dispatcher 嵌入)
+    │
+    ├── Board: <span class="text-blue-400">project-alpha</span>
+    │   ├── T1 running (implementer)
+    │   ├── T2 ready (implementer)
+    │   └── T3 todo (reviewer)
+    │
+    ├── Board: <span class="text-emerald-400">project-beta</span>
+    │   ├── T1 running (implementer)
+    │   └── T2 todo (orchestrator)
+    │
+    ├── Board: <span class="text-amber-400">project-gamma</span>
+    │   └── ...
+    │
+    └── Board: <span class="text-purple-400">project-juliet</span>
+        └── ...
+
+<span class="text-gray-500">每个 board 拥有:</span>
+  · 独立的 SQLite 数据库
+  · 独立的 workspace 目录
+  · 独立的 dispatcher 循环
+  · 任务不可跨 board 引用</pre>
+      </div>
+
+      <!-- 管理方式 -->
+      <h3 class="text-sm text-amber-400 font-semibold mb-2">管理方式</h3>
+      <div class="grid grid-cols-2 gap-3 mb-6">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs space-y-1">
+          <div><span class="text-blue-400">Dashboard GUI</span> → hermes dashboard → Kanban</div>
+          <div><span class="text-emerald-400">CLI</span> → hermes kanban --board project-alpha list</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs space-y-1">
+          <div><span class="text-amber-400">Gateway 消息</span> → /kanban list (Telegram/Discord)</div>
+          <div><span class="text-purple-400">手机通知</span> → Gateway 自动推送</div>
+        </div>
+      </div>
+
+      <!-- 跨项目经验共享 -->
+      <h3 class="text-sm text-emerald-400 font-semibold mb-2">跨项目经验共享</h3>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
+        <div class="space-y-2 text-xs">
+          <div class="flex items-center gap-3">
+            <span class="text-blue-400 w-24">Memory</span>
+            <span class="text-gray-400">全局 MEMORY.md 中的经验对所有项目生效</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-emerald-400 w-24">Skills</span>
+            <span class="text-gray-400">agent 创建的 skill 全局可用</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-amber-400 w-24">Session Search</span>
+            <span class="text-gray-400">可搜索所有项目的历史会话</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-purple-400 w-24">Profile SOUL.md</span>
+            <span class="text-gray-400">角色定义全局共享</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 分层经验归档 -->
+      <h3 class="text-sm text-cyan-400 font-semibold mb-2">分层经验归档 (.learnings/)</h3>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
+        <pre class="text-xs text-gray-300">.learnings/
+├── <span class="text-blue-400">&lt;project-name&gt;/</span>       <span class="text-gray-500">← 项目私有经验（默认写入位置）</span>
+├── <span class="text-emerald-400">_global/</span>              <span class="text-gray-500">← 经 curator 审核的跨项目经验</span>
+└── <span class="text-amber-400">_pending/</span>             <span class="text-gray-500">← 待审核的跨项目晋升请求</span>
+
+<span class="text-gray-500">规则:</span>
+  · 经验默认写入项目命名空间
+  · 只有 cross-project: true 且 curator 审核通过才进入 _global/
+  · agent 查找时项目池优先于全局池</pre>
+      </div>
+
+      <!-- 工具权限矩阵 -->
+      <h3 class="text-sm text-pink-400 font-semibold mb-2">工具权限矩阵</h3>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 overflow-x-auto">
+        <table class="text-xs w-full">
+          <thead>
+            <tr class="text-gray-500 border-b border-gray-700">
+              <th class="text-left py-1 pr-3">角色</th>
+              <th class="text-center py-1 px-2">terminal</th>
+              <th class="text-center py-1 px-2">file</th>
+              <th class="text-center py-1 px-2">code_exec</th>
+              <th class="text-center py-1 px-2">kanban</th>
+              <th class="text-center py-1 px-2">clarify</th>
+              <th class="text-center py-1 px-2">memory</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-blue-400">PM</td><td class="text-center">读✓ 写✗</td><td class="text-center">读✓ 写✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td></tr>
+            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-purple-400">Orchestrator</td><td class="text-center text-red-400">✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td></tr>
+            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-cyan-400">Researcher</td><td class="text-center">读✓ 写✗</td><td class="text-center">读✓ 写✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-red-400">✗</td></tr>
+            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-emerald-400">Implementer</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td></tr>
+            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-amber-400">Reviewer</td><td class="text-center">读✓ 写✗</td><td class="text-center">读✓ 写✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-red-400">✗</td></tr>
+            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-pink-400">QA-Tester</td><td class="text-center">测✓ 写✗</td><td class="text-center">读✓ 写✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-red-400">✗</td></tr>
+            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-orange-400">DevOps</td><td class="text-center">部✓ 写✗</td><td class="text-center">读✓ 写✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-red-400">✗</td></tr>
+            <tr><td class="py-1 pr-3 text-red-400">SRE-Observer</td><td class="text-center text-red-400">✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-red-400">✗</td><td class="text-center">读✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center">读✓</td></tr>
+          </tbody>
+        </table>
+        <div class="text-[10px] text-gray-600 mt-2">注: "读✓写✗" 表示 terminal/file 的读操作允许，写操作被技术性拦截 (R8 + R10)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 8: 自我进化 -->
+  <div x-show="activeTab === 8" x-cloak
+       x-transition:enter="transition-opacity duration-200"
+       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+       class="h-full flex flex-col absolute inset-0 overflow-hidden">
+
+    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+      <h2 class="text-base text-blue-400 font-semibold mb-4">自我进化三层架构</h2>
+
+      <div class="space-y-4 mb-6">
+        <div class="bg-gray-900 border border-red-500/20 rounded-lg p-4">
+          <div class="text-sm text-red-400 font-semibold mb-2">锁定层（不可自动修改）</div>
+          <div class="text-xs text-gray-400 space-y-1">
+            <div>· Bundled skills（Hermes 内置）</div>
+            <div>· Hub-installed skills（skills.sh 安装）</div>
+            <div>· Pinned skills（用户手动 pin）</div>
+            <div class="text-gray-600 mt-1">Curator 永远不碰这些</div>
+          </div>
+        </div>
+        <div class="bg-gray-900 border border-amber-500/20 rounded-lg p-4">
+          <div class="text-sm text-amber-400 font-semibold mb-2">可变层（Agent 可创建/patch）</div>
+          <div class="text-xs text-gray-400 space-y-1">
+            <div>· Agent-created skills</div>
+            <div>· MEMORY.md（2200 字符上限）</div>
+            <div>· USER.md（1375 字符上限）</div>
+            <div>· Profile SOUL.md（用户审核后修改）</div>
+            <div class="text-gray-600 mt-1">Curator 定期审查清理</div>
+          </div>
+        </div>
+        <div class="bg-gray-900 border border-emerald-500/20 rounded-lg p-4">
+          <div class="text-sm text-emerald-400 font-semibold mb-2">事实表（只增不改）</div>
+          <div class="text-xs text-gray-400 space-y-1">
+            <div>· Kanban task_runs + metadata</div>
+            <div>· Session SQLite（FTS5 可搜索）</div>
+            <div>· .learnings/ 目录（经验分类归档）</div>
+            <div class="text-gray-600 mt-1">永远不修改历史记录</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 进化触发 -->
+      <h2 class="text-base text-blue-400 font-semibold mb-3">进化触发条件</h2>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div class="flex items-start gap-2">
+            <span class="text-red-400 mt-0.5">●</span>
+            <div><span class="text-gray-300">命令/操作失败</span> → memory add 记录修复方法</div>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="text-amber-400 mt-0.5">●</span>
+            <div><span class="text-gray-300">用户纠正 agent</span> → memory add 记录纠正内容</div>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="text-emerald-400 mt-0.5">●</span>
+            <div><span class="text-gray-300">发现新工作流 (5+ tool calls)</span> → skill_manage create</div>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="text-blue-400 mt-0.5">●</span>
+            <div><span class="text-gray-300">知识过时</span> → memory replace 更新</div>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="text-purple-400 mt-0.5">●</span>
+            <div><span class="text-gray-300">找到更好的方法</span> → memory add 最佳实践</div>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="text-pink-400 mt-0.5">●</span>
+            <div><span class="text-gray-300">用户请求不存在的功能</span> → 创建 research task</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 升级规则 -->
+      <h2 class="text-base text-blue-400 font-semibold mb-3">经验升级路径</h2>
+      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
+        <div class="space-y-2 text-xs">
+          <div class="flex items-center gap-3">
+            <span class="text-amber-400 w-20">纠正</span>
+            <span class="text-gray-600">MEMORY.md</span>
+            <span class="text-gray-600">→</span>
+            <span class="text-emerald-400">SOUL.md (永久规则)</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-blue-400 w-20">洞察</span>
+            <span class="text-gray-600">MEMORY.md</span>
+            <span class="text-gray-600">→</span>
+            <span class="text-emerald-400">Skill (工作流程)</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-red-400 w-20">知识缺口</span>
+            <span class="text-gray-600">MEMORY.md</span>
+            <span class="text-gray-600">→</span>
+            <span class="text-emerald-400">Research task</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-emerald-400 w-20">最佳实践</span>
+            <span class="text-gray-600">MEMORY + Skill</span>
+            <span class="text-gray-600">→</span>
+            <span class="text-emerald-400">SOUL.md (永久规则)</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-purple-400 w-20">错误修复</span>
+            <span class="text-gray-600">MEMORY.md</span>
+            <span class="text-gray-600">→</span>
+            <span class="text-emerald-400">Skill pitfall 条目</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+function workflowApp() {
+  return {
+    activeTab: 0,
+    tabs: ['架构总览', '端到端流程', '看板视图', '任务状态机', '风险策略', 'Dispatcher + 背压', '通信机制', '可观测性', '多项目管理', '自我进化'],
+
+    // === 角色数据 ===
+    selectedRole: -1,
+    roles: [
+      { name: 'PM', icon: '📋', color: 'text-blue-400', summary: '需求分析、技术研判、任务拆解',
+        canDo: 'Kanban 读写, Clarify 问答, 技术发现(只读)', cannotDo: '不能写代码, file/terminal 只读',
+        tools: 'kanban, memory, clarify, file_read' },
+      { name: 'Orchestrator', icon: '🎯', color: 'text-purple-400', summary: '中枢路由、状态机驱动、消息转发',
+        canDo: 'Kanban 读写, 消息转发, 任务派发', cannotDo: '不能写代码, 不能做需求分析/拆解',
+        tools: 'kanban, memory, clarify' },
+      { name: 'Researcher', icon: '🔬', color: 'text-cyan-400', summary: '技术方案调研、POC 建议',
+        canDo: 'File 只读, Terminal 只读, Kanban 读写', cannotDo: '不能写代码, 不能执行操作',
+        tools: 'file_read, web, clarify, kanban, memory' },
+      { name: 'Implementer', icon: '⚒️', color: 'text-emerald-400', summary: '编码执行、TDD 强制、POC 验证',
+        canDo: 'Terminal, File, Code execution, Kanban', cannotDo: '不能做架构决策, 遇不确定必须 block',
+        tools: 'terminal, file, code_execution, memory, kanban' },
+      { name: 'Reviewer', icon: '🔍', color: 'text-amber-400', summary: '代码审查、安全审计（硬门禁/只读）',
+        canDo: 'File 只读, Kanban 读写, Clarify', cannotDo: '不能写文件, terminal 写操作被拦截',
+        tools: 'file_read, kanban_read, kanban_block, kanban_complete, clarify' },
+      { name: 'QA-Tester', icon: '🧪', color: 'text-pink-400', summary: '功能验收、集成测试、场景验证',
+        canDo: 'Terminal(测试), Kanban block/complete', cannotDo: '不能修改代码, 只能读+测试',
+        tools: 'terminal, file, code_execution, browser, kanban, memory' },
+      { name: 'DevOps', icon: '🚀', color: 'text-orange-400', summary: '三层部署、验证门控、UAT、回滚、git tag',
+        canDo: 'Terminal(部署), Kanban block/complete', cannotDo: '不能修改业务代码, 不能跳过用户批准',
+        tools: 'terminal, file, code_execution, kanban, memory' },
+      { name: 'SRE-Observer', icon: '🔎', color: 'text-red-400', summary: '故障根因分析（人工升级触发）',
+        canDo: '只读分析, 输出报告, 仅手动升级触发', cannotDo: '不能修改系统, 不能执行操作',
+        tools: 'file, kanban, memory, clarify, web' },
+    ],
+
+    // === 端到端流程 ===
+    e2eStep: 0,
+    e2ePlaying: false,
+    e2eSpeed: 800,
+    e2eTimer: null,
+    e2eData: [
+      {
+        phase: '1', title: '需求提交与澄清', actor: 'PM → User',
+        badge: 'Phase 1', badgeClass: 'bg-blue-500/15 text-blue-400',
+        content: `<div class="space-y-2">
+          <div>① 用户提交模糊需求: <span class="text-emerald-400">"登录体验太差了，每次都要重新登录"</span></div>
+          <div>② PM 自动技术发现: 读 CLAUDE.md → Cargo.toml → src/ → 产出证据报告</div>
+          <div>③ 需求澄清 (一次一问，逐步收缩):</div>
+          <div class="pl-4 text-gray-400">
+            Q1: 核心目标？→ <span class="text-emerald-400">7天免登录</span><br>
+            Q2: 用户群体？→ <span class="text-emerald-400">外部付费客户</span><br>
+            Q3: 时间压力？→ <span class="text-emerald-400">1-2周</span><br>
+            Q4~Q11: 登录方式、过期交互、验收方式...
+          </div>
+          <div>④ 发现冲突: 范围 vs 时间 → 主动沟通 → 用户选择缩小范围</div>
+          <div>⑤ DoR 验证门 (7 项检查) → ✅ 全部通过</div>
+          <div>⑥ 用户显式确认需求 v1 → 质量反馈收集</div>
+        </div>`,
+        roleStates: [
+          { name: 'PM', active: true, status: '分析中' },
+          { name: 'Orchestrator', active: false, status: '待命' },
+          { name: 'Researcher', active: false, status: '待命' },
+          { name: 'Implementer', active: false, status: '待命' },
+          { name: 'Reviewer', active: false, status: '待命' },
+          { name: 'QA-Tester', active: false, status: '待命' },
+          { name: 'DevOps', active: false, status: '待命' },
+          { name: 'SRE-Observer', active: false, status: '待命' },
+        ],
+        taskStates: [
+          { name: 'T0: 改善登录体验', status: 'running', badgeClass: 'bg-blue-500/15 text-blue-400' },
+        ],
+        explain: 'PM 先读代码搞清技术现状，再一次一问逐步收束需求。每问都有推荐标签+大白话理由。可行性检查贯穿全程，发现冲突立即沟通。'
+      },
+      {
+        phase: '1.5', title: '技术研判: Research + POC', actor: 'PM → Researcher → Implementer',
+        badge: 'Phase 1.5', badgeClass: 'bg-cyan-500/15 text-cyan-400',
+        content: `<div class="space-y-2">
+          <div>① PM 判断: "JWT 认证" 涉及项目从未用过的技术栈 → 需要 Research</div>
+          <div>② PM 创建子任务 T0.1: <span class="text-cyan-400">JWT 技术方案调研</span></div>
+          <div>③ Researcher 被唤醒: 读需求 → web research → 对比库选型</div>
+          <div>④ 产出技术方案: <span class="text-emerald-400">推荐 RS256 + jsonwebtoken</span></div>
+          <div>⑤ Researcher 标注: <span class="text-amber-400">需要 POC 验证</span></div>
+          <div>⑥ PM 创建 POC 子任务 T0.2 → Implementer 在独立 worktree 验证</div>
+          <div>⑦ POC 通过: <span class="text-emerald-400">签名 1000 ops/sec, 密钥轮换正常</span></div>
+        </div>`,
+        roleStates: [
+          { name: 'PM', active: true, status: '研判' },
+          { name: 'Orchestrator', active: false, status: '待命' },
+          { name: 'Researcher', active: true, status: '调研中' },
+          { name: 'Implementer', active: true, status: 'POC' },
+          { name: 'Reviewer', active: false, status: '待命' },
+          { name: 'QA-Tester', active: false, status: '待命' },
+          { name: 'DevOps', active: false, status: '待命' },
+          { name: 'SRE-Observer', active: false, status: '待命' },
+        ],
+        taskStates: [
+          { name: 'T0: 改善登录体验', status: 'running', badgeClass: 'bg-blue-500/15 text-blue-400' },
+          { name: 'T0.1: JWT 技术方案调研', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+          { name: 'T0.2: JWT POC 验证', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+        ],
+        explain: '技术不确定性高时，先 Research 产出方案文档，再 POC 验证可行性。Researcher 不写代码，POC 由 Implementer 在隔离 worktree 中执行。'
+      },
+      {
+        phase: '2', title: '任务拆解与派发', actor: 'PM → Orchestrator',
+        badge: 'Phase 2', badgeClass: 'bg-purple-500/15 text-purple-400',
+        content: `<div class="space-y-2">
+          <div>① PM 读取需求文档 + 技术方案</div>
+          <div>② 拆解为 4 个子任务:</div>
+          <div class="pl-4 text-gray-400">
+            T1: <span class="text-emerald-400">实现 JWT 认证模块</span> (implementer)<br>
+            T2: <span class="text-blue-400">编写认证模块测试</span> (implementer) ← parents: [T1]<br>
+            T3: <span class="text-amber-400">审查认证模块代码</span> (reviewer) ← parents: [T1]<br>
+            T4: <span class="text-red-400">修复审查问题</span> (implementer) ← parents: [T3]
+          </div>
+          <div>③ Orchestrator 接管 → 按状态机路由表派发</div>
+          <div>④ T1 变为 ready → Dispatcher spawn implementer worker</div>
+        </div>`,
+        roleStates: [
+          { name: 'PM', active: true, status: '拆解' },
+          { name: 'Orchestrator', active: true, status: '派发' },
+          { name: 'Researcher', active: false, status: '待命' },
+          { name: 'Implementer', active: true, status: '执行' },
+          { name: 'Reviewer', active: false, status: '待命' },
+          { name: 'QA-Tester', active: false, status: '待命' },
+          { name: 'DevOps', active: false, status: '待命' },
+          { name: 'SRE-Observer', active: false, status: '待命' },
+        ],
+        taskStates: [
+          { name: 'T1: 实现 JWT 认证模块', status: 'running', badgeClass: 'bg-blue-500/15 text-blue-400' },
+          { name: 'T2: 编写测试', status: 'todo', badgeClass: 'bg-gray-500/15 text-gray-400' },
+          { name: 'T3: 审查代码', status: 'todo', badgeClass: 'bg-gray-500/15 text-gray-400' },
+          { name: 'T4: 修复审查问题', status: 'todo', badgeClass: 'bg-gray-500/15 text-gray-400' },
+        ],
+        explain: 'PM 完成拆解后交接给 Orchestrator。Orchestrator 是纯路由器——按状态机执行，不做分析不做拆解。Dispatcher 自动按 assignee profile spawn worker。'
+      },
+      {
+        phase: '3', title: '执行: Implementer TDD', actor: 'Implementer',
+        badge: 'Phase 3', badgeClass: 'bg-emerald-500/15 text-emerald-400',
+        content: `<div class="space-y-2">
+          <div>① 读取 T1 详情 + 验收标准</div>
+          <div>② 推导行为清单 (Implementer 自行决定粒度):</div>
+          <div class="pl-4 text-gray-400">
+            行为 A: 有效登录 → 200 + token<br>
+            行为 B: 无效登录 → 401<br>
+            行为 C: 缺失字段 → 400
+          </div>
+          <div>③ 跑全量测试建立基线 → ✅ 通过</div>
+          <div>④ TDD 循环 (RED→GREEN):</div>
+          <div class="pl-4 text-gray-400">
+            <span class="text-red-400">RED</span>: 写测试 → 必须失败<br>
+            <span class="text-emerald-400">GREEN</span>: 写最简实现 → 必须通过
+          </div>
+          <div>⑤ 遇到疑问 → <span class="text-amber-400">kanban_block("RS256 vs HS256?")</span></div>
+          <div>⑥ Reviewer 一次性决策: "用 RS256" → 恢复执行</div>
+          <div>⑦ 全量回归测试: 15/15 ✅</div>
+          <div>⑧ kanban_complete (含 TDD metadata)</div>
+        </div>`,
+        roleStates: [
+          { name: 'PM', active: false, status: '待命' },
+          { name: 'Orchestrator', active: false, status: '监控' },
+          { name: 'Researcher', active: false, status: '待命' },
+          { name: 'Implementer', active: true, status: 'TDD 编码' },
+          { name: 'Reviewer', active: true, status: '决策' },
+          { name: 'QA-Tester', active: false, status: '待命' },
+          { name: 'DevOps', active: false, status: '待命' },
+          { name: 'SRE-Observer', active: false, status: '待命' },
+        ],
+        taskStates: [
+          { name: 'T1: 实现 JWT 认证模块', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+          { name: 'T2: 编写测试', status: 'ready', badgeClass: 'bg-amber-500/15 text-amber-400' },
+          { name: 'T3: 审查代码', status: 'ready', badgeClass: 'bg-amber-500/15 text-amber-400' },
+          { name: 'T4: 修复审查问题', status: 'todo', badgeClass: 'bg-gray-500/15 text-gray-400' },
+        ],
+        explain: 'Implementer 严格遵循 TDD: 先推导行为清单，再对每个行为执行 RED→GREEN 循环。遇到架构决策必须 block，不能自行决定。完成时输出结构化 handoff metadata。'
+      },
+      {
+        phase: '4', title: '测试 + 审查 (并行)', actor: 'Implementer + Reviewer',
+        badge: 'Phase 4', badgeClass: 'bg-amber-500/15 text-amber-400',
+        content: `<div class="space-y-2">
+          <div>T1 done → T2, T3 同时变为 <span class="text-amber-400">ready</span></div>
+          <div class="grid grid-cols-2 gap-4 mt-2">
+            <div class="border border-gray-700 rounded p-2">
+              <div class="text-emerald-400 text-xs font-semibold mb-1">T2: 写测试 (Implementer)</div>
+              <div class="text-xs text-gray-400">读取 T1 handoff → 跑 pytest → 14/14 ✅</div>
+            </div>
+            <div class="border border-gray-700 rounded p-2">
+              <div class="text-amber-400 text-xs font-semibold mb-1">T3: 审查代码 (Reviewer)</div>
+              <div class="text-xs text-gray-400">读取 T1 handoff → 审查代码</div>
+              <div class="text-xs text-red-400 mt-1">⚠ 发现: token 过期时间硬编码</div>
+              <div class="text-xs text-gray-500">approved: false → 阻塞流程</div>
+            </div>
+          </div>
+          <div>T3 done → T4 变为 ready → Implementer 修复</div>
+        </div>`,
+        roleStates: [
+          { name: 'PM', active: false, status: '待命' },
+          { name: 'Orchestrator', active: false, status: '监控' },
+          { name: 'Researcher', active: false, status: '待命' },
+          { name: 'Implementer', active: true, status: '写测试' },
+          { name: 'Reviewer', active: true, status: '审查中' },
+          { name: 'QA-Tester', active: false, status: '待命' },
+          { name: 'DevOps', active: false, status: '待命' },
+          { name: 'SRE-Observer', active: false, status: '待命' },
+        ],
+        taskStates: [
+          { name: 'T1: 实现 JWT 认证模块', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+          { name: 'T2: 编写测试', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+          { name: 'T3: 审查代码', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+          { name: 'T4: 修复审查问题', status: 'running', badgeClass: 'bg-blue-500/15 text-blue-400' },
+        ],
+        explain: 'Reviewer 是严格只读——只看代码不改代码。审查结论是硬门控：不通过就阻塞。Reviewer 发现 token 过期时间写死，打了"不通过"，流程阻塞直到修复完成。'
+      },
+      {
+        phase: '5', title: '修复 + 自我进化', actor: 'Implementer',
+        badge: 'Phase 5', badgeClass: 'bg-purple-500/15 text-purple-400',
+        content: `<div class="space-y-2">
+          <div>① 读取 T3 handoff: <span class="text-red-400">token 过期时间硬编码</span></div>
+          <div>② TDD 修复: RED (test_token_expiry_configurable → 失败) → GREEN (改环境变量 → 通过)</div>
+          <div>③ 回归测试: 15/15 ✅</div>
+          <div>④ kanban_complete (TDD metadata)</div>
+          <div class="mt-3 border-t border-gray-700 pt-3">
+            <div class="text-purple-400 text-xs font-semibold mb-1">自我进化 (边干边记):</div>
+            <div class="text-xs text-gray-400">memory add: "JWT token 过期时间应可配置，不要硬编码"</div>
+            <div class="text-xs text-gray-400">skill_manage create: "jwt-auth-checklist" → 新项目直接用</div>
+          </div>
+        </div>`,
+        roleStates: [
+          { name: 'PM', active: false, status: '待命' },
+          { name: 'Orchestrator', active: false, status: '监控' },
+          { name: 'Researcher', active: false, status: '待命' },
+          { name: 'Implementer', active: true, status: '修复' },
+          { name: 'Reviewer', active: false, status: '待命' },
+          { name: 'QA-Tester', active: false, status: '待命' },
+          { name: 'DevOps', active: false, status: '待命' },
+          { name: 'SRE-Observer', active: false, status: '待命' },
+        ],
+        taskStates: [
+          { name: 'T1~T3', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+          { name: 'T4: 修复审查问题', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+          { name: 'T-deploy: 部署发布', status: 'ready', badgeClass: 'bg-amber-500/15 text-amber-400' },
+        ],
+        explain: '修复审查问题的同时"长记性"——经验自动沉淀为 memory 和 skill。下次新项目做认证直接套 checklist，避免重复踩坑。'
+      },
+      {
+        phase: '5.6', title: '三层部署: DevOps', actor: 'DevOps-Engineer → User',
+        badge: 'Phase 5.6', badgeClass: 'bg-orange-500/15 text-orange-400',
+        content: `<div class="space-y-2">
+          <div>① <span class="text-emerald-400">dev/test</span> 自动部署 → 验证 (test+E2E+性能) → ✅</div>
+          <div>② 等待用户批准 staging → <span class="text-amber-400">kanban_block</span></div>
+          <div>③ 用户批准 → <span class="text-blue-400">staging</span> 部署 → 验证 (test+E2E) → ✅</div>
+          <div>④ UAT sign-off → <span class="text-amber-400">kanban_block</span> → 用户验收通过</div>
+          <div>⑤ 用户批准 production → <span class="text-red-400">production</span> 部署</div>
+          <div>⑥ 冒烟测试: 4/4 端点可达 → ✅</div>
+          <div>⑦ 自动打 git tag: <span class="text-purple-400">v1.2.3</span></div>
+          <div class="text-xs text-gray-500 mt-2">任何层失败 → 自动回滚 + kanban_block → 等待用户决策</div>
+        </div>`,
+        roleStates: [
+          { name: 'PM', active: false, status: '待命' },
+          { name: 'Orchestrator', active: false, status: '监控' },
+          { name: 'Researcher', active: false, status: '待命' },
+          { name: 'Implementer', active: false, status: '待命' },
+          { name: 'Reviewer', active: false, status: '待命' },
+          { name: 'QA-Tester', active: false, status: '待命' },
+          { name: 'DevOps', active: true, status: '部署中' },
+          { name: 'SRE-Observer', active: false, status: '待命' },
+        ],
+        taskStates: [
+          { name: 'T1~T4', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+          { name: 'T-deploy: 部署发布', status: 'running', badgeClass: 'bg-blue-500/15 text-blue-400' },
+        ],
+        explain: '三层环境逐级推进，每层有验证门控。dev/test 自动，staging 和 production 必须用户批准。UAT 由用户亲自在 staging 上验收。任何层失败自动回滚并等待用户决策。'
+      },
+      {
+        phase: '6', title: '完成通知 + 用户审核', actor: 'Orchestrator → User',
+        badge: 'Phase 6', badgeClass: 'bg-emerald-500/15 text-emerald-400',
+        content: `<div class="space-y-2">
+          <div>所有任务 done! Gateway 推送通知:</div>
+          <div class="border border-gray-700 rounded p-3 bg-gray-800/50 text-xs">
+            <div class="text-emerald-400 font-semibold mb-1">📬 项目 Alpha - 用户认证模块 已完成并部署</div>
+            <div class="text-gray-400">✅ 代码变更: src/auth/jwt.rs, src/auth/routes.rs</div>
+            <div class="text-gray-400">✅ 测试: 14/14 通过</div>
+            <div class="text-gray-400">✅ 审查: 1 个问题已修复</div>
+            <div class="text-gray-400">✅ 部署: v1.2.3 已上线 production</div>
+            <div class="text-gray-400">🧠 经验沉淀: 2 条 memory, 1 个新 skill</div>
+          </div>
+          <div>CEO 决策: <span class="text-emerald-400">[批准归档]</span> / <span class="text-blue-400">[查看详情]</span> / <span class="text-amber-400">[追加需求]</span></div>
+        </div>`,
+        roleStates: [
+          { name: 'PM', active: false, status: '待命' },
+          { name: 'Orchestrator', active: true, status: '通知' },
+          { name: 'Researcher', active: false, status: '待命' },
+          { name: 'Implementer', active: false, status: '待命' },
+          { name: 'Reviewer', active: false, status: '待命' },
+          { name: 'QA-Tester', active: false, status: '待命' },
+          { name: 'DevOps', active: false, status: '待命' },
+          { name: 'SRE-Observer', active: false, status: '待命' },
+        ],
+        taskStates: [
+          { name: 'T1~T4, T-deploy', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+        ],
+        explain: '所有工单完成，系统自动推送汇总通知。包含代码变更、测试结果、审查修复、部署状态和经验沉淀。CEO 审核后归档，整个流程闭环。'
+      },
+    ],
+    e2eNext() { if (this.e2eStep < this.e2eData.length - 1) this.e2eStep++; },
+    e2ePrev() { if (this.e2eStep > 0) this.e2eStep--; },
+    e2eReset() { this.e2eStep = 0; this.e2eStop(); },
+    e2ePlay() {
+      if (this.e2ePlaying) { this.e2eStop(); return; }
+      if (this.e2eStep >= this.e2eData.length - 1) this.e2eStep = 0;
+      this.e2ePlaying = true;
+      const tick = () => {
+        if (this.e2eStep < this.e2eData.length - 1 && this.e2ePlaying) {
+          this.e2eStep++;
+          this.e2eTimer = setTimeout(tick, 2200 - this.e2eSpeed);
+        } else { this.e2ePlaying = false; }
+      };
+      tick();
+    },
+    e2eStop() { this.e2ePlaying = false; clearTimeout(this.e2eTimer); },
+
+    // === 任务状态机 ===
+    activeKanbanState: 'triage',
+    kanbanStates: [
+      { id: 'triage', label: 'triage', color: 'text-gray-400', description: '粗糙想法，用户提交的原始需求', trigger: '用户通过 Gateway/CLI 提交需求', actor: '用户',
+        transitions: [{ from: '用户输入', to: 'triage', condition: '提交原始需求' }] },
+      { id: 'todo', label: 'todo', color: 'text-blue-400', description: '具体任务，Orchestrator 拆解后', trigger: 'PM 完成需求分析和任务拆解', actor: 'PM + Orchestrator',
+        transitions: [{ from: 'triage', to: 'todo', condition: 'PM 拆解完成' }] },
+      { id: 'ready', label: 'ready', color: 'text-amber-400', description: '可执行，所有 parents 已 done', trigger: '所有 parent 任务完成', actor: '系统自动',
+        transitions: [{ from: 'todo', to: 'ready', condition: 'parents 全 done' }, { from: 'running', to: 'ready', condition: '崩溃回退' }] },
+      { id: 'running', label: 'running', color: 'text-blue-400', description: '执行中，Dispatcher 派发 worker', trigger: 'Dispatcher 原子性 claim + spawn', actor: 'Dispatcher',
+        transitions: [{ from: 'ready', to: 'running', condition: 'Dispatcher claim' }] },
+      { id: 'blocked', label: 'blocked', color: 'text-amber-400', description: '等待输入，Worker 调用 kanban_block()', trigger: 'Worker 主动 block (L3 决策/架构问题)', actor: 'Worker',
+        transitions: [{ from: 'running', to: 'blocked', condition: 'kanban_block()' }, { from: 'blocked', to: 'running', condition: '用户 unblock' }] },
+      { id: 'done', label: 'done', color: 'text-emerald-400', description: '完成，Worker 调用 kanban_complete()', trigger: 'Worker 完成任务 + 回归通过', actor: 'Worker',
+        transitions: [{ from: 'running', to: 'done', condition: 'kanban_complete()' }] },
+      { id: 'archived', label: 'archived', color: 'text-gray-500', description: '归档，手动或 GC 归档', trigger: '用户批准归档', actor: '用户/系统',
+        transitions: [{ from: 'done', to: 'archived', condition: '用户批准' }] },
+    ],
+    get currentKanbanState() { return this.kanbanStates.find(s => s.id === this.activeKanbanState) || this.kanbanStates[0]; },
+
+    // === 背压模拟 ===
+    bpImpl: 5,
+    bpRev: 3,
+    get bpRatio() { return this.bpImpl / Math.max(this.bpRev, 1); },
+    get bpAction() { return this.bpRatio <= 2 ? '正常派发' : this.bpRatio <= 4 ? '降速派发' : '暂停派发'; },
+    get bpDetail() { return this.bpRatio <= 2 ? '每轮都派' : this.bpRatio <= 4 ? '隔 1 轮派 1 个' : '暂停 implementer'; },
+  };
+}
+</script>
+
+</body>
+</html>

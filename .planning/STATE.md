@@ -1,41 +1,42 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Hermes Dev Orchestra 规范化与迁移
-status: milestone_complete
-stopped_at: Phase 18 complete
-last_updated: "2026-04-29T00:20:43.322Z"
-last_activity: 2026-04-29
+milestone: v1.3
+milestone_name: Hermes 原生工作流 MVP 实现
+status: Defining requirements
+stopped_at: Milestone v1.3 opened
+last_updated: "2026-05-10T09:54:31.219Z"
+last_activity: 2026-05-10 -- Milestone v1.3 started from phase 19 workflow design docs
 progress:
   total_phases: 6
-  completed_phases: 6
-  total_plans: 6
-  completed_plans: 6
-  percent: 100
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-28)
+See: .planning/PROJECT.md (updated 2026-05-10)
 
 **Core value:** 用户可以通过 SSH/Hermes CLI 随时追加开发任务，让 Hermes 自动调度 Claude 与 Codex 推进多个项目，只在高风险或产品级决策时打断用户。
-**Current focus:** v1.2 complete — ready for milestone completion
+**Current focus:** v1.3 planning — Hermes 原生工作流 MVP 实现
 
 ## Current Position
 
-Phase: 18 complete
-Plan: 18-01 complete
-Status: Milestone complete
-Last activity: 2026-04-29 -- Phase 18 complete; ready for $gsd-complete-milestone
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-10 -- Milestone v1.3 started from phase 19 workflow design docs
 
-Progress: [██████████] 100%
+Progress: [----------] 0%
 
 ## Requirements Alignment
 
-v1.2 requirements defined: 16 requirements across 6 categories.
-Roadmap created: 6 phases (13-18) with success criteria and traceability.
+v1.3 requirements defined: 17 requirements across 6 categories.
+Roadmap created: 6 phases (20-25) with success criteria and traceability.
+v1.4 full-scope items captured in Future Requirements and roadmap preview.
 
 ## Accumulated Context
 
@@ -53,7 +54,9 @@ All v1.1 decisions remain valid.
 - [Phase 17]: Agent rule convergence verified without source edits. — `AGENTS.md` already preserves managed sections and the Dev Orchestra boundary block; `CLAUDE.md` remains pointer-only to `AGENTS.md` and `.planning/SPEC.md`; static checks and `rtk make test` passed.
 - [Phase 18 Context]: Use explicit architecture-boundary wording across canonical, derived, and user-facing docs. — Fixed Runtime bus filenames represent one active task slot per project; same-project parallelism is future v2 design work; "10x" is limited to single-developer multi-project orchestration, not same-project parallel Codex execution or AI-factory concurrency.
 - [Phase 18 Plan]: Execute one documentation and verification plan. — `18-01` covers ARCH-01 and ARCH-02 with fixed Runtime bus boundary wording, future same-project parallelism scope, 10x limitation, static drift checks, `rtk make test`, traceability updates, and Phase 18 verification evidence.
-- [Phase 18]: Architecture bounds and v1.2 closeout verified. — Fixed Runtime bus single-slot wording, same-project parallelism future-work boundary, 10x limitation, `rtk make test`, and Phase 13-18 traceability all passed; v1.2 is ready for `$gsd-complete-milestone`.
+- [Phase 18]: Architecture bounds and v1.2 closeout verified. — Fixed Runtime bus single-slot wording, same-project parallelism future-work boundary, 10x limitation, `rtk make test`, and Phase 13-18 traceability all passed.
+- [Milestone v1.3]: Split phase 19 workflow design into two execution milestones. — v1.3 covers the MVP path; v1.4 keeps curator semantics, SRE RCA, and deploy/UAT full-scope items.
+- [Milestone v1.3]: Start execution numbering at Phase 20. — `.planning/phases/19-hermes-workflow-design/` remains a stable design-source directory and is not reused as a GSD execution phase.
 
 ### Pending Todos
 
@@ -65,6 +68,6 @@ None at milestone start.
 
 ## Session Continuity
 
-Last session: 2026-04-29T00:01:07.081Z
-Stopped at: Phase 18 complete
-Resume: Complete v1.2 milestone
+Last session: 2026-05-10T09:54:31.214Z
+Stopped at: Milestone v1.3 opened
+Resume: Start Phase 20 planning
