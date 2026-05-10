@@ -3,1313 +3,1653 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hermes 多项目 AI 开发工作流 — 交互式全景</title>
+<title>Hermes 多项目 AI 开发工作流 — 完整模拟器</title>
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
-tailwind.config = {
-  theme: { extend: { colors: { surface: '#161b22', border: '#30363d' } } }
-}
+tailwind.config = { theme: { extend: { colors: { surface: '#161b22', border: '#30363d' } } } }
 </script>
 <style>
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
-  [x-cloak] { display: none !important; }
-  .role-card { transition: all 0.2s; }
-  .role-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-  .phase-arrow { animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
-  .state-node { transition: all 0.15s; cursor: pointer; }
-  .state-node:hover { filter: brightness(1.3); }
-  .flow-line { stroke-dasharray: 8 4; animation: dash 1s linear infinite; }
-  @keyframes dash { to { stroke-dashoffset: -12; } }
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+[x-cloak]{display:none!important}
+.task-card{transition:all .2s}.task-card:hover{transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,0,0,.4)}
+@keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}.slide-in{animation:slideIn .3s ease}
+@keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,0)}50%{box-shadow:0 0 8px 2px rgba(59,130,246,.3)}}.glow{animation:glow 2s infinite}
+@keyframes fade{from{opacity:0}to{opacity:1}}.fade-in{animation:fade .5s}
 </style>
 </head>
-<body class="bg-gray-950 text-gray-200 font-mono h-screen flex flex-col overflow-hidden" x-data="workflowApp()">
+<body class="bg-gray-950 text-gray-200 font-mono h-screen flex flex-col overflow-hidden" x-data="app()" x-init="init()">
 
 <!-- Header -->
-<header class="shrink-0 px-6 pt-4 pb-0 border-b border-gray-700">
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-xl text-blue-400 font-bold">Hermes 多项目 AI 开发工作流</h1>
-      <p class="text-sm text-gray-500 mt-1">8 角色编排 · 状态机路由 · 三层风险拦截 · 全链路可观测</p>
-    </div>
-    <div class="text-xs text-gray-600">v1.0 · Phase 19</div>
+<header class="shrink-0 px-4 pt-2 pb-1 border-b border-gray-700 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <h1 class="text-base text-blue-400 font-bold">Hermes 工作流模拟器</h1>
+    <span class="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-500" x-text="phaseLabel"></span>
   </div>
-  <!-- Tabs -->
-  <div class="flex gap-0.5 border-b-2 border-gray-700 mt-3">
-    <template x-for="(tab, i) in tabs" :key="i">
-      <button @click="activeTab = i"
-        class="px-4 py-2 border border-gray-700 border-b-0 rounded-t text-sm transition-colors whitespace-nowrap"
-        :class="activeTab === i
-          ? 'text-blue-400 bg-gray-950 -mb-[2px] z-10 relative'
-          : 'text-gray-500 hover:text-gray-200 bg-surface'"
-        x-text="tab"></button>
-    </template>
+  <div class="flex items-center gap-2">
+    <select x-model="currentBoard" @change="switchBoard()" class="bg-gray-900 border border-gray-700 rounded px-2 py-0.5 text-[10px] text-gray-300 focus:outline-none">
+      <template x-for="b in boards" :key="b.id">
+        <option :value="b.id" x-text="b.name"></option>
+      </template>
+    </select>
+    <button @click="addBoard()" class="px-1.5 py-0.5 bg-gray-800 border border-gray-700 rounded text-[10px] text-gray-400 hover:text-blue-400">+Board</button>
+    <button @click="resetAll()" class="px-2 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-[10px]">重置</button>
   </div>
 </header>
 
 <!-- Main -->
-<main class="flex-1 overflow-hidden min-h-0 relative">
+<main class="flex-1 flex overflow-hidden min-h-0">
 
-  <!-- Tab 0: 架构总览 -->
-  <div x-show="activeTab === 0" x-cloak
-       x-transition:enter="transition-opacity duration-200"
-       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-       class="h-full flex flex-col absolute inset-0 overflow-hidden">
+  <!-- ============ 左: 看板 + 交互区 ============ -->
+  <div class="flex-1 flex flex-col overflow-hidden min-w-0">
 
-    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-      <!-- 架构图 -->
-      <div class="mb-6">
-        <h2 class="text-base text-blue-400 font-semibold mb-3">系统架构</h2>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-5 text-sm leading-relaxed">
-          <pre class="text-gray-300 whitespace-pre overflow-x-auto">
-┌─────────────────────────────────────────────────────────────────────┐
-│                         User (Jacky)                                │
-│                    L3 决策仲裁 · 最终审批人                           │
-│              CLI ─── Dashboard ─── Gateway(Telegram/Discord)        │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────────┐
-│                   Hermes Agent v0.13.0 运行时                       │
-│   ┌─────────────────────────────────────────────────────────────┐  │
-│   │  Kanban · Dispatcher · Gateway · Curator · Observability    │  │
-│   └─────────────────────────────────────────────────────────────┘  │
-│                               │                                     │
-│   ┌───────────────────────────▼──────────────────────────────────┐  │
-│   │                    8 个 Profile 角色                          │  │
-│   │                                                              │  │
-│   │   ┌──────┐  ┌──────────────┐  ┌──────────┐                  │  │
-│   │   │  PM  │→│ Orchestrator │→│Researcher │                  │  │
-│   │   │需求分析│  │  中枢路由    │  │ 技术调研  │                  │  │
-│   │   └──┬───┘  └──────┬───────┘  └──────────┘                  │  │
-│   │      │             │                                         │  │
-│   │      │    ┌────────▼────────────────────────┐               │  │
-│   │      │    │     状态机路由表                  │               │  │
-│   │      └────┤ pm_analyzed → impl/researcher   │               │  │
-│   │           │ impl_done → reviewer            │               │  │
-│   │           │ review_pass → qa → devops       │               │  │
-│   │           └────────┬────────────────────────┘               │  │
-│   │                    │                                        │  │
-│   │   ┌────────┐ ┌─────┴─────┐ ┌──────────┐ ┌──────────────┐  │  │
-│   │   │Implementer│ │ Reviewer │ │QA-Tester │ │DevOps-Engineer│ │  │
-│   │   │ 编码/TDD │ │ 只读审查  │ │ 功能验收  │ │  三层部署     │  │  │
-│   │   └────────┘ └───────────┘ └──────────┘ └──────────────┘  │  │
-│   │                                                              │  │
-│   │   ┌──────────────┐  ┌───────────────────────────────────┐  │  │
-│   │   │ SRE-Observer │  │     Risk Policy Engine            │  │  │
-│   │   │  根因分析     │  │  SOUL.md + Plugin hook + CLI 安全 │  │  │
-│   │   └──────────────┘  └───────────────────────────────────┘  │  │
-│   └──────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘</pre>
-        </div>
-      </div>
+    <!-- 需求输入 -->
+    <div class="shrink-0 px-4 py-2 border-b border-gray-800 flex gap-2">
+      <input type="text" x-model="userInput" @keydown.enter="submitRequirement()"
+             :placeholder="inputPlaceholder" :disabled="simBusy"
+             class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 placeholder-gray-600 focus:border-blue-500 focus:outline-none">
+      <button @click="submitRequirement()" :disabled="!userInput.trim()||simBusy"
+              class="px-3 py-1.5 bg-blue-500 text-gray-950 rounded text-xs font-semibold disabled:opacity-40">提交</button>
+      <button x-show="hasCheckpoint" @click="recoverFromCheckpoint()"
+              class="px-2 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded text-xs">恢复上次进度</button>
+    </div>
 
-      <!-- 角色卡片 -->
-      <h2 class="text-base text-blue-400 font-semibold mb-3">角色详情</h2>
-      <div class="grid grid-cols-4 gap-3 mb-6">
-        <template x-for="(role, i) in roles" :key="i">
-          <div class="role-card bg-gray-900 border border-gray-700 rounded-lg p-3 cursor-pointer"
-               @click="selectedRole = selectedRole === i ? -1 : i"
-               :class="selectedRole === i ? 'border-blue-500 ring-1 ring-blue-500/30' : ''">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-lg" x-text="role.icon"></span>
-              <span class="text-sm font-semibold" :class="role.color" x-text="role.name"></span>
+    <!-- 看板列 -->
+    <div class="flex-1 overflow-x-auto overflow-y-hidden px-3 py-2 min-h-0">
+      <div class="flex gap-2 h-full min-w-max">
+        <template x-for="col in columns" :key="col.id">
+          <div class="flex flex-col bg-gray-900/50 border border-gray-800 rounded-lg w-44 shrink-0">
+            <div class="shrink-0 px-2 py-1.5 border-b border-gray-800 flex items-center justify-between">
+              <span class="text-[10px] font-semibold" :class="col.color" x-text="col.label"></span>
+              <span class="text-[10px] text-gray-600 bg-gray-800 rounded-full px-1" x-text="colTasks(col.id).length"></span>
             </div>
-            <p class="text-xs text-gray-400 leading-relaxed" x-text="role.summary"></p>
-            <!-- 展开详情 -->
-            <div x-show="selectedRole === i" x-cloak class="mt-3 pt-3 border-t border-gray-700">
-              <div class="text-xs space-y-2">
-                <div>
-                  <span class="text-emerald-400">能做:</span>
-                  <span class="text-gray-400" x-text="role.canDo"></span>
+            <div class="flex-1 overflow-y-auto p-1.5 space-y-1.5 min-h-0">
+              <template x-for="t in colTasks(col.id)" :key="t.id">
+                <div class="task-card bg-gray-900 border rounded p-2 cursor-pointer slide-in"
+                     :class="t.blocked?'border-amber-500/50':t.id===activeTaskId?'border-blue-500/50 glow':'border-gray-700'"
+                     @click="selectTask(t)">
+                  <div class="flex items-center justify-between mb-0.5">
+                    <span class="text-[9px] px-1 py-0.5 rounded" :class="t.assigneeBadge" x-text="t.assignee"></span>
+                    <span class="text-[9px] text-gray-600" x-text="t.id"></span>
+                  </div>
+                  <div class="text-[11px] text-gray-300 truncate" x-text="t.title"></div>
+                  <div x-show="t.blocked" class="mt-0.5 text-[9px] text-amber-400 truncate" x-text="'🔒 '+t.blockReason"></div>
                 </div>
-                <div>
-                  <span class="text-red-400">不能做:</span>
-                  <span class="text-gray-400" x-text="role.cannotDo"></span>
-                </div>
-                <div>
-                  <span class="text-amber-400">工具:</span>
-                  <span class="text-gray-400" x-text="role.tools"></span>
-                </div>
-              </div>
+              </template>
             </div>
           </div>
         </template>
       </div>
-
-      <!-- 核心原则 -->
-      <h2 class="text-base text-blue-400 font-semibold mb-3">核心设计原则</h2>
-      <div class="grid grid-cols-3 gap-3 mb-4">
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
-          <div class="text-sm text-purple-400 font-semibold mb-1">以官方能力为主</div>
-          <p class="text-xs text-gray-400">Kanban/Profile/Dispatcher/Curator/Memory 均为 Hermes 原生，不重复造轮子</p>
-        </div>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
-          <div class="text-sm text-emerald-400 font-semibold mb-1">角色抽象，实现可替换</div>
-          <p class="text-xs text-gray-400">Profile 定义"谁"，不绑定 CLI/模型。底层可从 Codex 切到 Claude</p>
-        </div>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
-          <div class="text-sm text-amber-400 font-semibold mb-1">三层纵深风险拦截</div>
-          <p class="text-xs text-gray-400">SOUL.md 软约束 → Plugin hook 硬拦截 → CLI 原生安全。L3 永不自动通过</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Tab 1: 端到端流程 -->
-  <div x-show="activeTab === 1" x-cloak
-       x-transition:enter="transition-opacity duration-200"
-       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-       class="h-full flex flex-col absolute inset-0 overflow-hidden">
-
-    <!-- Controls -->
-    <div class="shrink-0 px-6 py-3 flex gap-3 items-center">
-      <button @click="e2ePrev()" class="px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
-              :disabled="e2eStep === 0" :class="e2eStep === 0 ? 'opacity-40' : ''">◀</button>
-      <button @click="e2eNext()" class="px-4 py-2 bg-blue-500 text-gray-950 rounded text-sm font-semibold">下一步 ▶</button>
-      <button @click="e2ePlay()" class="px-4 py-2 rounded text-sm border"
-              :class="e2ePlaying ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-gray-800 border-gray-700'"
-              x-text="e2ePlaying ? '⏸ 暂停' : '▶ 自动'"></button>
-      <button @click="e2eReset()" class="px-4 py-2 bg-red-500/80 text-white rounded text-sm">重置</button>
-      <span class="text-sm text-gray-500" x-text="'Phase ' + e2eData[e2eStep].phase + ' / 6'"></span>
-      <span class="text-xs text-gray-600 ml-2">速度</span>
-      <input type="range" min="300" max="2000" x-model="e2eSpeed" class="w-24 accent-blue-500">
     </div>
 
-    <!-- Panels -->
-    <div class="flex-1 grid grid-cols-[3fr_2fr] gap-4 px-6 pb-4 overflow-hidden min-h-0">
-      <!-- 左: 流程面板 -->
-      <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col">
-        <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5 flex justify-between">
-          <span x-text="e2eData[e2eStep].title"></span>
-          <span class="text-xs text-gray-600" x-text="e2eData[e2eStep].actor"></span>
-        </div>
-        <div class="flex-1 p-4 overflow-y-auto min-h-0 text-sm">
-          <div class="mb-3">
-            <span class="text-xs px-2 py-0.5 rounded" :class="e2eData[e2eStep].badgeClass" x-text="e2eData[e2eStep].badge"></span>
-          </div>
-          <div class="space-y-2" x-html="e2eData[e2eStep].content"></div>
-        </div>
-      </div>
-
-      <!-- 右: 上下文 + 状态 -->
-      <div class="flex flex-col gap-4 overflow-hidden">
-        <!-- 角色状态 -->
-        <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex-1 min-h-0 flex flex-col">
-          <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5">角色状态</div>
-          <div class="flex-1 p-4 overflow-y-auto min-h-0 text-xs space-y-1.5">
-            <template x-for="(rs, i) in e2eData[e2eStep].roleStates" :key="i">
-              <div class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full shrink-0" :class="rs.active ? 'bg-emerald-400' : 'bg-gray-600'"></span>
-                <span class="text-gray-400" x-text="rs.name"></span>
-                <span class="ml-auto" :class="rs.active ? 'text-emerald-400' : 'text-gray-600'" x-text="rs.status"></span>
-              </div>
+    <!-- 交互面板 (问题/决策/TDD) -->
+    <div x-show="interactionPanel" x-cloak class="shrink-0 border-t border-gray-800 bg-gray-900/80 px-4 py-3 fade-in max-h-48 overflow-y-auto">
+      <!-- PM 问题 -->
+      <template x-if="interactionPanel==='question'">
+        <div>
+          <div class="text-xs text-blue-400 font-semibold mb-1">PM 提问 (Q<span x-text="qState.idx+1"></span>/<span x-text="questions.length"></span>)</div>
+          <div class="text-sm text-gray-200 mb-2" x-text="questions[qState.idx]?.q"></div>
+          <div class="space-y-1">
+            <template x-for="(opt,i) in questions[qState.idx]?.opts" :key="i">
+              <button @click="answerQuestion(opt)"
+                      class="w-full text-left px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-xs hover:border-blue-500 transition-colors flex items-center gap-2">
+                <span class="text-blue-400 font-semibold" x-text="opt.label"></span>
+                <span class="text-gray-400" x-text="opt.text"></span>
+                <span x-show="opt.rec" class="ml-auto text-[9px] px-1 py-0.5 bg-emerald-500/10 text-emerald-400 rounded" x-text="opt.rec"></span>
+              </button>
             </template>
-          </div>
-        </div>
-        <!-- 任务状态 -->
-        <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex-1 min-h-0 flex flex-col">
-          <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5">任务状态</div>
-          <div class="flex-1 p-4 overflow-y-auto min-h-0 text-xs space-y-1.5">
-            <template x-for="(ts, i) in e2eData[e2eStep].taskStates" :key="i">
-              <div class="flex items-center gap-2">
-                <span class="px-1.5 py-0.5 rounded text-[10px]" :class="ts.badgeClass" x-text="ts.status"></span>
-                <span class="text-gray-400 truncate" x-text="ts.name"></span>
-              </div>
-            </template>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Explain -->
-    <div class="shrink-0 px-6 py-3 border-t border-gray-700">
-      <div class="border-l-4 border-purple-500 bg-purple-500/5 rounded-r px-4 py-2 text-sm" x-html="e2eData[e2eStep].explain"></div>
-    </div>
-  </div>
-
-  <!-- Tab 2: 任务状态机 -->
-  <div x-show="activeTab === 2" x-cloak
-       x-transition:enter="transition-opacity duration-200"
-       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-       class="h-full flex flex-col absolute inset-0 overflow-hidden">
-
-    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-      <h2 class="text-base text-blue-400 font-semibold mb-4">任务状态机</h2>
-
-      <!-- 状态机可视化 -->
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-6 mb-6">
-        <div class="flex items-center justify-center gap-2 flex-wrap">
-          <template x-for="(state, i) in kanbanStates" :key="i">
-            <div class="flex items-center gap-2">
-              <div class="state-node px-4 py-2 rounded-lg border text-sm font-semibold"
-                   :class="state.id === activeKanbanState
-                     ? 'border-blue-400 bg-blue-500/15 text-blue-400 ring-1 ring-blue-400/30'
-                     : state.color + ' border-gray-600'"
-                   @click="activeKanbanState = state.id">
-                <span x-text="state.label"></span>
-              </div>
-              <span x-show="i < kanbanStates.length - 1" class="text-gray-600 text-lg">→</span>
+            <div class="flex gap-1">
+              <input type="text" x-model="otherInput" placeholder="其他: 自定义回答..."
+                     class="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-[11px] text-gray-300 placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                     @keydown.enter="answerOther()">
+              <button @click="answerOther()" :disabled="!otherInput.trim()"
+                      class="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-[10px] text-gray-400 disabled:opacity-40">确定</button>
             </div>
-          </template>
-        </div>
-      </div>
-
-      <!-- 选中状态的详情 -->
-      <div class="grid grid-cols-2 gap-4 mb-6">
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
-          <h3 class="text-sm text-emerald-400 font-semibold mb-2" x-text="'含义: ' + currentKanbanState.label"></h3>
-          <p class="text-sm text-gray-400 mb-3" x-text="currentKanbanState.description"></p>
-          <div class="text-xs space-y-1">
-            <div><span class="text-amber-400">触发条件:</span> <span class="text-gray-400" x-text="currentKanbanState.trigger"></span></div>
-            <div><span class="text-purple-400">执行者:</span> <span class="text-gray-400" x-text="currentKanbanState.actor"></span></div>
+          </div>
+          <div class="text-[10px] text-gray-600 mt-1" x-text="questions[qState.idx]?.reason"></div>
+          <div x-show="qState.otherCount > 0" class="text-[10px] text-amber-400 mt-0.5">
+            已选"其他" <span x-text="qState.otherCount"></span> 次
+            <span x-show="qState.otherCount >= 2"> — 系统将合成摘要强制收敛</span>
+            <span x-show="qState.otherCount >= 3"> — 已达收敛上限, 自动选择推荐项</span>
           </div>
         </div>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
-          <h3 class="text-sm text-blue-400 font-semibold mb-2">转换路径</h3>
-          <div class="space-y-2 text-xs">
-            <template x-for="(t, i) in currentKanbanState.transitions" :key="i">
-              <div class="flex items-center gap-2">
-                <span class="text-gray-500" x-text="t.from"></span>
-                <span class="text-gray-600">→</span>
-                <span class="text-emerald-400" x-text="t.to"></span>
-                <span class="text-gray-600 ml-1" x-text="'(' + t.condition + ')'"></span>
-              </div>
+      </template>
+      <!-- 决策 -->
+      <template x-if="interactionPanel==='decision'">
+        <div>
+          <div class="text-xs text-amber-400 font-semibold mb-1" x-text="decisionCtx.title"></div>
+          <div class="text-xs text-gray-400 mb-2" x-text="decisionCtx.desc"></div>
+          <div class="space-y-1">
+            <template x-for="(opt,i) in decisionCtx.options" :key="i">
+              <button @click="makeDecision(opt.action)"
+                      class="w-full text-left px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-xs hover:border-blue-500 transition-colors">
+                <span class="text-blue-400" x-text="opt.label"></span>
+                <span class="text-gray-500 ml-1" x-text="opt.desc"></span>
+              </button>
             </template>
           </div>
         </div>
-      </div>
-
-      <!-- 依赖链示例 -->
-      <h2 class="text-base text-blue-400 font-semibold mb-3">依赖链 (parents) 示例</h2>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 text-sm">
-        <pre class="text-gray-300 whitespace-pre overflow-x-auto">T1 (implementer: 实现认证模块)
- ├── T2 (implementer: 编写测试)    ← T1 完成后并行就绪
- └── T3 (reviewer: 审查代码)       ← T1 完成后并行就绪
-      └── T4 (implementer: 修复审查问题)  ← T3 完成后就绪</pre>
-        <div class="mt-3 text-xs text-gray-500">
-          parents 依赖: 子任务在所有 parent 任务 done 之后才从 todo 变为 ready
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Tab 3: 风险策略 -->
-  <div x-show="activeTab === 3" x-cloak
-       x-transition:enter="transition-opacity duration-200"
-       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-       class="h-full flex flex-col absolute inset-0 overflow-hidden">
-
-    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-      <h2 class="text-base text-blue-400 font-semibold mb-4">三层风险拦截决策矩阵</h2>
-
-      <!-- L1/L2/L3 卡片 -->
-      <div class="grid grid-cols-3 gap-4 mb-6">
-        <div class="bg-gray-900 border border-emerald-500/30 rounded-lg p-4">
+      </template>
+      <!-- TDD -->
+      <template x-if="interactionPanel==='tdd'">
+        <div>
+          <div class="text-xs text-emerald-400 font-semibold mb-1">TDD: <span x-text="tddState.currentBehavior"></span></div>
           <div class="flex items-center gap-2 mb-2">
-            <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
-            <span class="text-sm text-emerald-400 font-semibold">L1 — Worker 自行决定</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded" :class="tddState.phase==='RED'?'bg-red-500/15 text-red-400':'bg-emerald-500/15 text-emerald-400'" x-text="tddState.phase"></span>
+            <span class="text-xs text-gray-400" x-text="tddState.status"></span>
           </div>
-          <p class="text-xs text-gray-400 mb-2">代码实现细节、变量命名、格式调整</p>
-          <div class="text-xs space-y-1">
-            <div><span class="text-gray-500">决策者:</span> <span class="text-gray-400">Worker 自身</span></div>
-            <div><span class="text-gray-500">响应:</span> <span class="text-gray-400">直接执行</span></div>
-            <div><span class="text-gray-500">耗时:</span> <span class="text-gray-400">秒级</span></div>
-          </div>
+          <button @click="tddStep()" class="px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded text-xs">
+            <span x-text="tddState.phase==='RED'?'运行测试 (应失败) →':'运行测试 (应通过) →'"></span>
+          </button>
         </div>
-        <div class="bg-gray-900 border border-amber-500/30 rounded-lg p-4">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="w-3 h-3 rounded-full bg-amber-400"></span>
-            <span class="text-sm text-amber-400 font-semibold">L2 — Reviewer 决策</span>
-          </div>
-          <p class="text-xs text-gray-400 mb-2">技术方案选型、API 设计、架构权衡</p>
-          <div class="text-xs space-y-1">
-            <div><span class="text-gray-500">决策者:</span> <span class="text-gray-400">Reviewer (claude -p)</span></div>
-            <div><span class="text-gray-500">响应:</span> <span class="text-gray-400">一次性调用</span></div>
-            <div><span class="text-gray-500">耗时:</span> <span class="text-gray-400">秒~分钟</span></div>
+      </template>
+      <!-- 质量反馈 -->
+      <template x-if="interactionPanel==='feedback'">
+        <div>
+          <div class="text-xs text-purple-400 font-semibold mb-1">澄清质量反馈</div>
+          <div class="text-xs text-gray-400 mb-2">PM 澄清过程是否清晰?</div>
+          <div class="space-y-1">
+            <button @click="submitFeedback(5)" class="w-full text-left px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-xs hover:border-emerald-500 transition-colors"><span class="text-emerald-400">5分</span> <span class="text-gray-400">无遗漏</span></button>
+            <button @click="submitFeedback(4)" class="w-full text-left px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-xs hover:border-blue-500 transition-colors"><span class="text-blue-400">4分</span> <span class="text-gray-400">小瑕疵</span></button>
+            <button @click="submitFeedback(3)" class="w-full text-left px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-xs hover:border-amber-500 transition-colors"><span class="text-amber-400">3分</span> <span class="text-gray-400">有遗漏</span></button>
           </div>
         </div>
-        <div class="bg-gray-900 border border-red-500/30 rounded-lg p-4">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="w-3 h-3 rounded-full bg-red-400"></span>
-            <span class="text-sm text-red-400 font-semibold">L3 — 用户决策</span>
+      </template>
+      <!-- 完成归档 -->
+      <template x-if="interactionPanel==='archive'">
+        <div>
+          <div class="text-xs text-emerald-400 font-semibold mb-1">全流程完成</div>
+          <div class="text-xs text-gray-400 mb-2" x-html="archiveCtx.summary"></div>
+          <div class="space-y-1">
+            <template x-for="(opt,i) in archiveCtx.options" :key="i">
+              <button @click="makeDecision(opt.action)"
+                      class="w-full text-left px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-xs hover:border-blue-500 transition-colors">
+                <span class="text-blue-400" x-text="opt.label"></span>
+                <span class="text-gray-500 ml-1" x-text="opt.desc"></span>
+              </button>
+            </template>
           </div>
-          <p class="text-xs text-gray-400 mb-2">安全凭证、破坏性操作、产品方向</p>
-          <div class="text-xs space-y-1">
-            <div><span class="text-gray-500">决策者:</span> <span class="text-gray-400">用户 (Jacky)</span></div>
-            <div><span class="text-gray-500">响应:</span> <span class="text-gray-400">Gateway 推送 + 等待</span></div>
-            <div><span class="text-gray-500">耗时:</span> <span class="text-gray-400">分钟~小时</span></div>
-            <div class="text-red-400 font-semibold mt-1">永不自动通过</div>
+        </div>
+      </template>
+      <!-- 任务图确认 -->
+      <template x-if="interactionPanel==='taskgraph'">
+        <div>
+          <div class="text-xs text-purple-400 font-semibold mb-1">任务拆解确认</div>
+          <div class="text-xs text-gray-300 font-mono mb-2 bg-gray-800 rounded p-2" x-text="taskGraphDesc"></div>
+          <div class="space-y-1">
+            <template x-for="(opt,i) in taskGraphOptions" :key="i">
+              <button @click="confirmTaskGraph(opt.action)"
+                      class="w-full text-left px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-xs hover:border-blue-500 transition-colors">
+                <span class="text-blue-400" x-text="opt.label"></span>
+                <span class="text-gray-500 ml-1" x-text="opt.desc"></span>
+              </button>
+            </template>
           </div>
         </div>
-      </div>
-
-      <!-- L3 升级流程 -->
-      <h2 class="text-base text-blue-400 font-semibold mb-3">L3 升级流程</h2>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-5 mb-6">
-        <div class="flex items-center gap-3 flex-wrap text-sm">
-          <div class="px-3 py-1.5 bg-gray-800 rounded border border-gray-600">Worker 遇到危险命令</div>
-          <span class="text-gray-600">→</span>
-          <div class="px-3 py-1.5 bg-amber-500/10 rounded border border-amber-500/30 text-amber-400">kanban_block()</div>
-          <span class="text-gray-600">→</span>
-          <div class="px-3 py-1.5 bg-gray-800 rounded border border-gray-600">Risk Policy 拦截记录</div>
-          <span class="text-gray-600">→</span>
-          <div class="px-3 py-1.5 bg-blue-500/10 rounded border border-blue-500/30 text-blue-400">Gateway 推送用户</div>
-          <span class="text-gray-600">→</span>
-          <div class="px-3 py-1.5 bg-gray-800 rounded border border-gray-600">用户决策</div>
-          <span class="text-gray-600">→</span>
-          <div class="px-3 py-1.5 bg-emerald-500/10 rounded border border-emerald-500/30 text-emerald-400">unblock + 恢复执行</div>
+      </template>
+      <!-- POC 失败决策 -->
+      <template x-if="interactionPanel==='poc_fail'">
+        <div>
+          <div class="text-xs text-red-400 font-semibold mb-1">POC 验证失败</div>
+          <div class="text-xs text-gray-400 mb-2">RS256 POC 未通过性能/安全验证</div>
+          <div class="space-y-1">
+            <template x-for="(opt,i) in pocFailOptions" :key="i">
+              <button @click="handlePOCDecision(opt.action)"
+                      class="w-full text-left px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-xs hover:border-blue-500 transition-colors">
+                <span class="text-blue-400" x-text="opt.label"></span>
+                <span class="text-gray-500 ml-1" x-text="opt.desc"></span>
+              </button>
+            </template>
+          </div>
         </div>
-      </div>
+      </template>
+    </div>
 
-      <!-- 声明式风险策略 -->
-      <h2 class="text-base text-blue-400 font-semibold mb-3">声明式风险策略 (risk.yaml)</h2>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
-        <pre class="text-sm text-gray-300"><span class="text-purple-400">policies:</span>
-  - <span class="text-amber-400">pattern:</span> <span class="text-emerald-400">"rm -rf /*"</span>
-    <span class="text-amber-400">level:</span> <span class="text-red-400">L3</span>          <span class="text-gray-600"># 永不自动通过</span>
-    <span class="text-amber-400">approver:</span> <span class="text-blue-400">user</span>
-    <span class="text-amber-400">timeout:</span> <span class="text-cyan-400">0</span>
-
-  - <span class="text-amber-400">pattern:</span> <span class="text-emerald-400">"git push --force"</span>
-    <span class="text-amber-400">level:</span> <span class="text-red-400">L3</span>
-    <span class="text-amber-400">approver:</span> <span class="text-blue-400">user</span>
-    <span class="text-amber-400">timeout:</span> <span class="text-cyan-400">300</span>        <span class="text-gray-600"># 5 分钟无响应则 escalate</span>
-
-  - <span class="text-amber-400">pattern:</span> <span class="text-emerald-400">"修改 CI/CD 配置"</span>
-    <span class="text-amber-400">level:</span> <span class="text-amber-400">L2</span>
-    <span class="text-amber-400">approver:</span> <span class="text-blue-400">reviewer</span>
-    <span class="text-amber-400">timeout:</span> <span class="text-cyan-400">600</span>
-
-  - <span class="text-amber-400">pattern:</span> <span class="text-emerald-400">"变量重命名"</span>
-    <span class="text-amber-400">level:</span> <span class="text-emerald-400">L1</span>
-    <span class="text-amber-400">approver:</span> <span class="text-blue-400">self</span></pre>
-      </div>
-
-      <!-- 三层实现 -->
-      <h2 class="text-base text-blue-400 font-semibold mb-3">三层消费方式</h2>
-      <div class="grid grid-cols-3 gap-3">
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
-          <div class="text-sm text-red-400 font-semibold mb-1">Plugin 层 (硬拦截)</div>
-          <p class="text-xs text-gray-400">pre_tool_call hook 注入，匹配 L3 规则的命令直接阻塞</p>
-        </div>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
-          <div class="text-sm text-amber-400 font-semibold mb-1">SOUL.md 层 (软约束)</div>
-          <p class="text-xs text-gray-400">Worker 的 SOUL.md 引用 risk.yaml 做 L1/L2 决策依据</p>
-        </div>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
-          <div class="text-sm text-emerald-400 font-semibold mb-1">Toolsets 白名单 (主防线)</div>
-          <p class="text-xs text-gray-400">Reviewer 等角色通过 toolsets 限制可用工具，从源头阻断</p>
-        </div>
-      </div>
+    <!-- 底部控制 -->
+    <div class="shrink-0 px-4 py-1.5 border-t border-gray-800 flex items-center gap-3 text-[10px]">
+      <button @click="autoAdvance()" :disabled="!canAuto||simBusy"
+              class="px-2 py-1 rounded border text-xs disabled:opacity-40"
+              :class="autoPlaying?'bg-amber-500/20 border-amber-500 text-amber-400':'bg-gray-800 border-gray-700 text-gray-400'"
+              x-text="autoPlaying?'⏸ 暂停':'▶ 自动'"></button>
+      <span class="text-gray-500" x-text="statusText"></span>
+      <span class="flex-1"></span>
+      <span class="text-gray-600">速度</span>
+      <input type="range" min="300" max="2000" x-model="autoSpeed" class="w-16 accent-blue-500">
     </div>
   </div>
 
-  <!-- Tab 4: Dispatcher + 背压 -->
-  <div x-show="activeTab === 4" x-cloak
-       x-transition:enter="transition-opacity duration-200"
-       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-       class="h-full flex flex-col absolute inset-0 overflow-hidden">
-
-    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-      <h2 class="text-base text-blue-400 font-semibold mb-4">Dispatcher 循环 (每 60 秒)</h2>
-
-      <!-- 循环步骤 -->
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-5 mb-6">
-        <div class="space-y-3">
-          <div class="flex items-center gap-3">
-            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">1</span>
-            <span class="text-sm">回收超时 claim（worker 卡死）</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">2</span>
-            <span class="text-sm">回收崩溃 worker（PID 不存在）→ 任务回退 ready + rollback++</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">3</span>
-            <span class="text-sm">将 parents 全 done 的 todo 任务提升为 ready</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">4</span>
-            <span class="text-sm">原子性 claim ready 任务</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">5</span>
-            <span class="text-sm">计算背压比率 → 决定是否降速/暂停</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="w-8 h-8 rounded-full bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-bold">6</span>
-            <span class="text-sm">按 assignee (profile) spawn worker 进程</span>
+  <!-- ============ 右: 详情/角色/日志 ============ -->
+  <div class="w-80 flex flex-col border-l border-gray-800 overflow-hidden shrink-0">
+    <div class="shrink-0 flex border-b border-gray-800">
+      <button @click="rtab='detail'" class="flex-1 px-2 py-1.5 text-[10px]" :class="rtab==='detail'?'text-blue-400 border-b-2 border-blue-400':'text-gray-500'">任务详情</button>
+      <button @click="rtab='roles'" class="flex-1 px-2 py-1.5 text-[10px]" :class="rtab==='roles'?'text-blue-400 border-b-2 border-blue-400':'text-gray-500'">角色</button>
+      <button @click="rtab='log'" class="flex-1 px-2 py-1.5 text-[10px]" :class="rtab==='log'?'text-blue-400 border-b-2 border-blue-400':'text-gray-500'">日志</button>
+      <button @click="rtab='bp'" class="flex-1 px-2 py-1.5 text-[10px]" :class="rtab==='bp'?'text-blue-400 border-b-2 border-blue-400':'text-gray-500'">背压</button>
+      <button @click="rtab='trace'" class="flex-1 px-2 py-1.5 text-[10px]" :class="rtab==='trace'?'text-blue-400 border-b-2 border-blue-400':'text-gray-500'">追踪</button>
+    </div>
+    <!-- detail -->
+    <div x-show="rtab==='detail'" class="flex-1 overflow-y-auto p-3 min-h-0 text-xs">
+      <template x-if="selTask">
+        <div class="space-y-2">
+          <div class="flex items-center gap-2"><span class="px-1 py-0.5 rounded text-[9px]" :class="selTask.assigneeBadge" x-text="selTask.assignee"></span><span class="text-gray-500" x-text="selTask.id"></span></div>
+          <div class="text-sm text-gray-200 font-semibold" x-text="selTask.title"></div>
+          <div class="text-gray-400" x-html="selTask.description"></div>
+          <div x-show="selTask.parents.length" class="text-gray-500">依赖: <span x-text="selTask.parents.join(', ')"></span></div>
+          <div x-show="selTask.handoff" class="bg-gray-800/50 border border-gray-700 rounded p-2"><div class="text-purple-400 font-semibold text-[10px] mb-1">Handoff</div><pre class="text-[10px] text-gray-400 whitespace-pre-wrap" x-text="selTask.handoff"></pre></div>
+          <div x-show="selTask.testResults" class="bg-gray-800/50 border border-gray-700 rounded p-2"><div class="text-emerald-400 font-semibold text-[10px] mb-1">测试结果</div><pre class="text-[10px] text-gray-400 whitespace-pre-wrap" x-text="selTask.testResults"></pre></div>
+          <div x-show="selTask.deployInfo" class="bg-gray-800/50 border border-gray-700 rounded p-2"><div class="text-orange-400 font-semibold text-[10px] mb-1">部署信息</div><pre class="text-[10px] text-gray-400 whitespace-pre-wrap" x-text="selTask.deployInfo"></pre></div>
+          <div x-show="selTask.rollbackCount > 0" class="bg-red-500/5 border border-red-500/20 rounded p-2"><div class="text-red-400 font-semibold text-[10px] mb-1">回滚记录</div><div class="text-[10px] text-gray-400">rollback_count: <span x-text="selTask.rollbackCount"></span></div></div>
+          <div x-show="selTask.envSnapshot" class="bg-gray-800/50 border border-gray-700 rounded p-2"><div class="text-cyan-400 font-semibold text-[10px] mb-1">环境快照</div><pre class="text-[10px] text-gray-400 whitespace-pre-wrap" x-text="selTask.envSnapshot"></pre></div>
+          <!-- 模拟按钮区 -->
+          <div class="border-t border-gray-800 pt-2 space-y-1.5">
+            <div class="text-[10px] text-gray-600 font-semibold">模拟操作</div>
+            <button x-show="selTask.column==='running'" @click="simulateCrash(selTask)"
+                    class="w-full text-left px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded text-[10px] text-red-400 hover:bg-red-500/20">
+              💥 模拟 Worker 崩溃 (PID 消失)
+            </button>
+            <button x-show="selTask.column==='running'" @click="simulateRiskPolicy(selTask)"
+                    class="w-full text-left px-2 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded text-[10px] text-amber-400 hover:bg-amber-500/20">
+              ⚠️ 模拟 L3 风险命令拦截
+            </button>
+            <button x-show="selTask.column==='running'&&selTask.assignee==='DevOps'" @click="simulateDeployCrash(selTask)"
+                    class="w-full text-left px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded text-[10px] text-red-400 hover:bg-red-500/20">
+              💥 模拟部署失败 (触发 SRE)
+            </button>
           </div>
         </div>
+      </template>
+      <div x-show="!selTask" class="text-gray-600 text-center py-8">点击看板中的任务查看详情</div>
+    </div>
+    <!-- roles -->
+    <div x-show="rtab==='roles'" class="flex-1 overflow-y-auto p-3 min-h-0 space-y-1.5">
+      <div class="text-[9px] text-gray-600 mb-1 space-y-0.5">
+        <div><span class="text-red-400">锁定层</span>: Hermes 内置 (Dispatcher, Risk Policy)</div>
+        <div><span class="text-amber-400">可变层</span>: PM/Orchestrator/Researcher/Implementer/Reviewer/QA/DevOps/SRE</div>
+        <div><span class="text-cyan-400">事实层</span>: Kanban/Session/Memory</div>
       </div>
-
-      <!-- 背压可视化 -->
-      <h2 class="text-base text-blue-400 font-semibold mb-3">背压感知任务准入</h2>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-5 mb-6">
-        <div class="text-sm mb-4">
-          <code class="text-amber-400">ratio = ready_implementer_tasks / max(ready_reviewer_tasks, 1)</code>
-        </div>
-
-        <!-- 交互式背压模拟 -->
-        <div class="mb-4">
-          <label class="text-xs text-gray-500 block mb-2">拖动模拟 implementer 队列深度:</label>
-          <input type="range" min="0" max="20" x-model="bpImpl" class="w-full accent-blue-500">
-          <div class="flex justify-between text-xs text-gray-600 mt-1">
-            <span>0</span><span>10</span><span>20</span>
+      <template x-for="r in roles" :key="r.name">
+        <div class="bg-gray-900 border border-gray-700 rounded p-2">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full" :class="r.active?'bg-emerald-400':'bg-gray-600'"></span><span class="text-[10px] font-semibold" :class="r.color" x-text="r.name"></span></div>
+            <span class="text-[9px]" :class="r.active?'text-emerald-400':'text-gray-600'" x-text="r.status"></span>
           </div>
+          <div class="text-[9px] text-gray-600 mt-0.5">层: <span :class="r.layer==='锁定层'?'text-red-400':r.layer==='可变层'?'text-amber-400':'text-cyan-400'" x-text="r.layer"></span></div>
+          <div x-show="r.active&&r.task" class="text-[9px] text-gray-500 mt-0.5" x-text="'→ '+r.task"></div>
         </div>
-        <div class="mb-4">
-          <label class="text-xs text-gray-500 block mb-2">拖动模拟 reviewer 队列深度:</label>
-          <input type="range" min="1" max="10" x-model="bpRev" class="w-full accent-purple-500">
-          <div class="flex justify-between text-xs text-gray-600 mt-1">
-            <span>1</span><span>5</span><span>10</span>
+      </template>
+      <div class="border-t border-gray-800 pt-2 mt-2">
+        <div class="text-[9px] text-gray-600 font-semibold mb-1">Curator 质量评分</div>
+        <template x-for="s in curatorScores" :key="s.name">
+          <div class="flex items-center gap-2 text-[10px] mb-0.5">
+            <span class="text-gray-400 w-28 truncate" x-text="s.name"></span>
+            <div class="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden"><div class="h-full rounded-full" :class="s.score>=80?'bg-emerald-500':s.score>=50?'bg-amber-500':'bg-red-500'" :style="'width:'+s.score+'%'"></div></div>
+            <span :class="s.score>=80?'text-emerald-400':s.score>=50?'text-amber-400':'text-red-400'" x-text="s.score"></span>
           </div>
-        </div>
-
-        <div class="grid grid-cols-3 gap-4 mt-4">
-          <div class="text-center">
-            <div class="text-2xl font-bold" :class="bpRatio <= 2 ? 'text-emerald-400' : bpRatio <= 4 ? 'text-amber-400' : 'text-red-400'" x-text="bpRatio.toFixed(1)"></div>
-            <div class="text-xs text-gray-500">背压比率</div>
-          </div>
-          <div class="text-center">
-            <div class="text-lg font-bold" :class="bpAction === '正常派发' ? 'text-emerald-400' : bpAction === '降速派发' ? 'text-amber-400' : 'text-red-400'" x-text="bpAction"></div>
-            <div class="text-xs text-gray-500">当前策略</div>
-          </div>
-          <div class="text-center">
-            <div class="text-lg font-bold text-blue-400" x-text="bpDetail"></div>
-            <div class="text-xs text-gray-500">执行方式</div>
-          </div>
-        </div>
-
-        <!-- 阈值指示条 -->
-        <div class="mt-4 h-3 bg-gray-800 rounded-full overflow-hidden relative">
-          <div class="h-full rounded-full transition-all duration-300"
-               :class="bpRatio <= 2 ? 'bg-emerald-500' : bpRatio <= 4 ? 'bg-amber-500' : 'bg-red-500'"
-               :style="'width:' + Math.min(bpRatio / 6 * 100, 100) + '%'"></div>
-          <div class="absolute top-0 h-full w-px bg-white/30" style="left: 33.3%"></div>
-          <div class="absolute top-0 h-full w-px bg-white/30" style="left: 66.6%"></div>
-        </div>
-        <div class="flex justify-between text-[10px] text-gray-600 mt-1">
-          <span>ratio ≤ 2: 正常</span>
-          <span>2 &lt; ratio ≤ 4: 降速</span>
-          <span>ratio &gt; 4: 暂停</span>
-        </div>
-      </div>
-
-      <!-- Worker 生命周期 -->
-      <h2 class="text-base text-blue-400 font-semibold mb-3">Worker 生命周期</h2>
-      <div class="grid grid-cols-3 gap-3">
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
-          <div class="text-sm text-emerald-400 font-semibold mb-1">正常完成</div>
-          <p class="text-xs text-gray-400">stop_reason: end_turn → 任务 done → handoff → 下游就绪</p>
-        </div>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
-          <div class="text-sm text-amber-400 font-semibold mb-1">Block 等待</div>
-          <p class="text-xs text-gray-400">kanban_block() → blocked → 通知用户 → unblock 后恢复</p>
-        </div>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
-          <div class="text-sm text-red-400 font-semibold mb-1">崩溃/超时</div>
-          <p class="text-xs text-gray-400">PID 消失 → 快照恢复 → 任务回退 ready → rollback++ → 重新派发</p>
-        </div>
+        </template>
       </div>
     </div>
-  </div>
-
-  <!-- Tab 5: 通信机制 -->
-  <div x-show="activeTab === 5" x-cloak
-       x-transition:enter="transition-opacity duration-200"
-       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-       class="h-full flex flex-col absolute inset-0 overflow-hidden">
-
-    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-      <h2 class="text-base text-blue-400 font-semibold mb-4">Agent 间通信: Kanban Block + Defer</h2>
-
-      <!-- 通信场景表 -->
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
-        <div class="grid grid-cols-3 gap-2 text-xs font-semibold text-gray-500 mb-2">
-          <div>场景</div><div>机制</div><div>说明</div>
-        </div>
-        <div class="space-y-2 text-xs">
-          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">任务分派</div><div class="text-blue-400">Kanban create/claim</div><div class="text-gray-400">Dispatcher 自动</div></div>
-          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">任务完成</div><div class="text-emerald-400">Kanban complete</div><div class="text-gray-400">summary + metadata</div></div>
-          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">任务阻塞</div><div class="text-amber-400">Kanban block</div><div class="text-gray-400">等待用户/Reviewer 输入</div></div>
-          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">依赖等待</div><div class="text-purple-400">Kanban parents</div><div class="text-gray-400">自动 promote</div></div>
-          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">Claude 主动提问</div><div class="text-cyan-400">PreToolUse hook → defer</div><div class="text-gray-400">Worker 退出 → 路由 → 恢复</div></div>
-          <div class="grid grid-cols-3 gap-2"><div class="text-gray-300">用户决策</div><div class="text-pink-400">clarify()</div><div class="text-gray-400">Hermes 直接问用户</div></div>
-        </div>
+    <!-- log -->
+    <div x-show="rtab==='log'" class="flex-1 overflow-y-auto p-3 min-h-0 space-y-0.5">
+      <template x-for="(l,i) in logs" :key="i">
+        <div class="text-[10px] flex gap-1"><span class="text-gray-600 shrink-0" x-text="l.t"></span><span :class="l.c" x-html="l.m"></span></div>
+      </template>
+    </div>
+    <!-- backpressure -->
+    <div x-show="rtab==='bp'" class="flex-1 overflow-y-auto p-3 min-h-0 text-xs">
+      <div class="mb-3"><span class="text-gray-500">背压比率:</span> <span class="font-bold text-lg" :class="bp.ratio<=2?'text-emerald-400':bp.ratio<=4?'text-amber-400':'text-red-400'" x-text="bp.ratio.toFixed(1)"></span></div>
+      <div class="mb-2"><span class="text-gray-500">策略:</span> <span :class="bp.action==='正常'?'text-emerald-400':bp.action==='降速'?'text-amber-400':'text-red-400'" x-text="bp.action"></span></div>
+      <div class="h-2 bg-gray-800 rounded-full overflow-hidden relative mb-1">
+        <div class="h-full rounded-full transition-all" :class="bp.ratio<=2?'bg-emerald-500':bp.ratio<=4?'bg-amber-500':'bg-red-500'" :style="'width:'+Math.min(bp.ratio/6*100,100)+'%'"></div>
       </div>
-
-      <!-- 路径 A -->
-      <h2 class="text-base text-emerald-400 font-semibold mb-3">路径 A: Implementer 主动 block（主流程）</h2>
-      <div class="bg-gray-900 border border-emerald-500/20 rounded-lg p-4 mb-4">
-        <div class="flex items-center gap-2 flex-wrap text-sm mb-3">
-          <div class="px-2 py-1 bg-gray-800 rounded border border-gray-600 text-xs">Implementer 遇到 "RS256 vs HS256?"</div>
-          <span class="text-gray-600">→</span>
-          <div class="px-2 py-1 bg-amber-500/10 rounded border border-amber-500/30 text-amber-400 text-xs">kanban_block("reviewer-needed: ...")</div>
-          <span class="text-gray-600">→</span>
-          <div class="px-2 py-1 bg-gray-800 rounded border border-gray-600 text-xs">Dispatcher 创建 Reviewer 子任务</div>
-          <span class="text-gray-600">→</span>
-          <div class="px-2 py-1 bg-blue-500/10 rounded border border-blue-500/30 text-blue-400 text-xs">Reviewer 一次性决策</div>
-          <span class="text-gray-600">→</span>
-          <div class="px-2 py-1 bg-emerald-500/10 rounded border border-emerald-500/30 text-emerald-400 text-xs">unblock + 恢复</div>
-        </div>
-        <div class="text-xs text-gray-500">
-          <span class="text-emerald-400">优点:</span> 零额外基础设施，消息永不丢失（SQLite 持久化），天然支持重试<br>
-          <span class="text-amber-400">触发条件:</span> Implementer 遵守 SOUL.md 指令，主动 block
-        </div>
-      </div>
-
-      <!-- 路径 B -->
-      <h2 class="text-base text-cyan-400 font-semibold mb-3">路径 B: Claude Code AskUserQuestion → defer（兜底）</h2>
-      <div class="bg-gray-900 border border-cyan-500/20 rounded-lg p-4 mb-6">
-        <div class="space-y-2 text-xs text-gray-400">
-          <div>① Claude Code 调用 <span class="text-cyan-400">AskUserQuestion</span> 工具</div>
-          <div>② PreToolUse hook 拦截 → 返回 <span class="text-amber-400">permissionDecision: "defer"</span></div>
-          <div>③ Worker 进程退出，stop_reason: <span class="text-red-400">"tool_deferred"</span></div>
-          <div class="pl-4 text-gray-500">deferred_tool_use 包含完整问题内容（含选项）</div>
-          <div>④ Dispatcher 读取 deferred_tool_use → 路由给 Reviewer 或用户</div>
-          <div>⑤ 拿到答案后 → <span class="text-emerald-400">claude -p --resume &lt;session-id&gt;</span> 恢复 Worker</div>
-          <div>⑥ PreToolUse hook 再次触发 → 返回 <span class="text-emerald-400">allow + answers</span></div>
-          <div>⑦ Worker 继续执行，完全无感知</div>
-        </div>
-        <div class="mt-3 text-xs text-gray-500">
-          <span class="text-cyan-400">优点:</span> 原生 Claude Code 机制，不依赖 prompt 遵守<br>
-          <span class="text-amber-400">限制:</span> defer 仅在 claude -p 非交互模式生效，单次 turn 只能有一个工具调用<br>
-          <span class="text-purple-400">版本要求:</span> Claude Code >= 2.1.89
-        </div>
-      </div>
-
-      <!-- 决策路由 -->
-      <h2 class="text-base text-blue-400 font-semibold mb-3">决策路由优先级</h2>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
-        <pre class="text-sm text-gray-300 whitespace-pre">技术疑问
-    │
-    ├── Implementer 主动调用 kanban_block()?  ──→ <span class="text-emerald-400">路径 A（主流程）</span>
-    │
-    └── Claude 自动调用 AskUserQuestion?      ──→ <span class="text-cyan-400">路径 B（defer 兜底）</span>
-                                                    │
-                                                    ▼
-                                              Dispatcher 读取问题
-                                                    │
-                                                    ├── <span class="text-amber-400">架构/技术选型</span> ──→ Reviewer
-                                                    └── <span class="text-red-400">安全/产品方向</span>  ──→ 用户</pre>
+      <div class="text-[9px] text-gray-600 mb-3">impl_ready: <span x-text="bp.impl"></span> | rev_ready: <span x-text="bp.rev"></span></div>
+      <div class="border-t border-gray-800 pt-2 space-y-1 text-[10px]">
+        <div class="text-gray-500 font-semibold">Dispatcher 循环</div>
+        <div class="text-gray-400">① 回收超时 claim</div>
+        <div class="text-gray-400">② 回收崩溃 worker (PID 不存在)</div>
+        <div class="text-gray-400">③ 提升 todo → ready (parents 全 done)</div>
+        <div class="text-gray-400">④ 原子 claim ready 任务</div>
+        <div class="text-gray-400">⑤ 计算背压 → <span :class="bp.ratio<=2?'text-emerald-400':bp.ratio<=4?'text-amber-400':'text-red-400'" x-text="bp.action"></span></div>
+        <div class="text-gray-400">⑥ spawn worker (注入 TASK_ID/BOARD)</div>
       </div>
     </div>
-  </div>
-
-  <!-- Tab 6: 可观测性 -->
-  <div x-show="activeTab === 6" x-cloak
-       x-transition:enter="transition-opacity duration-200"
-       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-       class="h-full flex flex-col absolute inset-0 overflow-hidden">
-
-    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-      <h2 class="text-base text-blue-400 font-semibold mb-4">全链路可观测性</h2>
-
-      <!-- Observability Plugin -->
-      <h3 class="text-sm text-purple-400 font-semibold mb-2">Observability Plugin（零侵入采集）</h3>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-4">
-        <pre class="text-xs text-gray-300"><span class="text-purple-400">def register(ctx):</span>
-    <span class="text-gray-500"># 1. 采集每个 tool call</span>
-    <span class="text-blue-400">def on_post_tool_call(tool_name, params, result):</span>
-        trace_db.record(
-            task_id=os.environ.get(<span class="text-emerald-400">"HERMES_KANBAN_TASK"</span>),
-            tool_name=tool_name,
-            result_status=<span class="text-emerald-400">"ok"</span> | <span class="text-red-400">"error"</span>,
-            duration_ms=result.get(<span class="text-emerald-400">"_duration_ms"</span>, 0),
-        )
-    ctx.register_hook(<span class="text-emerald-400">"post_tool_call"</span>, on_post_tool_call)
-
-    <span class="text-gray-500"># 2. 会话结束时汇总</span>
-    <span class="text-blue-400">def on_session_end(session_info):</span>
-        trace_db.summarize_session(task_id, session_info)
-    ctx.register_hook(<span class="text-emerald-400">"on_session_end"</span>, on_session_end)</pre>
-      </div>
-
-      <!-- 数据源 -->
-      <h3 class="text-sm text-amber-400 font-semibold mb-2">采集数据源</h3>
-      <div class="grid grid-cols-2 gap-3 mb-6">
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs space-y-1">
-          <div><span class="text-blue-400">Tool Call Trace</span> → post_tool_call hook</div>
-          <div><span class="text-blue-400">Session Summary</span> → on_session_end hook</div>
-          <div><span class="text-blue-400">Kanban Runs</span> → 读取 kanban.db</div>
-          <div><span class="text-blue-400">Kanban Events</span> → 状态变迁历史</div>
+    <!-- trace -->
+    <div x-show="rtab==='trace'" class="flex-1 overflow-y-auto p-3 min-h-0 space-y-0.5">
+      <div class="text-[10px] text-gray-500 font-semibold mb-2">trace.db 时间线 (<span x-text="traceLog.length"></span> 条)</div>
+      <template x-for="(tr,i) in traceLog" :key="i">
+        <div class="text-[10px] flex gap-1 border-l-2 pl-1.5" :class="tr.level==='error'?'border-red-500':tr.level==='warn'?'border-amber-500':'border-gray-700'">
+          <span class="text-gray-600 shrink-0" x-text="tr.t"></span>
+          <span class="text-gray-500 shrink-0" x-text="tr.role"></span>
+          <span :class="tr.level==='error'?'text-red-400':tr.level==='warn'?'text-amber-400':'text-gray-400'" x-text="tr.action"></span>
+          <span class="text-gray-600" x-text="tr.detail"></span>
         </div>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs space-y-1">
-          <div><span class="text-blue-400">Worker Logs</span> → 文件系统终端输出</div>
-          <div><span class="text-blue-400">Audit Logs</span> → 风险策略拦截记录</div>
-          <div><span class="text-blue-400">Env Snapshot</span> → git status / df -h</div>
-        </div>
-      </div>
-
-      <!-- 故障定位 8 层模型 -->
-      <h3 class="text-sm text-red-400 font-semibold mb-2">故障定位 8 层模型</h3>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
-        <div class="grid grid-cols-4 gap-2 text-xs">
-          <div class="px-2 py-1.5 bg-red-500/10 rounded border border-red-500/20 text-center">
-            <div class="text-red-400 font-semibold">代码层</div>
-            <div class="text-gray-500 mt-0.5">语法错误/测试失败</div>
-          </div>
-          <div class="px-2 py-1.5 bg-amber-500/10 rounded border border-amber-500/20 text-center">
-            <div class="text-amber-400 font-semibold">审查层</div>
-            <div class="text-gray-500 mt-0.5">Reviewer 拒绝</div>
-          </div>
-          <div class="px-2 py-1.5 bg-blue-500/10 rounded border border-blue-500/20 text-center">
-            <div class="text-blue-400 font-semibold">验收层</div>
-            <div class="text-gray-500 mt-0.5">QA 测试未通过</div>
-          </div>
-          <div class="px-2 py-1.5 bg-purple-500/10 rounded border border-purple-500/20 text-center">
-            <div class="text-purple-400 font-semibold">环境层</div>
-            <div class="text-gray-500 mt-0.5">依赖缺失/配置错误</div>
-          </div>
-          <div class="px-2 py-1.5 bg-pink-500/10 rounded border border-pink-500/20 text-center">
-            <div class="text-pink-400 font-semibold">资源层</div>
-            <div class="text-gray-500 mt-0.5">磁盘满/API 限流</div>
-          </div>
-          <div class="px-2 py-1.5 bg-orange-500/10 rounded border border-orange-500/20 text-center">
-            <div class="text-orange-400 font-semibold">部署层</div>
-            <div class="text-gray-500 mt-0.5">CI/CD 失败</div>
-          </div>
-          <div class="px-2 py-1.5 bg-cyan-500/10 rounded border border-cyan-500/20 text-center">
-            <div class="text-cyan-400 font-semibold">外部层</div>
-            <div class="text-gray-500 mt-0.5">第三方不可用</div>
-          </div>
-          <div class="px-2 py-1.5 bg-gray-500/10 rounded border border-gray-500/20 text-center">
-            <div class="text-gray-400 font-semibold">策略层</div>
-            <div class="text-gray-500 mt-0.5">Risk Policy 拦截</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- SRE-Observer 分析流程 -->
-      <h3 class="text-sm text-red-400 font-semibold mb-2">SRE-Observer 分析流程（人工升级触发）</h3>
-      <div class="bg-gray-900 border border-red-500/20 rounded-lg p-4 mb-4">
-        <div class="space-y-2 text-xs text-gray-400">
-          <div>① <span class="text-blue-400">kanban_show()</span> → 读取故障任务基本信息</div>
-          <div>② 查询 <span class="text-cyan-400">trace.db</span> → 最近 3 次 run 的 tool call 序列</div>
-          <div>③ 读取 <span class="text-amber-400">worker logs</span> → 终端错误输出与堆栈</div>
-          <div>④ 读取 <span class="text-purple-400">task_events</span> → 状态变迁时间线</div>
-          <div>⑤ 读取 <span class="text-red-400">audit logs</span> → 策略拦截记录</div>
-          <div>⑥ 对比 <span class="text-emerald-400">parent handoff</span> → 上游交付物是否携带缺陷</div>
-          <div>⑦ 综合生成 <span class="text-blue-400">根因报告</span></div>
-        </div>
-      </div>
-
-      <!-- 根因报告 Schema -->
-      <h3 class="text-sm text-emerald-400 font-semibold mb-2">根因报告 Metadata Schema</h3>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-4">
-        <pre class="text-xs text-gray-300">{
-  <span class="text-amber-400">"root_cause_category"</span>: <span class="text-emerald-400">"environment|code|deployment|external|policy"</span>,
-  <span class="text-amber-400">"confidence"</span>: <span class="text-emerald-400">"high|medium|low"</span>,
-  <span class="text-amber-400">"symptom"</span>: <span class="text-emerald-400">"deploy.sh exited 1: DATABASE_URL not set"</span>,
-  <span class="text-amber-400">"root_cause"</span>: <span class="text-emerald-400">"生产环境缺少环境变量"</span>,
-  <span class="text-amber-400">"responsible_profile"</span>: <span class="text-emerald-400">"devops-engineer"</span>,
-  <span class="text-amber-400">"upstream_fault"</span>: <span class="text-cyan-400">null</span>,
-  <span class="text-amber-400">"recommended_action"</span>: <span class="text-emerald-400">"补全 DATABASE_URL 后重新部署"</span>,
-  <span class="text-amber-400">"trace_anchor"</span>: <span class="text-emerald-400">"tool_call_#3 terminal(deploy.sh) exited 1"</span>
-}</pre>
-      </div>
-
-      <!-- 触发条件 -->
-      <h3 class="text-sm text-amber-400 font-semibold mb-2">SRE 触发条件</h3>
-      <div class="grid grid-cols-3 gap-3">
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs">
-          <div class="text-red-400 font-semibold mb-1">任务崩溃</div>
-          <div class="text-gray-400">outcome = crashed / timed_out / gave_up</div>
-        </div>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs">
-          <div class="text-amber-400 font-semibold mb-1">反复回滚</div>
-          <div class="text-gray-400">rollback_count >= 2</div>
-        </div>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs">
-          <div class="text-purple-400 font-semibold mb-1">QA 阻塞</div>
-          <div class="text-gray-400">block reason 含 regression / critical_bug / security_flaw</div>
-        </div>
-      </div>
+      </template>
+      <div x-show="!traceLog.length" class="text-gray-600 text-center py-4">暂无追踪数据</div>
     </div>
   </div>
-
-  <!-- Tab 7: 多项目管理 -->
-  <div x-show="activeTab === 7" x-cloak
-       x-transition:enter="transition-opacity duration-200"
-       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-       class="h-full flex flex-col absolute inset-0 overflow-hidden">
-
-    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-      <h2 class="text-base text-blue-400 font-semibold mb-4">多项目并行管理 (10+ 项目)</h2>
-
-      <!-- Board 隔离 -->
-      <h3 class="text-sm text-purple-400 font-semibold mb-2">Board 隔离架构</h3>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
-        <pre class="text-sm text-gray-300 whitespace-pre">Hermes Gateway (dispatcher 嵌入)
-    │
-    ├── Board: <span class="text-blue-400">project-alpha</span>
-    │   ├── T1 running (implementer)
-    │   ├── T2 ready (implementer)
-    │   └── T3 todo (reviewer)
-    │
-    ├── Board: <span class="text-emerald-400">project-beta</span>
-    │   ├── T1 running (implementer)
-    │   └── T2 todo (orchestrator)
-    │
-    ├── Board: <span class="text-amber-400">project-gamma</span>
-    │   └── ...
-    │
-    └── Board: <span class="text-purple-400">project-juliet</span>
-        └── ...
-
-<span class="text-gray-500">每个 board 拥有:</span>
-  · 独立的 SQLite 数据库
-  · 独立的 workspace 目录
-  · 独立的 dispatcher 循环
-  · 任务不可跨 board 引用</pre>
-      </div>
-
-      <!-- 管理方式 -->
-      <h3 class="text-sm text-amber-400 font-semibold mb-2">管理方式</h3>
-      <div class="grid grid-cols-2 gap-3 mb-6">
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs space-y-1">
-          <div><span class="text-blue-400">Dashboard GUI</span> → hermes dashboard → Kanban</div>
-          <div><span class="text-emerald-400">CLI</span> → hermes kanban --board project-alpha list</div>
-        </div>
-        <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 text-xs space-y-1">
-          <div><span class="text-amber-400">Gateway 消息</span> → /kanban list (Telegram/Discord)</div>
-          <div><span class="text-purple-400">手机通知</span> → Gateway 自动推送</div>
-        </div>
-      </div>
-
-      <!-- 跨项目经验共享 -->
-      <h3 class="text-sm text-emerald-400 font-semibold mb-2">跨项目经验共享</h3>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
-        <div class="space-y-2 text-xs">
-          <div class="flex items-center gap-3">
-            <span class="text-blue-400 w-24">Memory</span>
-            <span class="text-gray-400">全局 MEMORY.md 中的经验对所有项目生效</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="text-emerald-400 w-24">Skills</span>
-            <span class="text-gray-400">agent 创建的 skill 全局可用</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="text-amber-400 w-24">Session Search</span>
-            <span class="text-gray-400">可搜索所有项目的历史会话</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="text-purple-400 w-24">Profile SOUL.md</span>
-            <span class="text-gray-400">角色定义全局共享</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 分层经验归档 -->
-      <h3 class="text-sm text-cyan-400 font-semibold mb-2">分层经验归档 (.learnings/)</h3>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
-        <pre class="text-xs text-gray-300">.learnings/
-├── <span class="text-blue-400">&lt;project-name&gt;/</span>       <span class="text-gray-500">← 项目私有经验（默认写入位置）</span>
-├── <span class="text-emerald-400">_global/</span>              <span class="text-gray-500">← 经 curator 审核的跨项目经验</span>
-└── <span class="text-amber-400">_pending/</span>             <span class="text-gray-500">← 待审核的跨项目晋升请求</span>
-
-<span class="text-gray-500">规则:</span>
-  · 经验默认写入项目命名空间
-  · 只有 cross-project: true 且 curator 审核通过才进入 _global/
-  · agent 查找时项目池优先于全局池</pre>
-      </div>
-
-      <!-- 工具权限矩阵 -->
-      <h3 class="text-sm text-pink-400 font-semibold mb-2">工具权限矩阵</h3>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 overflow-x-auto">
-        <table class="text-xs w-full">
-          <thead>
-            <tr class="text-gray-500 border-b border-gray-700">
-              <th class="text-left py-1 pr-3">角色</th>
-              <th class="text-center py-1 px-2">terminal</th>
-              <th class="text-center py-1 px-2">file</th>
-              <th class="text-center py-1 px-2">code_exec</th>
-              <th class="text-center py-1 px-2">kanban</th>
-              <th class="text-center py-1 px-2">clarify</th>
-              <th class="text-center py-1 px-2">memory</th>
-            </tr>
-          </thead>
-          <tbody class="text-gray-400">
-            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-blue-400">PM</td><td class="text-center">读✓ 写✗</td><td class="text-center">读✓ 写✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td></tr>
-            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-purple-400">Orchestrator</td><td class="text-center text-red-400">✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td></tr>
-            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-cyan-400">Researcher</td><td class="text-center">读✓ 写✗</td><td class="text-center">读✓ 写✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-red-400">✗</td></tr>
-            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-emerald-400">Implementer</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td></tr>
-            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-amber-400">Reviewer</td><td class="text-center">读✓ 写✗</td><td class="text-center">读✓ 写✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-red-400">✗</td></tr>
-            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-pink-400">QA-Tester</td><td class="text-center">测✓ 写✗</td><td class="text-center">读✓ 写✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-red-400">✗</td></tr>
-            <tr class="border-b border-gray-800"><td class="py-1 pr-3 text-orange-400">DevOps</td><td class="text-center">部✓ 写✗</td><td class="text-center">读✓ 写✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center text-red-400">✗</td></tr>
-            <tr><td class="py-1 pr-3 text-red-400">SRE-Observer</td><td class="text-center text-red-400">✗</td><td class="text-center text-red-400">✗</td><td class="text-center text-red-400">✗</td><td class="text-center">读✓</td><td class="text-center text-emerald-400">✓</td><td class="text-center">读✓</td></tr>
-          </tbody>
-        </table>
-        <div class="text-[10px] text-gray-600 mt-2">注: "读✓写✗" 表示 terminal/file 的读操作允许，写操作被技术性拦截 (R8 + R10)</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Tab 8: 自我进化 -->
-  <div x-show="activeTab === 8" x-cloak
-       x-transition:enter="transition-opacity duration-200"
-       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
-       class="h-full flex flex-col absolute inset-0 overflow-hidden">
-
-    <div class="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-      <h2 class="text-base text-blue-400 font-semibold mb-4">自我进化三层架构</h2>
-
-      <div class="space-y-4 mb-6">
-        <div class="bg-gray-900 border border-red-500/20 rounded-lg p-4">
-          <div class="text-sm text-red-400 font-semibold mb-2">锁定层（不可自动修改）</div>
-          <div class="text-xs text-gray-400 space-y-1">
-            <div>· Bundled skills（Hermes 内置）</div>
-            <div>· Hub-installed skills（skills.sh 安装）</div>
-            <div>· Pinned skills（用户手动 pin）</div>
-            <div class="text-gray-600 mt-1">Curator 永远不碰这些</div>
-          </div>
-        </div>
-        <div class="bg-gray-900 border border-amber-500/20 rounded-lg p-4">
-          <div class="text-sm text-amber-400 font-semibold mb-2">可变层（Agent 可创建/patch）</div>
-          <div class="text-xs text-gray-400 space-y-1">
-            <div>· Agent-created skills</div>
-            <div>· MEMORY.md（2200 字符上限）</div>
-            <div>· USER.md（1375 字符上限）</div>
-            <div>· Profile SOUL.md（用户审核后修改）</div>
-            <div class="text-gray-600 mt-1">Curator 定期审查清理</div>
-          </div>
-        </div>
-        <div class="bg-gray-900 border border-emerald-500/20 rounded-lg p-4">
-          <div class="text-sm text-emerald-400 font-semibold mb-2">事实表（只增不改）</div>
-          <div class="text-xs text-gray-400 space-y-1">
-            <div>· Kanban task_runs + metadata</div>
-            <div>· Session SQLite（FTS5 可搜索）</div>
-            <div>· .learnings/ 目录（经验分类归档）</div>
-            <div class="text-gray-600 mt-1">永远不修改历史记录</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 进化触发 -->
-      <h2 class="text-base text-blue-400 font-semibold mb-3">进化触发条件</h2>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4 mb-6">
-        <div class="grid grid-cols-2 gap-3 text-xs">
-          <div class="flex items-start gap-2">
-            <span class="text-red-400 mt-0.5">●</span>
-            <div><span class="text-gray-300">命令/操作失败</span> → memory add 记录修复方法</div>
-          </div>
-          <div class="flex items-start gap-2">
-            <span class="text-amber-400 mt-0.5">●</span>
-            <div><span class="text-gray-300">用户纠正 agent</span> → memory add 记录纠正内容</div>
-          </div>
-          <div class="flex items-start gap-2">
-            <span class="text-emerald-400 mt-0.5">●</span>
-            <div><span class="text-gray-300">发现新工作流 (5+ tool calls)</span> → skill_manage create</div>
-          </div>
-          <div class="flex items-start gap-2">
-            <span class="text-blue-400 mt-0.5">●</span>
-            <div><span class="text-gray-300">知识过时</span> → memory replace 更新</div>
-          </div>
-          <div class="flex items-start gap-2">
-            <span class="text-purple-400 mt-0.5">●</span>
-            <div><span class="text-gray-300">找到更好的方法</span> → memory add 最佳实践</div>
-          </div>
-          <div class="flex items-start gap-2">
-            <span class="text-pink-400 mt-0.5">●</span>
-            <div><span class="text-gray-300">用户请求不存在的功能</span> → 创建 research task</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 升级规则 -->
-      <h2 class="text-base text-blue-400 font-semibold mb-3">经验升级路径</h2>
-      <div class="bg-gray-900 border border-gray-700 rounded-lg p-4">
-        <div class="space-y-2 text-xs">
-          <div class="flex items-center gap-3">
-            <span class="text-amber-400 w-20">纠正</span>
-            <span class="text-gray-600">MEMORY.md</span>
-            <span class="text-gray-600">→</span>
-            <span class="text-emerald-400">SOUL.md (永久规则)</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="text-blue-400 w-20">洞察</span>
-            <span class="text-gray-600">MEMORY.md</span>
-            <span class="text-gray-600">→</span>
-            <span class="text-emerald-400">Skill (工作流程)</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="text-red-400 w-20">知识缺口</span>
-            <span class="text-gray-600">MEMORY.md</span>
-            <span class="text-gray-600">→</span>
-            <span class="text-emerald-400">Research task</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="text-emerald-400 w-20">最佳实践</span>
-            <span class="text-gray-600">MEMORY + Skill</span>
-            <span class="text-gray-600">→</span>
-            <span class="text-emerald-400">SOUL.md (永久规则)</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="text-purple-400 w-20">错误修复</span>
-            <span class="text-gray-600">MEMORY.md</span>
-            <span class="text-gray-600">→</span>
-            <span class="text-emerald-400">Skill pitfall 条目</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
 </main>
 
 <script>
-function workflowApp() {
+// ========== QUESTION BANK (Phase 1: 一次一问) ==========
+const QUESTIONS = [
+  { q: '这次改善的核心目标是什么?', dim: '目标',
+    opts: [
+      { label: '⭐A', text: '7天免登录', rec: '推荐', reason: '业界通行做法，平衡体验与安全' },
+      { label: 'B', text: '永远不登录', reason: '安全隐患大，不适合外部客户' },
+      { label: 'C', text: '安全超时(30分钟)', reason: '安全性高但体验差' },
+    ]},
+  { q: '目标用户群体是?', dim: '用户',
+    opts: [
+      { label: '⭐A', text: '外部付费客户', rec: '推荐', reason: '安全标准需高' },
+      { label: 'B', text: '内部员工', reason: '可降低安全要求', skipTo: 3 },
+    ]},
+  { q: '时间压力如何?', dim: '时间',
+    opts: [
+      { label: 'A', text: '本周', reason: '范围需大幅缩小' },
+      { label: '⭐B', text: '1-2周', rec: '推荐', reason: '合理范围' },
+      { label: 'C', text: '不急', reason: '可做完整方案' },
+    ]},
+  { q: '登录方式偏好?', dim: '方式',
+    opts: [
+      { label: '⭐A', text: '邮箱+密码', rec: '推荐', reason: '最通用' },
+      { label: 'B', text: '第三方登录(Google等)', reason: '需额外集成' },
+      { label: 'C', text: '两者都要', reason: '增加工作量' },
+    ]},
+  { q: '新方案如何处理现有登录?', dim: '迁移',
+    opts: [
+      { label: '⭐A', text: '替换现有 session', rec: '推荐', reason: '统一方案' },
+      { label: 'B', text: '叠加(兼容)', reason: '增加复杂度' },
+    ]},
+  { q: 'Token 过期时的交互方式?', dim: '过期',
+    opts: [
+      { label: '⭐A', text: '静默刷新', rec: '推荐', reason: '用户无感知' },
+      { label: 'B', text: '弹窗提示', reason: '打断用户' },
+      { label: 'C', text: '跳转登录页', reason: '体验最差' },
+    ]},
+  { q: '验收方式?', dim: '验收',
+    opts: [
+      { label: '⭐A', text: '自动化测试+手动', rec: '推荐', reason: '覆盖全面' },
+      { label: 'B', text: '仅自动化', reason: '效率高但可能遗漏' },
+    ]},
+  { q: '影响范围?', dim: '范围',
+    opts: [
+      { label: '⭐A', text: '仅登录接口', rec: '推荐', reason: '最小范围' },
+      { label: 'B', text: '登录+注册+密码重置', reason: '范围大，时间紧可能完不成' },
+    ]},
+  { q: '可观测性需求?', dim: '观测',
+    opts: [
+      { label: '⭐A', text: '基础日志', rec: '推荐', reason: '足够排查问题' },
+      { label: 'B', text: '完整链路追踪', reason: '过度工程' },
+    ]},
+  { q: 'MVP 范围确认?', dim: 'MVP',
+    opts: [
+      { label: '⭐A', text: '核心认证流程(登录+刷新)', rec: '推荐', reason: '聚焦核心' },
+      { label: 'B', text: '完整认证(含注册+密码重置)', reason: '时间风险' },
+    ]},
+  { q: '实现方式偏好?', dim: '实现',
+    opts: [
+      { label: '⭐A', text: '第三方库(jsonwebtoken)', rec: '推荐', reason: '成熟稳定' },
+      { label: 'B', text: '自己实现', reason: '维护成本高' },
+    ]},
+];
+
+// ========== APP ==========
+function app() {
   return {
-    activeTab: 0,
-    tabs: ['架构总览', '端到端流程', '看板视图', '任务状态机', '风险策略', 'Dispatcher + 背压', '通信机制', '可观测性', '多项目管理', '自我进化'],
+    // --- UI State ---
+    userInput: '', rtab: 'detail', activeTaskId: null, selTask: null,
+    simBusy: false, autoPlaying: false, autoTimer: null, autoSpeed: 1000,
+    interactionPanel: null, // 'question' | 'decision' | 'tdd' | null
+    otherInput: '',
 
-    // === 角色数据 ===
-    selectedRole: -1,
+    // --- Multi-Project Boards ---
+    boards: [
+      { id: 'project-alpha', name: '🏢 Project Alpha' },
+    ],
+    currentBoard: 'project-alpha',
+    boardData: {}, // { boardId: { tasks: [], taskSeq: 0, logs: [] } }
+
+    // --- Risk Policy Engine (YAML-like rules) ---
+    riskPolicies: [
+      { pattern: 'rm -rf', level: 'L3', approver: 'user', timeout: 0, desc: '删除文件系统' },
+      { pattern: 'git push --force', level: 'L3', approver: 'user', timeout: 300, desc: '强制推送' },
+      { pattern: 'DROP TABLE', level: 'L3', approver: 'user', timeout: 0, desc: '删除数据库表' },
+      { pattern: '修改生产配置', level: 'L3', approver: 'user', timeout: 300, desc: '修改生产环境配置' },
+      { pattern: '修改 CI/CD', level: 'L2', approver: 'reviewer', timeout: 600, desc: '修改 CI/CD 配置' },
+      { pattern: 'git reset --hard', level: 'L3', approver: 'user', timeout: 0, desc: '强制重置' },
+      { pattern: '变量重命名', level: 'L1', approver: 'self', timeout: 0, desc: '代码细节' },
+      { pattern: 'kubectl delete', level: 'L3', approver: 'user', timeout: 0, desc: '删除 K8s 资源' },
+    ],
+
+    // --- Columns ---
+    columns: [
+      { id:'triage', label:'📥 需求池', color:'text-gray-400' },
+      { id:'analyzing', label:'🔍 PM 分析', color:'text-blue-400' },
+      { id:'research', label:'🔬 调研', color:'text-cyan-400' },
+      { id:'todo', label:'📋 待派发', color:'text-blue-400' },
+      { id:'ready', label:'⚡ 就绪', color:'text-amber-400' },
+      { id:'running', label:'🔧 执行中', color:'text-emerald-400' },
+      { id:'blocked', label:'🔒 阻塞', color:'text-amber-400' },
+      { id:'done', label:'✅ 完成', color:'text-emerald-400' },
+      { id:'deployed', label:'🚀 已部署', color:'text-purple-400' },
+    ],
+
+    // --- Data ---
+    tasks: [], taskSeq: 0, logs: [],
     roles: [
-      { name: 'PM', icon: '📋', color: 'text-blue-400', summary: '需求分析、技术研判、任务拆解',
-        canDo: 'Kanban 读写, Clarify 问答, 技术发现(只读)', cannotDo: '不能写代码, file/terminal 只读',
-        tools: 'kanban, memory, clarify, file_read' },
-      { name: 'Orchestrator', icon: '🎯', color: 'text-purple-400', summary: '中枢路由、状态机驱动、消息转发',
-        canDo: 'Kanban 读写, 消息转发, 任务派发', cannotDo: '不能写代码, 不能做需求分析/拆解',
-        tools: 'kanban, memory, clarify' },
-      { name: 'Researcher', icon: '🔬', color: 'text-cyan-400', summary: '技术方案调研、POC 建议',
-        canDo: 'File 只读, Terminal 只读, Kanban 读写', cannotDo: '不能写代码, 不能执行操作',
-        tools: 'file_read, web, clarify, kanban, memory' },
-      { name: 'Implementer', icon: '⚒️', color: 'text-emerald-400', summary: '编码执行、TDD 强制、POC 验证',
-        canDo: 'Terminal, File, Code execution, Kanban', cannotDo: '不能做架构决策, 遇不确定必须 block',
-        tools: 'terminal, file, code_execution, memory, kanban' },
-      { name: 'Reviewer', icon: '🔍', color: 'text-amber-400', summary: '代码审查、安全审计（硬门禁/只读）',
-        canDo: 'File 只读, Kanban 读写, Clarify', cannotDo: '不能写文件, terminal 写操作被拦截',
-        tools: 'file_read, kanban_read, kanban_block, kanban_complete, clarify' },
-      { name: 'QA-Tester', icon: '🧪', color: 'text-pink-400', summary: '功能验收、集成测试、场景验证',
-        canDo: 'Terminal(测试), Kanban block/complete', cannotDo: '不能修改代码, 只能读+测试',
-        tools: 'terminal, file, code_execution, browser, kanban, memory' },
-      { name: 'DevOps', icon: '🚀', color: 'text-orange-400', summary: '三层部署、验证门控、UAT、回滚、git tag',
-        canDo: 'Terminal(部署), Kanban block/complete', cannotDo: '不能修改业务代码, 不能跳过用户批准',
-        tools: 'terminal, file, code_execution, kanban, memory' },
-      { name: 'SRE-Observer', icon: '🔎', color: 'text-red-400', summary: '故障根因分析（人工升级触发）',
-        canDo: '只读分析, 输出报告, 仅手动升级触发', cannotDo: '不能修改系统, 不能执行操作',
-        tools: 'file, kanban, memory, clarify, web' },
+      { name:'PM', color:'text-blue-400', active:false, status:'待命', task:'', layer:'可变层' },
+      { name:'Orchestrator', color:'text-purple-400', active:false, status:'待命', task:'', layer:'可变层' },
+      { name:'Researcher', color:'text-cyan-400', active:false, status:'待命', task:'', layer:'可变层' },
+      { name:'Implementer', color:'text-emerald-400', active:false, status:'待命', task:'', layer:'可变层' },
+      { name:'Reviewer', color:'text-amber-400', active:false, status:'待命', task:'', layer:'可变层' },
+      { name:'QA-Tester', color:'text-pink-400', active:false, status:'待命', task:'', layer:'可变层' },
+      { name:'DevOps', color:'text-orange-400', active:false, status:'待命', task:'', layer:'可变层' },
+      { name:'SRE-Observer', color:'text-red-400', active:false, status:'待命', task:'', layer:'可变层' },
     ],
 
-    // === 端到端流程 ===
-    e2eStep: 0,
-    e2ePlaying: false,
-    e2eSpeed: 800,
-    e2eTimer: null,
-    e2eData: [
-      {
-        phase: '1', title: '需求提交与澄清', actor: 'PM → User',
-        badge: 'Phase 1', badgeClass: 'bg-blue-500/15 text-blue-400',
-        content: `<div class="space-y-2">
-          <div>① 用户提交模糊需求: <span class="text-emerald-400">"登录体验太差了，每次都要重新登录"</span></div>
-          <div>② PM 自动技术发现: 读 CLAUDE.md → Cargo.toml → src/ → 产出证据报告</div>
-          <div>③ 需求澄清 (一次一问，逐步收缩):</div>
-          <div class="pl-4 text-gray-400">
-            Q1: 核心目标？→ <span class="text-emerald-400">7天免登录</span><br>
-            Q2: 用户群体？→ <span class="text-emerald-400">外部付费客户</span><br>
-            Q3: 时间压力？→ <span class="text-emerald-400">1-2周</span><br>
-            Q4~Q11: 登录方式、过期交互、验收方式...
-          </div>
-          <div>④ 发现冲突: 范围 vs 时间 → 主动沟通 → 用户选择缩小范围</div>
-          <div>⑤ DoR 验证门 (7 项检查) → ✅ 全部通过</div>
-          <div>⑥ 用户显式确认需求 v1 → 质量反馈收集</div>
-        </div>`,
-        roleStates: [
-          { name: 'PM', active: true, status: '分析中' },
-          { name: 'Orchestrator', active: false, status: '待命' },
-          { name: 'Researcher', active: false, status: '待命' },
-          { name: 'Implementer', active: false, status: '待命' },
-          { name: 'Reviewer', active: false, status: '待命' },
-          { name: 'QA-Tester', active: false, status: '待命' },
-          { name: 'DevOps', active: false, status: '待命' },
-          { name: 'SRE-Observer', active: false, status: '待命' },
-        ],
-        taskStates: [
-          { name: 'T0: 改善登录体验', status: 'running', badgeClass: 'bg-blue-500/15 text-blue-400' },
-        ],
-        explain: 'PM 先读代码搞清技术现状，再一次一问逐步收束需求。每问都有推荐标签+大白话理由。可行性检查贯穿全程，发现冲突立即沟通。'
-      },
-      {
-        phase: '1.5', title: '技术研判: Research + POC', actor: 'PM → Researcher → Implementer',
-        badge: 'Phase 1.5', badgeClass: 'bg-cyan-500/15 text-cyan-400',
-        content: `<div class="space-y-2">
-          <div>① PM 判断: "JWT 认证" 涉及项目从未用过的技术栈 → 需要 Research</div>
-          <div>② PM 创建子任务 T0.1: <span class="text-cyan-400">JWT 技术方案调研</span></div>
-          <div>③ Researcher 被唤醒: 读需求 → web research → 对比库选型</div>
-          <div>④ 产出技术方案: <span class="text-emerald-400">推荐 RS256 + jsonwebtoken</span></div>
-          <div>⑤ Researcher 标注: <span class="text-amber-400">需要 POC 验证</span></div>
-          <div>⑥ PM 创建 POC 子任务 T0.2 → Implementer 在独立 worktree 验证</div>
-          <div>⑦ POC 通过: <span class="text-emerald-400">签名 1000 ops/sec, 密钥轮换正常</span></div>
-        </div>`,
-        roleStates: [
-          { name: 'PM', active: true, status: '研判' },
-          { name: 'Orchestrator', active: false, status: '待命' },
-          { name: 'Researcher', active: true, status: '调研中' },
-          { name: 'Implementer', active: true, status: 'POC' },
-          { name: 'Reviewer', active: false, status: '待命' },
-          { name: 'QA-Tester', active: false, status: '待命' },
-          { name: 'DevOps', active: false, status: '待命' },
-          { name: 'SRE-Observer', active: false, status: '待命' },
-        ],
-        taskStates: [
-          { name: 'T0: 改善登录体验', status: 'running', badgeClass: 'bg-blue-500/15 text-blue-400' },
-          { name: 'T0.1: JWT 技术方案调研', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
-          { name: 'T0.2: JWT POC 验证', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
-        ],
-        explain: '技术不确定性高时，先 Research 产出方案文档，再 POC 验证可行性。Researcher 不写代码，POC 由 Implementer 在隔离 worktree 中执行。'
-      },
-      {
-        phase: '2', title: '任务拆解与派发', actor: 'PM → Orchestrator',
-        badge: 'Phase 2', badgeClass: 'bg-purple-500/15 text-purple-400',
-        content: `<div class="space-y-2">
-          <div>① PM 读取需求文档 + 技术方案</div>
-          <div>② 拆解为 4 个子任务:</div>
-          <div class="pl-4 text-gray-400">
-            T1: <span class="text-emerald-400">实现 JWT 认证模块</span> (implementer)<br>
-            T2: <span class="text-blue-400">编写认证模块测试</span> (implementer) ← parents: [T1]<br>
-            T3: <span class="text-amber-400">审查认证模块代码</span> (reviewer) ← parents: [T1]<br>
-            T4: <span class="text-red-400">修复审查问题</span> (implementer) ← parents: [T3]
-          </div>
-          <div>③ Orchestrator 接管 → 按状态机路由表派发</div>
-          <div>④ T1 变为 ready → Dispatcher spawn implementer worker</div>
-        </div>`,
-        roleStates: [
-          { name: 'PM', active: true, status: '拆解' },
-          { name: 'Orchestrator', active: true, status: '派发' },
-          { name: 'Researcher', active: false, status: '待命' },
-          { name: 'Implementer', active: true, status: '执行' },
-          { name: 'Reviewer', active: false, status: '待命' },
-          { name: 'QA-Tester', active: false, status: '待命' },
-          { name: 'DevOps', active: false, status: '待命' },
-          { name: 'SRE-Observer', active: false, status: '待命' },
-        ],
-        taskStates: [
-          { name: 'T1: 实现 JWT 认证模块', status: 'running', badgeClass: 'bg-blue-500/15 text-blue-400' },
-          { name: 'T2: 编写测试', status: 'todo', badgeClass: 'bg-gray-500/15 text-gray-400' },
-          { name: 'T3: 审查代码', status: 'todo', badgeClass: 'bg-gray-500/15 text-gray-400' },
-          { name: 'T4: 修复审查问题', status: 'todo', badgeClass: 'bg-gray-500/15 text-gray-400' },
-        ],
-        explain: 'PM 完成拆解后交接给 Orchestrator。Orchestrator 是纯路由器——按状态机执行，不做分析不做拆解。Dispatcher 自动按 assignee profile spawn worker。'
-      },
-      {
-        phase: '3', title: '执行: Implementer TDD', actor: 'Implementer',
-        badge: 'Phase 3', badgeClass: 'bg-emerald-500/15 text-emerald-400',
-        content: `<div class="space-y-2">
-          <div>① 读取 T1 详情 + 验收标准</div>
-          <div>② 推导行为清单 (Implementer 自行决定粒度):</div>
-          <div class="pl-4 text-gray-400">
-            行为 A: 有效登录 → 200 + token<br>
-            行为 B: 无效登录 → 401<br>
-            行为 C: 缺失字段 → 400
-          </div>
-          <div>③ 跑全量测试建立基线 → ✅ 通过</div>
-          <div>④ TDD 循环 (RED→GREEN):</div>
-          <div class="pl-4 text-gray-400">
-            <span class="text-red-400">RED</span>: 写测试 → 必须失败<br>
-            <span class="text-emerald-400">GREEN</span>: 写最简实现 → 必须通过
-          </div>
-          <div>⑤ 遇到疑问 → <span class="text-amber-400">kanban_block("RS256 vs HS256?")</span></div>
-          <div>⑥ Reviewer 一次性决策: "用 RS256" → 恢复执行</div>
-          <div>⑦ 全量回归测试: 15/15 ✅</div>
-          <div>⑧ kanban_complete (含 TDD metadata)</div>
-        </div>`,
-        roleStates: [
-          { name: 'PM', active: false, status: '待命' },
-          { name: 'Orchestrator', active: false, status: '监控' },
-          { name: 'Researcher', active: false, status: '待命' },
-          { name: 'Implementer', active: true, status: 'TDD 编码' },
-          { name: 'Reviewer', active: true, status: '决策' },
-          { name: 'QA-Tester', active: false, status: '待命' },
-          { name: 'DevOps', active: false, status: '待命' },
-          { name: 'SRE-Observer', active: false, status: '待命' },
-        ],
-        taskStates: [
-          { name: 'T1: 实现 JWT 认证模块', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
-          { name: 'T2: 编写测试', status: 'ready', badgeClass: 'bg-amber-500/15 text-amber-400' },
-          { name: 'T3: 审查代码', status: 'ready', badgeClass: 'bg-amber-500/15 text-amber-400' },
-          { name: 'T4: 修复审查问题', status: 'todo', badgeClass: 'bg-gray-500/15 text-gray-400' },
-        ],
-        explain: 'Implementer 严格遵循 TDD: 先推导行为清单，再对每个行为执行 RED→GREEN 循环。遇到架构决策必须 block，不能自行决定。完成时输出结构化 handoff metadata。'
-      },
-      {
-        phase: '4', title: '测试 + 审查 (并行)', actor: 'Implementer + Reviewer',
-        badge: 'Phase 4', badgeClass: 'bg-amber-500/15 text-amber-400',
-        content: `<div class="space-y-2">
-          <div>T1 done → T2, T3 同时变为 <span class="text-amber-400">ready</span></div>
-          <div class="grid grid-cols-2 gap-4 mt-2">
-            <div class="border border-gray-700 rounded p-2">
-              <div class="text-emerald-400 text-xs font-semibold mb-1">T2: 写测试 (Implementer)</div>
-              <div class="text-xs text-gray-400">读取 T1 handoff → 跑 pytest → 14/14 ✅</div>
-            </div>
-            <div class="border border-gray-700 rounded p-2">
-              <div class="text-amber-400 text-xs font-semibold mb-1">T3: 审查代码 (Reviewer)</div>
-              <div class="text-xs text-gray-400">读取 T1 handoff → 审查代码</div>
-              <div class="text-xs text-red-400 mt-1">⚠ 发现: token 过期时间硬编码</div>
-              <div class="text-xs text-gray-500">approved: false → 阻塞流程</div>
-            </div>
-          </div>
-          <div>T3 done → T4 变为 ready → Implementer 修复</div>
-        </div>`,
-        roleStates: [
-          { name: 'PM', active: false, status: '待命' },
-          { name: 'Orchestrator', active: false, status: '监控' },
-          { name: 'Researcher', active: false, status: '待命' },
-          { name: 'Implementer', active: true, status: '写测试' },
-          { name: 'Reviewer', active: true, status: '审查中' },
-          { name: 'QA-Tester', active: false, status: '待命' },
-          { name: 'DevOps', active: false, status: '待命' },
-          { name: 'SRE-Observer', active: false, status: '待命' },
-        ],
-        taskStates: [
-          { name: 'T1: 实现 JWT 认证模块', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
-          { name: 'T2: 编写测试', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
-          { name: 'T3: 审查代码', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
-          { name: 'T4: 修复审查问题', status: 'running', badgeClass: 'bg-blue-500/15 text-blue-400' },
-        ],
-        explain: 'Reviewer 是严格只读——只看代码不改代码。审查结论是硬门控：不通过就阻塞。Reviewer 发现 token 过期时间写死，打了"不通过"，流程阻塞直到修复完成。'
-      },
-      {
-        phase: '5', title: '修复 + 自我进化', actor: 'Implementer',
-        badge: 'Phase 5', badgeClass: 'bg-purple-500/15 text-purple-400',
-        content: `<div class="space-y-2">
-          <div>① 读取 T3 handoff: <span class="text-red-400">token 过期时间硬编码</span></div>
-          <div>② TDD 修复: RED (test_token_expiry_configurable → 失败) → GREEN (改环境变量 → 通过)</div>
-          <div>③ 回归测试: 15/15 ✅</div>
-          <div>④ kanban_complete (TDD metadata)</div>
-          <div class="mt-3 border-t border-gray-700 pt-3">
-            <div class="text-purple-400 text-xs font-semibold mb-1">自我进化 (边干边记):</div>
-            <div class="text-xs text-gray-400">memory add: "JWT token 过期时间应可配置，不要硬编码"</div>
-            <div class="text-xs text-gray-400">skill_manage create: "jwt-auth-checklist" → 新项目直接用</div>
-          </div>
-        </div>`,
-        roleStates: [
-          { name: 'PM', active: false, status: '待命' },
-          { name: 'Orchestrator', active: false, status: '监控' },
-          { name: 'Researcher', active: false, status: '待命' },
-          { name: 'Implementer', active: true, status: '修复' },
-          { name: 'Reviewer', active: false, status: '待命' },
-          { name: 'QA-Tester', active: false, status: '待命' },
-          { name: 'DevOps', active: false, status: '待命' },
-          { name: 'SRE-Observer', active: false, status: '待命' },
-        ],
-        taskStates: [
-          { name: 'T1~T3', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
-          { name: 'T4: 修复审查问题', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
-          { name: 'T-deploy: 部署发布', status: 'ready', badgeClass: 'bg-amber-500/15 text-amber-400' },
-        ],
-        explain: '修复审查问题的同时"长记性"——经验自动沉淀为 memory 和 skill。下次新项目做认证直接套 checklist，避免重复踩坑。'
-      },
-      {
-        phase: '5.6', title: '三层部署: DevOps', actor: 'DevOps-Engineer → User',
-        badge: 'Phase 5.6', badgeClass: 'bg-orange-500/15 text-orange-400',
-        content: `<div class="space-y-2">
-          <div>① <span class="text-emerald-400">dev/test</span> 自动部署 → 验证 (test+E2E+性能) → ✅</div>
-          <div>② 等待用户批准 staging → <span class="text-amber-400">kanban_block</span></div>
-          <div>③ 用户批准 → <span class="text-blue-400">staging</span> 部署 → 验证 (test+E2E) → ✅</div>
-          <div>④ UAT sign-off → <span class="text-amber-400">kanban_block</span> → 用户验收通过</div>
-          <div>⑤ 用户批准 production → <span class="text-red-400">production</span> 部署</div>
-          <div>⑥ 冒烟测试: 4/4 端点可达 → ✅</div>
-          <div>⑦ 自动打 git tag: <span class="text-purple-400">v1.2.3</span></div>
-          <div class="text-xs text-gray-500 mt-2">任何层失败 → 自动回滚 + kanban_block → 等待用户决策</div>
-        </div>`,
-        roleStates: [
-          { name: 'PM', active: false, status: '待命' },
-          { name: 'Orchestrator', active: false, status: '监控' },
-          { name: 'Researcher', active: false, status: '待命' },
-          { name: 'Implementer', active: false, status: '待命' },
-          { name: 'Reviewer', active: false, status: '待命' },
-          { name: 'QA-Tester', active: false, status: '待命' },
-          { name: 'DevOps', active: true, status: '部署中' },
-          { name: 'SRE-Observer', active: false, status: '待命' },
-        ],
-        taskStates: [
-          { name: 'T1~T4', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
-          { name: 'T-deploy: 部署发布', status: 'running', badgeClass: 'bg-blue-500/15 text-blue-400' },
-        ],
-        explain: '三层环境逐级推进，每层有验证门控。dev/test 自动，staging 和 production 必须用户批准。UAT 由用户亲自在 staging 上验收。任何层失败自动回滚并等待用户决策。'
-      },
-      {
-        phase: '6', title: '完成通知 + 用户审核', actor: 'Orchestrator → User',
-        badge: 'Phase 6', badgeClass: 'bg-emerald-500/15 text-emerald-400',
-        content: `<div class="space-y-2">
-          <div>所有任务 done! Gateway 推送通知:</div>
-          <div class="border border-gray-700 rounded p-3 bg-gray-800/50 text-xs">
-            <div class="text-emerald-400 font-semibold mb-1">📬 项目 Alpha - 用户认证模块 已完成并部署</div>
-            <div class="text-gray-400">✅ 代码变更: src/auth/jwt.rs, src/auth/routes.rs</div>
-            <div class="text-gray-400">✅ 测试: 14/14 通过</div>
-            <div class="text-gray-400">✅ 审查: 1 个问题已修复</div>
-            <div class="text-gray-400">✅ 部署: v1.2.3 已上线 production</div>
-            <div class="text-gray-400">🧠 经验沉淀: 2 条 memory, 1 个新 skill</div>
-          </div>
-          <div>CEO 决策: <span class="text-emerald-400">[批准归档]</span> / <span class="text-blue-400">[查看详情]</span> / <span class="text-amber-400">[追加需求]</span></div>
-        </div>`,
-        roleStates: [
-          { name: 'PM', active: false, status: '待命' },
-          { name: 'Orchestrator', active: true, status: '通知' },
-          { name: 'Researcher', active: false, status: '待命' },
-          { name: 'Implementer', active: false, status: '待命' },
-          { name: 'Reviewer', active: false, status: '待命' },
-          { name: 'QA-Tester', active: false, status: '待命' },
-          { name: 'DevOps', active: false, status: '待命' },
-          { name: 'SRE-Observer', active: false, status: '待命' },
-        ],
-        taskStates: [
-          { name: 'T1~T4, T-deploy', status: 'done', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
-        ],
-        explain: '所有工单完成，系统自动推送汇总通知。包含代码变更、测试结果、审查修复、部署状态和经验沉淀。CEO 审核后归档，整个流程闭环。'
-      },
+    // --- Phase State ---
+    phase: 'idle', // idle|clarifying|researching|decomposing|executing|deploying
+    qState: { idx: 0, answers: [], otherCount: 0 },
+    tddState: { taskId: '', behaviors: [], behIdx: 0, phase: 'RED', status: '' },
+    decisionCtx: { title: '', desc: '', options: [] },
+    currentRootId: '',
+    deployState: { env: 'dev', taskId: '' },
+    bp: { impl: 0, rev: 0, ratio: 0, action: '正常' },
+    bpHistory: [],
+    reqVersion: 1,
+    hasCheckpoint: false,
+    traceLog: [],
+    deadlockCounter: 0,
+    archiveCtx: { summary: '', options: [] },
+    taskGraphDesc: '',
+    taskGraphOptions: [],
+    pocFailOptions: [],
+    curatorScores: [
+      { name: 'jwt-auth-checklist', score: 85 },
+      { name: 'memory:token过期配置', score: 72 },
+      { name: 'memory:RS256选型', score: 60 },
     ],
-    e2eNext() { if (this.e2eStep < this.e2eData.length - 1) this.e2eStep++; },
-    e2ePrev() { if (this.e2eStep > 0) this.e2eStep--; },
-    e2eReset() { this.e2eStep = 0; this.e2eStop(); },
-    e2ePlay() {
-      if (this.e2ePlaying) { this.e2eStop(); return; }
-      if (this.e2eStep >= this.e2eData.length - 1) this.e2eStep = 0;
-      this.e2ePlaying = true;
+
+    // --- Questions ref ---
+    questions: QUESTIONS,
+
+    // --- Computed ---
+    get inputPlaceholder() {
+      if (this.phase === 'idle') return '输入需求，如: 登录体验太差了，每次都要重新登录';
+      if (this.phase === 'clarifying') return 'PM 正在澄清需求...';
+      return '模拟进行中...';
+    },
+    get phaseLabel() {
+      const m = { idle:'等待输入', clarifying:'Phase 1: 需求澄清', researching:'Phase 1.5: 技术调研',
+        decomposing:'Phase 2: 任务拆解', executing:'Phase 3-5: 执行', deploying:'Phase 5.6: 部署' };
+      return m[this.phase] || this.phase;
+    },
+    get canAuto() { return this.tasks.length > 0 && !this.simBusy; },
+    get statusText() {
+      const total = this.tasks.filter(t => !t.isSubtask || t.column !== 'triage').length;
+      const done = this.tasks.filter(t => ['done','deployed'].includes(t.column)).length;
+      const blocked = this.tasks.filter(t => t.blocked).length;
+      return `任务 ${done}/${total}` + (blocked ? ` | ${blocked} 阻塞` : '');
+    },
+
+    colTasks(cid) { return this.boardTasks().filter(t => t.column === cid); },
+    boardTasks() { return this.tasks.filter(t => t.board === this.currentBoard); },
+
+    // --- Logging ---
+    log(m, c='text-gray-400') {
+      const t = new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      this.logs.unshift({ t, m, c });
+      if (this.logs.length > 200) this.logs.pop();
+    },
+    setRole(name, active, status, task='') {
+      const r = this.roles.find(r => r.name === name);
+      if (r) Object.assign(r, { active, status, task });
+    },
+    selectTask(t) { this.selTask = t; this.activeTaskId = t.id; this.rtab = 'detail'; },
+
+    // --- Task CRUD ---
+    mkTask(title, assignee, desc, parents=[], extra={}) {
+      this.taskSeq++;
+      const badges = { PM:'bg-blue-500/15 text-blue-400', Orchestrator:'bg-purple-500/15 text-purple-400',
+        Researcher:'bg-cyan-500/15 text-cyan-400', Implementer:'bg-emerald-500/15 text-emerald-400',
+        Reviewer:'bg-amber-500/15 text-amber-400', 'QA-Tester':'bg-pink-500/15 text-pink-400',
+        DevOps:'bg-orange-500/15 text-orange-400', 'SRE-Observer':'bg-red-500/15 text-red-400' };
+      const t = { id: `T${this.taskSeq}`, column: 'triage', assignee, assigneeBadge: badges[assignee]||'bg-gray-500/15 text-gray-400',
+        title, description: desc, parents, blocked: false, blockReason: '', blockOptions: [],
+        handoff: '', testResults: '', deployInfo: '', behaviors: [], isSubtask: false,
+        rollbackCount: 0, board: this.currentBoard, ...extra };
+      this.tasks.push(t);
+      return t;
+    },
+    moveTask(t, col) { t.column = col; },
+    promoteReady() {
+      this.tasks.forEach(t => {
+        if (t.column === 'todo') {
+          const ok = t.parents.every(pid => { const p = this.tasks.find(x => x.id === pid); return p && ['done','deployed'].includes(p.column); });
+          if (ok) { t.column = 'ready'; this.log(`${t.id} → ready (parents 满足)`); }
+        }
+      });
+      this.calcBP();
+    },
+    calcBP() {
+      this.bp.impl = this.tasks.filter(t => t.column === 'ready' && t.assignee === 'Implementer').length;
+      this.bp.rev = this.tasks.filter(t => t.column === 'ready' && (t.assignee === 'Reviewer' || t.assignee === 'QA-Tester')).length;
+      const instant = this.bp.impl / Math.max(this.bp.rev, 1);
+      this.bpHistory.push(instant);
+      if (this.bpHistory.length > 5) this.bpHistory.shift();
+      const avg = this.bpHistory.reduce((a,b) => a+b, 0) / this.bpHistory.length;
+      this.bp.ratio = avg;
+      this.bp.action = this.bp.ratio <= 2 ? '正常' : this.bp.ratio <= 4 ? '降速' : '暂停';
+    },
+
+    // ==================== SUBMIT REQUIREMENT ====================
+    submitRequirement() {
+      const text = this.userInput.trim();
+      if (!text || this.simBusy) return;
+      this.simBusy = true; this.userInput = '';
+      this.phase = 'clarifying';
+      this.addTrace('User', 'submit_requirement', text);
+
+      // Feature 9: Multi-requirement priority
+      const existingTriage = this.boardTasks().filter(t => t.column === 'triage' && !t.isSubtask);
+      if (existingTriage.length > 0) {
+        const names = existingTriage.map(t => t.title).join(' → ');
+        this.simBusy = false;
+        this.interactionPanel = 'decision';
+        this.decisionCtx = {
+          title: '多需求优先级排序',
+          desc: `Board 上已有需求: ${names} → ${text}`,
+          options: [
+            { label: '✅ 确认顺序', desc: '新需求追加到末尾', action: 'confirm_priority' },
+            { label: '🔝 新需求优先', desc: '新需求排到最前', action: 'new_first' },
+          ]
+        };
+        // Store for later
+        this._pendingReq = text;
+        return;
+      }
+
+      this._doSubmitRequirement(text);
+    },
+    _doSubmitRequirement(text) {
+      const root = this.mkTask(text, 'PM', '用户提交的原始需求，等待 PM 分析...', []);
+      root.column = 'analyzing';
+      this.setRole('PM', true, '接收需求', root.id);
+      this.log(`<b>需求提交:</b> "${text}"`, 'text-blue-400');
+      this.selectTask(root);
+      this.currentRootId = root.id;
+
+      // PM: 技术发现
+      setTimeout(() => {
+        root.description = '<b>技术发现中...</b><br>读 CLAUDE.md → 项目入口<br>按指引: Cargo.toml → Axum 0.7, sqlx, 无 JWT 依赖<br>src/routes/users.rs → session-based 登录<br>src/middleware/ → 无 auth 中间件';
+        this.log('PM 技术发现完成: Axum + session-based, 无 JWT', 'text-blue-400');
+        this.addTrace('PM', 'tech_discovery', 'Axum + session-based');
+        // 开始一次一问
+        this.qState = { idx: 0, answers: [], otherCount: 0 };
+        this.interactionPanel = 'question';
+        this.simBusy = false;
+      }, 1500);
+    },
+
+    // ==================== ANSWER QUESTION ====================
+    answerQuestion(opt) {
+      const q = QUESTIONS[this.qState.idx];
+      this.qState.answers.push({ dim: q.dim, answer: opt.text, label: opt.label });
+      this.qState.otherCount = 0; // reset convergence counter for this question
+
+      // 冲突检测: 范围大+时间紧
+      if (q.dim === '时间' && opt.label === 'A') {
+        const scope = this.qState.answers.find(a => a.dim === '范围');
+        if (scope && scope.answer.includes('登录+注册')) {
+          this.log('⚠ <span class="text-red-400">冲突检测: 范围大 vs 时间紧</span>', 'text-amber-400');
+          this.interactionPanel = 'decision';
+          this.decisionCtx = {
+            title: '⚠ 可行性冲突', desc: '范围: 完整认证 vs 时间: 本周 — 不可行',
+            options: [
+              { label: 'A) 缩小范围', desc: '仅做核心认证(登录+刷新)', action: 'shrink_scope' },
+              { label: 'B) 延长时间', desc: '改为 1-2 周', action: 'extend_time' },
+            ]
+          };
+          return;
+        }
+      }
+
+      this.log(`Q${this.qState.idx+1} ${q.dim}: <span class="text-emerald-400">${opt.text}</span>`, 'text-gray-400');
+      this.addTrace('PM', `Q${this.qState.idx+1} answered`, `${q.dim}: ${opt.text}`);
+
+      // Dynamic ordering: skipTo support
+      if (opt.skipTo !== undefined) {
+        this.log(`跳转: Q${this.qState.idx+1} → Q${opt.skipTo+1} (skipTo)`, 'text-amber-400');
+        this.addTrace('PM', 'skip_to', `Q${opt.skipTo+1}`);
+        this.qState.idx = opt.skipTo;
+      } else {
+        this.qState.idx++;
+      }
+
+      // Save checkpoint every question
+      this.saveCheckpoint();
+
+      if (this.qState.idx >= QUESTIONS.length) {
+        this.finishClarification();
+      }
+    },
+
+    // ==================== DECISION ====================
+    makeDecision(action) {
+      this.interactionPanel = null;
+      if (action === 'shrink_scope') {
+        this.log('用户选择缩小范围: 仅核心认证', 'text-amber-400');
+        this.qState.answers.push({ dim: '范围', answer: '仅登录接口', label: '⭐A' });
+        this.qState.idx++;
+        if (this.qState.idx >= QUESTIONS.length) { this.finishClarification(); return; }
+        this.interactionPanel = 'question';
+      } else if (action === 'confirm_req') {
+        this.log('用户 <span class="text-emerald-400">确认需求 v1</span>', 'text-gray-400');
+        this.startResearch();
+      } else if (action === 'revise_req') {
+        this.log('用户要求修改需求, PM 重新澄清...', 'text-amber-400');
+        this.qState = { idx: 7, answers: this.qState.answers.slice(0,7) };
+        this.interactionPanel = 'question';
+      } else if (action === 'poc_needed') {
+        this.log('PM 判断需要 POC 验证', 'text-cyan-400');
+        this.startPOC();
+      } else if (action === 'poc_skip') {
+        this.log('PM 判断无需 POC, 直接进入拆解', 'text-blue-400');
+        this.startDecomposition();
+      } else if (action === 'approve_staging') {
+        this.log('用户 <span class="text-emerald-400">批准 staging 部署</span>', 'text-gray-400');
+        this.deployToEnv('staging');
+      } else if (action === 'uat_pass') {
+        this.log('用户 <span class="text-emerald-400">UAT 验收通过</span>', 'text-gray-400');
+        this.deployToEnv('production');
+      } else if (action === 'uat_fail') {
+        this.log('用户 <span class="text-red-400">发现问题</span>', 'text-gray-400');
+        this.addTrace('User', 'uat_fail');
+        // Feature 4: Keep deploy task blocked
+        const deployTask = this.tasks.find(t => t.id === this.deployState.taskId);
+        if (deployTask) {
+          deployTask.blocked = true;
+          deployTask.blockReason = 'UAT 失败, 等待修复';
+        }
+        const fix = this.mkTask('修复 UAT 发现的问题', 'Implementer', '根据用户反馈修复, 完成后自动 unblock deploy 任务', []);
+        fix.column = 'ready';
+        // Store deploy task id in fix task for auto-unblock
+        fix._unblockDeployId = this.deployState.taskId;
+        this.promoteReady();
+        setTimeout(() => this.runNext(), 500);
+      } else if (action === 'approve_prod') {
+        this.log('用户 <span class="text-emerald-400">批准 production 部署</span>', 'text-gray-400');
+        this.deployToEnv('production');
+      } else if (action === 'abort_deploy') {
+        const dt = this.tasks.find(t => t.id === this.deployState.taskId);
+        if (dt) { dt.column = 'done'; dt.description += '<br><span class="text-red-400">用户放弃部署</span>'; }
+        this.setRole('DevOps', false, '待命');
+        this.checkAllDone();
+      } else if (action === 'risk_approve') {
+        this.log('用户 <span class="text-emerald-400">批准 L3 风险命令</span>, Worker 继续执行', 'text-gray-400');
+        const blocked = this.tasks.find(t => t.blocked && t.blockReason.includes('L3'));
+        if (blocked) { blocked.blocked = false; blocked.blockReason = ''; }
+        this.interactionPanel = null;
+        this.simBusy = false;
+      } else if (action === 'risk_reject') {
+        this.log('用户 <span class="text-red-400">拒绝 L3 风险命令</span>, 任务保持 blocked', 'text-gray-400');
+        this.addTrace('User', 'risk_reject');
+        this.interactionPanel = null;
+        this.simBusy = false;
+      } else if (action === 'retry_deploy') {
+        // Feature 3: Retry deploy to current env
+        this.log('用户选择 <span class="text-blue-400">修复重试</span>, 重新部署到 staging', 'text-gray-400');
+        this.addTrace('User', 'retry_deploy');
+        this.deployToEnv('staging');
+      } else if (action === 'confirm_priority') {
+        // Feature 9: Confirm priority order
+        this.interactionPanel = null;
+        this.simBusy = true;
+        this.log('用户确认需求顺序: 新需求追加到末尾', 'text-blue-400');
+        this.addTrace('User', 'confirm_priority');
+        this._doSubmitRequirement(this._pendingReq);
+        this._pendingReq = '';
+      } else if (action === 'new_first') {
+        // Feature 9: New requirement first
+        this.interactionPanel = null;
+        this.simBusy = true;
+        this.log('用户选择新需求优先', 'text-blue-400');
+        this.addTrace('User', 'new_first_priority');
+        this._doSubmitRequirement(this._pendingReq);
+        this._pendingReq = '';
+      } else if (action === 'approve_archive') {
+        // Feature 17: Approve archive
+        this.interactionPanel = null;
+        this.log('用户 <span class="text-emerald-400">批准归档</span>, 全流程结束', 'text-gray-400');
+        this.addTrace('User', 'approve_archive');
+        this.curatorScores.push({ name: 'jwt-auth-module', score: 88 });
+      } else if (action === 'add_requirement') {
+        // Feature 17: Add more requirements
+        this.interactionPanel = null;
+        this.log('用户选择 <span class="text-blue-400">追加需求</span>', 'text-gray-400');
+        this.addTrace('User', 'add_requirement');
+        this.reqVersion++;
+        this.phase = 'idle';
+        this.simBusy = false;
+        this.userInput = '';
+      } else if (action === 'trigger_sre') {
+        const faultTask = this.tasks.find(t => t.rollbackCount > 0 && t.assignee === 'DevOps');
+        this.triggerSRE(faultTask ? faultTask.id : 'T-deploy');
+      } else if (action === 'skip_sre') {
+        this.log('跳过 SRE 分析, 重新部署...', 'text-gray-400');
+        this.interactionPanel = null;
+        this.simBusy = false;
+        setTimeout(() => this.runNext(), 500);
+      } else if (action === 'block_architecture') {
+        // Implementer blocks on architecture decision → auto-create Reviewer subtask
+        this.log('Implementer <span class="text-amber-400">kanban_block("reviewer-needed: RS256 vs HS256?")</span>', 'text-gray-400');
+        const implTask = this.tasks.find(t => t.id === this.tddState.taskId);
+        if (implTask) { implTask.blocked = true; implTask.blockReason = '等待 Reviewer 决策: RS256 vs HS256'; }
+        this.setRole('Implementer', true, 'blocked', this.tddState.taskId);
+        // Auto-create Reviewer task
+        const revTask = this.mkTask('审查: JWT 算法选型', 'Reviewer', 'T1 需要决策: 用 RS256 还是 HS256?', [], { priority: 'high' });
+        revTask.column = 'ready';
+        this.promoteReady();
+        this.log('Dispatcher 自动创建 Reviewer 子任务', 'text-purple-400');
+        setTimeout(() => this.runNext(), 800);
+      } else if (action === 'reviewer_decide_rs256') {
+        // Reviewer decides
+        this.log('Reviewer 决策: <span class="text-emerald-400">用 RS256 (支持 key rotation)</span>', 'text-amber-400');
+        // Unblock implementer task
+        const implTask = this.tasks.find(t => t.id === this.tddState.taskId);
+        if (implTask) {
+          implTask.blocked = false; implTask.blockReason = '';
+          implTask.handoff += '\ndecision: RS256 (from Reviewer)';
+        }
+        this.setRole('Reviewer', false, '待命');
+        this.setRole('Implementer', true, 'TDD 编码', this.tddState.taskId);
+        // Continue TDD
+        this.interactionPanel = 'tdd';
+        this.simBusy = false;
+      }
+    },
+
+    // ==================== FINISH CLARIFICATION ====================
+    finishClarification() {
+      this.interactionPanel = null;
+      const root = this.tasks.find(t => t.id === this.currentRootId);
+      if (!root) return;
+      this.addTrace('PM', 'finish_clarification', `v${this.reqVersion}`);
+
+      // DoR 验证
+      this.log('<b>DoR 验证门 (7项检查)</b>', 'text-blue-400');
+      const dor = ['目标明确 ✓', '用户群体确定 ✓', '时间约束明确 ✓', '技术方案可行 ✓', '范围无歧义 ✓', '验收标准清晰 ✓', '无未解决冲突 ✓'];
+      dor.forEach(d => this.log(`  ${d}`, 'text-emerald-400'));
+      this.log('DoR 验证 <span class="text-emerald-400">全部通过</span>', 'text-blue-400');
+
+      // Feature 7: Version control
+      root.description = `<b>需求文档 v${this.reqVersion}</b><br>` + this.qState.answers.map(a => `${a.dim}: ${a.answer}`).join('<br>') + '<br><br>DoR ✅ | 证据索引: src/routes/users.rs:45, src/middleware/mod.rs:8';
+      if (this.reqVersion > 1) {
+        root.description += `<br><br><span class="text-amber-400">版本历史: 从 v1 更新到 v${this.reqVersion}</span>`;
+      }
+      root.column = 'blocked'; root.blocked = true;
+      root.blockReason = '等待确认需求';
+      root.blockOptions = [
+        { label: `✅ 确认需求 v${this.reqVersion}`, desc: '进入技术研判', action: 'confirm_req' },
+        { label: '📝 修改需求', desc: '重新澄清', action: 'revise_req' },
+      ];
+
+      // Feature 8: Quality feedback (show before confirm decision)
+      this.interactionPanel = 'feedback';
+      this.setRole('PM', true, '等待反馈');
+    },
+
+    // ==================== PHASE 1.5: RESEARCH ====================
+    startResearch() {
+      this.phase = 'researching';
+      const root = this.tasks.find(t => t.id === this.currentRootId);
+      if (root) { root.blocked = false; root.column = 'analyzing'; }
+      this.log('PM 判断: JWT 认证涉及未用过的技术栈 → <span class="text-cyan-400">需要 Research</span>', 'text-blue-400');
+      this.addTrace('PM', 'start_research', 'JWT tech stack');
+
+      const res = this.mkTask('JWT 技术方案调研', 'Researcher', '调研 JWT 签名方案(RS256 vs HS256)、库选型、安全性', [this.currentRootId]);
+      res.column = 'research';
+      this.setRole('Researcher', true, '技术调研', res.id);
+      this.log(`Researcher 启动: ${res.id}`, 'text-cyan-400');
+
+      setTimeout(() => {
+        res.description = '<b>技术方案</b><br>推荐: RS256 + jsonwebtoken<br>RS256 支持密钥轮换, jsonwebtoken 是 Rust 生态最成熟 JWT 库<br><span class="text-amber-400">建议: 需要 POC 验证签名性能</span>';
+        res.handoff = 'proposal: RS256 + jsonwebtoken\nneeds_poc: true\npoc_scope: 验证 RS256 签名性能和密钥轮换';
+        res.column = 'done';
+        this.setRole('Researcher', false, '待命');
+        this.log('Researcher 完成: 推荐 RS256 + jsonwebtoken, 建议 POC', 'text-emerald-400');
+
+        // PM 判断是否需要 POC
+        this.interactionPanel = 'decision';
+        this.decisionCtx = {
+          title: 'Research 完成 — 是否需要 POC?',
+          desc: 'Researcher 建议 POC 验证签名性能',
+          options: [
+            { label: '✅ 需要 POC', desc: '创建 POC 子任务', action: 'poc_needed' },
+            { label: '⏭ 跳过 POC', desc: '直接进入拆解', action: 'poc_skip' },
+          ]
+        };
+      }, 2000);
+    },
+
+    startPOC() {
+      const poc = this.mkTask('JWT RS256 POC 验证', 'Implementer', '在独立 worktree 中验证 RS256 签名性能和密钥轮换', [this.currentRootId]);
+      poc.column = 'ready';
+      this.setRole('Implementer', true, 'POC 验证', poc.id);
+      this.promoteReady();
+      this.log(`Implementer 开始 POC: ${poc.id}`, 'text-emerald-400');
+      this.addTrace('Implementer', 'poc_start', poc.id);
+
+      setTimeout(() => {
+        // 40% chance of POC failure
+        const pocPassed = Math.random() > 0.4;
+        if (pocPassed) {
+          poc.handoff = 'poc_result: success\nbenchmark: 1000 ops/sec\nkey_rotation: normal';
+          poc.column = 'done';
+          poc.description += '<br><span class="text-emerald-400">POC 通过: 签名 1000 ops/sec, 密钥轮换正常</span>';
+          this.setRole('Implementer', false, '待命');
+          this.log('POC 通过 ✅', 'text-emerald-400');
+          this.addTrace('Implementer', 'poc_pass', '1000 ops/sec');
+          this.startDecomposition();
+        } else {
+          poc.handoff = 'poc_result: failed\nbenchmark: 50 ops/sec (低于阈值)\nkey_rotation: error';
+          poc.column = 'done';
+          poc.description += '<br><span class="text-red-400">POC 失败: 签名仅 50 ops/sec, 远低于阈值</span>';
+          this.setRole('Implementer', false, '待命');
+          this.log('POC <span class="text-red-400">失败</span>: 签名性能不达标 (50 ops/sec)', 'text-red-400');
+          this.addTrace('Implementer', 'poc_fail', '50 ops/sec', 'error');
+          // Show POC failure decision panel
+          this.interactionPanel = 'poc_fail';
+          this.pocFailOptions = [
+            { label: '🔄 换方案重新调研', desc: '回到 Research 阶段', action: 'poc_retry_research' },
+            { label: '⬆ 升级用户决策', desc: '让用户决定继续或放弃', action: 'poc_escalate_user' },
+            { label: '❌ 放弃任务', desc: '标记完成并记录失败原因', action: 'poc_give_up' },
+          ];
+          this.simBusy = false;
+        }
+      }, 2500);
+    },
+
+    // ==================== PHASE 2: DECOMPOSITION ====================
+    startDecomposition() {
+      this.phase = 'decomposing';
+      const root = this.tasks.find(t => t.id === this.currentRootId);
+      if (root) root.column = 'analyzing';
+      this.setRole('PM', true, '拆解任务', this.currentRootId);
+      this.log('PM 开始任务拆解...', 'text-blue-400');
+      this.addTrace('PM', 'start_decomposition');
+
+      setTimeout(() => {
+        const t1 = this.mkTask('实现 JWT 认证模块', 'Implementer', 'TDD: 有效登录→200+token, 无效→401, 缺字段→400', [this.currentRootId]);
+        const t2 = this.mkTask('编写认证模块测试', 'Implementer', '单元测试+集成测试, 覆盖正常/异常流程', [t1.id]);
+        const t3 = this.mkTask('审查认证模块代码', 'Reviewer', '安全性、代码规范、错误处理', [t1.id]);
+        const t4 = this.mkTask('修复审查问题', 'Implementer', '根据 reviewer findings 修复', [t3.id]);
+        const t5 = this.mkTask('部署发布', 'DevOps', '三层部署: dev/test → staging → production', [t2.id, t4.id]);
+        // Feature 2: QA-Tester independent verification task
+        const tqa = this.mkTask('QA 独立验收', 'QA-Tester', '独立运行测试, 验证 behaviors + regression', [t2.id, t4.id]);
+        [t1,t2,t3,t4,t5,tqa].forEach(t => { t.column = 'todo'; t.isSubtask = true; });
+        root.column = 'done';
+        this.setRole('PM', false, '待命');
+        this.setRole('Orchestrator', true, '派发任务');
+        this.log(`PM 拆解为 6 个子任务: ${t1.id}→${t2.id}+${t3.id}→${t4.id}→${t5.id}+${tqa.id}`, 'text-emerald-400');
+        this.addTrace('PM', 'decomposition_done', `6 tasks: ${t1.id}→${t2.id}+${t3.id}→${t4.id}→${t5.id}+${tqa.id}`);
+
+        // Feature 10: User confirms task graph
+        this.taskGraphDesc = `${t1.id}(实现) → ${t2.id}(测试) + ${t3.id}(审查) → ${t4.id}(修复) → ${t5.id}(部署) + ${tqa.id}(QA)`;
+        this.taskGraphOptions = [
+          { label: '✅ 确认任务图', desc: '进入执行阶段', action: 'confirm_graph' },
+          { label: '📝 修改拆解', desc: 'PM 重新拆解', action: 'revise_graph' },
+        ];
+        this.interactionPanel = 'taskgraph';
+        this.simBusy = false;
+      }, 1500);
+    },
+
+    // ==================== PHASE 3-5: EXECUTION ====================
+ runNext() {
+      this.promoteReady();
+      // Check blocked tasks that need Reviewer decision
+      const reviewerDecision = this.tasks.find(t => t.blocked && t.blockReason.includes('Reviewer'));
+      if (reviewerDecision && reviewerDecision.assignee === 'Implementer') {
+        // Reviewer decision task
+        const revDone = this.tasks.find(t => t.assignee === 'Reviewer' && t.column === 'done' && t.title.includes('算法'));
+        if (!revDone) {
+          const revTask = this.tasks.find(t => t.assignee === 'Reviewer' && t.column === 'ready' && t.title.includes('算法'));
+          if (revTask) { this.executeTask(revTask); return; }
+        }
+      }
+
+      const ready = this.tasks.filter(t => t.column === 'ready');
+      if (ready.length === 0) {
+        this.checkAllDone();
+        return;
+      }
+
+      // Feature 14: Deadlock detection
+      this.deadlockCounter++;
+      if (this.deadlockCounter >= 3 && ready.length > 0) {
+        const profiles = ready.map(t => t.assignee).join(', ');
+        this.log(`<span class="text-red-400">⚠ 检测到潜在死锁: ${profiles} 队列积压超过阈值 (${this.deadlockCounter} 轮无执行)</span>`, 'text-red-400');
+        this.addTrace('Dispatcher', 'deadlock_detected', `${profiles} x${this.deadlockCounter}`, 'error');
+        this.deadlockCounter = 0; // reset
+      }
+
+      // Backpressure check
+      const implReady = ready.filter(t => t.assignee === 'Implementer').length;
+      const revReady = ready.filter(t => t.assignee === 'Reviewer').length;
+      this.calcBP();
+      if (this.bp.ratio > 4 && ready[0].assignee === 'Implementer') {
+        this.log(`<span class="text-red-400">背压暂停: ratio=${this.bp.ratio.toFixed(1)}>4, 暂停 Implementer 派发</span>`, 'text-gray-400');
+        this.addTrace('Dispatcher', 'backpressure_pause', `ratio=${this.bp.ratio.toFixed(1)}`, 'warn');
+        // Try non-implementer tasks first
+        const nonImpl = ready.find(t => t.assignee !== 'Implementer');
+        if (!nonImpl) { this.checkAllDone(); return; }
+        this.executeTask(nonImpl);
+        return;
+      }
+
+      this.deadlockCounter = 0; // reset on successful dispatch
+      this.executeTask(ready[0]);
+    },
+
+    executeTask(task) {
+      task.column = 'running';
+      this.setRole(task.assignee, true, '执行中', task.id);
+      this.log(`${task.assignee} 开始执行 ${task.id}: ${task.title}`, 'text-emerald-400');
+      this.addTrace(task.assignee, 'task_start', `${task.id}: ${task.title}`);
+
+      // Feature 15: Environment snapshot on Worker spawn
+      const snapshot = `git: clean, 3 staged\nstorage: 45G free\nhermes: running, 2 workers\nboard: ${this.currentBoard}`;
+      task.envSnapshot = snapshot;
+      this.addTrace(task.assignee, 'env_snapshot', snapshot);
+
+      if (task.assignee === 'Implementer' && task.title.includes('实现')) {
+        this.startTDD(task);
+      } else if (task.assignee === 'Reviewer') {
+        this.executeReviewer(task);
+      } else if (task.assignee === 'QA-Tester') {
+        this.executeQA(task);
+      } else if (task.assignee === 'DevOps') {
+        this.startDeploy(task);
+      } else {
+        // Generic execution
+        setTimeout(() => {
+          task.column = 'done';
+          this.setRole(task.assignee, false, '待命');
+          this.log(`${task.id} 完成`, 'text-emerald-400');
+          this.addTrace(task.assignee, 'task_done', task.id);
+
+          // Feature 4: Auto-unblock deploy task after fix task completes
+          if (task._unblockDeployId) {
+            const deployTask = this.tasks.find(t => t.id === task._unblockDeployId);
+            if (deployTask) {
+              deployTask.blocked = false;
+              deployTask.blockReason = '';
+              this.log(`修复完成, 自动 unblock deploy 任务 ${deployTask.id}, 重新部署 staging`, 'text-emerald-400');
+              this.addTrace('System', 'auto_unblock_deploy', deployTask.id);
+              setTimeout(() => this.deployToEnv('staging'), 800);
+              return;
+            }
+          }
+
+          this.promoteReady();
+          setTimeout(() => this.runNext(), 500);
+        }, 1500);
+      }
+    },
+
+    // ==================== TDD (Phase 3) ====================
+    startTDD(task) {
+      // Derive behaviors from acceptance criteria
+      const behaviors = [
+        { name: '有效登录→200+token', test: 'test_valid_login_returns_token', status: 'pending' },
+        { name: '无效登录→401', test: 'test_invalid_login_returns_401', status: 'pending' },
+        { name: '缺失字段→400', test: 'test_missing_fields_returns_400', status: 'pending' },
+      ];
+      task.behaviors = behaviors;
+      this.tddState = { taskId: task.id, behaviors, behIdx: 0, phase: 'RED', status: `行为 A: ${behaviors[0].name}` };
+      this.setRole('Implementer', true, 'TDD 基线检查', task.id);
+
+      // Baseline check
+      this.log('TDD 基线检查: 跑全量测试...', 'text-emerald-400');
+      this.addTrace('Implementer', 'tdd_baseline_start');
+      setTimeout(() => {
+        this.log('基线通过 ✅ (15/15)', 'text-emerald-400');
+        this.addTrace('Implementer', 'tdd_baseline_pass', '15/15');
+        // Architecture decision point (at behavior B)
+        this.interactionPanel = 'tdd';
+        this.simBusy = false;
+      }, 1000);
+    },
+
+    tddStep() {
+      const s = this.tddState;
+      const beh = s.behaviors[s.behIdx];
+      if (s.phase === 'RED') {
+        // RED: write test, should fail
+        beh.status = 'red';
+        this.log(`<span class="text-red-400">RED</span>: ${beh.test} → 运行... 必须失败`, 'text-gray-400');
+        this.addTrace('Implementer', 'tdd_red', beh.test);
+        s.phase = 'GREEN';
+        s.status = `${beh.name}: 测试已写, 等待实现`;
+      } else {
+        // GREEN: implement, should pass
+        beh.status = 'passed';
+        this.log(`<span class="text-emerald-400">GREEN</span>: ${beh.test} → 通过 ✅`, 'text-gray-400');
+        this.addTrace('Implementer', 'tdd_green', beh.test);
+        s.behIdx++;
+        if (s.behIdx >= s.behaviors.length) {
+          // All behaviors done
+          this.finishTDD();
+          return;
+        }
+        // Architecture decision at behavior B (RS256 vs HS256)
+        if (s.behIdx === 1 && !this.tasks.find(t => t.id === s.taskId).handoff.includes('RS256')) {
+          this.interactionPanel = 'decision';
+          this.decisionCtx = {
+            title: '架构决策: JWT 算法选型', desc: 'Implementer 遇到技术选型问题, 必须 block (SOUL.md 强制规则)',
+            options: [
+              { label: 'kanban_block', desc: '"reviewer-needed: RS256 vs HS256?" → 创建 Reviewer 子任务', action: 'block_architecture' },
+            ]
+          };
+          return;
+        }
+        s.phase = 'RED';
+        s.status = `行为 ${String.fromCharCode(65+s.behIdx)}: ${s.behaviors[s.behIdx].name}`;
+      }
+    },
+
+    finishTDD() {
+      this.interactionPanel = null;
+      const task = this.tasks.find(t => t.id === this.tddState.taskId);
+      if (!task) return;
+      // Regression test
+      this.log('全量回归测试...', 'text-emerald-400');
+      setTimeout(() => {
+        task.testResults = `behaviors: 3/3 passed\nregression: {run:15, passed:15, failed:0}`;
+        task.handoff = `behaviors: [{name:"有效登录→200", test:"test_valid_login", status:"passed"}, {name:"无效登录→401", test:"test_invalid_login", status:"passed"}, {name:"缺失字段→400", test:"test_missing_fields", status:"passed"}]\nregression: {run:15, passed:15, failed:0}\ndecisions: ["RS256 for key rotation"]\npitfalls: ["token刷新用滑动窗口"]`;
+        task.column = 'done';
+        this.setRole('Implementer', false, '待命');
+        this.log(`${task.id} TDD 完成: 3 行为全通过, 回归 15/15 ✅`, 'text-emerald-400');
+        this.addTrace('Implementer', 'tdd_complete', `${task.id}: 3/3 passed`);
+        this.promoteReady();
+        setTimeout(() => this.runNext(), 500);
+      }, 1500);
+    },
+
+    // ==================== REVIEWER (Phase 4) ====================
+    executeReviewer(task) {
+      // Read parent handoff
+      const parent = this.tasks.find(t => task.parents.includes(t.id));
+      if (parent) {
+        this.log(`Reviewer 读取 ${parent.id} handoff: changed_files, decisions...`, 'text-amber-400');
+        this.addTrace('Reviewer', 'read_handoff', parent.id);
+      }
+      setTimeout(() => {
+        // Feature 18: Write operation intercept
+        const dangerousCmds = ['rm ', 'write', 'git push', 'DROP', 'git reset --hard'];
+        const intercepted = dangerousCmds.find(cmd => task.description.includes(cmd));
+        if (intercepted) {
+          this.log(`Reviewer 写操作被拦截: <span class="text-red-400">${intercepted}</span>`, 'text-amber-400');
+          this.addTrace('Reviewer', 'write_intercepted', intercepted, 'warn');
+          // Record to audit log
+          this.log(`[审计] Reviewer 尝试执行危险命令: ${intercepted} — 已阻止`, 'text-red-400');
+        }
+
+        // Find issue
+        task.handoff = 'findings: [{severity:"high", file:"src/auth/jwt.rs", issue:"token过期时间硬编码, 应可配置"}]\napproved: false';
+        task.column = 'done';
+        this.setRole('Reviewer', false, '待命');
+        this.log(`Reviewer 审查完成: 发现 1 个高危问题 ⚠`, 'text-amber-400');
+        this.log('  <span class="text-red-400">[HIGH] src/auth/jwt.rs: token 过期时间硬编码</span>', 'text-gray-400');
+        this.addTrace('Reviewer', 'review_done', '1 high issue');
+
+        // Check if fix task becomes ready
+        this.promoteReady();
+        setTimeout(() => this.runNext(), 500);
+      }, 2000);
+    },
+
+    // ==================== DEPLOYMENT (Phase 5.6) ====================
+    startDeploy(task) {
+      this.phase = 'deploying';
+      this.deployState = { env: 'dev', taskId: task.id };
+      this.log('DevOps 读取部署配置: 版本号, 部署脚本, 策略', 'text-orange-400');
+      this.addTrace('DevOps', 'start_deploy', task.id);
+
+      // Layer 1: dev/test
+      this.log('① 部署到 <span class="text-emerald-400">dev/test</span>...', 'text-orange-400');
+      setTimeout(() => {
+        task.deployInfo = 'dev/test: 部署成功';
+        this.log('dev/test 部署成功', 'text-emerald-400');
+        // Validation gate
+        this.log('验证门控: test_suite + E2E + 性能基准...', 'text-orange-400');
+        setTimeout(() => {
+          task.deployInfo += '\ndev/test 验证: test=15/15, e2e=5/5, perf=120ms ✅';
+          this.log('dev/test 验证通过 ✅ (test=15/15, e2e=5/5, perf=120ms)', 'text-emerald-400');
+          // Wait for user approval
+          task.blocked = true; task.blockReason = '等待批准 staging 部署';
+          this.interactionPanel = 'decision';
+          this.decisionCtx = {
+            title: 'dev/test 验证通过', desc: '测试 15/15 | E2E 5/5 | 性能 120ms',
+            options: [
+              { label: '✅ 批准 staging', desc: '部署到 staging 环境', action: 'approve_staging' },
+              { label: '❌ 放弃部署', desc: '取消', action: 'abort_deploy' },
+            ]
+          };
+        }, 1500);
+      }, 2000);
+    },
+
+    deployToEnv(env) {
+      const task = this.tasks.find(t => t.id === this.deployState.taskId);
+      if (!task) return;
+      task.blocked = false; task.blockReason = '';
+      this.deployState.env = env;
+      this.addTrace('DevOps', `deploy_to_${env}`, task.id);
+
+      if (env === 'staging') {
+        this.log('② 部署到 <span class="text-blue-400">staging</span>...', 'text-orange-400');
+        setTimeout(() => {
+          task.deployInfo += '\nstaging: 部署成功';
+          this.log('staging 部署成功', 'text-emerald-400');
+          this.log('验证门控: test_suite + E2E (跳过性能)...', 'text-orange-400');
+          // Feature 3: 25% chance of staging verification failure
+          const stagingPassed = Math.random() > 0.25;
+          if (stagingPassed) {
+            setTimeout(() => {
+              task.deployInfo += '\nstaging 验证: test=15/15, e2e=5/5 ✅';
+              this.log('staging 验证通过 ✅ (test=15/15, e2e=5/5)', 'text-emerald-400');
+              this.addTrace('DevOps', 'staging_verify_pass');
+              // UAT
+              task.blocked = true; task.blockReason = '等待 UAT 验收';
+              this.interactionPanel = 'decision';
+              this.decisionCtx = {
+                title: 'UAT 验收 — staging 环境', desc: '请在 staging 上验收',
+                options: [
+                  { label: '✅ 验收通过', desc: '部署到 production', action: 'uat_pass' },
+                  { label: '🐛 发现问题', desc: '创建修复任务', action: 'uat_fail' },
+                ]
+              };
+            }, 1500);
+          } else {
+            // Feature 3: Staging verification failed → auto rollback
+            setTimeout(() => {
+              task.deployInfo += '\n❌ staging 验证失败: test=13/15, e2e=3/5';
+              task.rollbackCount++;
+              this.log('staging 验证 <span class="text-red-400">失败</span>: test=13/15, e2e=3/5', 'text-red-400');
+              this.addTrace('DevOps', 'staging_verify_fail', 'test=13/15, e2e=3/5', 'error');
+              this.log('自动回滚 staging 环境...', 'text-amber-400');
+              task.deployInfo += '\nstaging: 已回滚到上一版本';
+              task.blocked = true; task.blockReason = 'staging 验证失败, 已回滚';
+              this.interactionPanel = 'decision';
+              this.decisionCtx = {
+                title: 'staging 验证失败 — 已自动回滚',
+                desc: 'test=13/15, e2e=3/5, 已回滚到上一版本',
+                options: [
+                  { label: '🔄 修复重试', desc: '修复后重新部署到 staging', action: 'retry_deploy' },
+                  { label: '❌ 放弃部署', desc: '取消部署', action: 'abort_deploy' },
+                ]
+              };
+            }, 1500);
+          }
+        }, 2000);
+      } else if (env === 'production') {
+        this.log('③ 部署到 <span class="text-red-400">production</span>...', 'text-orange-400');
+        setTimeout(() => {
+          task.deployInfo += '\nproduction: 部署成功';
+          this.log('production 部署成功', 'text-emerald-400');
+          this.log('冒烟测试: 服务启动 + 端点可达...', 'text-orange-400');
+          setTimeout(() => {
+            task.deployInfo += '\n冒烟测试: 4/4 端点可达 ✅';
+            this.log('冒烟测试通过 ✅ (4/4 端点可达)', 'text-emerald-400');
+            // Git tag
+            task.deployInfo += '\ngit tag: v1.2.3';
+            this.log('自动打 git tag: <span class="text-purple-400">v1.2.3</span>', 'text-orange-400');
+            task.column = 'deployed';
+            task.blocked = false;
+            this.setRole('DevOps', false, '待命');
+            this.log('🎉 <span class="text-emerald-400">三层部署完成! v1.2.3 已上线</span>', 'text-emerald-400');
+            // Self-evolution
+            this.log('自我进化: memory add "JWT token 过期时间应可配置"', 'text-purple-400');
+            this.log('自我进化: skill_manage create "jwt-auth-checklist"', 'text-purple-400');
+            this.checkAllDone();
+          }, 1500);
+        }, 2000);
+      }
+    },
+
+    checkAllDone() {
+      // Feature 4: If there are blocked deploy tasks with active fix tasks, keep going
+      const blockedDeploy = this.tasks.find(t => t.column === 'blocked' && t.assignee === 'DevOps');
+      const activeFixTask = this.tasks.find(t => t.column === 'running' && t.assignee === 'Implementer' && t.title.includes('修复'));
+      const readyFixTask = this.tasks.find(t => t.column === 'ready' && t.assignee === 'Implementer' && t.title.includes('修复'));
+      if (blockedDeploy && (activeFixTask || readyFixTask)) {
+        this.simBusy = false;
+        if (readyFixTask) setTimeout(() => this.runNext(), 500);
+        return;
+      }
+
+      const allDone = this.tasks.filter(t => t.isSubtask || t.column !== 'triage').every(t => ['done','deployed'].includes(t.column));
+      if (allDone) {
+        this.phase = 'idle';
+        this.simBusy = false;
+        this.setRole('Orchestrator', false, '待命');
+        this.addTrace('System', 'all_done');
+        // Feature 17: Completion notification panel
+        const changedFiles = 'src/auth/jwt.rs, src/auth/routes.rs, src/middleware/auth.rs';
+        const testResult = '单元: 14/14, E2E: 5/5, 回归: 15/15';
+        const reviewResult = '1 高危问题已修复';
+        const deployVersion = 'v1.2.3 production';
+        this.archiveCtx = {
+          summary: `<div class="space-y-1 text-[11px]">
+            <div>📄 变更文件: ${changedFiles}</div>
+            <div>🧪 测试: ${testResult}</div>
+            <div>👀 审查: ${reviewResult}</div>
+            <div>🚀 部署: ${deployVersion}</div>
+            <div>📚 经验: 2 memory + 1 skill</div>
+          </div>`,
+          options: [
+            { label: '✅ 批准归档', desc: '归档并完成', action: 'approve_archive' },
+            { label: '➕ 追加需求', desc: '继续迭代', action: 'add_requirement' },
+          ]
+        };
+        this.interactionPanel = 'archive';
+        this.log('━━━ <span class="text-purple-400">全流程完成</span> ━━━', 'text-emerald-400');
+        this.log('代码: src/auth/jwt.rs, src/auth/routes.rs | 测试: 14/14 | 审查: 1问题已修复', 'text-gray-400');
+        this.log('部署: v1.2.3 production | 经验: 2 memory + 1 skill', 'text-gray-400');
+      } else {
+        this.simBusy = false;
+        setTimeout(() => this.runNext(), 500);
+      }
+    },
+
+    // ==================== AUTO PLAY ====================
+    autoAdvance() {
+      if (this.autoPlaying) { this.autoPlaying = false; clearTimeout(this.autoTimer); return; }
+      this.autoPlaying = true;
       const tick = () => {
-        if (this.e2eStep < this.e2eData.length - 1 && this.e2ePlaying) {
-          this.e2eStep++;
-          this.e2eTimer = setTimeout(tick, 2200 - this.e2eSpeed);
-        } else { this.e2ePlaying = false; }
+        if (!this.autoPlaying) return;
+        if (this.interactionPanel === 'question' && QUESTIONS[this.qState.idx]) {
+          this.answerQuestion(QUESTIONS[this.qState.idx].opts.find(o => o.rec) || QUESTIONS[this.qState.idx].opts[0]);
+        } else if (this.interactionPanel === 'decision' && this.decisionCtx.options.length) {
+          this.makeDecision(this.decisionCtx.options[0].action);
+        } else if (this.interactionPanel === 'tdd') {
+          this.tddStep();
+        } else if (this.interactionPanel === 'feedback') {
+          this.submitFeedback(5);
+        } else if (this.interactionPanel === 'archive' && this.archiveCtx.options.length) {
+          this.makeDecision(this.archiveCtx.options[0].action);
+        } else if (this.interactionPanel === 'taskgraph' && this.taskGraphOptions.length) {
+          this.confirmTaskGraph(this.taskGraphOptions[0].action);
+        } else if (this.interactionPanel === 'poc_fail' && this.pocFailOptions.length) {
+          this.handlePOCDecision(this.pocFailOptions[0].action);
+        }
+        this.autoTimer = setTimeout(tick, parseInt(this.autoSpeed));
       };
       tick();
     },
-    e2eStop() { this.e2ePlaying = false; clearTimeout(this.e2eTimer); },
 
-    // === 任务状态机 ===
-    activeKanbanState: 'triage',
-    kanbanStates: [
-      { id: 'triage', label: 'triage', color: 'text-gray-400', description: '粗糙想法，用户提交的原始需求', trigger: '用户通过 Gateway/CLI 提交需求', actor: '用户',
-        transitions: [{ from: '用户输入', to: 'triage', condition: '提交原始需求' }] },
-      { id: 'todo', label: 'todo', color: 'text-blue-400', description: '具体任务，Orchestrator 拆解后', trigger: 'PM 完成需求分析和任务拆解', actor: 'PM + Orchestrator',
-        transitions: [{ from: 'triage', to: 'todo', condition: 'PM 拆解完成' }] },
-      { id: 'ready', label: 'ready', color: 'text-amber-400', description: '可执行，所有 parents 已 done', trigger: '所有 parent 任务完成', actor: '系统自动',
-        transitions: [{ from: 'todo', to: 'ready', condition: 'parents 全 done' }, { from: 'running', to: 'ready', condition: '崩溃回退' }] },
-      { id: 'running', label: 'running', color: 'text-blue-400', description: '执行中，Dispatcher 派发 worker', trigger: 'Dispatcher 原子性 claim + spawn', actor: 'Dispatcher',
-        transitions: [{ from: 'ready', to: 'running', condition: 'Dispatcher claim' }] },
-      { id: 'blocked', label: 'blocked', color: 'text-amber-400', description: '等待输入，Worker 调用 kanban_block()', trigger: 'Worker 主动 block (L3 决策/架构问题)', actor: 'Worker',
-        transitions: [{ from: 'running', to: 'blocked', condition: 'kanban_block()' }, { from: 'blocked', to: 'running', condition: '用户 unblock' }] },
-      { id: 'done', label: 'done', color: 'text-emerald-400', description: '完成，Worker 调用 kanban_complete()', trigger: 'Worker 完成任务 + 回归通过', actor: 'Worker',
-        transitions: [{ from: 'running', to: 'done', condition: 'kanban_complete()' }] },
-      { id: 'archived', label: 'archived', color: 'text-gray-500', description: '归档，手动或 GC 归档', trigger: '用户批准归档', actor: '用户/系统',
-        transitions: [{ from: 'done', to: 'archived', condition: '用户批准' }] },
-    ],
-    get currentKanbanState() { return this.kanbanStates.find(s => s.id === this.activeKanbanState) || this.kanbanStates[0]; },
+    // ==================== MULTI-PROJECT BOARDS ====================
+    switchBoard() {
+      this.selTask = null; this.activeTaskId = null;
+      this.interactionPanel = null;
+      this.log(`切换到 Board: ${this.currentBoard}`, 'text-purple-400');
+      this.calcBP();
+    },
+    addBoard() {
+      const id = `project-${String.fromCharCode(97 + this.boards.length)}`;
+      const names = ['Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta'];
+      const name = `🏢 Project ${names[this.boards.length - 1] || id}`;
+      this.boards.push({ id, name });
+      this.currentBoard = id;
+      this.log(`创建新 Board: ${name}`, 'text-purple-400');
+    },
 
-    // === 背压模拟 ===
-    bpImpl: 5,
-    bpRev: 3,
-    get bpRatio() { return this.bpImpl / Math.max(this.bpRev, 1); },
-    get bpAction() { return this.bpRatio <= 2 ? '正常派发' : this.bpRatio <= 4 ? '降速派发' : '暂停派发'; },
-    get bpDetail() { return this.bpRatio <= 2 ? '每轮都派' : this.bpRatio <= 4 ? '隔 1 轮派 1 个' : '暂停 implementer'; },
+    // ==================== RISK POLICY ENGINE ====================
+    checkRiskPolicy(command) {
+      for (const p of this.riskPolicies) {
+        if (command.includes(p.pattern)) return p;
+      }
+      return null;
+    },
+    simulateRiskPolicy(task) {
+      const cmd = 'git push --force';
+      const policy = this.checkRiskPolicy(cmd);
+      if (!policy) return;
+      this.log(`<span class="text-red-400">Risk Policy 拦截!</span> 命令: "${cmd}" → 匹配规则: ${policy.pattern}`, 'text-amber-400');
+      this.log(`  级别: <span class="${policy.level==='L3'?'text-red-400':policy.level==='L2'?'text-amber-400':'text-emerald-400'}">${policy.level}</span> | 审批者: ${policy.approver} | 超时: ${policy.timeout}s`, 'text-gray-400');
+
+      if (policy.level === 'L3') {
+        task.blocked = true;
+        task.blockReason = `L3 拦截: ${policy.desc} (${cmd})`;
+        task.column = 'blocked';
+        this.addTrace('RiskPolicy', 'L3_block', cmd, 'error');
+        this.interactionPanel = 'decision';
+        this.decisionCtx = {
+          title: `⚠ L3 风险拦截: ${policy.desc}`,
+          desc: `命令 "${cmd}" 匹配 Risk Policy 规则 "${policy.pattern}"\n级别: L3 | 永不自动通过`,
+          options: [
+            { label: '✅ 批准执行', desc: '允许执行此危险命令', action: 'risk_approve' },
+            { label: '❌ 拒绝', desc: '阻止执行, 任务保持 blocked', action: 'risk_reject' },
+          ]
+        };
+      } else if (policy.level === 'L2') {
+        // Feature 11: L2 routes to Reviewer — create actual Reviewer subtask
+        this.log(`L2: 转 Reviewer 决策...`, 'text-amber-400');
+        this.addTrace('RiskPolicy', 'L2_route_reviewer', cmd, 'warn');
+        const revTask = this.mkTask(`L2 审查: ${policy.desc}`, 'Reviewer', `审查风险命令: ${cmd}`, [], { priority: 'high' });
+        revTask.column = 'ready';
+        task.blocked = true;
+        task.blockReason = `L2 拦截: 等待 Reviewer 审查 (${cmd})`;
+        this.setRole('Reviewer', true, 'L2 审查', revTask.id);
+        this.promoteReady();
+        setTimeout(() => {
+          // Reviewer approves L2
+          this.log(`Reviewer L2 审查完成: <span class="text-emerald-400">批准</span> ${cmd}`, 'text-amber-400');
+          this.addTrace('Reviewer', 'L2_approve', cmd);
+          revTask.handoff = `l2_review: approved\ncommand: ${cmd}`;
+          revTask.column = 'done';
+          task.blocked = false;
+          task.blockReason = '';
+          this.setRole('Reviewer', false, '待命');
+          this.promoteReady();
+          this.simBusy = false;
+        }, 2000);
+      } else {
+        // Feature 12: L1 Worker self-execute — no blocking
+        this.log(`L1: <span class="text-emerald-400">Worker 自行决策 → 直接执行</span>`, 'text-emerald-400');
+        this.addTrace('RiskPolicy', 'L1_self_execute', cmd);
+        this.simBusy = false;
+      }
+    },
+
+    // ==================== WORKER CRASH ROLLBACK ====================
+    simulateCrash(task) {
+      this.log(`💥 <span class="text-red-400">Worker 崩溃!</span> PID 消失, 任务 ${task.id}`, 'text-red-400');
+      this.log(`  ① 检测: PID 不存在`, 'text-gray-400');
+      this.log(`  ② git stash pop --index → 恢复干净 workspace`, 'text-gray-400');
+      task.rollbackCount++;
+      task.column = 'ready';
+      task.blocked = false;
+      task.blockReason = '';
+      task.description += `<br><span class="text-red-400">⚠ Worker 崩溃回滚 (rollback #${task.rollbackCount})</span>`;
+      this.setRole(task.assignee, false, '崩溃');
+      this.log(`  ③ 任务 → ready, rollback_count=${task.rollbackCount}`, 'text-amber-400');
+      this.log(`  ④ 重新派发新 Worker...`, 'text-gray-400');
+      this.calcBP();
+      // Auto re-dispatch after a delay
+      setTimeout(() => {
+        this.log(`Dispatcher 重新派发 ${task.id} (新 Worker)`, 'text-purple-400');
+        this.runNext();
+      }, 1500);
+    },
+
+    // ==================== DEPLOYMENT CRASH + SRE-OBSERVER ====================
+    simulateDeployCrash(task) {
+      this.log(`💥 <span class="text-red-400">部署失败!</span> deploy.sh exited 1`, 'text-red-400');
+      this.log(`  stderr: "DATABASE_URL: parameter not set"`, 'text-gray-400');
+      task.column = 'done';
+      task.description += `<br><span class="text-red-400">部署失败: DATABASE_URL 未设置</span>`;
+      task.deployInfo += '\n❌ deploy.sh exited 1: DATABASE_URL not set';
+      this.setRole('DevOps', false, '失败');
+
+      // Hermes auto-recovery
+      this.log('Hermes 官方自动回收: 任务 → ready', 'text-gray-400');
+      task.column = 'ready';
+      task.rollbackCount++;
+
+      // Notify user + offer SRE
+      this.interactionPanel = 'decision';
+      this.decisionCtx = {
+        title: '部署故障通知',
+        desc: 'T-deploy crashed, DevOps 修复失败。是否需要 SRE-Observer 深度分析?',
+        options: [
+          { label: '🔎 创建 SRE 分析任务', desc: 'SRE-Observer 进行 7 步根因分析', action: 'trigger_sre' },
+          { label: '⏭ 暂不需要', desc: '跳过深度分析, 重新部署', action: 'skip_sre' },
+        ]
+      };
+    },
+
+    triggerSRE(faultTaskId) {
+      this.log('人工升级触发 → 创建 <span class="text-red-400">SRE-Observer</span> 分析任务', 'text-gray-400');
+      const sre = this.mkTask(`根因分析: ${faultTaskId} 部署失败`, 'SRE-Observer',
+        '读取 trace.db + worker logs + task_events + env snapshot', [faultTaskId]);
+      sre.column = 'ready';
+      this.setRole('SRE-Observer', true, '根因分析', sre.id);
+      this.promoteReady();
+
+      // 7-step SRE analysis
+      setTimeout(() => {
+        this.log('SRE-Observer ① kanban_show() → 读取故障任务信息', 'text-red-400');
+        setTimeout(() => {
+          this.log('SRE-Observer ② 查询 trace.db → tool_call #3: deploy.sh exited 1', 'text-red-400');
+          setTimeout(() => {
+            this.log('SRE-Observer ③ 读取 worker logs → stderr: DATABASE_URL not set', 'text-red-400');
+            setTimeout(() => {
+              this.log('SRE-Observer ④ 读取 task_events → claim→crashed 时间线', 'text-red-400');
+              setTimeout(() => {
+                this.log('SRE-Observer ⑤ 读取 env snapshot → git status / df -h', 'text-red-400');
+                setTimeout(() => {
+                  this.log('SRE-Observer ⑥ 对比 parent handoff → 上游无缺陷', 'text-red-400');
+                  setTimeout(() => {
+                    this.log('SRE-Observer ⑦ 综合分析 → <span class="text-emerald-400">根因定位: 环境层</span>', 'text-red-400');
+                    // Output structured report
+                    sre.handoff = JSON.stringify({
+                      fault_task_id: faultTaskId,
+                      root_cause_category: 'environment',
+                      confidence: 'high',
+                      symptom: 'deploy.sh exited 1: DATABASE_URL not set',
+                      root_cause: '生产环境缺少 DATABASE_URL 环境变量',
+                      responsible_profile: 'devops-engineer',
+                      upstream_fault: null,
+                      recommended_action: '补全 DATABASE_URL 后重新部署',
+                      trace_anchor: "tool_call_#3 terminal('deploy.sh') exited 1"
+                    }, null, 2);
+                    sre.column = 'done';
+                    this.setRole('SRE-Observer', false, '待命');
+                    this.log('根因报告已生成:', 'text-emerald-400');
+                    this.log('  类别: <span class="text-amber-400">environment</span> | 置信度: <span class="text-emerald-400">high</span>', 'text-gray-400');
+                    this.log('  建议: 补全 DATABASE_URL 后重新部署', 'text-gray-400');
+                    this.selectTask(sre);
+                    this.promoteReady();
+                    this.simBusy = false;
+                  }, 800);
+                }, 800);
+              }, 800);
+            }, 800);
+          }, 800);
+        }, 800);
+      }, 500);
+    },
+
+    // ==================== "OTHER" OPTION + CONVERGENCE ====================
+    answerOther() {
+      const text = this.otherInput.trim();
+      if (!text) return;
+      const q = QUESTIONS[this.qState.idx];
+      this.qState.otherCount++;
+      this.qState.answers.push({ dim: q.dim, answer: text, label: '其他' });
+      this.log(`Q${this.qState.idx+1} ${q.dim}: <span class="text-amber-400">其他: ${text}</span>`, 'text-gray-400');
+      this.otherInput = '';
+
+      if (this.qState.otherCount >= 3) {
+        // Force convergence: auto-select recommended
+        this.log('已达收敛上限 (第3次选"其他"), <span class="text-blue-400">自动选择推荐项</span>', 'text-amber-400');
+        const rec = q.opts.find(o => o.rec) || q.opts[0];
+        this.qState.answers[this.qState.answers.length - 1] = { dim: q.dim, answer: rec.text, label: rec.label };
+        this.qState.otherCount = 0; // reset for next question
+      } else if (this.qState.otherCount === 2) {
+        this.log('第2次选"其他", <span class="text-amber-400">系统合成摘要</span>: 请在下方确认或修改', 'text-gray-400');
+      }
+
+      this.qState.idx++;
+      if (this.qState.idx >= QUESTIONS.length) {
+        this.finishClarification();
+      }
+    },
+
+    // ==================== TRACE LOGGING ====================
+    addTrace(role, action, detail='', level='info') {
+      const t = new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      this.traceLog.unshift({ t, role, action, detail, level });
+      if (this.traceLog.length > 300) this.traceLog.pop();
+    },
+
+    // ==================== CHECKPOINT (Feature 5) ====================
+    saveCheckpoint() {
+      const root = this.tasks.find(t => t.id === this.currentRootId);
+      if (!root) return;
+      const data = JSON.stringify({ answers: this.qState.answers, idx: this.qState.idx, otherCount: this.qState.otherCount });
+      root.description = root.description.replace(/\[checkpoint:.*?\]/, '') + `[checkpoint:${data}]`;
+      this.hasCheckpoint = true;
+      try { localStorage.setItem('hermes_checkpoint', data); } catch(e) {}
+      this.addTrace('System', 'checkpoint_saved', `Q${this.qState.idx+1}`);
+    },
+    recoverFromCheckpoint() {
+      let data = null;
+      try { data = JSON.parse(localStorage.getItem('hermes_checkpoint')); } catch(e) {}
+      if (!data) {
+        const root = this.tasks.find(t => t.id === this.currentRootId);
+        if (root) {
+          const m = root.description.match(/\[checkpoint:(.*?)\]/);
+          if (m) try { data = JSON.parse(m[1]); } catch(e) {}
+        }
+      }
+      if (!data || !data.answers || !data.answers.length) { this.log('未找到可恢复的检查点', 'text-amber-400'); return; }
+      this.qState = { idx: data.idx, answers: data.answers, otherCount: data.otherCount || 0 };
+      this.phase = 'clarifying';
+      this.simBusy = false;
+      this.interactionPanel = 'question';
+      this.log(`已恢复检查点: Q${this.qState.idx+1}, 已回答 ${this.qState.answers.length} 题`, 'text-emerald-400');
+      this.addTrace('System', 'checkpoint_recovered', `Q${this.qState.idx+1}`);
+      this.hasCheckpoint = false;
+    },
+
+    // ==================== QA-TESTER (Feature 2) ====================
+    executeQA(task) {
+      this.setRole('QA-Tester', true, '独立验收', task.id);
+      this.log('QA-Tester 开始独立验收...', 'text-pink-400');
+      this.addTrace('QA-Tester', 'qa_start', task.id);
+      // Read T1 handoff
+      const t1 = this.tasks.find(t => t.title.includes('实现') && t.assignee === 'Implementer');
+      if (t1) {
+        this.log(`QA-Tester 读取 ${t1.id} handoff: behaviors, regression`, 'text-pink-400');
+        this.addTrace('QA-Tester', 'read_handoff', t1.id);
+      }
+      setTimeout(() => {
+        // 80% pass, 20% find issues
+        const passed = Math.random() > 0.2;
+        if (passed) {
+          task.handoff = 'qa_result: pass\nverified: true\nregression: 15/15';
+          task.column = 'done';
+          task.description += '<br><span class="text-emerald-400">QA 独立验收通过: verified=true</span>';
+          this.setRole('QA-Tester', false, '待命');
+          this.log('QA-Tester 验收通过: <span class="text-emerald-400">verified=true</span>', 'text-pink-400');
+          this.addTrace('QA-Tester', 'qa_pass', 'verified=true');
+        } else {
+          task.blocked = true;
+          task.blockReason = 'QA 发现 critical_bug';
+          task.column = 'blocked';
+          task.handoff = 'qa_result: blocked\nissue: critical_bug — 登录接口未处理并发请求';
+          task.description += '<br><span class="text-red-400">QA 发现 critical_bug: 登录接口未处理并发请求</span>';
+          this.setRole('QA-Tester', true, 'blocked', task.id);
+          this.log('QA-Tester 发现 <span class="text-red-400">critical_bug</span>, kanban_block', 'text-pink-400');
+          this.addTrace('QA-Tester', 'qa_block', 'critical_bug', 'error');
+          this.log('推荐: 创建 SRE 分析任务排查并发问题', 'text-amber-400');
+          // Create fix task
+          const fix = this.mkTask('修复 QA 发现的并发问题', 'Implementer', '修复登录接口并发处理', []);
+          fix.column = 'ready';
+          this.promoteReady();
+        }
+        this.promoteReady();
+        setTimeout(() => this.runNext(), 500);
+      }, 2000);
+    },
+
+    // ==================== POC FAILURE (Feature 1) ====================
+    handlePOCDecision(action) {
+      this.interactionPanel = null;
+      this.simBusy = false;
+      if (action === 'poc_retry_research') {
+        this.log('用户选择: <span class="text-cyan-400">换方案重新调研</span>', 'text-gray-400');
+        this.addTrace('User', 'poc_fail_retry');
+        this.startResearch();
+      } else if (action === 'poc_escalate_user') {
+        this.log('用户选择: <span class="text-amber-400">升级用户决策</span>', 'text-gray-400');
+        this.addTrace('User', 'poc_fail_escalate');
+        this.interactionPanel = 'decision';
+        this.decisionCtx = {
+          title: 'POC 失败 — 用户决策',
+          desc: '请决定是否继续或放弃此需求',
+          options: [
+            { label: '✅ 继续 (换方案)', desc: '回到调研阶段', action: 'poc_needed' },
+            { label: '❌ 放弃任务', desc: '标记为完成并记录原因', action: 'poc_give_up' },
+          ]
+        };
+      } else if (action === 'poc_give_up') {
+        const poc = this.tasks.find(t => t.title.includes('POC'));
+        if (poc) { poc.column = 'done'; poc.description += '<br><span class="text-red-400">POC 失败后放弃: 用户决策终止</span>'; }
+        this.log('用户放弃任务: POC 失败, 记录原因', 'text-red-400');
+        this.addTrace('User', 'poc_give_up');
+        this.checkAllDone();
+      }
+    },
+
+    // ==================== QUALITY FEEDBACK (Feature 8) ====================
+    submitFeedback(score) {
+      this.log(`澄清质量反馈: <span class="text-emerald-400">${score}/5</span>`, 'text-purple-400');
+      this.addTrace('User', 'quality_feedback', `score=${score}`);
+      const root = this.tasks.find(t => t.id === this.currentRootId);
+      if (root) root.description += `<br>澄清质量评分: ${score}/5`;
+      // Show confirm decision
+      this.interactionPanel = 'decision';
+      this.decisionCtx = { title: `需求 v${this.reqVersion} 已生成`, desc: '请确认是否进入下一阶段', options: root ? root.blockOptions : [
+        { label: '✅ 确认', desc: '进入技术研判', action: 'confirm_req' },
+        { label: '📝 修改', desc: '重新澄清', action: 'revise_req' },
+      ]};
+    },
+
+    // ==================== TASK GRAPH CONFIRM (Feature 10) ====================
+    confirmTaskGraph(action) {
+      this.interactionPanel = null;
+      this.simBusy = false;
+      if (action === 'confirm_graph') {
+        this.log('用户 <span class="text-emerald-400">确认任务图</span>, 进入执行阶段', 'text-gray-400');
+        this.addTrace('User', 'taskgraph_confirmed');
+        this.phase = 'executing';
+        this.promoteReady();
+        setTimeout(() => this.runNext(), 800);
+      } else if (action === 'revise_graph') {
+        this.log('用户要求修改拆解, PM 重新分析...', 'text-amber-400');
+        this.addTrace('User', 'taskgraph_revise');
+        // Remove old subtasks and re-decompose
+        this.tasks = this.tasks.filter(t => !t.isSubtask);
+        this.startDecomposition();
+      }
+    },
+
+    // ==================== RESET ====================
+    resetAll() {
+      this.autoPlaying = false; clearTimeout(this.autoTimer);
+      Object.assign(this, {
+        tasks: [], taskSeq: 0, logs: [], phase: 'idle', simBusy: false,
+        interactionPanel: null, selTask: null, activeTaskId: null, currentRootId: '',
+        qState: { idx: 0, answers: [], otherCount: 0 },
+        tddState: { taskId: '', behaviors: [], behIdx: 0, phase: 'RED', status: '' },
+        deployState: { env: 'dev', taskId: '' }, otherInput: '',
+        traceLog: [], bpHistory: [], reqVersion: 1, hasCheckpoint: false,
+        deadlockCounter: 0, archiveCtx: { summary: '', options: [] },
+        taskGraphDesc: '', taskGraphOptions: [], pocFailOptions: [],
+        _pendingReq: '',
+      });
+      this.roles.forEach(r => { r.active = false; r.status = '待命'; r.task = ''; });
+      this.bp = { impl: 0, rev: 0, ratio: 0, action: '正常' };
+      try { localStorage.removeItem('hermes_checkpoint'); } catch(e) {}
+    },
+
+    init() { this.log('Hermes 工作流模拟器就绪。输入需求开始模拟。', 'text-blue-400'); },
   };
 }
 </script>
-
 </body>
 </html>
