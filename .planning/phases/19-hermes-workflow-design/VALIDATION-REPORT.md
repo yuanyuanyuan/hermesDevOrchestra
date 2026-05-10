@@ -53,7 +53,7 @@ topic: workflow-explained-validation
 |---|---------|------------|-----------|
 | 21 | **Observability Plugin** 通过 `post_tool_call` / `on_session_end` hooks 采集 | **官方文档未确认这些 hook 存在**。Plugin SDK 存在，但具体 hooks 名称需验证 | 🔴 高 |
 | 22 | **Risk Policy Engine** (`policies/risk.yaml`) 自动拦截危险命令 | **官方无此机制**。命令拦截需通过 SOUL.md + toolsets 白名单实现 | 🔴 高 |
-| 23 | **SRE-Observer 自动触发**：Dispatcher 检测到 crashed 自动创建分析任务 | **官方无此机制**。Dispatcher 不会自动创建任务，这是产品的增量设计（R20） | 🔴 高 |
+| 23 | **SRE-Observer 触发**：人工升级触发，非自动 | Hermes 原生处理 crash/timed_out 自动恢复（任务回滚到 ready）。SRE-Observer 仅在 Jacky/PM 判断需要深度根因分析时手动创建 | ✅ 人工升级 |
 | 24 | **环境快照**：spawn 时自动采集 `git status`、`df -h`、`hermes status` | **官方无此机制**。需通过 Plugin 或自定义实现（R22） | 🟡 中 |
 | 25 | **背压感知**：ratio > 4 暂停派发 implementer | **官方无此机制**。Dispatcher 目前没有背压逻辑（R5 是真增量） | 🟡 中 |
 | 26 | **Reviewer 的 terminal 写操作技术性拦截（R8）** | **官方无此机制**。Reviewer 的只读约束只能通过 toolsets 白名单 + SOUL.md 实现 | 🟡 中 |
@@ -140,28 +140,28 @@ Tech-Reviewer 只审查了 jwt.rs，没有看 routes.rs（虽然 T2 还没完成
 - Reviewer profile 的 model 能力
 - 训练数据中相关安全知识的覆盖度
 
-#### 2.3 Orchestrator 的理想化问题
+#### 2.3 PM 的理想化问题
 
-**叙事中的 Orchestrator：**
+**叙事中的 PM：**
 > 完美拆解为 6 个任务，依赖关系合理，预估时间准确
 
 **真实的 LLM 可能的行为：**
 
 ```
 【可能性 A：拆解过细】
-Orchestrator 把 JWT 模块拆成 15 个子任务，每个只有 10 行代码的工作量。
+PM 把 JWT 模块拆成 15 个子任务，每个只有 10 行代码的工作量。
 导致 Dispatcher 频繁 spawn/destroy worker，开销超过实际工作。
 
 【可能性 B：拆解过粗】
-Orchestrator 只拆成 2 个任务："实现 JWT" + "写测试"。
+PM 只拆成 2 个任务："实现 JWT" + "写测试"。
 Implementer 执行 T1 时 overwhelmed（任务太大，容易 timeout）。
 
 【可能性 C：依赖关系错误】
-Orchestrator 设置 T4（审查）依赖 T2（接口）而不是 T1（核心逻辑）。
+PM 设置 T4（审查）依赖 T2（接口）而不是 T1（核心逻辑）。
 导致审查员在等待 Implementer 写接口时无事可做，延迟了 1 小时。
 
 【可能性 D：预估时间偏差】
-Orchestrator 预估 T1 60 分钟，实际 Implementer 用了 120 分钟（RS256 问题反复调试）。
+PM 预估 T1 60 分钟，实际 Implementer 用了 120 分钟（RS256 问题反复调试）。
 Dispatcher 在 60 分钟时 timeout kill worker，导致任务回滚， Implementer retry。
 ```
 
@@ -274,7 +274,7 @@ LLM 才会大概率执行。
 **产品设计需考虑的机制：**
 - 重要 block 是否需要重复通知（ escalating 通知策略）
 - 是否支持"批量决策"（一次处理多个 block）
-- 是否支持"代理决策"（让 Orchestrator 在 L2 层面做更多决策，减少 L3）
+- 是否支持"代理决策"（让 PM 在 L2 层面做更多决策，减少 L3）
 
 ### 3.3 对"预计 4.3 小时"的反应
 
@@ -303,7 +303,7 @@ LLM 才会大概率执行。
 
 ### 🔴 第 1 类：产品能力 vs 官方能力混淆
 
-**问题：** 叙事中大量描述的功能（Risk Policy、SRE 自动触发、背压、环境快照）被呈现为"系统正在运行"的机制，但实际上这些是产品的**增量设计**（R3-R24），不是 Hermes 官方已有的能力。
+**问题：** 叙事中大量描述的功能（Risk Policy、背压、环境快照）被呈现为"系统正在运行"的机制，但实际上这些是产品的**增量设计**（R3-R24），不是 Hermes 官方已有的能力。SRE-Observer 已改为人工升级触发，Hermes 原生处理 crash/timed_out 恢复。
 
 **影响：** Jacky 审核时会产生误解——"这些功能好像已经都有了，那我还需要开发什么？"
 
@@ -361,24 +361,24 @@ LLM 才会大概率执行。
 
 | 位置 | 当前内容 | 修正建议 |
 |------|---------|---------|
-| Phase 1 | Jacky 提交详细需求文档 | ✅ 已修正：Jacky 只提模糊需求，Orchestrator 从 CLAUDE.md 出发按需读代码发现技术上下文 |
+| Phase 1 | Jacky 提交详细需求文档 | ✅ 已修正：Jacky 只提模糊需求，PM 从 CLAUDE.md 出发按需读代码发现技术上下文 |
 | Phase 1 | 需求澄清选项无推荐标签 | ✅ 已修正：每个选项含⭐推荐标签 + 大白话理由 + "其他"选项 |
 | Phase 1 | 需求澄清无验收层 | ✅ 已修正：新增 VERIFY 维度（如何验收/影响范围/可观测性） |
 | Phase 1 | 澄清结果无证据 | ✅ 已修正：所有技术判断引用代码（文件:行号）或外部链接 |
 | Phase 1 | 一次抛出所有问题 | ✅ 已修正：改为一次一问，逐步收缩，每轮基于上一轮回答优化下一个问题 |
 | Phase 1 | 只有确认没有冲突检查 | ✅ 已修正：新增可行性检查，发现冲突时主动沟通（附证据和建议选项） |
-| Phase 1→2 | 需求直接进入任务拆解 | ✅ 已修正：新增需求澄清阶段，生成含证据链的标准化需求文档后再拆解 |
-| Phase 2.3 | Orchestrator 完美拆解 6 个任务 | 增加"如果拆解过细/过粗会怎样"的失败模式 |
+| Phase 1→2 | 需求直接进入任务拆解 | ✅ 已修正：新增需求澄清阶段 → Research + POC 技术研判 → PM 任务拆解 |
+| Phase 2.3 | PM 完美拆解 6 个任务 | 增加"如果拆解过细/过粗会怎样"的失败模式 |
 | Phase 3.7 | Implementer 自修正 RS256 bug | 增加"如果 Implementer 没发现，Reviewer 如何兜底"的对比场景 |
 | Phase 4.3 | Tech-Reviewer 发现 8 个问题 | 增加"Reviewer 可能遗漏或误报"的失败模式 |
 | Phase 4.10 | Jacky 1 分钟内回复 block | 改为"Jacky 可能在开会，30 分钟后才看到"的真实场景 |
 | Phase 5.4 | Implementer 主动 memory_add + create_skill | 明确说明"这需要 SOUL.md 中的显式规则引导" |
 | Phase 5.5.2 | DevOps block（外部依赖缺失） | 改为真正的 crashed 场景（如 deploy.sh 执行错误命令） |
-| Phase 5.5.3 | SRE-Observer 自动触发 | 标注 `[Phase 19 增量]` |
+| Phase 5.5.3 | SRE-Observer 触发 | 改为人工升级触发；Hermes 原生处理 crash/timed_out 恢复 |
 | 全局 | 所有 Plugin hooks | 标注 `[设计假设，需验证官方 Plugin SDK 支持]` |
 | 全局 | Risk Policy Engine | 标注 `[Phase 19 增量]` |
 | 全局 | 背压机制 | 标注 `[Phase 19 增量]` |
-| 附录 B | 决策讨论 | 增加"这些决策的前提是什么官方能力已存在"的澄清 |
+| 附录 B | 决策讨论 | 增加"这些决策的前提是什么官方能力已存在"的澄清；SRE-Observer 改为人工升级触发 |
 
 ### Round 4 修正（持续可行性检查 + DoR 门控 + 确认流程 + 追溯链）
 
@@ -392,7 +392,7 @@ LLM 才会大概率执行。
 | Phase 1 Step 1.8 | 无需求版本控制 | ✅ 已修正：每次确认生成版本号（v1→v2→v3），记录变更摘要 |
 | Phase 1 | 无需求追溯规范 | ✅ 已修正：新增 Step 1.8.5 追溯规范（US→Q编号→代码证据） |
 | Phase 2 T1-T6 | metadata 无需求追溯 | ✅ 已修正：每个任务 metadata 含 requirement_version + covered_user_stories + covered_acceptance |
-| Phase 2 Step 2.2 | Orchestrator 读取需求文档 | ✅ 已修正：反映读取已确认的 v1 文档，含追溯链 |
+| Phase 2 Step 2.2 | PM 读取需求文档 | ✅ 已修正：反映读取已确认的 v1 文档+技术方案，含追溯链 |
 | ascii-end-to-end | 可行性检查在最后 | ✅ 已修正：改为持续检查 + DoR 验证门 + 显式确认/修改流程 |
 | workflow-appendix-timeline | 无 DoR 验证和确认步骤 | ✅ 已修正：新增 DoR 验证和 Jacky 确认 v1 步骤 |
 | WORKFLOW-EXPLAINED | Phase 1 描述无 DoR/确认/版本 | ✅ 已修正：更新目录描述 |
@@ -411,15 +411,15 @@ LLM 才会大概率执行。
 | 位置 | 设计决策 | 修正内容 |
 |------|---------|---------|
 | 设计原则 | 证据必须来自外部或实证 | ✅ 新增原则：不做推理，无外部证据则本地 POC |
-| 设计原则 | 问题顺序动态 | ✅ 新增原则：11 维度固定覆盖，顺序由 Orchestrator 动态决定 |
-| 设计原则 | 异步澄清 | ✅ 新增原则：Orchestrator 不被超时回收，支持暂停/恢复 |
+| 设计原则 | 问题顺序动态 | ✅ 新增原则：11 维度固定覆盖，顺序由 PM 动态决定 |
+| 设计原则 | 异步澄清 | ✅ 新增原则：PM 不被超时回收，支持暂停/恢复 |
 | Step 1.4 | 技术发现一次性前置 | ✅ 改为按需触发，与澄清交织进行 |
-| Step 1.4 | Orchestrator 工具权限未定义 | ✅ 新增权限说明：file_read + terminal(只读)，禁止写操作 |
-| Step 1.5 | 问题顺序固定 Q1-Q11 | ✅ 改为动态顺序，问题池固定但顺序由 Orchestrator 决定 |
+| Step 1.4 | PM 工具权限未定义 | ✅ 新增权限说明：file_read + terminal(只读)，禁止写操作 |
+| Step 1.5 | 问题顺序固定 Q1-Q11 | ✅ 改为动态顺序，问题池固定但顺序由 PM 决定 |
 | Step 1.5.14 | 无崩溃恢复机制 | ✅ 新增：每轮通过 kanban comments 保存进度，崩溃后从检查点恢复 |
 | Step 1.5.14 | 无异步处理规则 | ✅ 新增：不回复/Research 阻塞/暂停/多天/放弃 5 种场景的处理规则 |
 | Step 1.8 | 修改需求无收敛限制 | ✅ 新增：同一维度最多 1 次收敛 + 1 次修改，第二次仍模糊则锁定 |
-| REQUIREMENTS.md R11 | Orchestrator 禁用 file/terminal | ✅ 放宽为 file_read + terminal(只读) 允许，file_write + terminal(写) 禁止 |
+| REQUIREMENTS.md R11 | PM 禁用 file/terminal | ✅ 放宽为 file_read + terminal(只读) 允许，file_write + terminal(写) 禁止 |
 | ascii-end-to-end | 技术发现一次性 | ✅ 改为按需触发 + 动态顺序 + 异步澄清 + 崩溃恢复 |
 | WORKFLOW-EXPLAINED | Phase 1 描述 | ✅ 更新：按需发现/动态顺序/崩溃恢复/异步/交叉校正 |
 

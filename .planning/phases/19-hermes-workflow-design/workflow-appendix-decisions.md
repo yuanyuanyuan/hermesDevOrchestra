@@ -2,11 +2,11 @@
 
 > 📎 **相关 ASCII 流程图**：
 > - [`ascii-decision-matrix.md`](./ascii-decision-matrix.md) — L3 升级流程、声明式风险策略引擎
-> - [`ascii-observability.md`](./ascii-observability.md) — SRE-Observer 自动触发与分析
+> - [`ascii-observability.md`](./ascii-observability.md) — SRE-Observer 人工升级触发与分析
 
 ---
 
-### 决策 1：为什么 SRE-Observer 是独立 Profile 而不是内置逻辑？ `[Phase 19 增量]`
+### 决策 1：为什么 SRE-Observer 是独立 Profile 且仅人工升级触发？ `[Phase 19 增量]`
 
 **【Jacky 的心理提问】**
 
@@ -16,29 +16,28 @@
 **【系统回答】**
 
 > "有三个原因：
-> 
+>
 > **原因 1：架构一致性**
 > 系统中的所有'工作'都走 Kanban 任务流。如果根因分析是内置逻辑，
 > 它就成为了系统核心的一部分，违反了'不修改 Hermes 核心'的约束（R19）。
 > 作为独立 Profile，它和其他 Worker 一样，通过 hooks 读取数据，通过 Kanban 输出报告。
-> 
+>
 > **原因 2：可替换性**
 > 现在的 SRE-Observer 可以用通用 LLM（GPT-4/Claude）。
 > 未来如果出现专门的'根因分析模型'（比如经过大量日志训练的专用模型），
 > 只需要换掉 SRE-Observer 的 profile model 配置，不需要改系统代码。
-> 
+>
 > **原因 3：资源隔离**
 > SRE 分析可能需要读取大量 trace 数据，消耗大量 token。
 > 作为独立任务，可以通过 priority 机制或独立派发池，避免和业务任务争夺资源。
-> 
-> **技术实现说明：**
-> SRE-Observer 的**自动触发**不是由 Plugin hook 直接创建 Kanban 任务的（hooks 不能调用工具）。
-> 实际路径是：Plugin 的 `post_tool_call` / `on_session_end` hooks 将故障事件写入外部队列；
-> 由 cron job 或独立监控进程定期扫描该队列和 board 状态，检测到触发条件后创建 sre-observer 任务。
-> 这种'观察 → 记录 → 异步触发'的设计保持了 Plugin 的纯观察性，不侵入 Hermes 核心调度逻辑。
-> 
+>
+> **触发机制说明：**
+> SRE-Observer **仅由人工升级触发**——Jacky 或 PM 在审查阶段发现需要根因分析时，手动创建 sre-observer 任务。
+> Hermes 平台原生处理 crash/timed_out 等异常状态的自动恢复（任务回滚到 ready，等待 Dispatcher 重新派发），
+> 无需 SRE-Observer 介入。SRE-Observer 专注于需要人工判断的深度根因分析，而非自动故障恢复。
+>
 > 类比：就像公司里的'事故调查小组'——它不是每个部门日常工作的一部分，
-> 而是出事后临时组建的专家团队，调查完出报告就解散。"
+> 而是出事后由管理层决定是否组建的专家团队，调查完出报告就解散。"
 
 **【Jacky 的认可】**
 

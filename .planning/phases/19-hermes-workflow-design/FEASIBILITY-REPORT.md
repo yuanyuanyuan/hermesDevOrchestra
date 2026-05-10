@@ -128,14 +128,14 @@ Plugin 通过 `PluginManager.discover_and_load()` 在 Hermes **启动时**加载
 | **可行性** | 🟢 **高度可行** — 但有一个关键约束： |
 | **风险** | ① `task_id` 可能为空，需通过 `HERMES_KANBAN_TASK` env var 关联；② Worker crash 时 `on_session_end` 不触发，缺失数据需由 Dispatcher 侧补充；③ 大量 tool call 产生高频写入，需 batch 或异步化 |
 
-### R20: SRE-Observer 自动触发
+### R20: SRE-Observer 人工升级触发
 
 | 维度 | 评估 |
 |------|------|
-| **官方支持** | 无原生"任务失败自动创建分析任务"机制 |
-| **可行路径** | ① `on_session_end` 检测 `completed=False` 后... 但 hook **不能调用工具**（`kanban_create`），只能写入外部队列；② **Cron job** 定期扫描 board，检测 crashed/timed_out/gave_up 状态，自动创建 sre-observer 任务；③ Gateway hook 监控（仅限 Gateway 场景） |
-| **可行性** | 🟡 **部分可行** — 最佳路径是 **cron job** 或独立监控进程，不是 Plugin hook 直接触发 |
-| **风险** | Cron 间隔决定响应延迟；需要持久化"已触发"状态避免重复创建分析任务 |
+| **官方支持** | Hermes 原生处理 crash/timed_out 自动恢复（任务回滚到 ready，Dispatcher 重新派发） |
+| **可行路径** | SRE-Observer 仅由人工升级触发——Jacky 或 PM 在审查阶段发现需要根因分析时，手动创建 sre-observer 任务。无需自动触发机制。 |
+| **可行性** | 🟢 **完全可行** — 纯人工触发，无技术障碍 |
+| **风险** | 无；人工判断触发时机，避免误触发 |
 
 ### R21: RCA Metadata Schema
 
@@ -155,13 +155,13 @@ Plugin 通过 `PluginManager.discover_and_load()` 在 Hermes **启动时**加载
 | **可行性** | 🟢 **可行** — 但 snapshot 采集与 task_run 的关联需要自定义映射层 |
 | **风险** | `on_session_start` 在 worker crash 后重启时也会触发，可能产生重复 snapshot |
 
-### R23/R24: QA/DevOps 故障自动触发 SRE
+### R23/R24: QA/DevOps 故障事件上报（人工升级触发 SRE）
 
 | 维度 | 评估 |
 |------|------|
 | **官方支持** | `post_tool_call` 可观察 `kanban_block` 调用 |
-| **可行路径** | Plugin `post_tool_call` 监听 `kanban_block`，解析 `reason` 字段，匹配关键词（`regression`、`critical_bug`、`security_flaw`），将事件写入外部队列；由 cron job 消费并创建 sre-observer 任务 |
-| **可行性** | 🟢 **可行** — 但同样需要 cron/外部进程做实际的任务创建 |
+| **可行路径** | Plugin `post_tool_call` 监听 `kanban_block`，解析 `reason` 字段，匹配关键词（`regression`、`critical_bug`、`security_flaw`），将事件写入通知队列供 PM/Jacky 审阅。PM/Jacky 判断是否需要深度根因分析后，手动创建 sre-observer 任务。 |
+| **可行性** | 🟢 **可行** — 纯观察+通知，无自动触发 |
 | **风险** | `reason` 是自由文本，关键词匹配有漏报/误报风险 |
 
 ---
@@ -178,10 +178,10 @@ Plugin 通过 `PluginManager.discover_and_load()` 在 Hermes **启动时**加载
 | R8 | Reviewer read-only 拦截 | 🟢 | `pre_tool_call` hook 拦截 | Terminal 命令解析复杂度 |
 | R9-R18 | 行为契约 | 🟢 | SOUL.md + Skill 配置 | LLM 遵守率非 100% |
 | R19 | Observability hooks | 🟢 | `post_tool_call` + `on_session_end` | task_id 可能为空；crash 无数据 |
-| R20 | SRE 自动触发 | 🟡 | Cron job 扫描 board | Hook 无法直接创建 kanban 任务 |
+| R20 | SRE 人工升级触发 | 🟢 | 人工创建 sre-observer 任务 | 无技术障碍 |
 | R21 | RCA schema | 🟢 | 纯数据契约 | 无 |
 | R22 | 环境快照 | 🟢 | `on_session_start` hook | 需自定义 task_run 关联 |
-| R23/R24 | QA/DevOps 故障触发 | 🟢 | `post_tool_call` + cron 消费 | 关键词匹配精度 |
+| R23/R24 | QA/DevOps 故障事件上报 | 🟢 | `post_tool_call` 观察 + 通知 PM/Jacky | 关键词匹配精度 |
 
 ---
 
@@ -196,7 +196,7 @@ Plugin 通过 `PluginManager.discover_and_load()` 在 Hermes **启动时**加载
 | Profile 切换、SOUL.md、Skill 注入 | Hermes 官方原生 | `[Hermes 官方]` |
 | Risk Policy 拦截 L3 命令 | Phase 19 增量（Plugin `pre_tool_call`） | `[Phase 19 增量]` |
 | Observability trace 采集 | Phase 19 增量（Plugin `post_tool_call`/`on_session_end`） | `[Phase 19 增量]` |
-| SRE-Observer 自动创建分析任务 | Phase 19 增量（Cron job + Plugin 观察） | `[Phase 19 增量]` |
+| SRE-Observer 人工升级触发 | Hermes 原生 crash/timed_out 恢复 + 人工创建分析任务 | `[Hermes 官方]` + 人工触发 |
 | 背压暂停 spawn | Phase 19 增量（外部监控） | `[Phase 19 增量]` |
 | Worktree 自动回收 | Phase 19 增量（`on_session_end` + cron 兜底） | `[Phase 19 增量]` |
 | Reviewer terminal 写拦截 | Phase 19 增量（Plugin `pre_tool_call`） | `[Phase 19 增量]` |
@@ -220,7 +220,7 @@ Plugin 通过 `PluginManager.discover_and_load()` 在 Hermes **启动时**加载
 每个角色至少展示 1-2 种错误行为：
 - **Implementer**: 未发现问题（如 RS256/PSS 问题）、过度自信地自行决定架构选型（未调用 `kanban_block`）
 - **Tech-Reviewer**: 遗漏安全问题、产生误报（如认为安全的 random 生成器不安全）
-- **Orchestrator**: 任务拆分过细/过粗、依赖关系设错
+- **PM**: 任务拆分过细/过粗、依赖关系设错
 - **QA-Tester**: 测试覆盖不全、未测试边界条件
 - **DevOps-Engineer**: 部署脚本环境变量遗漏、未验证回滚路径
 - **SRE-Observer**: 根因归因错误（如将环境问题归因于代码）、confidence 过高但实际错误
@@ -246,10 +246,10 @@ Plugin 通过 `PluginManager.discover_and_load()` 在 Hermes **启动时**加载
 
 ### 5.2 中优先级（🟡 可行但有约束）
 
-5. **R20 SRE 自动触发** — 需要 cron job 架构，非纯 Plugin 可解决
+5. **R20 SRE 人工升级触发** — 纯人工触发，Hermes 原生处理 crash/timed_out 恢复
 6. **R4 Worktree 回收** — 需要 cron 兜底，正常路径可用 `on_session_end`
 7. **R22 环境快照** — 可用 `on_session_start`，但 task_run 关联需自定义
-8. **R23/R24 故障关键词触发** — 可用 `post_tool_call` + cron 消费
+8. **R23/R24 故障事件上报** — 可用 `post_tool_call` 观察 + 通知 PM/Jacky
 
 ### 5.3 低优先级/需进一步验证
 
@@ -259,7 +259,7 @@ Plugin 通过 `PluginManager.discover_and_load()` 在 Hermes **启动时**加载
 
 ### 5.4 Phase 0 验证建议
 
-在 ce-plan 前必须验证：
+在实施阶段前必须验证：
 - [ ] Plugin 在 Kanban Worker 进程中是否被加载（spawn 方式决定）
 - [ ] `HERMES_KANBAN_TASK` env var 在 `post_tool_call` 中是否可通过 `task_id` 获取
 - [ ] `on_session_end` 在 Worker 正常完成时是否触发（预期：是）

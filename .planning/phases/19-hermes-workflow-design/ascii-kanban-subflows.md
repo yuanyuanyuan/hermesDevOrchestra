@@ -1,7 +1,7 @@
 ## 二、Kanban 任务管理子流程（§4）
 
 > 📎 **相关叙事文档**：
-> - 任务依赖链 / Dispatcher 循环 → [`workflow-phase-02-orchestrator.md`](./workflow-phase-02-orchestrator.md) — Orchestrator 拆解任务、Dispatcher 派发
+> - 任务依赖链 / Dispatcher 循环 → [`workflow-phase-02-orchestrator.md`](./workflow-phase-02-orchestrator.md) — PM 拆解任务、Dispatcher 派发
 > - Handoff 机制 → [`workflow-phase-03-implementation.md`](./workflow-phase-03-implementation.md)、[`workflow-phase-04-testing-review.md`](./workflow-phase-04-testing-review.md)
 > - Worker 崩溃回滚 → [`workflow-phase-05-fix-evolution.md`](./workflow-phase-05-fix-evolution.md) — Phase 5.5 故障场景
 
@@ -25,7 +25,7 @@
         │                          │                          │
         ▼                          ▼                          ▼
    ┌─────────┐              ┌─────────┐                 ┌─────────┐
-   │Orchestrator│            │Dispatcher│                │  用户    │
+   │   PM    │            │Dispatcher│                │  用户    │
    │ 拆解任务  │              │ 派发worker│               │ unblock │
    │ 创建子任务│              │ 监控执行  │               │ 做决策  │
    └─────────┘              └─────────┘                 └─────────┘
@@ -47,7 +47,7 @@
         └───────────────┘
 ```
 
-**大白话：** 一张工厂看板，工单从左到右流动：粗想法→具体任务→可以开工→正在干→卡住等回复→干完了→归档收起来。
+**大白话：** 一张工厂看板，工单从左到右流动：粗想法→PM 拆解为具体任务→可以开工→正在干→卡住等回复→干完了→归档收起来。
 
 ---
 
@@ -55,7 +55,7 @@
 
 ```
                          ┌──────────────────┐
-                         │  Orchestrator    │
+                         │       PM         │
                          │  创建任务图      │
                          └────────┬─────────┘
                                   │
@@ -182,7 +182,7 @@
                     └─────────────────────┘
 ```
 
-**大白话：** 调度员是个"每分钟看一次全局"的机器人：有没有假死的工人？有没有真死的？前面的活干完了后面能开始了吗？能开始的任务派给谁？派的时候给工人发工牌（环境变量），告诉他"你只许看这个任务、用这些工具"。
+**大白话：** PM 负责拆解需求、创建任务图和分配责任人。调度员（Orchestrator）是个"每分钟看一次全局"的路由器：有没有假死的工人？有没有真死的？前面的活干完了后面能开始了吗？能开始的任务派给谁？派的时候给工人发工牌（环境变量），告诉他"你只许看这个任务、用这些工具"。
 
 ---
 

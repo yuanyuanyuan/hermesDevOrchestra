@@ -280,7 +280,7 @@ hermes kanban archive t_alpha_001
 > - 审查员没有发现的：集成测试需要 DB、jti_blacklist 清理缺失
 >
 > **流程体验：**
-> - Orchestrator 拆解得很细，6 个任务 + 清晰的依赖关系
+> - PM 拆解得很细，6 个任务 + 清晰的依赖关系
 > - Implementer 遇到了技术问题能自己修正（RS256 算法修正）
 > - 遇到架构决策（token 旋转）会 block 问我，不会擅自决定
 > - Reviewer 审查很仔细，找到了安全隐患（constant_time_eq、用户枚举）
@@ -294,7 +294,7 @@ hermes kanban archive t_alpha_001
 >   这意味着 /login 的恒定时间比较、错误响应等是由 Implementer 自己保证的
 >
 > **改进想法：**
-> 1. 下次让 Orchestrator 把"覆盖率 ≥ 80%"作为 hard gate，不达标不完成
+> 1. 下次让 PM 把"覆盖率 ≥ 80%"作为 hard gate，不达标不完成
 > 2. 增加 T4b 审查 HTTP 接口（或者把 T4 的范围扩大到所有 auth 相关文件）
 > 3. 提前配置好 staging 环境，避免部署阶段 block
 > 4. 建立统一的部署模板（Dockerfile + docker-compose），新项目直接复用

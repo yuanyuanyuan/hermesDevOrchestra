@@ -3,7 +3,7 @@
 > 📎 **相关 ASCII 流程图**：
 > - [`ascii-end-to-end.md`](./ascii-end-to-end.md) — Phase 5 修复+进化、Phase 5.5 故障场景→SRE-Observer
 > - [`ascii-self-evolution.md`](./ascii-self-evolution.md) — 三层架构、实时/定期层进化
-> - [`ascii-observability.md`](./ascii-observability.md) — SRE-Observer 自动触发、故障定位 8 层模型
+> - [`ascii-observability.md`](./ascii-observability.md) — SRE-Observer 手动升级触发、故障定位 8 层模型
 > - [`ascii-core-flows.md`](./ascii-core-flows.md) — F4 自动故障检测与根因分析
 > - [`ascii-kanban-subflows.md`](./ascii-kanban-subflows.md) — Worker 崩溃状态回滚
 
@@ -646,22 +646,48 @@ FATAL: Deployment failed. Manual intervention required.
 
 ---
 
-### Step 5.5.3: Dispatcher 检测到崩溃，触发 SRE-Observer `[Phase 19 增量]` `[设计假设]`
+### Step 5.5.3: Hermes 原生自动恢复 + 用户手动升级 SRE-Observer
 
-**【系统内部】Dispatcher 检测日志：**
+> **设计决策：** Hermes 原生处理 crash/timed_out 的自动恢复（回滚任务状态到 ready，重新派发）。SRE-Observer 仅在用户手动升级时触发，不做自动触发。
+
+**【系统内部】Hermes 原生恢复日志：**
 
 ```
 [2026-05-10T13:16:45Z] Worker t_beta_deploy_001 PID 18821: process exited with code 1
 [2026-05-10T13:16:45Z] Checking outcome...
 [2026-05-10T13:16:45Z] Outcome: crashed
-[2026-05-10T13:16:45Z] Rollback count: 0
-[2026-05-10T13:16:45Z] Trigger condition matched: outcome == 'crashed'
-[2026-05-10T13:16:45Z] AUTO-CREATING SRE analysis task...
+[2026-05-10T13:16:45Z] Hermes native recovery: rolling back task to ready
+[2026-05-10T13:16:45Z] Task t_beta_deploy_001 status: crashed → ready (retry 1/3)
 ```
 
-**【系统自动创建 SRE 任务】**
+**【系统向 Jacky 推送】**
+
+```
+🚨 Project Beta — 部署失败
+
+任务: t_beta_deploy_001 (部署到生产)
+状态: crashed → 已自动回滚至 ready (retry 1/3)
+错误: DATABASE_URL 未设置 + Rollback 失败
+
+Hermes 将自动重试。如需深入分析根因，请手动升级至 SRE-Observer。
+
+[手动升级 SRE 分析] [查看错误详情] [取消重试]
+SRE-Observer 正在分析根因...
+
+预计 1-2 分钟内出报告
+```
+
+---
+
+### Step 5.5.4: Jacky 手动升级，SRE-Observer 被派发
+
+**【场景上下文】**
+Jacky 看到部署失败通知后，认为需要深入分析根因（而非简单重试），点击"手动升级 SRE 分析"。
+
+**【系统内部】**
 
 ```python
+# Jacky 手动升级 → 创建 SRE 分析任务
 sre_task = kanban_create(
     title="根因分析: Project Beta 部署失败 (t_beta_deploy_001)",
     assignee="sre-observer",
@@ -676,37 +702,9 @@ sre_task = kanban_create(
 )
 ```
 
-**【系统提示】**
-
-```
-[hermes] AUTO-TRIGGERED: SRE-Observer task created
-[hermes] Task: t_sre_beta_001
-[hermes] Parent: t_beta_deploy_001
-[hermes] Priority: high
-```
-
-**【系统向 Jacky 推送】**
-
-```
-🚨 Project Beta — 部署失败，自动诊断中
-
-任务: t_beta_deploy_001 (部署到生产)
-状态: crashed
-错误: DATABASE_URL 未设置 + Rollback 失败
-
-已自动创建 SRE 分析任务 (t_sre_beta_001)
-SRE-Observer 正在分析根因...
-
-预计 1-2 分钟内出报告
-```
-
----
-
-### Step 5.5.4: SRE-Observer 被派发，开始调查
-
 **【SRE-Observer 内心OS】**
 
-> "我被自动派发了。任务是调查 Project Beta 的部署失败。
+> "我被 Jacky 手动升级派发了。任务是调查 Project Beta 的部署失败。
 > 让我按 7 步流程分析。"
 
 **【SRE-Observer 执行第 1 步：读取故障任务信息】**

@@ -29,12 +29,14 @@ topic: hermes-workflow-design
 
 **人物：**
 - **Jacky**（你）：一人公司 CEO，懂技术但时间有限，同时管理 5-6 个项目
-- **Orchestrator**（AI 项目经理）：负责任务拆解、调度、进度跟踪
-- **Implementer**（AI 开发工程师）：负责写代码、跑测试
-- **Tech-Reviewer**（AI 技术审查员）：负责审查代码安全性、规范性
+- **PM**（AI 项目经理）：负责需求分析、技术研判、任务拆解与派发
+- **Orchestrator**（AI 中枢路由器）：负责任务派发、进度监控、消息路由（不做分析/拆解）
+- **Researcher**（AI 技术调研员）：按需唤醒，负责技术方案调研，不写代码
+- **Implementer**（AI 开发工程师）：负责写代码、跑测试、POC 验证
+- **Tech-Reviewer**（AI 技术审查员）：负责审查代码安全性、规范性（硬门禁 + 只读）
 - **QA-Tester**（AI 测试员）：负责跑测试用例、功能验收
 - **DevOps-Engineer**（AI 发布工程师）：负责部署、发布
-- **SRE-Observer**（AI 可观测性工程师）：负责故障根因分析
+- **SRE-Observer**（AI 可观测性工程师）：负责故障根因分析（仅人工升级触发）
 
 **项目：** Project Alpha —— 一个 SaaS 产品的后端服务，技术栈：Rust + Axum + PostgreSQL
 
@@ -51,8 +53,9 @@ topic: hermes-workflow-design
 
 | Phase | 标题 | 文件 | 行数 | 核心内容 |
 |-------|------|------|------|----------|
-| 1 | 需求提交与澄清 | [`workflow-phase-01-requirements.md`](./workflow-phase-01-requirements.md) | ~1050 | Jacky 提交模糊需求、多需求优先级排序、按需技术发现（与澄清交织）、动态顺序一次一问逐步收缩澄清（含推荐标签/大白话理由/其他选项/追加轮次/收敛上限）、持续可行性检查+冲突沟通+阻塞升级、崩溃恢复（comments 保存进度）+异步澄清、DoR 验证门、Jacky 显式确认+收敛修改限制+需求版本控制+质量反馈、Reviewer/QA 交叉校正、生成含证据链的标准化需求文档 |
-| 2 | 任务拆解（Orchestrator） | [`workflow-phase-02-orchestrator.md`](./workflow-phase-02-orchestrator.md) | ~360 | Orchestrator 读取澄清后的需求文档、分析技术依赖、拆分为 6 个子任务、Jacky 确认任务图 |
+| 1 | 需求提交与澄清（PM） | [`workflow-phase-01-requirements.md`](./workflow-phase-01-requirements.md) | ~1050 | Jacky 提交模糊需求、多需求优先级排序、按需技术发现（与澄清交织）、动态顺序一次一问逐步收缩澄清（含推荐标签/大白话理由/其他选项/追加轮次/收敛上限）、持续可行性检查+冲突沟通+阻塞升级、崩溃恢复（comments 保存进度）+异步澄清、DoR 验证门、Jacky 显式确认+收敛修改限制+需求版本控制+质量反馈、Reviewer/QA 交叉校正、生成含证据链的标准化需求文档 |
+| 1.5 | Research + POC（Researcher） | *(内嵌于 Phase 1-2 之间)* | ~100 | PM 发起技术调研任务、Researcher 产出技术方案文档（含 POC 验证）、PM 拿到方案后进入任务拆解 |
+| 2 | 任务拆解（PM） + 派发（Orchestrator） | [`workflow-phase-02-orchestrator.md`](./workflow-phase-02-orchestrator.md) | ~360 | PM 读取需求文档+技术方案、拆分为 6 个子任务、Orchestrator 按状态机路由派发、Jacky 确认任务图 |
 | 3 | 执行（Implementer） | [`workflow-phase-03-implementation.md`](./workflow-phase-03-implementation.md) | ~740 | Implementer 被唤醒、建立上下文、编写 JWT 核心逻辑和测试、发送心跳 |
 | 4 | 测试 + 审查（并行） | [`workflow-phase-04-testing-review.md`](./workflow-phase-04-testing-review.md) | ~975 | Tech-Reviewer 并行审查代码安全性；Implementer 同时执行 T2（HTTP 接口）；发现 L3 拦截事件 |
 | 5 | 修复 + 自我进化 | [`workflow-phase-05-fix-evolution.md`](./workflow-phase-05-fix-evolution.md) | ~1000 | T3 测试用例编写、T5 修复审查问题、记录经验教训 Skill、部署失败触发 SRE-Observer 调查 |
@@ -78,7 +81,7 @@ topic: hermes-workflow-design
 3. 扫读 **附录 D** 和 **附录 E**，校准对 AI 和人类行为的预期
 
 **如果你要验证某个具体需求**：
-- 需求 R1-R2（Phase 0 能力对齐）→ Phase 2 + Phase 3
+- 需求 R1-R2（Phase 0 平台能力确认）→ Phase 2 + Phase 3
 - 需求 R3-R8（真增量工程）→ Phase 4（L3 拦截 = R6/R8）、Phase 5（背压 = R5、worktree 回收 = R4）
 - 需求 R9-R18（SOUL.md / Skill 行为契约）→ Phase 3、Phase 5 Step 5.4
 - 需求 R19-R24（可观测性）→ Phase 5.5（SRE-Observer）、Phase 4 Step 4.5

@@ -10,7 +10,7 @@
 
 > "用户体验太差了，每次都要重新登录"
 
-**老板也不会给出技术细节。** 技术栈、数据库表结构、现有代码——这些由系统自己去读项目文件和代码来获取。如果需要调研外部内容（比如"JWT 和 Session 哪个适合我们"），系统发起 research 任务。
+**老板也不会给出技术细节。** 技术栈、数据库表结构、现有代码——这些由 PM 自己去读项目文件和代码来获取。如果需要调研外部内容（比如"JWT 和 Session 哪个适合我们"），PM 发起 Research 子任务（assignee: researcher），由 Researcher 产出技术方案提案。
 
 **需求澄清必须输出证据。** 所有澄清结果不能是 AI "拍脑袋"给出的——必须引用具体的代码行、文档段落或外部链接，做到可追溯、可验证。
 
@@ -20,11 +20,26 @@
 
 **发现冲突要主动沟通。** 如果需求跟项目实际情况不一致、技术上无法实现、或者需求本身有逻辑问题，必须跟老板沟通澄清——而不是默默接受然后做不了。沟通时要有证据。
 
-**证据分层要求。** 技术事实（框架版本、依赖、代码逻辑）必须引用代码（文件:行号），且引用后需再次 file_read 验证准确性。关键发现（如「无 auth 模块」）必须用 grep 搜索全代码库交叉验证。工作量估算标注为「LLM 估算，未经验证」。业务/行业判断优先使用外部佐证（搜索结果、行业报告）；对于标准行业实践（如「7 天免登录是 SaaS 常见做法」），Orchestrator 可基于领域知识给出建议并标注置信度，不必强制搜索。
+**证据分层要求。** 技术事实（框架版本、依赖、代码逻辑）必须引用代码（文件:行号），且引用后需再次 file_read 验证准确性。关键发现（如「无 auth 模块」）必须用 grep 搜索全代码库交叉验证。工作量估算标注为「LLM 估算，未经验证」。业务/行业判断优先使用外部佐证（搜索结果、行业报告）；对于标准行业实践（如「7 天免登录是 SaaS 常见做法」），PM 可基于领域知识给出建议并标注置信度，不必强制搜索。
 
 **问题顺序遵循维度依赖图，冲突时动态调整。** 11 个维度必须全部覆盖，默认顺序为：目标→用户→时间→登录方式→现有处理→交互→验收→影响→可观测→MVP→技术方案。当可行性检查发现冲突时，可跳过或重排后续维度优先澄清冲突项。如果用户输入已隐含某些维度（如「企业 SSO」隐含了用户群体），可跳过已回答的维度。
 
 **澄清流程是异步的，但有分级超时。** 老板可能中途去开会、出差、睡觉。每轮通过 kanban comments 保存进度，崩溃后可从检查点恢复（v1 依赖自然语言 comments 恢复上下文）。但澄清任务不能无限期阻塞：24h 未回复发送提醒 → 72h 升级通知渠道 → 7 天标记为 stale 并通知将在 48h 后归档 → 归档后回到 backlog 不阻塞 Board。同一时间只允许一个需求处于「等待用户回答」状态，其他排队。
+
+---
+
+### 活跃角色（8 profiles）
+
+| 角色 | 职责 |
+|------|------|
+| **pm** | 需求分析、任务分解、任务分配 |
+| **orchestrator** | 派发/监控/消息路由（状态机驱动，不做分析） |
+| **researcher** | 技术方案调研（不写代码） |
+| **implementer** | 编码实现、POC 验证 |
+| **tech-reviewer** | 代码审查（hard gate + 只读） |
+| **qa-tester** | 验收测试 |
+| **devops-engineer** | 部署与环境配置 |
+| **sre-observer** | 故障分析（仅手动升级触发） |
 
 ---
 
@@ -92,7 +107,7 @@ $ hermes kanban boards switch project-alpha
 $ hermes kanban create \
     --title "改善登录体验：减少用户重复登录" \
     --body "用户反馈每次重启浏览器都要重新登录，体验很差。需要改善。" \
-    --assignee orchestrator \
+    --assignee pm \
     --triage
 ```
 
@@ -100,7 +115,7 @@ $ hermes kanban create \
 
 ---
 
-### Step 1.3: Dispatcher 派发 Orchestrator
+### Step 1.3: Dispatcher 派发 PM
 
 **【系统内部】Dispatcher 决策日志：**
 
@@ -110,7 +125,7 @@ $ hermes kanban create \
 [2026-05-10T09:31:02Z] Triage tasks: [t_alpha_001]
 [2026-05-10T09:31:02Z] Promoting t_alpha_001: triage → ready
 [2026-05-10T09:31:02Z] Claiming t_alpha_001 (atomic)
-[2026-05-10T09:31:02Z] Spawning worker: orchestrator
+[2026-05-10T09:31:02Z] Spawning worker: pm
 [2026-05-10T09:31:03Z] Worker PID: 18473
 ```
 
@@ -120,10 +135,10 @@ $ hermes kanban create \
 
 **【场景】** Jacky 可能一次性提交多个需求，或 Board 上已有多个待处理需求。默认的 FIFO（先到先处理）不一定合理。
 
-**【Orchestrator 执行优先级排序】**
+**【PM 执行优先级排序】**
 
 ```python
-# Orchestrator 被派发后，先检查 Board 上所有 triage 需求
+# PM 被派发后，先检查 Board 上所有 triage 需求
 triage_tasks = kanban_list(board="project-alpha", status="triage")
 
 # 如果有多个需求，先排序再逐个处理
@@ -140,7 +155,7 @@ if len(triage_tasks) > 1:
 | **依赖关系** | 中 | 被其他需求依赖的优先 |
 | **技术风险** | 中 | 不确定性高的优先（需要先验证可行性） |
 
-**【Orchestrator 向 Jacky 确认排序】**
+**【PM 向 Jacky 确认排序】**
 
 ```python
 clarify(
@@ -179,12 +194,12 @@ clarify(
 
 ---
 
-### Step 1.4: Orchestrator 自动发现技术上下文 `[Phase 19 增量]`
+### Step 1.4: PM 自动发现技术上下文 `[Phase 19 增量]`
 
-**【Orchestrator 工具权限】**
+**【PM 工具权限】**
 
-> Orchestrator 允许 `file_read` + `terminal(只读)`，禁止 `file_write` + `terminal(写操作)`。
-> 这是 R11 的放宽版本——Orchestrator 需要读代码来理解项目上下文，但不能亲自写代码。
+> PM 允许 `file_read` + `terminal(只读)`，禁止 `file_write` + `terminal(写操作)`。
+> 这是 R11 的放宽版本——PM 需要读代码来理解项目上下文，但不能亲自写代码。
 > 详见 REQUIREMENTS.md R11 修订。
 
 **【技术发现：按需触发，与澄清交织】**
@@ -198,7 +213,7 @@ clarify(
 | **可行性检查发现盲区时** | 如果检查需要的数据不在初始发现中，触发补充发现 |
 | **每轮澄清后** | 如果回答改变了技术方向，更新技术画像 |
 
-**【Orchestrator 内心OS】**
+**【PM 内心OS】**
 
 > "Jacky 只说了'登录体验差'，没给任何技术细节。
 > 我需要自己去读项目代码和文档，搞清楚现有系统是什么样的。
@@ -249,7 +264,7 @@ file_read("tests/")  # 或根据 CLAUDE.md 的指引
 # → 发现: 现有测试框架和运行方式
 ```
 
-**【Orchestrator 生成技术发现报告】**
+**【PM 生成技术发现报告】**
 
 ```markdown
 ## 技术发现报告 (project-alpha)
@@ -278,7 +293,7 @@ CLAUDE.md → Cargo.toml → src/ → 按需深入具体文件
 
 **【证据验证步骤】**
 
-技术发现报告生成后，Orchestrator 必须对关键发现进行交叉验证：
+技术发现报告生成后，PM 必须对关键发现进行交叉验证：
 
 ```python
 # 关键发现验证（必须执行）
@@ -297,7 +312,7 @@ file_read("src/routes/users.rs", offset=44, limit=28)
 
 ---
 
-### Step 1.5: Orchestrator 执行需求澄清流程（一次一问，逐步收缩，维度依赖图驱动顺序）
+### Step 1.5: PM 执行需求澄清流程（一次一问，逐步收缩，维度依赖图驱动顺序）
 
 **【核心设计：一次一个问题，维度依赖图驱动顺序，冲突时动态调整】**
 
@@ -317,11 +332,11 @@ file_read("src/routes/users.rs", offset=44, limit=28)
 标准路径（参考，非固定脚本）：Q1(目标) → Q2(用户) → Q3(时间) → Q4(登录方式) → ...
 
 但如果技术发现阶段就发现项目没有 Redis，而 Jacky 选了"用 Redis 做 session"：
-- Orchestrator 立即触发可行性冲突沟通，而不是继续问 Q6-Q11
+- PM 立即触发可行性冲突沟通，而不是继续问 Q6-Q11
 - 冲突解决后，根据新的上下文决定下一个问题
 
 如果 Jacky 在 Q1 选了"其他"并引入了全新概念（如"企业 SSO"）：
-- Orchestrator 触发针对性技术发现
+- PM 触发针对性技术发现
 - 可能跳过 Q2（用户群体已隐含在"企业"中），直接问 Q4（登录方式）
 
 **需求逐步收缩示意：**
@@ -348,7 +363,7 @@ Q11后: 实现方式确认为"第三方库" — 技术方案确定
 
 #### 1.5.1 第 1 问：核心目标（价值层 — 最关键的问题先问）
 
-**【Orchestrator 内心OS】**
+**【PM 内心OS】**
 
 > "Jacky 说'登录体验差'，但具体要改善到什么程度？
 > 这是最核心的问题，决定了后面所有技术选型的方向。
@@ -388,7 +403,7 @@ clarify(
 **【Jacky 回复】**
 > "选 A — 7 天不用重新登录就行。"
 
-**【Orchestrator 更新上下文】**
+**【PM 更新上下文】**
 ```
 已知信息更新:
 + 目标: 7 天免登录（长会话）
@@ -400,7 +415,7 @@ clarify(
 
 #### 1.5.2 第 2 问：用户群体（价值层 — 基于 Q1 的目标推导）
 
-**【Orchestrator 内心OS】**
+**【PM 内心OS】**
 
 > "Q1 确认了 7 天免登录。接下来要知道给谁用——
 > 外部客户和内部团队的安全要求完全不同。"
@@ -439,7 +454,7 @@ clarify(
 **【Jacky 回复】**
 > "选 A — 外部付费客户。"
 
-**【Orchestrator 更新上下文】**
+**【PM 更新上下文】**
 ```
 已知信息更新:
 + 用户群体: 外部付费客户
@@ -467,6 +482,20 @@ clarify(
 | 涉及行业合规标准 | "GDPR 对用户数据有什么要求？" | 合规调研 |
 | 老板提到竞品功能 | "像 Notion 那样的协作编辑" | 竞品分析 |
 | 项目依赖的外部 API | "集成 Google OAuth 需要什么条件？" | API 调研 |
+
+**Research + POC 流程：**
+
+PM 判断技术不确定性高时，创建 Research 子任务（assignee: researcher）。Researcher 产出技术方案提案（不写代码）。如果方案需要验证，PM 创建 POC 子任务（assignee: implementer），Implementer 在隔离 worktree 中完成 POC。
+
+```
+PM 判断不确定性高
+    → 创建 Research 子任务 (assignee: researcher)
+    → Researcher 产出技术方案提案
+    → PM 评估方案，判断是否需要 POC
+        → 需要: 创建 POC 子任务 (assignee: implementer)
+              → Implementer 在隔离 worktree 中验证
+        → 不需要: 直接进入任务拆解
+```
 
 **Research 结果处理：**
 - 研究结果作为**新证据**加入证据索引（如 E9: "JWT vs Session 对比分析"）
@@ -511,7 +540,7 @@ clarify(
 **【Jacky 回复】**
 > "选 B — 1-2 周内搞定。"
 
-**【Orchestrator 更新上下文】**
+**【PM 更新上下文】**
 ```
 已知信息更新:
 + 时间: 1-2 周
@@ -629,7 +658,7 @@ clarify(
 **【Jacky 回复】**
 > "选 A — 静默刷新。"
 
-**【Orchestrator 更新上下文】**
+**【PM 更新上下文】**
 ```
 已知信息更新:
 + 功能层核心已确定: 邮箱+密码 + 替换session + 静默刷新
@@ -746,7 +775,7 @@ clarify(
 **【Jacky 回复】**
 > "选 A — 基础日志就行。"
 
-**【Orchestrator 更新上下文】**
+**【PM 更新上下文】**
 ```
 已知信息更新:
 + 验收层已完整: 自动化+手动、仅登录接口、基础日志
@@ -829,7 +858,7 @@ clarify(
 **【Jacky 回复】**
 > "选 A — 用第三方库。"
 
-**【Orchestrator 更新上下文】**
+**【PM 更新上下文】**
 ```
 所有维度已满足 Definition of Ready:
 ✅ 价值层: 7天免登录, 外部客户, 1-2周
@@ -849,7 +878,7 @@ clarify(
 
 > "我希望用户可以选择记住登录状态，但安全要求高的操作（比如修改密码、删除账号）还是需要重新验证"
 
-这是一个模糊的需求，Orchestrator 发起**追加澄清**（继续一次一问）：
+这是一个模糊的需求，PM 发起**追加澄清**（继续一次一问）：
 
 **【追加第 1 问】**
 
@@ -947,7 +976,7 @@ clarify(
 # 如果用户输入清晰但不在选项中 → 接受用户输入，标记为「用户自定义」
 # 如果用户输入仍然模糊 → 用默认值收敛
 
-orchestrator_action = {
+pm_action = {
     "dimension": "Q1_核心目标",
     "status": "converged_with_default",  # 或 "user_custom"
     "default_value": "7天免登录（最简方案）",
@@ -960,7 +989,7 @@ orchestrator_action = {
 
 **【收敛后的处理】**
 - 被收敛的维度在需求文档中标注为 `[待细化]`
-- Orchestrator 在 DoR 验证时，`[待细化]` 项不算未通过，但会提醒 Jacky
+- PM 在 DoR 验证时，`[待细化]` 项不算未通过，但会提醒 Jacky
 - 后续迭代时，这些项会被优先处理
 
 ---
@@ -969,7 +998,7 @@ orchestrator_action = {
 
 **【崩溃恢复：通过 kanban comments 保存进度】**
 
-澄清过程中，Orchestrator 每轮回答后将当前进度写入 task comments（自然语言格式，v1 不使用结构化 JSON checkpoint）：
+澄清过程中，PM 每轮回答后将当前进度写入 task comments（自然语言格式，v1 不使用结构化 JSON checkpoint）：
 
 ```python
 # 每轮澄清后保存进度（自然语言）
@@ -987,15 +1016,15 @@ kanban_comment(
 **【崩溃后恢复流程】**
 
 ```
-Orchestrator 崩溃/超时
+PM 崩溃/超时
     ↓
-Dispatcher 回滚任务到 ready，重新 spawn 新 Orchestrator
+Dispatcher 回滚任务到 ready，重新 spawn 新 PM
     ↓
-新 Orchestrator 读取 task comments，找到最近的进度更新
+新 PM 读取 task comments，找到最近的进度更新
     ↓
 恢复上下文：已回答 Q1-Q4，待澄清 6 个维度
     ↓
-发送通知："Orchestrator 已重启，将从 Q5 继续"
+发送通知："PM 已重启，将从 Q5 继续"
     ↓
 从待澄清维度中选择下一个最关键的问题，继续澄清
 ```
@@ -1006,8 +1035,8 @@ Dispatcher 回滚任务到 ready，重新 spawn 新 Orchestrator
 |------|---------|
 | **Jacky 不回复** | 24h 发提醒通知 → 72h 升级通知渠道 → 7 天标记 stale → 48h 后归档回 backlog |
 | **Research 任务阻塞** | 澄清暂停，task 状态变为 `waiting`。Research 超时 72h，超时后跳过该证据继续澄清 |
-| **Jacky 说"明天继续"** | task 状态变为 `paused`。Orchestrator 保存进度到 comments 后安全退出。Jacky 随时可以恢复。 |
-| **多天澄清** | 每轮通过 comments 保存进度。Orchestrator 可以被安全回收和重建，不会丢失上下文。 |
+| **Jacky 说"明天继续"** | task 状态变为 `paused`。PM 保存进度到 comments 后安全退出。Jacky 随时可以恢复。 |
+| **多天澄清** | 每轮通过 comments 保存进度。PM 可以被安全回收和重建，不会丢失上下文。 |
 | **Jacky 明确放弃** | task 状态变为 `cancelled`。已有的澄清进度保留在 comments 中，供后续参考。 |
 | **多需求排队** | 同一时间只允许一个需求处于「等待回答」状态，其他排队。支持跳过被阻塞需求处理下一个。 |
 
@@ -1193,7 +1222,7 @@ final_feasibility = {
 | **前置需求未完成** | "加协作编辑"但实时通信模块还没做 | 技术发现时 |
 | **合规要求未满足** | "存储用户健康数据"但没有 HIPAA 合规 | Q2 确认用户群体时 |
 
-**【Orchestrator 处理阻塞】**
+**【PM 处理阻塞】**
 
 ```python
 # 示例: Jacky 要密码重置，但项目没有邮件服务
@@ -1269,12 +1298,12 @@ block_resolution = {
 
 ---
 
-**【Orchestrator 内心OS】**
+**【PM 内心OS】**
 
 > "所有问题都问完了，冲突也都解决了。
 > 现在生成最终的需求文档，每一条都要有证据。"
 
-**【Orchestrator 生成的需求文档】**
+**【PM 生成的需求文档】**
 
 ```markdown
 # 需求文档: 用户认证模块 (t_alpha_001)
@@ -1394,7 +1423,7 @@ Alpha SaaS 产品的外部付费客户。
 
 ## 5. 技术背景（系统自动发现，非老板提供）
 
-> 以下所有技术信息均由 Orchestrator 自动读取项目代码获得。
+> 以下所有技术信息均由 PM 自动读取项目代码获得。
 > 发现路径: CLAUDE.md → Cargo.toml → src/ → 按需深入
 
 | 组件 | 状态 | 证据 |
@@ -1454,7 +1483,7 @@ for us in requirement_doc.user_stories:
 
 **【LLM 自检项（结构化输出）】**
 
-需求文档生成后，Orchestrator 必须逐项检查 Definition of Ready 的 7 项标准。自检必须结构化输出，不通过的项自动触发补问。
+需求文档生成后，PM 必须逐项检查 Definition of Ready 的 7 项标准。自检必须结构化输出，不通过的项自动触发补问。
 
 ```python
 dor_verification = {
@@ -1525,7 +1554,7 @@ dor_verification = {
         "action": "触发补问 → 回到 Step 1.5 补充具体验收标准",
     },
 }
-# Orchestrator 自动发起补问:
+# PM 自动发起补问:
 clarify(
     question={
         "id": "DOR_FIX_1",
@@ -1638,7 +1667,7 @@ clarify(
 ```
 
 **修改流程：**
-1. Jacky 指定修改范围 → Orchestrator 回到对应的澄清轮次
+1. Jacky 指定修改范围 → PM 回到对应的澄清轮次
 2. 重新执行该轮次的澄清 + 可行性检查
 3. 更新需求文档，重新验证 DoR
 4. 再次推送确认通知
@@ -1646,7 +1675,7 @@ clarify(
 
 **【全局修改预算】**
 
-需求确认后最多允许 **3 次修改**。超限后 Orchestrator 强制输出当前版本并标注「修改预算已用尽，如需继续修改请手动干预」。如果连续 2 次修改涉及不同维度，提示 Jacky 是否需要重新从头澄清（说明需求尚未稳定）。
+需求确认后最多允许 **3 次修改**。超限后 PM 强制输出当前版本并标注「修改预算已用尽，如需继续修改请手动干预」。如果连续 2 次修改涉及不同维度，提示 Jacky 是否需要重新从头澄清（说明需求尚未稳定）。
 
 **【收敛-修改限制】**
 
@@ -1801,7 +1830,7 @@ E4 (现有登录)       ←→     src/routes/users.rs:45-72
 
 ---
 
-### Step 1.9: Orchestrator 完成需求澄清任务
+### Step 1.9: PM 完成需求澄清任务
 
 ```python
 kanban_complete(
@@ -1834,7 +1863,7 @@ kanban_complete(
 ```python
 t_plan = kanban_create(
     title="任务拆解: 用户认证模块 (v1)",
-    assignee="orchestrator",
+    assignee="pm",
     body="""读取 t_alpha_001 的需求澄清文档 v1，拆解为可执行的子任务图。
 
 追溯要求:

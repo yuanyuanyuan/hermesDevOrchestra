@@ -141,7 +141,7 @@ approve T4. create fix tasks for all findings.
 - Jacky 在烦躁状态下给了一个模糊的指令
 - Implementer 的 SOUL.md 说"架构决策必须 block"，但 Jacky 说"不要问我"
 - 冲突的指令导致 Implementer 陷入两难：遵守 SOUL.md 还是遵守用户的最新指令？
-- 可能需要 orchestrator 介入仲裁
+- 可能需要 PM 介入仲裁
 
 **【系统应如何支持】**
 
@@ -233,7 +233,7 @@ Jacky 周末去海边度假，设置了"勿扰模式"。Gateway 的 Telegram 通
 - **分级通知**：L3 风险拦截应使用"紧急通道"（如电话/SMS），而非普通 Telegram 消息
 - **Escalation**：block 超过 1 小时后，系统应升级通知方式（Telegram → SMS → 电话）；block 超过 4 小时后，应通知备用联系人
 - ** digest vs alert 分离**：工作日志（heartbeat、任务完成）走 digest 模式（每小时汇总）；block/L3 拦截走 alert 模式（即时推送）
-- **Vacation mode**：Jacky 可设置"度假模式"，指定某些类型的决策可委托给 orchestrator 或预设规则
+- **Vacation mode**：Jacky 可设置"度假模式"，指定某些类型的决策可委托给 PM 或预设规则
 
 ---
 

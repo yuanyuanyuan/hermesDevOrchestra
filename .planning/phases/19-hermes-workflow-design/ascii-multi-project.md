@@ -1,7 +1,7 @@
 ## 五、多项目并行管理子流程（§7）
 
 > 📎 **相关叙事文档**：
-> - 多项目上下文 → [`workflow-phase-02-orchestrator.md`](./workflow-phase-02-orchestrator.md) — Orchestrator 管理多项目任务
+> - 多项目上下文 → [`workflow-phase-02-orchestrator.md`](./workflow-phase-02-orchestrator.md) — PM 管理多项目任务分解
 > - 跨项目 Skill 进化 → [`workflow-phase-05-fix-evolution.md`](./workflow-phase-05-fix-evolution.md) — Step 5.4 记录经验教训
 
 ---

@@ -18,7 +18,7 @@ topic: hermes-workflow-design
 
 | 章节 | 文件 | 行数 | 包含的 ASCII 图 |
 |------|------|------|----------------|
-| 一、核心业务流程（F1–F4） | [`ascii-core-flows.md`](./ascii-core-flows.md) | ~367 | F1 Phase 0 能力对齐验证、F2 多项目并行任务生命周期（含背压）、F3 L3 风险升级与用户决策、F4 自动故障检测与根因分析 |
+| 一、核心业务流程（F1–F4） | [`ascii-core-flows.md`](./ascii-core-flows.md) | ~367 | F0 Phase 0 平台能力确认、F2 多项目并行任务生命周期（含背压）、F3 L3 风险升级与用户决策、F4 自动故障检测与根因分析 |
 | 八、端到端完整示例 | [`ascii-end-to-end.md`](./ascii-end-to-end.md) | ~399 | Phase 1-2 需求提交→澄清→拆解、Phase 3 执行、Phase 4 测试+审查、Phase 5 修复+进化、Phase 5.5 故障场景→SRE-Observer、Phase 6 完成通知 |
 
 ### 子系统流程
@@ -30,20 +30,20 @@ topic: hermes-workflow-design
 | 四、决策矩阵 | [`ascii-decision-matrix.md`](./ascii-decision-matrix.md) | ~146 | L3 升级流程（完整路径）、声明式风险策略引擎 |
 | 五、多项目并行管理 | [`ascii-multi-project.md`](./ascii-multi-project.md) | ~77 | 跨项目经验共享 |
 | 六、自我进化 | [`ascii-self-evolution.md`](./ascii-self-evolution.md) | ~227 | 三层架构（知识资产管理）、实时层进化、定期层进化（Curator 自动审查）、分层经验归档 |
-| 七、全链路可观测性 | [`ascii-observability.md`](./ascii-observability.md) | ~258 | Observability Plugin 零侵入采集、SRE-Observer 自动触发与分析、故障定位 8 层模型 |
+| 七、全链路可观测性 | [`ascii-observability.md`](./ascii-observability.md) | ~258 | Observability Plugin 零侵入采集、SRE-Observer 人工升级触发与分析、故障定位 8 层模型 |
 
 ### 总览与速查
 
 | 章节 | 文件 | 行数 | 内容 |
 |------|------|------|------|
-| 九、流程全景图 + 十、角色职责速查表 + 附录 | [`ascii-overview.md`](./ascii-overview.md) | ~225 | 完整系统架构全景 ASCII 图、7 角色职责矩阵、30+ 流程编号索引 |
+| 九、流程全景图 + 十、角色职责速查表 + 附录 | [`ascii-overview.md`](./ascii-overview.md) | ~225 | 完整系统架构全景 ASCII 图、8 角色职责矩阵（pm, orchestrator, researcher, implementer, tech-reviewer, qa-tester, devops-engineer, sre-observer）、30+ 流程编号索引 |
 
 ---
 
 ## 如何阅读本文档
 
 **如果你需要验证某个具体需求**：
-- R1-R2（Phase 0 能力对齐）→ **核心业务流程** F1
+- R1-R2（Phase 0 平台能力确认）→ **核心业务流程** F0
 - R3（Profile Override）→ **Kanban 子流程** Dispatcher 工作循环
 - R4（Worktree 回收）→ **Kanban 子流程** Worker 崩溃状态回滚
 - R5（Backpressure）→ **核心业务流程** F2、**Kanban 子流程** 背压感知任务准入

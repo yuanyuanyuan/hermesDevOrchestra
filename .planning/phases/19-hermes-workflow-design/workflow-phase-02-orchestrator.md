@@ -1,13 +1,13 @@
-## Phase 2: 任务拆解（Orchestrator）
+## Phase 2: 任务拆解（PM）
 
 > 📎 **相关 ASCII 流程图**：
 > - [`ascii-end-to-end.md`](./ascii-end-to-end.md) — Phase 1-2 需求提交→任务拆解
 > - [`ascii-kanban-subflows.md`](./ascii-kanban-subflows.md) — 任务依赖链、Dispatcher 工作循环
-> - [`ascii-core-flows.md`](./ascii-core-flows.md) — F1 Phase 0 能力对齐、F2 多项目并行生命周期
+> - [`ascii-core-flows.md`](./ascii-core-flows.md) — F1 Phase 0 平台能力确认、F2 多项目并行生命周期
 
 ---
 
-### Step 2.1: Dispatcher 派发 Orchestrator `[Hermes 官方]`
+### Step 2.1: Dispatcher 派发 PM `[Hermes 官方]`
 
 **【场景上下文】**
 60 秒后，Dispatcher 的下一轮循环开始。t_alpha_001 是 project-alpha board 上唯一的 ready 任务。
@@ -19,7 +19,7 @@
 [2026-05-10T09:31:02Z] Board: project-alpha
 [2026-05-10T09:31:02Z] Ready tasks: [t_alpha_001]
 [2026-05-10T09:31:02Z] Claiming t_alpha_001 (atomic)
-[2026-05-10T09:31:02Z] Spawning worker: orchestrator
+[2026-05-10T09:31:02Z] Spawning worker: pm
 [2026-05-10T09:31:02Z] Environment: HERMES_KANBAN_TASK=t_alpha_001
 [2026-05-10T09:31:02Z] Environment: HERMES_KANBAN_BOARD=project-alpha
 [2026-05-10T09:31:03Z] Worker PID: 18473
@@ -27,18 +27,18 @@
 
 ---
 
-### Step 2.2: Orchestrator 被唤醒，读取任务 `[Hermes 官方]`
+### Step 2.2: PM 被唤醒，读取任务 `[Hermes 官方]`
 
-**【Orchestrator 内心OS】**
+**【PM 内心OS】**
 
 > "我被 Dispatcher 派发了。任务 ID 是 t_plan_alpha_001，board 是 project-alpha。
 > 这是一个任务拆解任务，parent 是 t_alpha_001（需求澄清任务）。
 > 让我先看看任务详情，然后读取需求澄清文档。"
 
-**【Orchestrator 执行的具体指令】**
+**【PM 执行的具体指令】**
 
 ```python
-# Orchestrator 调用 kanban_show() 读取自己的任务
+# PM 调用 kanban_show() 读取自己的任务
 kanban_show(task_id="t_plan_alpha_001")
 ```
 
@@ -49,7 +49,7 @@ kanban_show(task_id="t_plan_alpha_001")
   "task_id": "t_plan_alpha_001",
   "title": "任务拆解: 用户认证模块",
   "body": "读取 t_alpha_001 的需求澄清文档，拆解为可执行的子任务图",
-  "assignee": "orchestrator",
+  "assignee": "pm",
   "status": "running",
   "board": "project-alpha",
   "parents": ["t_alpha_001"],
@@ -60,14 +60,14 @@ kanban_show(task_id="t_plan_alpha_001")
 }
 ```
 
-**【Orchestrator 读取 parent 的需求澄清文档】**
+**【PM 读取 parent 的需求澄清文档】**
 
 ```python
 # 读取需求澄清任务的 handoff（包含标准化需求文档）
 kanban_show(task_id="t_alpha_001")
 ```
 
-**【Orchestrator 内心OS】**
+**【PM 内心OS】**
 
 > "好的，需求澄清文档 v1 已经被 Jacky 确认了。让我提取关键信息：
 >
@@ -85,9 +85,9 @@ kanban_show(task_id="t_alpha_001")
 
 ---
 
-### Step 2.3: Orchestrator 拆解任务
+### Step 2.3: PM 拆解任务
 
-**【Orchestrator 执行的具体指令】**
+**【PM 执行的具体指令】**
 
 ```python
 # T1: 实现 JWT 核心逻辑（生成、验证、刷新）
@@ -299,7 +299,7 @@ t6 = kanban_create(
 )
 ```
 
-**【Orchestrator 内心OS】**
+**【PM 内心OS】**
 
 > "任务图创建完毕。让我检查一下依赖关系：
 > - T1（JWT 核心）无依赖，可立即开始
@@ -312,7 +312,7 @@ t6 = kanban_create(
 > 这个依赖图是合理的。最大并行度是 2（T2 和 T4 同时跑）。
 > 现在完成自己的任务，把任务图提交。"
 
-**【Orchestrator 执行完成指令】**
+**【PM 执行完成指令】**
 
 ```python
 kanban_complete(
@@ -336,7 +336,7 @@ kanban_complete(
 **【系统提示】**
 
 ```
-[hermes] Task t_alpha_001 completed by orchestrator
+[hermes] Task t_alpha_001 completed by pm
 [hermes] Task graph created: 6 sub-tasks
 [hermes] Next ready tasks: [t1_alpha_001]  ← T1 无依赖，已 ready
 [hermes] Dispatcher will spawn implementer for T1 in next cycle
