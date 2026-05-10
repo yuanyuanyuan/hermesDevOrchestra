@@ -1,6 +1,8 @@
 ## 附录 D：AI 失败模式
 
 > 主文档展示的是 AI 的"理想执行路径"。本节补充**每个角色在真实运行中可能犯的错**，用于校准预期和设计兜底机制。
+>
+> **能力来源说明：** 本附录讨论的兜底机制中，`kanban_block`、Profile 隔离属于 `[Hermes 官方]`。R9（强制 block 规则）、R14（block 触发清单）、R6（Risk Policy）、R10（Reviewer 白名单）、R13（handoff metadata schema）、SRE-Observer 根因分析属于 `[Phase 19 增量]`。
 
 > 📎 **相关 ASCII 流程图**：
 > - [`ascii-core-flows.md`](./ascii-core-flows.md) — F3 L3 风险升级、F4 自动故障检测
@@ -189,9 +191,11 @@ QA-Tester 执行 T3（写测试），编写了 8 个单元测试：
 
 ### D.8 DevOps-Engineer — 环境变量遗漏
 
+> 📎 **相关流程**：Phase 5.6 部署发布（三层环境）— [`ascii-end-to-end.md`](./ascii-end-to-end.md)
+
 **【失败场景】**
 
-DevOps-Engineer 编写 `deploy.sh`：
+DevOps-Engineer 在 Phase 5.6 三层部署流程中，执行 dev/test 层的 `deploy.sh`：
 
 ```bash
 #!/bin/bash
@@ -212,6 +216,7 @@ ssh $DEPLOY_HOST "systemctl restart alpha"
 
 - DevOps-Engineer 的 SOUL.md 要求"部署脚本必须以 `set -u` 开头，所有环境变量在使用前检查"
 - Risk Policy 可将 `"scp .* :"` 或 `"ssh .*@"` 中主机名为空的模式标记为 L2
+- Phase 5.6 三层部署流程：dev/test 层失败时自动 block，devops-engineer 先尝试修复部署脚本/配置，修复失败则升级用户决策
 
 ---
 

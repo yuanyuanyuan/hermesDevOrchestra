@@ -5,6 +5,8 @@
 > - [`ascii-decision-matrix.md`](./ascii-decision-matrix.md) — L3 升级流程（完整路径）、声明式风险策略引擎
 > - [`ascii-core-flows.md`](./ascii-core-flows.md) — F3 L3 风险升级与用户决策
 > - [`ascii-kanban-subflows.md`](./ascii-kanban-subflows.md) — Handoff 机制
+>
+> **能力来源说明：** Dispatcher 并行派发、`kanban_show`/`kanban_complete`/`kanban_block` 工具、Reviewer Profile 隔离属于 `[Hermes 官方]`。Reviewer toolsets 白名单（R10）、terminal 写操作拦截（R8）、L1/L2/L3 风险分级、Risk Policy Engine、背压检查属于 `[Phase 19 增量]`。L1/L2/L3 为项目设计概念，非 Hermes 官方机制。
 
 ---
 
@@ -82,6 +84,9 @@ kanban_show(task_id="t4_alpha_001")
 ```python
 # 读取父任务 T1 的 handoff
 parent = kanban_show(task_id="t1_alpha_001")
+# 获取 TDD 行为清单
+behaviors = parent["metadata"]["behaviors"]
+regression = parent["metadata"]["regression"]
 # 获取 changed_files
 files_to_review = parent["metadata"]["changed_files"]
 # 获取 decisions 和 pitfalls
@@ -94,7 +99,14 @@ review_context = {
 **【Tech-Reviewer 内心OS】**
 
 > "Implementer 改了 5 个文件，做了 4 个关键决策，发现了 3 个 pitfalls。
-> 让我按 checklist 逐一审查。先看 jwt.rs 的核心实现。"
+> TDD 行为清单有 3 个行为，回归测试 13/13 通过。
+>
+> **审查要点：**
+> 1. 每个行为是否有对应的测试文件和测试函数？
+> 2. 测试是否真的在测试该行为（不是空测试/假测试）？
+> 3. 实现代码是否通过了测试描述的行为？
+>
+> 让我按 checklist 逐一审查。先看 jwt.rs 的核心实现和测试。"
 
 ---
 
@@ -940,16 +952,21 @@ cargo test auth --lib 2>&1
 ```python
 kanban_complete(
     task_id="t2_alpha_001",
-    summary="4 个 HTTP 接口已实现，包含 token 旋转机制。/refresh 验证旧 token 后生成新 token 对，旧 token jti 加入黑名单。",
+    summary="4 个 HTTP 接口已实现 (TDD)，包含 token 旋转机制。",
     metadata={
+        "behaviors": [
+            {"name": "POST /login 返回 access+refresh token", "test": "test_login_returns_tokens", "status": "passed"},
+            {"name": "POST /refresh 用旧 refresh token 换新 token 对", "test": "test_refresh_rotation", "status": "passed"},
+            {"name": "POST /logout 将 jti 加入黑名单", "test": "test_logout_blacklists_jti", "status": "passed"},
+            {"name": "GET /me 用有效 token 返回用户信息", "test": "test_me_with_valid_token", "status": "passed"}
+        ],
+        "regression": {"run": 12, "passed": 12, "failed": 0},
         "changed_files": [
             "src/auth/routes.rs",
             "src/auth/middleware.rs",
             "src/main.rs",
             "migrations/20260510_add_jti_blacklist.sql"
         ],
-        "tests_run": 0,  # 集成测试在 T3
-        "tests_passed": 0,
         "decisions": [
             "Jacky 选择 B: Token rotation with jti_blacklist",
             "/refresh 返回新 access + refresh token",

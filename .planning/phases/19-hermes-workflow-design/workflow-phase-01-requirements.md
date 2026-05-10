@@ -1,6 +1,8 @@
 ## Phase 1: 需求提交与澄清
 
 > 📎 **相关 ASCII 流程图**：[`ascii-end-to-end.md`](./ascii-end-to-end.md) — Phase 1-2 需求提交→澄清→任务拆解
+>
+> **能力来源说明：** `kanban_create`/`kanban_show`/`kanban_block`/`kanban_complete` 工具、Profile 隔离、Dispatcher 派发属于 `[Hermes 官方]`。需求澄清方法论（一次一问/动态顺序/推荐标签/收敛机制）、Research + POC 技术研判流程、DoR 验证门、异步澄清（崩溃恢复/分级超时）、多需求优先级排序、持续可行性检查、需求版本控制属于 `[Phase 19 增量]`。
 
 ---
 
@@ -35,7 +37,7 @@
 | **pm** | 需求分析、任务分解、任务分配 |
 | **orchestrator** | 派发/监控/消息路由（状态机驱动，不做分析） |
 | **researcher** | 技术方案调研（不写代码） |
-| **implementer** | 编码实现、POC 验证 |
+| **implementer** | TDD 编码（RED→GREEN）、回归测试、POC 验证 |
 | **tech-reviewer** | 代码审查（hard gate + 只读） |
 | **qa-tester** | 验收测试 |
 | **devops-engineer** | 部署与环境配置 |

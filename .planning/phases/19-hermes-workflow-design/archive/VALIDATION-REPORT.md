@@ -373,7 +373,7 @@ LLM 才会大概率执行。
 | Phase 4.3 | Tech-Reviewer 发现 8 个问题 | 增加"Reviewer 可能遗漏或误报"的失败模式 |
 | Phase 4.10 | Jacky 1 分钟内回复 block | 改为"Jacky 可能在开会，30 分钟后才看到"的真实场景 |
 | Phase 5.4 | Implementer 主动 memory_add + create_skill | 明确说明"这需要 SOUL.md 中的显式规则引导" |
-| Phase 5.5.2 | DevOps block（外部依赖缺失） | 改为真正的 crashed 场景（如 deploy.sh 执行错误命令） |
+| Phase 5.5.2 | DevOps block（外部依赖缺失） | 改为真正的 crashed 场景（如 deploy.sh 执行错误命令）；Phase 5.6 三层部署流程中任一层失败触发 |
 | Phase 5.5.3 | SRE-Observer 触发 | 改为人工升级触发；Hermes 原生处理 crash/timed_out 恢复 |
 | 全局 | 所有 Plugin hooks | 标注 `[设计假设，需验证官方 Plugin SDK 支持]` |
 | 全局 | Risk Policy Engine | 标注 `[Phase 19 增量]` |
@@ -423,4 +423,23 @@ LLM 才会大概率执行。
 | ascii-end-to-end | 技术发现一次性 | ✅ 改为按需触发 + 动态顺序 + 异步澄清 + 崩溃恢复 |
 | WORKFLOW-EXPLAINED | Phase 1 描述 | ✅ 更新：按需发现/动态顺序/崩溃恢复/异步/交叉校正 |
 
-*本验证报告基于 Hermes Agent v0.13.0 官方文档（2026-05-09 索引）*
+### Round 7 修正（DoubleCheck 报告交叉验证）
+
+基于 `WORKFLOW-HERMES-DOUBLE-CHECK.md` 的独立调查结果：
+
+| # | DoubleCheck 发现 | 对设计文档的影响 | 修正内容 |
+|---|-----------------|----------------|---------|
+| 1 | Worker/Dispatcher/Gateway 官方已实现 | 无影响，设计文档已正确标注 | ✅ 无需修正 |
+| 2 | L1/L2/L3 官方不存在，为项目独创 | DESIGN.md §6 需标注为项目设计概念 | ✅ 已修正：添加 `[项目设计概念，非官方机制]` 标注 |
+| 3 | Risk Policy YAML 官方不存在 | DESIGN.md §6.2 需标注为项目增量 | ✅ 已修正：添加 `[项目增量，非官方机制]` 标注 |
+| 4 | Sentinel 官方不存在 | 已在 VALIDATION-REPORT 标注 | ✅ 无需额外修正 |
+| 5 | Reviewer Hard Gate 软约定有硬门无 | R10 已要求白名单+R8兜底 | ✅ 设计已覆盖 |
+| 6 | **RFC #16102 明确支持 user-space approval gates** | DESIGN.md / REQUIREMENTS.md 需引用 | ✅ 已修正：§1、§6、§6.2、R6、Architecture Context 均添加 RFC 引用 |
+| 7 | Plugin `pre_tool_call` hook 确认存在 | Risk Policy 实现路径已验证 | ✅ 已修正：DESIGN.md §6.2 添加 Plugin 实现路径推荐 |
+| 8 | Plugin `post_tool_call` / `on_session_end` 确认存在 | Observability Plugin 实现已验证 | ✅ 已修正：DESIGN.md §9.2 + R19 添加验证状态 |
+| 9 | 官方安全模型只有两层（命令级拦截） | 需区分官方能力与项目增量 | ✅ 已修正：DESIGN.md §6 说明区别 |
+| 10 | 官方 `approvals.mode` 有 manual/smart/off 三模式 | DESIGN.md 附录 A 需补充 | ✅ 已修正：附录 A 添加条目 |
+
+**DoubleCheck 报告核心结论：** 本项目设计文档与 Hermes 官方能力的边界划分基本正确。L1/L2/L3、Risk Policy、Sentinel 均为项目增量设计，有 RFC #16102 的官方背书支持通过 Plugin/Skill 层实现。Plugin Hook 名称（`pre_tool_call`、`post_tool_call`、`on_session_end`）已全部通过官方文档验证。
+
+*本验证报告基于 Hermes Agent v0.13.0 官方文档（2026-05-09 索引）+ DoubleCheck 报告交叉验证（2026-05-10）*

@@ -3,6 +3,8 @@
 > 📎 **相关叙事文档**：
 > - SRE-Observer 触发与调查 → [`workflow-phase-05-fix-evolution.md`](./workflow-phase-05-fix-evolution.md) — Phase 5.5 故障场景
 > - SRE 独立 Profile 设计讨论 → [`workflow-appendix-decisions.md`](./workflow-appendix-decisions.md) — 决策 1
+>
+> **能力来源说明：** Plugin `post_tool_call`/`on_session_end` hooks、`kanban_create`/`kanban_complete` 工具属于 `[Hermes 官方]`（Hook 已通过官方文档验证）。Observability Plugin 采集逻辑、SRE-Observer 人工升级触发机制、故障定位 8 层模型、环境快照采集（R22）属于 `[Phase 19 增量]`。
 
 ---
 
@@ -98,6 +100,7 @@
             ▼                   ▼                   ▼
    ┌─────────────────────────────────────────────────────────────┐
    │                    ④ DevOps 部署失败                          │
+   │              (Phase 5.6 三层部署中任一层失败)                  │
    │                       outcome ≠ completed                    │
    └─────────────────────────────────────────────────────────────┘
             │
@@ -107,10 +110,10 @@
    │              步骤 1: 用户手动触发 SRE 分析任务                    │
    │                                                                 │
    │  kanban_create(                                                 │
-   │    title="根因分析: T5 部署失败",                                │
+   │    title="根因分析: T-deploy 部署失败",                          │
    │    assignee="sre-observer",        ← 专属角色                   │
-   │    body="T5 crashed，请定位根因",                                │
-   │    parents=[T5],                   ← 关联故障任务               │
+   │    body="T-deploy crashed，请定位根因",                          │
+   │    parents=[T-deploy],             ← 关联故障任务               │
    │    priority="high"                 ← 高优先级插队               │
    │  )                                                              │
    └─────────────────────────────────────────────────────────────────┘

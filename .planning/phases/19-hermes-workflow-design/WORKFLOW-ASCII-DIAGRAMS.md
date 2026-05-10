@@ -26,7 +26,7 @@ topic: hermes-workflow-design
 | 章节 | 文件 | 行数 | 包含的 ASCII 图 |
 |------|------|------|----------------|
 | 二、Kanban 任务管理 | [`ascii-kanban-subflows.md`](./ascii-kanban-subflows.md) | ~349 | 任务状态机流转、任务依赖链（parents）、Dispatcher 工作循环、Handoff 机制、Worker 崩溃状态回滚、背压感知任务准入 |
-| 三、实时通信 | [`ascii-communication-subflows.md`](./ascii-communication-subflows.md) | ~195 | 实时问答流程（tmux 方式）、Agent 间通信可靠性方案（推荐 A）、Tmux Session 预热池 |
+| 三、实时通信 | [`ascii-communication-subflows.md`](./ascii-communication-subflows.md) | ~195 | 实时问答流程（Kanban block 主路径 + defer 兜底） |
 | 四、决策矩阵 | [`ascii-decision-matrix.md`](./ascii-decision-matrix.md) | ~146 | L3 升级流程（完整路径）、声明式风险策略引擎 |
 | 五、多项目并行管理 | [`ascii-multi-project.md`](./ascii-multi-project.md) | ~77 | 跨项目经验共享 |
 | 六、自我进化 | [`ascii-self-evolution.md`](./ascii-self-evolution.md) | ~227 | 三层架构（知识资产管理）、实时层进化、定期层进化（Curator 自动审查）、分层经验归档 |

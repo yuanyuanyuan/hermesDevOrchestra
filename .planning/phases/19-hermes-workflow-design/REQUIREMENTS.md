@@ -26,7 +26,9 @@ Hermes Agent v0.13.0 原生提供了：
 - 23 个内置 toolsets 覆盖 terminal / file / clarify / delegation / messaging 全部需求
 - Plugin Hook 系统（`pre_tool_call` / `post_tool_call` / `on_session_end` 等，支持阻塞和观测）
 
-需要在此基础上构建增量能力：Research + POC 技术研判流程、PM/Orchestrator 角色分离、状态机驱动路由、三层纵深风险拦截、per-board 完全隔离的多项目并行管理。
+需要在此基础上构建增量能力：Research + POC 技术研判流程、PM/Orchestrator 角色分离、状态机驱动路由、三层纵深风险拦截（L1/L2/L3、Risk Policy YAML、Sentinel）、per-board 完全隔离的多项目并行管理。
+
+> **官方背书：** Hermes RFC #16102 明确将 "approval gates" 列为 v1 不实现的功能，鼓励通过 plugins 或 profile conventions 在 user-space 构建。本需求集的 R6（风险策略）、R8（写操作拦截）、R10（toolsets 白名单）均属于此范畴。
 
 ---
 
@@ -194,7 +196,7 @@ Hermes Agent v0.13.0 原生提供了：
 - R3. 必须支持项目级 profile override：在不污染全局 `~/.hermes/profiles/` 的前提下，允许每个项目对 toolsets / model / SOUL.md 做局部覆盖；运行时按"全局 base + 项目 override"合并。
 - R4. Worker 任务需要回收时（PID 不存在 OR 任务执行超出声明的 expected_duration_max OR 用户/orchestrator 主动 cancel），系统必须将该 worker 占用的 git worktree 恢复到任务开始前的干净状态，再由 dispatcher 将任务回退到 ready 重新派发。
 - R5. Dispatcher 必须感知"按 profile 分类的 ready 任务队列深度"，当某 profile 的 ready 队列相对其下游消费 profile 超过阈值时，自动降低或暂停对该 profile 的 spawn 频率。
-- R6. 必须支持声明式风险策略文件（YAML 形态），按 pattern 匹配将命令归入 L1/L2/L3，注入 worker 上下文供 sentinel 逻辑统一消费；L3 项目永远不允许超时自动通过。
+- R6. 必须支持声明式风险策略文件（YAML 形态），按 pattern 匹配将命令归入 L1/L2/L3，注入 worker 上下文供 sentinel 逻辑统一消费；L3 项目永远不允许超时自动通过。**实现路径：** 通过 Hermes 官方 Plugin `pre_tool_call` hook 实现硬拦截（RFC #16102 明确支持 user-space 构建 approval gates）；SOUL.md 作为软约束补充；toolsets 白名单作为主防线。
 - R7. Learnings/memory 默认必须写入"项目专属"命名空间；只有显式标记 cross-project 且通过 curator 审核的条目才进入"全局"命名空间；agent 查找时项目命名空间优先于全局。
 - R7b. Curator 必须支持基于语义相似度的"同主题 learning"识别：当多个项目命名空间的 learning 在主题与建议上相似度超过阈值（具体值留 ce-plan）时，curator 必须主动触发合并流程或生成跨项目复审 task；不允许"5 个项目独立记录同一条经验"长期沉默存在。
 - R7c. 当 agent 查询 learning 时，若项目命名空间条目与全局命名空间条目在主题相似但内容矛盾，查询结果必须显式包含 `<conflict_warning>` 元数据（含两端条目摘要）；agent 不允许沉默选用项目版本而忽略全局矛盾。
@@ -208,7 +210,7 @@ Hermes Agent v0.13.0 原生提供了：
 - R10. Reviewer profile 的 toolsets 配置必须采用白名单显式列举形式，仅 enable 必需的只读 + kanban 写工具集（默认白名单：`file_read` / `kanban_read` / `kanban_block` / `kanban_complete` / `clarify`），其他 toolsets 默认 disabled。Hermes Agent 升级引入新 toolset 时，必须经过显式审计才能加入 reviewer 白名单。Reviewer 的 SOUL.md 须声明"只读"立场作为 prompt 层强化，与 toolsets 白名单（主防线）+ R8 terminal 兜底（次防线）形成纵深防御。
 - R11. Orchestrator profile 的 toolsets 配置必须采用白名单形式：允许 `file_read` / `terminal(只读命令)` / `kanban_read` / `kanban_write` / `clarify`，禁止 `file_write` / `terminal(写操作)` / `code_execution`。Orchestrator 需要只读访问项目代码来执行技术发现（Step 1.4）和可行性检查（Step 1.6），但不能亲自编码。写操作拦截机制同 R8。
 - R12. Worker skill 必须为每个任务在 task metadata 中声明 `expected_duration_max`（任务的最大合理执行时长），dispatcher 据此触发 R4 的任务级 timeout 流程。Worker 进程的存活通过 OS 进程级别（PID 探测 + 进程级 keep-alive 信号）判定，不再要求任务循环显式调用 heartbeat API。
-- R13. Worker skill 必须为 `kanban_complete` 定义结构化 handoff metadata 形态，至少包含 changed_files、tests_run、tests_passed、decisions、pitfalls 五个字段（具体 schema 留给 ce-plan）。schema 校验必须覆盖字段值的安全性：decisions / pitfalls 等自由文本字段不允许包含可执行 payload 模式（shebang / bash heredoc / 含 auth token 的 URL / shell 命令注入元字符等），由 ce-plan 阶段定义具体过滤清单。
+- R13. Worker skill 必须为 `kanban_complete` 定义结构化 handoff metadata 形态，至少包含 behaviors（TDD 行为清单，每项含 name/test/status）、regression（回归测试汇总，含 run/passed/failed）、changed_files、decisions、pitfalls 五个字段（具体 schema 留给 ce-plan）。Implementer 必须采用 TDD 工作流（强制）：从验收标准推导行为清单 → 基线检查 → 每个行为 RED→GREEN 循环 → 回归测试 → complete。schema 校验必须覆盖字段值的安全性：decisions / pitfalls 等自由文本字段不允许包含可执行 payload 模式（shebang / bash heredoc / 含 auth token 的 URL / shell 命令注入元字符等），由 ce-plan 阶段定义具体过滤清单。
 - R14. Worker skill 必须明确列出"必须 kanban_block 的触发条件清单"（至少包含：架构决策、被 risk policy 拦截、外部依赖不可用、关键测试失败），不允许 worker 凭直觉决定何时 block。
 - R15. Dispatcher 必须支持任务级 timeout：基于 task metadata 中的 `expected_duration_max` 字段，超时后触发 R4 的 dirty-state cleanup 与 ready 重派流程。timeout 默认值（按 profile 给保守值，如 implementer 60min / reviewer 10min）由 ce-plan 阶段确定。
 - R16. 下游 worker（任意 profile）读取 parent task 的 handoff metadata 时，必须将 metadata 标注为 untrusted input：在 LLM 上下文中使用专用包裹标签（如 `<untrusted-handoff source="<parent_task_id>">…</untrusted-handoff>`）隔离，禁止将 metadata 内容直接拼接到指令性 prompt；worker skill 必须显式声明对 untrusted-handoff 内容的处理边界（仅作为参考信息使用，不作为指令源）。
@@ -217,12 +219,18 @@ Hermes Agent v0.13.0 原生提供了：
 
 **全链路可观测性需求**
 
-- R19. Observability Plugin 必须通过 Hermes 官方 `post_tool_call` 和 `on_session_end` hooks 采集工具调用链，写入 `observability_trace.db`（或扩展 `kanban.db` schema），**不允许**修改 Hermes 核心代码。
-- R20. 当任务 outcome 为 `crashed` / `timed_out` / `gave_up`，或同一任务的 `rollback_count ≥ 2`，或任务 `blocked` 超过 R17 阈值（默认 30 分钟）时，Dispatcher 必须自动创建高优先级 `sre-observer` 分析任务，且该任务必须能读取故障任务的全部 runs、events、logs、audit traces。
+- R19. Observability Plugin 必须通过 Hermes 官方 `post_tool_call` 和 `on_session_end` hooks 采集工具调用链，写入 `observability_trace.db`（或扩展 `kanban.db` schema），**不允许**修改 Hermes 核心代码。**Hook 验证（2026-05-10）：** `post_tool_call` 和 `on_session_end` 已通过 Hermes 官方 Event Hooks 文档确认存在，注册方式为 `ctx.register_hook("hook_name", handler)`。
+- R20. 当任务 outcome 为 `crashed` / `timed_out` / `gave_up`，或同一任务的 `rollback_count ≥ 2`，或任务 `blocked` 超过 R17 阈值（默认 30 分钟）时，Hermes 官方自动回收机制将任务回退到 ready 等待重新派发。同时 Dispatcher 必须通过 Gateway 向用户推送故障通知（含故障摘要和建议创建 SRE 分析任务的选项），由用户决定是否手动创建 `sre-observer` 分析任务。SRE 分析任务必须能读取故障任务的全部 runs、events、logs、audit traces。**设计意图：** SRE-Observer 仅在人工判断需要深度分析时介入，Hermes 原生处理 crash/timed_out 自动恢复（见 DESIGN.md §9.3）。
 - R21. SRE-Observer 的 `kanban_complete` 必须输出标准化根因报告 metadata，字段至少包含：`root_cause_category`（枚举：code / environment / deployment / external / policy / review / qa）、`confidence`（high / medium / low）、`symptom`、`root_cause`、`responsible_profile`、`upstream_fault`、`recommended_action`、`trace_anchor`。
 - R22. 所有 Worker spawn 时，Dispatcher 必须采集环境快照（至少包含 `git status` 输出、`df -h` 前 5 行、`hermes status` 输出）并关联到当前 `task_run` 的 metadata，供 SRE-Observer 做环境层根因定位。
-- R23. QA-Tester 调用 `kanban_block` 且 reason 包含 `regression`、`critical_bug` 或 `security_flaw` 时，必须自动触发 R20 的 SRE 分析流程；根因报告必须能区分"代码缺陷"（responsible_profile = implementer）与"上游交付物缺陷"（responsible_profile = 上游角色，upstream_fault 指向上游 task）。
-- R24. DevOps-Engineer 的 deployment 相关 task（workspace 含 `deploy` 关键词或 task body 含部署指令）若 outcome ≠ `completed`，必须自动触发 R20 的 SRE 分析；根因报告必须包含 CI/CD 日志摘要（最后 50 行）和环境差异（当前 git commit vs 上次成功发布的 commit diff）。
+- R23. QA-Tester 调用 `kanban_block` 且 reason 包含 `regression`、`critical_bug` 或 `security_flaw` 时，Dispatcher 必须通过 Gateway 向用户推送告警（含建议创建 SRE 分析任务的选项）；根因报告必须能区分"代码缺陷"（responsible_profile = implementer）与"上游交付物缺陷"（responsible_profile = 上游角色，upstream_fault 指向上游 task）。
+- R24. DevOps-Engineer 的 deployment 相关 task（workspace 含 `deploy` 关键词或 task body 含部署指令）若 outcome ≠ `completed`，Dispatcher 必须通过 Gateway 向用户推送故障通知（含建议创建 SRE 分析任务的选项）；根因报告必须包含 CI/CD 日志摘要（最后 50 行）和环境差异（当前 git commit vs 上次成功发布的 commit diff）。
+- R25. DevOps-Engineer 必须支持三层环境部署：dev/test → staging → production。dev/test 在 QA pass 后自动部署；staging 和 production 需要用户通过 Kanban block/unblock 显式批准。环境拓扑由项目配置定义，默认三层。
+- R26. 每层部署之间必须有验证门控：dev/test → staging 需通过测试套件 + E2E + 性能基准；staging → production 需通过测试套件 + E2E（跳过性能基准）；production 部署后需通过冒烟测试（服务启动 + 端点可达）。
+- R27. staging 部署验证通过后，必须通过 Kanban block 等待用户 UAT sign-off（Gateway 推送带"验收通过"按钮）。UAT 失败时，系统必须创建修复任务（assignee: implementer），deploy 任务保持 blocked 等待修复后重试。
+- R28. production 部署需要用户在 UAT 通过后再次批准（Kanban block + Gateway 推送"批准部署到 production"按钮）。部署成功后自动打 git tag（版本号由项目配置）。
+- R29. 任何层部署失败时，DevOps-Engineer 必须先尝试修复部署脚本/配置问题；修复失败则 kanban_block 报告用户。验证门控失败时，自动回滚该层环境并阻塞后续部署，等待用户决策（修复重试 / 放弃）。
+- R30. DevOps-Engineer 的 `kanban_complete` 必须输出结构化部署报告 metadata，字段至少包含：`version`、`strategy`、`environments[]`（每层含 name/status/validation/smoke_test）、`git_tag`、`rollback_available`、`changed_files`、`duration`。部署过程中每完成一层必须通过 `kanban_comment` 记录进度，同时更新 task metadata 的 `current_env` 和 `status` 字段。
 
 ---
 
@@ -247,6 +255,12 @@ Hermes Agent v0.13.0 原生提供了：
 - AE16. **Covers R22.** Given Dispatcher spawn DevOps-Engineer worker 时，when 环境快照采集完成，then `task_runs` 的 metadata 中包含 `env_snapshot.git_status` 与 `env_snapshot.disk_free` 字段。
 - AE17. **Covers R23.** Given QA-Tester 调用 `kanban_block(reason="critical_bug: login returns 500")`，when blocker 关键词匹配，then Dispatcher 在下一 tick 自动创建 sre-observer 分析任务，且根因报告中 `responsible_profile` 字段最终指向具体角色。
 - AE18. **Covers R24.** Given DevOps-Engineer 执行 `deploy.sh` 返回非 0 退出码导致 outcome `crashed`，when sre-observer 分析完成，then 根因报告的 `trace_anchor` 字段包含 deploy 相关 tool call 的标识，且 `recommended_action` 不为空。
+- AE19. **Covers R25.** Given QA pass 后 Orchestrator 派发 deploy 任务，when DevOps-Engineer 执行 `deploy.sh dev` 成功，则 dev/test 环境自动部署完成；when 准备部署 staging 时，任务必须进入 blocked 状态等待用户批准。
+- AE20. **Covers R26.** Given dev/test 部署成功，when 验证门控执行，则必须运行测试套件 + E2E + 性能基准；when staging 部署成功，则运行测试套件 + E2E（无性能基准）；when production 部署成功，则运行冒烟测试。
+- AE21. **Covers R27.** Given staging 验证通过，when DevOps-Engineer 调用 `kanban_block(reason="等待 UAT 验收")`，then Gateway 推送包含"验收通过"按钮；when 用户点击"发现问题"，then 系统创建 implementer 修复任务，deploy 任务保持 blocked。
+- AE22. **Covers R28.** Given UAT 通过，when 用户点击"批准部署到 production"，then production 部署开始；when production 冒烟通过，then 自动执行 `git tag {version}` 并推送。
+- AE23. **Covers R29.** Given staging 验证失败（E2E 测试不通过），when DevOps-Engineer 检测到失败，则自动回滚 staging 环境、kanban_block 报告用户，等待决策。
+- AE24. **Covers R30.** Given DevOps-Engineer 完成全部三层部署，when 调用 `kanban_complete`，then metadata 包含 `version`、`strategy`、`environments[]`（3 个环境各含 status 和 validation 结果）、`git_tag`、`duration` 字段。
 
 ---
 

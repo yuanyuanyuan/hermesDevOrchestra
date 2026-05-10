@@ -1,6 +1,8 @@
 ## 附录 A：其他核心流程的叙事化版本
 
 > 📎 **相关 ASCII 流程图**：[`ascii-overview.md`](./ascii-overview.md) — 角色职责速查表
+>
+> **能力来源说明：** 本附录描述的角色能力中，Kanban 任务管理、Profile 隔离、Dispatcher 自动派发、Curator 审查、Memory/Skill 进化属于 `[Hermes 官方]` 能力。L1/L2/L3 风险分级、背压感知（R5）、Reviewer 写操作拦截（R8）、三层部署（R25-R30）等属于 `[Phase 19 增量]`。
 
 ---
 

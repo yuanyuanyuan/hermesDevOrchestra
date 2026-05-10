@@ -13,8 +13,10 @@
 **核心原则：**
 - 以 Hermes 官方能力为主，不重复造轮子
 - 角色是抽象的，实现是可替换的
-- Kanban 管理任务生命周期，tmux 管理实时通信
+- Kanban 管理任务生命周期和 Agent 间通信
 - 自我进化走 Hermes 原生的 memory + skill_manage + curator 机制
+
+**官方背书：** Hermes RFC #16102 明确将 "approval gates" 列为 v1 不实现的功能，并指明应通过 **plugins 或 profile conventions** 在 user-space 构建。本设计的 L1/L2/L3 风险分级、Risk Policy Engine、Sentinel 拦截均属于此范畴，是官方鼓励的扩展方向。
 
 ---
 
@@ -91,7 +93,7 @@ Profile = config.yaml (model + toolsets)
 | `implementer` | 🟢 启用 | 编码、测试、重构、POC 验证 | "只执行编码，不做架构决策；POC 在独立 worktree 中执行" | `terminal`, `file`, `code_execution`, `memory`, `kanban` | codex / claude |
 | `tech-reviewer` | 🟢 启用 | 代码审查、安全审计（硬门禁） | "审查质量，标记危险操作；只读；block 直到 pass" | `file_read`, `kanban_read`, `kanban_block`, `kanban_complete`, `clarify` | claude |
 | `qa-tester` | 🟢 启用 | 功能验收、集成测试、场景验证 | "站在用户角度验收，不站在开发者角度" | `terminal`, `file`, `code_execution`, `browser`, `kanban`, `memory` | claude |
-| `devops-engineer` | 🟢 启用 | CI/CD、部署、版本管理、回滚 | "发布前必须通过 QA 验收；生产变更必须 L3 审批" | `terminal`, `file`, `code_execution`, `kanban`, `memory` | codex |
+| `devops-engineer` | 🟢 启用 | 三层部署（dev/test→staging→production）、验证门控、UAT 配合、回滚、git tag | "发布前必须通过 QA 验收；staging/production 必须用户批准；不能修改业务代码" | `terminal`, `file`, `code_execution`, `kanban`, `memory` | codex |
 | `sre-observer` | 🟢 启用 | 故障根因分析（人工升级触发） | "只观测不修复；输出结构化根因报告" | `file`, `kanban`, `memory`, `clarify`, `web` | claude |
 | `pm-researcher` | ⚪ 预留 | 竞品分析、用户画像、市场调研 | （预留，暂不启用） | `[]`（禁用） | — |
 | `product-designer` | ⚪ 预留 | PRD 撰写、功能设计、验收标准 | （预留，暂不启用） | `[]`（禁用） | — |
@@ -117,25 +119,47 @@ hermes -p reviewer model        # 选择 claude sonnet
 # SOUL.md — Implementer
 
 ## Identity
-You are a full-stack engineer. You execute coding tasks assigned to you.
+You are a full-stack engineer. You execute coding tasks assigned to you using strict TDD.
+
+## TDD Mandate (强制)
+Every task MUST follow Test-Driven Development. No exceptions.
+
+### TDD Workflow per Task
+1. Read the task from kanban_show() — extract acceptance criteria.
+2. Derive a behavior list (2-3 behaviors) from the acceptance criteria.
+   - Each behavior = one testable outcome (e.g., "valid login returns 200 + token").
+   - You decide the granularity, not the PM.
+3. Run the full test suite to establish baseline.
+   - If baseline fails → kanban_block(reason="baseline-failed: {failing tests}") → STOP.
+   - Do NOT fix unrelated test failures.
+4. For each behavior, execute RED→GREEN cycle:
+   - RED: Write a failing test that describes the behavior.
+     - Run it. It MUST fail.
+     - If it unexpectedly passes → strengthen assertions until it fails.
+   - GREEN: Write the minimal implementation to make the test pass.
+     - Run it. It MUST pass.
+5. After all behaviors: run full regression test suite.
+   - If regression fails → fix → re-run until all pass.
+6. kanban_complete() with TDD evidence (see Completion Metadata).
+
+### What NOT to Do
+- Do NOT write implementation code before a failing test exists.
+- Do NOT write all tests first then all implementation (horizontal slicing).
+- Do NOT skip the RED phase ("tests pass anyway" means the test is wrong).
+- Do NOT make architecture decisions — block the task and ask.
+- Do NOT touch production databases, credentials, or CI/CD configs.
 
 ## Rules
-1. Read the task from kanban_show() before starting.
-2. Work within $HERMES_KANBAN_WORKSPACE only.
-3. Run existing tests before making changes (establish baseline).
-4. Write tests for new functionality.
-5. Run tests after changes to verify.
-6. Do NOT make architecture decisions — block the task and ask.
-7. Do NOT touch production databases, credentials, or CI/CD configs.
-8. Use kanban_heartbeat() for long-running tasks (>2 min).
-9. Use kanban_complete() with structured metadata when done.
-10. Use kanban_block() when you need human input.
+1. Work within $HERMES_KANBAN_WORKSPACE only.
+2. Use kanban_heartbeat() for long-running tasks (>2 min).
+3. Use kanban_block() when you need human input.
+4. Use kanban_complete() with structured metadata when done.
 
 ## Completion Metadata Shape
 Always include in kanban_complete metadata:
+- behaviors: list of {name, test_file, test_name, status}
+- regression: {tests_run, tests_passed, tests_failed}
 - changed_files: list of modified file paths
-- tests_run: number of tests executed
-- tests_passed: number of tests passed
 - decisions: list of technical decisions made
 - pitfalls: list of gotchas discovered
 ```
@@ -353,11 +377,14 @@ Spawn 时的行为：
 
 ```python
 kanban_complete(
-    summary="shipped JWT auth — login/register/refresh, 14 tests pass",
+    summary="shipped JWT auth (TDD) — login/register/refresh, 14 tests pass",
     metadata={
+        "behaviors": [
+            {"name": "valid login returns token", "test": "test_valid_login", "status": "passed"},
+            {"name": "expired token returns 401", "test": "test_expired_token", "status": "passed"}
+        ],
+        "regression": {"run": 14, "passed": 14, "failed": 0},
         "changed_files": ["auth/jwt.py", "auth/tests/test_jwt.py"],
-        "tests_run": 14,
-        "tests_passed": 14,
         "decisions": ["RS256 over HS256 for key rotation support"],
         "pitfalls": ["token refresh needs sliding window, not fixed TTL"],
         "duration_minutes": 25,
@@ -371,15 +398,15 @@ kanban_complete(
 
 当 worker 调用 `kanban_block()` 进入 L3 等待时，dispatcher 执行以下操作：
 
-1. 将 worker 的 tmux session 挂起（`SIGSTOP`）
+1. Worker 进程退出（`claude -p` 正常结束或 hook `defer` 导致 `tool_deferred`）
 2. 在 SQLite 中写入 `hibernation_snapshot`：
-   - `task_id`, `pane_content_hash`, `git_worktree_ref`, `workspace_snapshot_ref`
+   - `task_id`, `session_id`（用于 `--resume`）, `git_worktree_ref`, `workspace_snapshot_ref`
 3. 释放该 worker 占用的 API context window 和内存资源
 
 **恢复流程：**
 1. 用户 unblock 并附带决策
-2. dispatcher 校验 pane hash 和 workspace 一致性
-3. 若一致，恢复 tmux session（`SIGCONT`）；若不一致，从 snapshot 恢复后重新派发
+2. dispatcher 校验 workspace 和 session 一致性
+3. 若一致，`claude -p --resume <session-id>` 恢复 worker；若不一致，从 snapshot 恢复后重新派发
 4. worker 继续执行
 
 **目的**：L3 决策可能持续几小时到几天，避免挂起 worker 长期占用资源。
@@ -422,11 +449,11 @@ backpressure_ratio = ready_implementer_tasks / max(ready_reviewer_tasks, 1)
 
 ---
 
-## 5. 实时通信：tmux
+## 5. Agent 间通信：Kanban Block + Defer
 
 ### 5.1 设计决策
 
-**不用文件总线。** Hermes 作为 tmux 的操控者，可以直接通过 `tmux capture-pane` 读取输出、`tmux send-keys` 发送输入，实现 Agent 间的实时通信。
+**不用 tmux，不用文件总线。** 所有 Agent 间通信通过 Kanban 原生机制（block/unblock）和 Claude Code 的 PreToolUse hook（defer 模式）实现。消息持久化在 SQLite 中，永不丢失。
 
 ### 5.2 通信场景
 
@@ -434,102 +461,98 @@ backpressure_ratio = ready_implementer_tasks / max(ready_reviewer_tasks, 1)
 |------|------|------|
 | 任务分派 | Kanban create/claim | Dispatcher 自动 |
 | 任务完成 | Kanban complete | summary + metadata |
-| 任务阻塞 | Kanban block | 等待用户输入 |
+| 任务阻塞 | Kanban block | 等待用户/Reviewer 输入 |
 | 依赖等待 | Kanban parents | 自动 promote |
-| 实时问答 | tmux capture + send-keys | Hermes 做路由器 |
+| Claude 主动提问 | PreToolUse hook → defer → resume | Worker 退出 → 路由 → 恢复 |
 | 用户决策 | clarify() | Hermes 直接问用户 |
 
-### 5.3 实时问答流程
+### 5.3 技术疑问处理：两条路径
 
-当 Worker（如 implementer）执行中遇到需要 reviewer 决策的问题：
+当 Worker（如 implementer）执行中遇到技术疑问，有两条触发路径：
 
-```
-1. Worker 的 tmux 输出显示疑问
-2. Hermes capture-pane 读取到
-3. Hermes 判断需要 reviewer 决策
-4. Hermes 用 claude -p 一次性调用 reviewer 角色：
-   terminal(command="claude -p '审查以下技术问题：{问题描述}，
-            项目上下文：{上下文}，给出决策和理由。' --max-turns 1")
-5. Hermes 将决策结果 send-keys 回 Worker 的 tmux
-6. Worker 继续执行
-```
+**路径 A：Implementer 主动 block（主流程）**
 
-**Reviewer 不需要常驻 tmux 会话。** 按需 `-p` 调用即可。
-
-### 5.4 tmux 会话命名规范
+Implementer 的 system prompt 规定"遇到架构决策必须 block"，Implementer 主动调用 `kanban_block()`：
 
 ```
-hermes-{board_slug}-{profile}-{task_id}
+1. Implementer 遇到 "RS256 vs HS256?" 选型问题
+2. 调用 kanban_block(reason="reviewer-needed: 用 RS256 还是 HS256?")
+3. Dispatcher 检测到 "reviewer-needed:" 前缀
+4. 自动创建高优先级 Reviewer 子任务
+5. Reviewer 通过 claude -p 一次性给出决策，kanban_complete()
+6. Dispatcher 将决策写入原 task metadata，unblock
+7. Implementer 读取 handoff 继续执行
 ```
-
-示例：
-```
-hermes-project-alpha-implementer-t_a1b2c3
-hermes-project-beta-reviewer-t_d4e5f6
-```
-
-### 5.5 Agent 间通信可靠性方案
-
-tmux `capture-pane`/`send-keys` 是"尽力而为"的，存在消息丢失风险。以下三个方案均基于 Hermes 官方能力：
-
-**方案 A：Kanban Block + Auto-Spawn Reviewer Task（推荐）**
-
-完全放弃 tmux 做 agent 间实时问答，改用 Kanban 原生机制：
-
-1. implementer 遇到需要 reviewer 的问题
-2. 调用 `kanban_block(reason="reviewer-needed: {问题描述}")`
-3. dispatcher 检测到 `reviewer-needed:` 前缀，自动创建高优先级 reviewer task
-4. reviewer 通过 `claude -p` 一次性给出决策并 `kanban_complete()`
-5. dispatcher 将决策写入原 task metadata 后 unblock
-6. implementer 读取 handoff 继续
 
 - **优点**：零额外基础设施，消息永不丢失（SQLite 持久化），天然支持重试
-- **缺点**：从"秒级实时"变成"分钟级"
+- **触发条件**：Implementer 遵守 prompt 指令，主动 block
 
-**方案 B：Kanban Heartbeat 作为隐式 ACK**
+**路径 B：Claude Code AskUserQuestion → defer（兜底）**
 
-保留 tmux 实时通信，利用 `kanban_heartbeat()` 做确认：
-
-1. Hermes `send-keys` 后附带 `seq_id` 环境变量
-2. worker 在下一个 heartbeat 的 `note` 中回显 `ack:seq_id`
-3. 若 120 秒内未收到 ack，dispatcher 判定丢失并重发
-
-- **优点**：保留 tmux 实时性，改动最小
-- **缺点**：heartbeat 周期可能长达几分钟
-
-**方案 C：Task Metadata 增量同步**
-
-worker 和 Hermes 通过 task metadata 做状态同步：
-
-1. Hermes 在 metadata 写入 `pending_query:{seq_id}:{问题}`
-2. worker 处理后写入 `query_resolved:{seq_id}:{答案}`
-3. 双方通过 `kanban_show()` 读取对方状态
-
-- **优点**：状态完全持久化，可审计
-- **缺点**：需要 Kanban API 支持 metadata 增量更新
-
-> **推荐采用方案 A**，与"reviewer 不需要常驻 tmux，按需 `-p` 调用"的设计哲学一致。
-
-### 5.6 Tmux Session 预热池（Session Warm Pool）
-
-维护一个小规模的预热 tmux session 池（默认 2-3 个），预先加载常用环境变量和依赖：
+当 Claude Code 运行时自行决定调用 `AskUserQuestion`（Implementer 未遵守 block 指令，或问题不在架构决策范围内）：
 
 ```
-hermes-warm-pool-1  (预加载: HERMES_KANBAN_WORKSPACE, git config, common env)
-hermes-warm-pool-2  (预加载: 同上)
+1. Claude Code 调用 AskUserQuestion 工具
+2. PreToolUse hook 拦截，返回 permissionDecision: "defer"
+3. Worker 进程退出，stop_reason: "tool_deferred"
+   deferred_tool_use 包含完整问题内容：
+   {
+     "name": "AskUserQuestion",
+     "input": {
+       "questions": [{
+         "question": "用 RS256 还是 HS256?",
+         "header": "JWT算法",
+         "options": [{"label": "RS256"}, {"label": "HS256"}],
+         "multiSelect": false
+       }]
+     }
+   }
+4. Dispatcher 读取 deferred_tool_use，路由给 Reviewer 或用户
+5. 拿到答案后，claude -p --resume <session-id> 恢复 Worker
+6. PreToolUse hook 再次触发，这次返回 allow + answers：
+   {
+     "permissionDecision": "allow",
+     "updatedInput": {
+       "questions": [...],
+       "answers": {"用 RS256 还是 HS256?": "RS256"}
+     }
+   }
+7. Worker 继续执行，完全无感知
 ```
 
-**Claim 流程：**
-1. dispatcher 需要 spawn worker 时，先从 warm pool claim 一个 session
-2. 注入 `HERMES_KANBAN_TASK` 和 `HERMES_KANBAN_BOARD` 环境变量
-3. 重命名为 `hermes-{board_slug}-{profile}-{task_id}`
-4. 异步补充一个新的 warm session 到池中
+- **优点**：原生 Claude Code 机制，不依赖 prompt 遵守
+- **限制**：defer 仅在 `claude -p` 非交互模式生效，且单次 turn 只能有一个工具调用
+- **版本要求**：Claude Code >= 2.1.89
 
-**目的**：减少 worker 冷启动时间（从秒级降到毫秒级）。当前并发需求较低，池大小保持小规模；未来并发增长时可扩展为多 lane。
+### 5.4 决策路由优先级
+
+```
+技术疑问
+    │
+    ├── Implementer 主动调用 kanban_block()?  ──→ 路径 A（主流程）
+    │
+    └── Claude 自动调用 AskUserQuestion?      ──→ 路径 B（defer 兜底）
+                                                    │
+                                                    ▼
+                                              Dispatcher 读取问题
+                                                    │
+                                                    ├── 架构/技术选型 ──→ Reviewer
+                                                    └── 安全/产品方向  ──→ 用户
+```
+
+### 5.5 Session 管理
+
+Worker 通过 `claude -p` 启动，退出后 session 保留在磁盘上。Dispatcher 通过 `session_id` 追踪：
+
+- **正常完成**：`stop_reason: "end_turn"`，任务标记 done
+- **defer 等待**：`stop_reason: "tool_deferred"`，任务保持 running，等待 resume
+- **崩溃/超时**：Dispatcher 通过 PID 探测（R12）判定，Hermes 官方自动回收任务到 ready；通知用户后由用户决定是否创建 SRE 分析任务（见 §9.3）
 
 ---
 
 ## 6. 决策矩阵（三级）
+
+> **[项目设计概念，非官方机制]** L1/L2/L3 风险分级是本项目的独创设计。Hermes 官方的安全模型只有两层（Hardline Blocklist + Dangerous Command Approval），属于命令级拦截。本设计将其扩展为任务级分级决策系统。Hermes RFC #16102 明确将 "approval gates" 列为 v1 不做，鼓励通过 plugins/profile conventions 在 user-space 构建。
 
 | 级别 | 决策者 | 场景 | 响应方式 | 响应时间 |
 |------|--------|------|---------|---------|
@@ -557,6 +580,8 @@ Dispatcher 重新派发 Worker 继续执行
 
 ### 6.2 声明式风险策略引擎（Declarative Risk Policy Engine）
 
+> **[项目增量，非官方机制]** Risk Policy YAML 是本项目独创。Hermes 官方无此机制，但 RFC #16102 明确支持通过 Plugin 层实现。
+
 将 L0-L3 决策矩阵提取为 `policies/risk.yaml`：
 
 ```yaml
@@ -581,10 +606,15 @@ policies:
     approver: self
 ```
 
-**消费方式：**
-- dispatcher 在 spawn worker 前注入 `HERMES_RISK_POLICY` 环境变量
-- worker 的 SOUL.md 中引用该文件做决策
-- sentinel 逻辑统一消费，避免分散在代码各处
+**消费方式（三层实现）：**
+1. **Plugin 层（硬拦截）**：通过 `pre_tool_call` hook 注册 Risk Policy Plugin，在工具调用前拦截匹配 L3 规则的命令，调用 `kanban_block()` 阻塞任务
+2. **SOUL.md 层（软约束）**：worker 的 SOUL.md 中引用 risk.yaml 做 L1/L2 决策依据
+3. **Toolsets 白名单层（主防线）**：reviewer 等角色通过 toolsets 白名单限制可用工具（见 R10），无需依赖 prompt 遵守
+
+**实现路径推荐：Plugin 层**（`plugins/risk-gate/`）
+- 利用 Hermes 官方 `pre_tool_call` hook（已验证存在）
+- 读取 `policies/risk.yaml`，匹配 pattern → 分级
+- 与 Hermes 核心解耦，升级安全
 
 **目的**：将概念层面的风险矩阵转化为可执行、可维护的声明式配置。
 
@@ -782,6 +812,8 @@ Hermes Gateway (dispatcher 嵌入)
 ```
 
 ### 9.2 Observability Plugin（零侵入采集）
+
+> **Hook 验证状态（2026-05-10）**：`post_tool_call`、`on_session_end` 已通过 Hermes 官方文档确认存在（Event Hooks 页面）。Plugin 注册方式：`ctx.register_hook("post_tool_call", handler)`。
 
 通过 Hermes 官方 Plugin + Hook 机制实现，**不修改 Hermes 核心代码**：
 
@@ -1018,41 +1050,50 @@ PM 读取澄清后的需求文档（含证据链）和技术方案，执行：
   )
 
 ═══════════════════════════════════════════════════════════════
- Phase 3: 执行（Implementer）
+ Phase 3: 执行（Implementer · TDD 强制）
 ═══════════════════════════════════════════════════════════════
 
 Dispatcher 发现 T1 ready, spawn implementer worker:
 
   hermes -p implementer --skills kanban-worker
 
-Implementer:
-  kanban_show() → 读取 T1 详情
+Implementer (TDD 流程):
+  kanban_show() → 读取 T1 详情 + 验收标准
   cd $HERMES_KANBAN_WORKSPACE
 
-  # 运行现有测试建立基线
-  terminal(command="npm test")
+  # TDD 第一步：从验收标准推导行为清单（Implementer 自行决定粒度）
+  # 验收: "有效凭证返回 token，无效凭证返回 401"
+  # → 行为 A: 有效登录 → 200 + token
+  # → 行为 B: 无效登录 → 401
+  # → 行为 C: 过期 token → Expired 错误
 
-  # 调用底层 CLI 执行编码（具体用什么 CLI 由 profile 的 model 决定）
-  # 如果 model 是 codex:
-  terminal(command="codex exec --full-auto '实现 JWT 认证...'",
-           workdir="...", background=true, pty=true)
-  # 如果 model 是 claude:
-  terminal(command="claude -p '实现 JWT 认证...' --max-turns 10",
-           workdir="...", timeout=180)
+  # TDD 门禁：跑全量测试建立基线
+  terminal(command="cargo test --lib")
+  # 如果基线失败 → kanban_block(reason="baseline-failed: ...") → 停止
 
-  # 长任务心跳
-  kanban_heartbeat(note="已实现登录接口，正在实现注册...")
+  # TDD 循环：对每个行为执行 RED→GREEN
+  # 行为 A: RED (写测试 → 必须失败) → GREEN (写最简实现 → 必须通过)
+  # 行为 B: RED → GREEN
+  # 行为 C: RED → GREEN
 
   # 遇到疑问（如不确定用 RS256 还是 HS256）
-  # tmux 输出显示疑问，Hermes 读取后用 claude -p 问 reviewer
-  # reviewer 回答后 Hermes send-keys 回 implementer 的 tmux
+  # 路径 A: kanban_block(reason="reviewer-needed: ...") → Dispatcher 创建 Reviewer 任务
+  # 路径 B: AskUserQuestion → PreToolUse hook defer → Dispatcher 路由 → --resume 恢复
 
-  # 完成
+  # 全量回归测试
+  terminal(command="cargo test --lib")
+
+  # 完成（TDD metadata 格式）
   kanban_complete(
-      summary="JWT 认证已实现，登录/注册/刷新三个接口",
+      summary="JWT 签发已实现 (TDD)，3 个行为各有对应测试，回归通过",
       metadata={
-          "changed_files": ["src/auth/jwt.rs", "src/auth/routes.rs"],
-          "tests_run": 12, "tests_passed": 12,
+          "behaviors": [
+              {"name": "有效登录→200", "test": "test_valid_login", "status": "passed"},
+              {"name": "无效登录→401", "test": "test_invalid_login", "status": "passed"},
+              {"name": "过期token→Expired", "test": "test_expired_token", "status": "passed"}
+          ],
+          "regression": {"run": 15, "passed": 15, "failed": 0},
+          "changed_files": ["src/auth/jwt.rs", "tests/auth/test_jwt.py"],
           "decisions": ["RS256 for key rotation support"],
           "pitfalls": ["token refresh needs sliding window"]
       }
@@ -1096,14 +1137,19 @@ T3 done → T4 promoted to ready
 Implementer (T4):
   kanban_show() → 读取 T3 的 handoff（findings...）
 
-  # 修复问题
-  terminal(command="codex exec --full-auto '修复 token 过期时间硬编码问题...'")
+  # 修复问题（TDD：先写失败测试，再修复）
+  # RED: 写测试 test_token_expiry_is_configurable → 失败（当前硬编码）
+  # GREEN: 修改为环境变量配置 → 测试通过
+  terminal(command="cargo test --lib")
 
   kanban_complete(
-      summary="已修复，token 过期时间改为环境变量配置",
+      summary="已修复，token 过期时间改为环境变量配置 (TDD)",
       metadata={
-          "changed_files": ["src/auth/jwt.rs", "config/default.toml"],
-          "tests_run": 12, "tests_passed": 12
+          "behaviors": [
+              {"name": "token 过期时间可配置", "test": "test_token_expiry_is_configurable", "status": "passed"}
+          ],
+          "regression": {"run": 15, "passed": 15, "failed": 0},
+          "changed_files": ["src/auth/jwt.rs", "config/default.toml"]
       }
   )
 
@@ -1115,27 +1161,30 @@ Implementer (T4):
  Phase 5.5: 故障场景 — 部署失败触发 SRE-Observer（异常分支）
 ═══════════════════════════════════════════════════════════════
 
-T5 (devops-engineer: 部署发布) crashed：
-  - 部署脚本在 production 环境返回 exit code 1
+> 📎 正常部署流程参见 Phase 5.6（三层环境部署）。以下为 Phase 5.6 中任一层部署失败时的异常分支。
+
+T-deploy (devops-engineer: 部署发布) crashed：
+  - 部署脚本在某层环境返回 exit code 1（dev/test / staging / production）
+  - devops-engineer 尝试修复部署脚本/配置失败
   - Dispatcher 检测到 outcome='crashed'
-  - 自动创建 T5-sre = kanban_create(
-      title="根因分析: T5 部署失败",
+  - 自动创建 T-deploy-sre = kanban_create(
+      title="根因分析: T-deploy 部署失败",
       assignee="sre-observer",
-      body="T5 (devops-engineer) 部署失败，请定位根因",
-      parents=[T5],
+      body="T-deploy (devops-engineer) 部署失败，请定位根因",
+      parents=[T-deploy],
   )
 
 SRE-Observer:
-  kanban_show() → 读取 T5 详情
-  查询 trace.db → T5 的 tool call 序列
+  kanban_show() → 读取 T-deploy 详情
+  查询 trace.db → T-deploy 的 tool call 序列
   读取 worker logs → 部署脚本的 stderr
-  读取 task_events → T5 的 claim → crashed 时间线
+  读取 task_events → T-deploy 的 claim → crashed 时间线
   Environment Snapshot → production git status / hermes status
 
   kanban_complete(
       summary="根因定位: 生产环境缺少环境变量 DATABASE_URL",
       metadata={
-          "fault_task_id": "T5",
+          "fault_task_id": "T-deploy",
           "root_cause_category": "environment",
           "confidence": "high",
           "symptom": "deploy.sh exited 1: 'DATABASE_URL: parameter not set'",
@@ -1148,7 +1197,7 @@ SRE-Observer:
 Dispatcher 通知 CEO：
   "项目 Alpha 部署失败，SRE-Observer 已定位根因：
    类别: environment | 置信度: high
-   建议: 补全 DATABASE_URL 后重新部署 T5"
+   建议: 补全 DATABASE_URL 后重新部署 T-deploy"
 
 ═══════════════════════════════════════════════════════════════
  Phase 6: 完成通知
@@ -1169,8 +1218,8 @@ Dispatcher 通知 CEO：
 |------|---------|--------|---------|
 | 任务管理 | 文件总线 + todo 工具 | Kanban boards | 删除文件总线逻辑 |
 | 任务依赖 | inotifywait 轮询 | Kanban parents | 替换为依赖链 |
-| 进程管理 | tmux 手动 spawn | Kanban dispatcher | 删除手动 spawn |
-| Agent 间通信 | 文件总线 JSON envelope | tmux capture + send-keys | 删除文件总线 |
+| 进程管理 | tmux 手动 spawn | Kanban dispatcher + claude -p | 删除手动 spawn |
+| Agent 间通信 | 文件总线 JSON envelope | Kanban block/unblock + defer | 删除文件总线和 tmux |
 | 角色定义 | 绑定 CLI (claude-supervisor/codex-executor) | 抽象 Profile | 重写 SOUL.md |
 | 决策流转 | 三级决策矩阵 | 保留（不冲突） | 无需修改 |
 | 多项目 | process(action="list") | Kanban 多 board | 替换为 board |
@@ -1184,9 +1233,8 @@ Dispatcher 通知 CEO：
 | 依赖 | 最低版本 | 检查命令 |
 |------|---------|---------|
 | Hermes Agent | >= 0.11.0 | `hermes --version` |
-| Claude Code CLI | >= 2.1.110 | `claude --version` |
+| Claude Code CLI | >= 2.1.110 (含 defer 支持) | `claude --version` |
 | Codex CLI | >= 0.122.0 | `codex --version` |
-| tmux | >= 3.0 | `tmux -V` |
 | Node.js | >= 18 | `node --version` |
 
 ---
@@ -1260,18 +1308,23 @@ Dispatcher 通知 CEO：
 
 ## 附录 A：Hermes 官方能力引用
 
-| 能力 | 官方来源 | 本文使用方式 |
-|------|---------|-------------|
-| Kanban 系统 | `hermes kanban --help` + 官方文档 | 任务生命周期管理 |
-| Profile 系统 | `hermes profile --help` | 角色隔离 |
-| Dispatcher | Kanban 内置，嵌入 Gateway | 自动派发 worker |
-| Curator | `hermes curator --help` + 官方文档 | Skill 生命周期维护 |
-| Memory | `hermes memory --help` + 官方文档 | 跨会话持久记忆 |
-| skill_manage | Agent 内置工具 | 自动创建 skill |
-| Session Search | `hermes sessions --help` | 历史回溯 |
-| terminal() | 内置工具 | 执行任意 CLI |
-| clarify() | 内置工具 | 向用户请求决策 |
-| Gateway | `hermes gateway --help` | 多平台消息通知 |
+| 能力 | 官方来源 | 本文使用方式 | 验证状态 |
+|------|---------|-------------|---------|
+| Kanban 系统 | `hermes kanban --help` + 官方文档 | 任务生命周期管理 | ✅ Phase 0 验证 |
+| Profile 系统 | `hermes profile --help` | 角色隔离 | ✅ Phase 0 验证 |
+| Dispatcher | Kanban 内置，嵌入 Gateway | 自动派发 worker | ✅ Phase 0 验证 |
+| Curator | `hermes curator --help` + 官方文档 | Skill 生命周期维护 | ✅ Phase 0 验证 |
+| Memory | `hermes memory --help` + 官方文档 | 跨会话持久记忆 | ✅ Phase 0 验证 |
+| skill_manage | Agent 内置工具 | 自动创建 skill | ✅ Phase 0 验证 |
+| Session Search | `hermes sessions --help` | 历史回溯 | ✅ Phase 0 验证 |
+| terminal() | 内置工具 | 执行任意 CLI | ✅ Phase 0 验证 |
+| clarify() | 内置工具 | 向用户请求决策 | ✅ Phase 0 验证 |
+| Gateway | `hermes gateway --help` | 多平台消息通知 | ✅ Phase 0 验证 |
+| Plugin `pre_tool_call` hook | Event Hooks 文档 | Risk Policy 硬拦截 | ✅ 文档验证 |
+| Plugin `post_tool_call` hook | Event Hooks 文档 | Observability 采集 | ✅ 文档验证 |
+| Plugin `on_session_end` hook | Event Hooks 文档 | Observability 汇总 | ✅ 文档验证 |
+| `approvals.mode` 配置 | `config.yaml` + Security 文档 | 命令级审批（官方两层） | ✅ 文档验证 |
+| RFC #16102 | GitHub Issue | approval gates 属于 user-space | ✅ DoubleCheck 验证 |
 
 ## 附录 B：self-improving-agent 规则参考
 

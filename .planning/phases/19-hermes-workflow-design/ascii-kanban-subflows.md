@@ -4,6 +4,8 @@
 > - 任务依赖链 / Dispatcher 循环 → [`workflow-phase-02-orchestrator.md`](./workflow-phase-02-orchestrator.md) — PM 拆解任务、Dispatcher 派发
 > - Handoff 机制 → [`workflow-phase-03-implementation.md`](./workflow-phase-03-implementation.md)、[`workflow-phase-04-testing-review.md`](./workflow-phase-04-testing-review.md)
 > - Worker 崩溃回滚 → [`workflow-phase-05-fix-evolution.md`](./workflow-phase-05-fix-evolution.md) — Phase 5.5 故障场景
+>
+> **能力来源说明：** 任务状态机（triage→todo→ready→running→blocked→done）、parents 依赖链、Dispatcher 工作循环（60秒）、`kanban_create`/`kanban_complete`/`kanban_show` 工具属于 `[Hermes 官方]`。Worker 崩溃状态回滚（git stash 快照恢复，R4）、背压感知任务准入（R5）属于 `[Phase 19 增量]`。
 
 ---
 
@@ -203,12 +205,12 @@
    │  ┌───────────────────────────────────────────────────────┐  │
    │  │  Task T1 (done)                                       │  │
    │  │  ───────────────────────────────────────────────────  │  │
-   │  │  summary: "JWT 认证已实现"                             │  │
+   │  │  summary: "JWT 认证已实现 (TDD)"                       │  │
    │  │  metadata:                                            │  │
    │  │  {                                                    │  │
+   │  │    "behaviors": [...],                                │  │
+   │  │    "regression": {"run": 14, "passed": 14},          │  │
    │  │    "changed_files": ["auth/jwt.py"],                  │  │
-   │  │    "tests_run": 14,                                   │  │
-   │  │    "tests_passed": 14,                                │  │
    │  │    "decisions": ["用 RS256"],                         │  │
    │  │    "pitfalls": ["token刷新用滑动窗口"]                 │  │
    │  │  }                                                    │  │

@@ -1,5 +1,7 @@
 ## 附录 C：全流程时间线 `[设计假设]`
 
+> **能力来源说明：** 本时间线展示的完整流程（从需求提交到部署归档）中，Kanban/Dispatcher/Gateway 属于 `[Hermes 官方]`；需求澄清、Research+POC、TDD、L3 风险拦截、三层部署属于 `[Phase 19 增量]`。时间数据为 `[设计假设]`，实际耗时取决于 LLM 响应速度和用户决策延迟。
+
 ```
 09:30  Jacky 提交模糊需求 → t_alpha_001 (triage)
        "登录体验太差了，每次都要重新登录"
@@ -52,15 +54,21 @@
 11:52  Implementer 跑 T3 (测试)
 12:47  T3 完成
 12:48  Implementer 跑 T5 (修复审查问题)
-13:23  T5 完成 → T6 变为 ready
-13:24  DevOps-Engineer 跑 T6 (部署)
-13:26  DevOps 发现 staging 环境缺失 → block T6
-13:31  Jacky 选择本地验证方案
-13:32  DevOps 恢复，本地 docker 验证通过
-13:36  DevOps 发现生产环境不可达 → block T6
-13:46  Jacky 审核完成，归档主任务
+13:23  T5 完成 → T-deploy 变为 ready
+13:24  DevOps-Engineer 部署到 dev/test（自动）
+13:26  dev/test 验证通过（测试+E2E+性能）
+13:27  DevOps block: 等待批准 staging 部署
+13:28  Jacky 批准 → 部署到 staging
+13:30  staging 验证通过（测试+E2E）
+13:31  DevOps block: 等待 UAT 验收
+13:35  Jacky UAT 验收通过
+13:36  DevOps block: 等待批准 production 部署
+13:37  Jacky 批准 → 部署到 production
+13:39  production 冒烟通过 → 自动打 git tag
+13:40  T-deploy 完成 → Phase 6 完成通知
+13:41  Jacky 审核完成，归档主任务
 
-总耗时: ~4.5 小时 (Jacky 实际投入: ~15 分钟)
+总耗时: ~4 小时 (Jacky 实际投入: ~20 分钟)
 ```
 
 > **需求澄清阶段（09:30-09:46）** 耗时约 16 分钟：

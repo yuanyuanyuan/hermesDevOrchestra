@@ -6,6 +6,8 @@
 > - [`ascii-observability.md`](./ascii-observability.md) — SRE-Observer 手动升级触发、故障定位 8 层模型
 > - [`ascii-core-flows.md`](./ascii-core-flows.md) — F4 自动故障检测与根因分析
 > - [`ascii-kanban-subflows.md`](./ascii-kanban-subflows.md) — Worker 崩溃状态回滚
+>
+> **能力来源说明：** `kanban_show`/`kanban_complete`/`kanban_block` 工具、`memory add`/`skill_manage create` 工具、Curator 自动审查属于 `[Hermes 官方]`。SRE-Observer 人工升级触发、Observability Plugin 采集、环境快照（R22）、TDD 修复流程、`.learnings/` 分层归档（R7）属于 `[Phase 19 增量]`。
 
 ---
 
@@ -212,12 +214,16 @@ Integration tests: 3 (需要 DB)
 ```python
 kanban_complete(
     task_id="t3_alpha_001",
-    summary="单元测试已补充至 8 个，覆盖核心场景。集成测试已写但需要运行中的 PostgreSQL 实例。",
+    summary="单元测试已补充至 8 个 (TDD)，覆盖核心场景。集成测试已写但需要运行中的 PostgreSQL 实例。",
     metadata={
+        "behaviors": [
+            {"name": "有效 token 访问受保护资源 → 200", "test": "test_valid_token_access", "status": "passed"},
+            {"name": "过期 token 访问 → 401", "test": "test_expired_token_access", "status": "passed"},
+            {"name": "篡改 token 访问 → 403", "test": "test_tampered_token_access", "status": "passed"},
+            {"name": "refresh token 换取新 token → 200", "test": "test_refresh_token_exchange", "status": "passed"}
+        ],
+        "regression": {"run": 8, "passed": 8, "failed": 0},
         "changed_files": ["tests/auth_integration.rs", "src/auth/jwt.rs"],
-        "tests_run": 8,
-        "tests_passed": 8,
-        "coverage_estimate": "65% (单元测试) + 集成测试待跑",
         "decisions": [
             "集成测试需要真实 PostgreSQL，计划在 CI 中配置"
         ],
@@ -415,11 +421,15 @@ thiserror = "1"
 ```python
 kanban_complete(
     task_id="t5_alpha_001",
-    summary="已修复全部 8 个审查问题：测试路径改为临时目录、确认 argon2 恒定时间、统一错误响应、代码格式化、移除 unused import、调整 pub 可见性。新增 2 条 memory 和 1 个 skill。",
+    summary="已修复全部 8 个审查问题 (TDD)。新增 2 条 memory 和 1 个 skill。",
     metadata={
+        "behaviors": [
+            {"name": "测试路径使用临时目录", "test": "test_temp_dir_usage", "status": "passed"},
+            {"name": "argon2 恒定时间验证", "test": "test_constant_time_comparison", "status": "passed"},
+            {"name": "错误响应不泄露用户存在性", "test": "test_unified_error_response", "status": "passed"}
+        ],
+        "regression": {"run": 10, "passed": 10, "failed": 0},
         "changed_files": ["src/auth/jwt.rs", "src/auth/routes.rs"],
-        "tests_run": 8,
-        "tests_passed": 8,
         "findings_resolved": 8,
         "findings_pending": 0,
         "memory_added": 2,

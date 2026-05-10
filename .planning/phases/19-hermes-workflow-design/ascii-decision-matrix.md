@@ -4,6 +4,9 @@
 > - L3 升级事件 → [`workflow-phase-04-testing-review.md`](./workflow-phase-04-testing-review.md) — Step 4.10 阻塞通知与决策
 > - 风险策略设计讨论 → [`workflow-appendix-decisions.md`](./workflow-appendix-decisions.md) — 决策 2：Reviewer 只读终端
 > - 失败模式 → [`workflow-appendix-failure-modes.md`](./workflow-appendix-failure-modes.md) — AI 在决策环节的失误
+>
+> ⚠️ **L1/L2/L3、Risk Policy YAML、Sentinel 均为项目设计概念，非 Hermes 官方机制。** Hermes 官方安全模型只有两层（Hardline Blocklist + Dangerous Command Approval），属于命令级拦截。本设计将其扩展为任务级分级决策系统。
+> **官方背书：** Hermes RFC #16102 明确将 "approval gates" 列为 v1 不做，鼓励通过 plugins/profile conventions 在 user-space 构建。
 
 ---
 
@@ -145,6 +148,11 @@
 ```
 
 **大白话：** 公司规章制度写成一张"自动检查清单"，所有 AI 工人干活前先过一遍：删根目录→必须老板签字，改 CI 配置→问技术负责人，变量重命名→自己定。一处修改，所有工人都遵守。
+
+**消费方式（三层实现，非单点）：**
+1. **Plugin 层（硬拦截）**：`plugins/risk-gate/` 通过 `pre_tool_call` hook 拦截匹配 L3 规则的命令 → `kanban_block()` 阻塞
+2. **SOUL.md 层（软约束）**：worker 引用 risk.yaml 做 L1/L2 决策依据
+3. **Toolsets 白名单层（主防线）**：reviewer 等角色通过 toolsets 白名单限制可用工具
 
 
 ---

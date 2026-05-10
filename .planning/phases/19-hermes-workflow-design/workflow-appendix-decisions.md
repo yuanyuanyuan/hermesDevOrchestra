@@ -3,6 +3,8 @@
 > 📎 **相关 ASCII 流程图**：
 > - [`ascii-decision-matrix.md`](./ascii-decision-matrix.md) — L3 升级流程、声明式风险策略引擎
 > - [`ascii-observability.md`](./ascii-observability.md) — SRE-Observer 人工升级触发与分析
+>
+> **能力来源说明：** 本附录讨论的设计决策中，`kanban_block()`、Profile 隔离、SOUL.md 约束属于 `[Hermes 官方]` 能力；L1/L2/L3 风险分级、Risk Policy YAML、Reviewer 写操作技术拦截（R8）、SOUL.md 中的强制 block 规则（R9）属于 `[Phase 19 增量]`。详见 DESIGN.md §6 和 REQUIREMENTS.md R6-R10。
 
 ---
 
@@ -72,9 +74,9 @@
 > 
 > 这是纵深防御：
 > - 第一层：SOUL.md prompt 约束（心理防线）
-> - 第二层：toolsets 白名单（工具防线）
-> - 第三层：R8 terminal 写操作拦截（物理防线）
-> 
+> - 第二层：toolsets 白名单（主防线，R10）
+> - 第三层：R8 terminal 写操作拦截（兜底防线，拦截白名单内的 terminal abuse）
+>
 > 三层都失效的概率极低。"
 
 **【Jacky 的认可】**
