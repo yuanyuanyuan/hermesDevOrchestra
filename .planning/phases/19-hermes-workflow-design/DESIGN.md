@@ -30,15 +30,35 @@
 │  Hermes Agent (Master)                                       │
 │  · Kanban: 任务生命周期管理                                   │
 │  · Dispatcher: 自动按 Profile 派发 worker                    │
-│  · tmux: 进程管理 + 实时通信                                  │
 │  · Curator: Skill 生命周期维护                                │
 │  · Memory: 跨会话持久记忆                                    │
+│  · Plugin Hooks: 风险拦截 + 可观测性                          │
 └───────┬──────────────┬──────────────┬───────────────────────┘
         │              │              │
    ┌────▼────┐   ┌────▼────┐   ┌────▼────┐
-   │ Profile │   │ Profile │   │ Profile │
-   │  ...N   │   │  ...2   │   │  ...1   │
-   └─────────┘   └─────────┘   └─────────┘
+   │   PM    │   │  Orch   │   │Researcher│
+   │ 需求分析 │   │ 中枢路由 │   │ 技术调研  │
+   └────┬────┘   └────┬────┘   └─────────┘
+        │              │
+   ┌────▼──────────────▼───────────────────┐
+   │         状态机路由表                     │
+   │  pm_analyzed → researcher/implementer  │
+   │  research_done → implementer           │
+   │  poc_success → implementer             │
+   │  impl_done → reviewer                  │
+   │  review_pass → qa-tester               │
+   │  qa_pass → devops                      │
+   └────┬──────────────┬───────────────────┘
+        │              │
+   ┌────▼────┐   ┌────▼────┐   ┌─────────┐
+   │Implementer│ │Reviewer │   │QA-Tester │
+   │ 编码/POC  │ │ 只读审查 │   │ 功能验收  │
+   └─────────┘  └─────────┘   └─────────┘
+        │              │
+   ┌────▼────┐   ┌────▼────┐
+   │ DevOps  │   │  SRE   │
+   │ 发布部署 │   │ 根因分析 │
+   └─────────┘   └─────────┘
 ```
 
 每个 Profile 是一个独立的角色定义单元：
@@ -60,14 +80,22 @@ Profile = config.yaml (model + toolsets)
 
 ### 3.2 标准角色表
 
-| Profile | 职责 | SOUL.md 核心规则 | Toolsets | 典型 Model |
-|---------|------|-----------------|----------|------------|
-| `orchestrator` | 拆任务、派发、监控、复盘 | "只路由，不执行" | kanban, memory, clarify, delegation | 任意（如 kimi-coding） |
-| `implementer` | 编码、测试、重构 | "只执行编码，不做架构决策" | terminal, file, code_execution | 任意（如 codex/claude） |
-| `reviewer` | 代码审查、技术决策 | "审查质量，标记危险操作" | terminal(只读), file(只读) | 任意（如 claude） |
-| `researcher` | 调研、收集信息 | "广泛搜索，结构化输出" | web, browser, file, terminal | 任意 |
-| `analyst` | 综合分析、决策建议 | "基于事实，给出明确结论" | file, memory | 任意 |
-| `ops` | 部署、运维、CI/CD | "变更前确认，操作可回滚" | terminal, file | 任意 |
+> **MVP 阶段启用（8 个）**：PM、Orchestrator、Researcher、Implementer、Reviewer、QA-Tester、DevOps-Engineer、SRE-Observer
+> **占坑预留（3 个）**：调研（市场）、设计、运营——Profile 目录预创建但 `toolsets.enabled: []`，不进入 Dispatcher 派发池
+
+| Profile | 状态 | 职责 | SOUL.md 核心规则 | Toolsets | 典型 Model |
+|---------|------|------|-----------------|----------|------------|
+| `pm` | 🟢 启用 | 需求澄清、技术研判、任务拆解、分配 | "只分析不执行；需求必须澄清到无歧义才拆解；判断技术不确定性决定是否需要 Research" | `kanban`, `memory`, `clarify`, `file_read` | kimi-coding / mimo 2.5pro |
+| `orchestrator` | 🟢 启用 | 中枢路由、进度监控、审计追踪 | "按状态机路由表执行；所有角色通信经由本角色中转；不做分析不做执行" | `kanban`, `memory`, `clarify` | kimi-coding / mimo 2.5pro |
+| `researcher` | 🟢 启用 | 技术方案调研、POC 建议 | "只分析不写代码；产出技术方案文档；建议是否需要 POC" | `file_read`, `web`, `clarify`, `kanban`, `memory` | claude |
+| `implementer` | 🟢 启用 | 编码、测试、重构、POC 验证 | "只执行编码，不做架构决策；POC 在独立 worktree 中执行" | `terminal`, `file`, `code_execution`, `memory`, `kanban` | codex / claude |
+| `tech-reviewer` | 🟢 启用 | 代码审查、安全审计（硬门禁） | "审查质量，标记危险操作；只读；block 直到 pass" | `file_read`, `kanban_read`, `kanban_block`, `kanban_complete`, `clarify` | claude |
+| `qa-tester` | 🟢 启用 | 功能验收、集成测试、场景验证 | "站在用户角度验收，不站在开发者角度" | `terminal`, `file`, `code_execution`, `browser`, `kanban`, `memory` | claude |
+| `devops-engineer` | 🟢 启用 | CI/CD、部署、版本管理、回滚 | "发布前必须通过 QA 验收；生产变更必须 L3 审批" | `terminal`, `file`, `code_execution`, `kanban`, `memory` | codex |
+| `sre-observer` | 🟢 启用 | 故障根因分析（人工升级触发） | "只观测不修复；输出结构化根因报告" | `file`, `kanban`, `memory`, `clarify`, `web` | claude |
+| `pm-researcher` | ⚪ 预留 | 竞品分析、用户画像、市场调研 | （预留，暂不启用） | `[]`（禁用） | — |
+| `product-designer` | ⚪ 预留 | PRD 撰写、功能设计、验收标准 | （预留，暂不启用） | `[]`（禁用） | — |
+| `growth-marketer` | ⚪ 预留 | 内容创作、SEO、社媒运营、数据分析 | （预留，暂不启用） | `[]`（禁用） | — |
 
 ### 3.3 Profile 创建命令
 
@@ -117,21 +145,110 @@ Always include in kanban_complete metadata:
 每个 profile 的 `config.yaml` 中通过 `toolsets` 控制可用工具：
 
 ```yaml
+# pm/config.yaml
+toolsets:
+  enabled: [kanban, memory, clarify, file_read]
+  disabled: [terminal, code_execution, web, browser, delegation]
+
 # orchestrator/config.yaml
 toolsets:
-  enabled: [kanban, memory, clarify, delegation, todo]
-  disabled: [terminal, file, code_execution, web, browser]
+  enabled: [kanban, memory, clarify]
+  disabled: [terminal, file, code_execution, web, browser, delegation]
+
+# researcher/config.yaml
+toolsets:
+  enabled: [file_read, web, clarify, kanban, memory]
+  disabled: [terminal, code_execution, delegation]
 
 # implementer/config.yaml
 toolsets:
   enabled: [terminal, file, code_execution, memory, kanban]
   disabled: [delegation, messaging]
 
-# reviewer/config.yaml
+# tech-reviewer/config.yaml
 toolsets:
-  enabled: [terminal, file, memory, kanban]
-  disabled: [code_execution, delegation, messaging]
+  enabled: [file_read, kanban_read, kanban_block, kanban_complete, clarify]
+  disabled: [code_execution, delegation, messaging, file_write, terminal]
+
+# qa-tester/config.yaml
+toolsets:
+  enabled: [terminal, file, code_execution, browser, kanban, memory]
+  disabled: [delegation, messaging]
+
+# devops-engineer/config.yaml
+toolsets:
+  enabled: [terminal, file, code_execution, kanban, memory]
+  disabled: [delegation, messaging, web]
+
+# sre-observer/config.yaml
+toolsets:
+  enabled: [file, kanban, memory, clarify, web]
+  disabled: [terminal, code_execution, delegation]
+
+# --- 预留角色（toolsets 全禁，确保不会被 Dispatcher spawn）---
+# pm-researcher/config.yaml (reserved — 市场调研，非技术调研)
+# product-designer/config.yaml (reserved)
+# growth-marketer/config.yaml (reserved)
+toolsets:
+  enabled: []
+  disabled: [terminal, file, code_execution, web, browser, kanban, memory, clarify, delegation]
 ```
+
+### 3.6 Project-Level Profile Override Registry
+
+全局 profile 存放在 `~/.hermes/profiles/` 作为 base，每个项目可通过 `.hermes/profiles/<name>.override.yaml` 做层级覆盖。运行时按 `global + project_override` 合并，项目的 SOUL.md 修改仅影响本地，不污染全局。
+
+**覆盖规则：**
+- `toolsets.enabled/disabled`：取并集后按 project_override 优先
+- `SOUL.md`：使用 YAML frontmatter 声明 `extends: global`，运行时按顺序拼接：通用规则 → 项目规则 → 角色规则
+- `config.yaml` 中的 `model`：project_override 可覆盖全局配置
+
+**示例：**
+```yaml
+# project-alpha/.hermes/profiles/implementer.override.yaml
+toolsets:
+  enabled: [terminal, file, code_execution, memory, kanban, web]
+  disabled: [delegation]
+
+model: codex
+```
+
+**目的**：防止一个项目的经验（如新增检查清单、工具陷阱）自动污染所有项目的全局 profile，同时保留全局更新的传播能力。
+
+### 3.7 预留角色占位配置
+
+`pm-researcher`、`product-designer`、`growth-marketer` 三个角色占坑但不启用：
+
+```bash
+# 预创建目录结构（实施阶段一次性执行）
+mkdir -p ~/.hermes/profiles/{pm-researcher,product-designer,growth-marketer}
+```
+
+每个预留 Profile 的最小配置：
+
+```yaml
+# config.yaml — 全禁用，Dispatcher 不会 spawn
+toolsets:
+  enabled: []
+  disabled: [terminal, file, code_execution, web, browser, kanban, memory, clarify, delegation]
+model: none
+```
+
+```markdown
+<!-- SOUL.md — 占位状态 -->
+# SOUL.md — {Role} (RESERVED)
+
+> 状态：占位预留，暂不启用。
+> 启用条件：产品开发进入规模化阶段，需要系统化的 {职责}。
+
+## Identity (Future)
+You are a {role}. {职责描述}.
+```
+
+**启用流程**：未来需要启用时，只需：
+1. 修改 `config.yaml` 的 `toolsets.enabled` 和 `model`
+2. 完善 `SOUL.md` 的行为规则
+3. 在 Orchestrator 的分解剧本中加入该角色的 `assignee` 映射
 
 ---
 
@@ -250,6 +367,59 @@ kanban_complete(
 
 下游任务通过 `kanban_show()` 读取 parent 的 handoff 数据，获得完整上下文。
 
+### 4.6 阻塞任务休眠（Blocked Task Hibernation）
+
+当 worker 调用 `kanban_block()` 进入 L3 等待时，dispatcher 执行以下操作：
+
+1. 将 worker 的 tmux session 挂起（`SIGSTOP`）
+2. 在 SQLite 中写入 `hibernation_snapshot`：
+   - `task_id`, `pane_content_hash`, `git_worktree_ref`, `workspace_snapshot_ref`
+3. 释放该 worker 占用的 API context window 和内存资源
+
+**恢复流程：**
+1. 用户 unblock 并附带决策
+2. dispatcher 校验 pane hash 和 workspace 一致性
+3. 若一致，恢复 tmux session（`SIGCONT`）；若不一致，从 snapshot 恢复后重新派发
+4. worker 继续执行
+
+**目的**：L3 决策可能持续几小时到几天，避免挂起 worker 长期占用资源。
+
+### 4.7 Worker 崩溃状态回滚（Dirty-State Rollback）
+
+worker 启动前，dispatcher 创建 workspace 的 pre-task 快照：
+
+```bash
+git stash push -m "pre-task:${task_id}"
+# 或 cp -a workspace/ .snapshots/${task_id}/
+```
+
+**崩溃检测：**
+- PID 不存在
+- 心跳超时（>2 个 dispatcher 循环无 heartbeat）
+
+**回滚流程：**
+1. 将 task 状态回退到 `ready`
+2. 执行 `git stash pop --index` 或从快照恢复 workspace
+3. 在 kanban metadata 中记录 `rollback_count`
+4. 重新派发 worker
+
+**目的**：崩溃时 worker 可能已经修改了一半文件，确保下一个 worker 看到干净的初始状态。
+
+### 4.8 背压感知任务准入（Backpressure-Aware Admission）
+
+Dispatcher 在每次轮询时计算全局队列深度比：
+
+```python
+backpressure_ratio = ready_implementer_tasks / max(ready_reviewer_tasks, 1)
+```
+
+**阈值策略：**
+- `ratio <= 2.0`：正常派发
+- `2.0 < ratio <= 4.0`：降低 implementer 派发频率（每隔 1 个循环派 1 个）
+- `ratio > 4.0`：暂停向 implementer 派发，直至 reviewer 消化积压
+
+**目的**：防止 implementer 生成速度持续超过 reviewer 审查速度，导致待审队列无限膨胀。
+
 ---
 
 ## 5. 实时通信：tmux
@@ -298,6 +468,65 @@ hermes-project-alpha-implementer-t_a1b2c3
 hermes-project-beta-reviewer-t_d4e5f6
 ```
 
+### 5.5 Agent 间通信可靠性方案
+
+tmux `capture-pane`/`send-keys` 是"尽力而为"的，存在消息丢失风险。以下三个方案均基于 Hermes 官方能力：
+
+**方案 A：Kanban Block + Auto-Spawn Reviewer Task（推荐）**
+
+完全放弃 tmux 做 agent 间实时问答，改用 Kanban 原生机制：
+
+1. implementer 遇到需要 reviewer 的问题
+2. 调用 `kanban_block(reason="reviewer-needed: {问题描述}")`
+3. dispatcher 检测到 `reviewer-needed:` 前缀，自动创建高优先级 reviewer task
+4. reviewer 通过 `claude -p` 一次性给出决策并 `kanban_complete()`
+5. dispatcher 将决策写入原 task metadata 后 unblock
+6. implementer 读取 handoff 继续
+
+- **优点**：零额外基础设施，消息永不丢失（SQLite 持久化），天然支持重试
+- **缺点**：从"秒级实时"变成"分钟级"
+
+**方案 B：Kanban Heartbeat 作为隐式 ACK**
+
+保留 tmux 实时通信，利用 `kanban_heartbeat()` 做确认：
+
+1. Hermes `send-keys` 后附带 `seq_id` 环境变量
+2. worker 在下一个 heartbeat 的 `note` 中回显 `ack:seq_id`
+3. 若 120 秒内未收到 ack，dispatcher 判定丢失并重发
+
+- **优点**：保留 tmux 实时性，改动最小
+- **缺点**：heartbeat 周期可能长达几分钟
+
+**方案 C：Task Metadata 增量同步**
+
+worker 和 Hermes 通过 task metadata 做状态同步：
+
+1. Hermes 在 metadata 写入 `pending_query:{seq_id}:{问题}`
+2. worker 处理后写入 `query_resolved:{seq_id}:{答案}`
+3. 双方通过 `kanban_show()` 读取对方状态
+
+- **优点**：状态完全持久化，可审计
+- **缺点**：需要 Kanban API 支持 metadata 增量更新
+
+> **推荐采用方案 A**，与"reviewer 不需要常驻 tmux，按需 `-p` 调用"的设计哲学一致。
+
+### 5.6 Tmux Session 预热池（Session Warm Pool）
+
+维护一个小规模的预热 tmux session 池（默认 2-3 个），预先加载常用环境变量和依赖：
+
+```
+hermes-warm-pool-1  (预加载: HERMES_KANBAN_WORKSPACE, git config, common env)
+hermes-warm-pool-2  (预加载: 同上)
+```
+
+**Claim 流程：**
+1. dispatcher 需要 spawn worker 时，先从 warm pool claim 一个 session
+2. 注入 `HERMES_KANBAN_TASK` 和 `HERMES_KANBAN_BOARD` 环境变量
+3. 重命名为 `hermes-{board_slug}-{profile}-{task_id}`
+4. 异步补充一个新的 warm session 到池中
+
+**目的**：减少 worker 冷启动时间（从秒级降到毫秒级）。当前并发需求较低，池大小保持小规模；未来并发增长时可扩展为多 lane。
+
 ---
 
 ## 6. 决策矩阵（三级）
@@ -325,6 +554,39 @@ Dispatcher 通知用户（Gateway 推送 / Dashboard 标记）
     ▼
 Dispatcher 重新派发 Worker 继续执行
 ```
+
+### 6.2 声明式风险策略引擎（Declarative Risk Policy Engine）
+
+将 L0-L3 决策矩阵提取为 `policies/risk.yaml`：
+
+```yaml
+policies:
+  - pattern: "rm -rf /*"
+    level: L3
+    approver: user
+    timeout: 0  # 永不自动通过
+
+  - pattern: "git push --force"
+    level: L3
+    approver: user
+    timeout: 300  # 5 分钟无响应则 escalate
+
+  - pattern: "修改 CI/CD 配置"
+    level: L2
+    approver: reviewer
+    timeout: 600
+
+  - pattern: "变量重命名"
+    level: L1
+    approver: self
+```
+
+**消费方式：**
+- dispatcher 在 spawn worker 前注入 `HERMES_RISK_POLICY` 环境变量
+- worker 的 SOUL.md 中引用该文件做决策
+- sentinel 逻辑统一消费，避免分散在代码各处
+
+**目的**：将概念层面的风险矩阵转化为可执行、可维护的声明式配置。
 
 ---
 
@@ -451,29 +713,278 @@ Hermes Gateway (dispatcher 嵌入)
 | SOUL.md 编辑 | 手动编辑 | 角色行为永久修改 |
 | Memory 检视 | Dashboard / CLI | 查看和编辑持久记忆 |
 
+### 8.6 Curator 质量评分与分级（Quality Score）
+
+为每个 skill 和 memory 条目维护 0-100 自动质量分：
+
+| 维度 | 权重 | 计算方式 |
+|------|------|---------|
+| 使用频率 | 30% | 最近 30 天内被调用的次数 |
+| 任务成功率 | 30% | 使用该 skill 的任务完成率 |
+| 最近访问时间 | 20% | 距今天数衰减（半衰期 14 天） |
+| 适用范围 | 20% | 跨项目调用次数 / 总调用次数 |
+
+**分级策略：**
+- `>= 80`：优质，优先保留
+- `40-79`：普通，正常维护
+- `< 40`：劣质，自动进入清理候选池
+- `< 20`：危险，立即锁定待人工审核
+
+**目的**：将"过时"和"重叠"的主观判断转化为可量化的 curator 审查标准。
+
+### 8.7 Skill 沙箱与 Dry-Run 验证（Skill Sandbox）
+
+任何新创建或升级的 skill 必须先通过沙箱验证：
+
+**流程：**
+1. 创建隔离 branch：`sandbox/skill-{name}-{timestamp}`
+2. 在 branch 上执行 skill 的 tool calls 序列
+3. 检查清单：
+   - 是否有文件系统越界（访问 sandbox 外路径）
+   - 是否包含危险命令（`rm -rf`, `DROP TABLE`, `git push --force` 等）
+   - 是否修改了锁定层 skill
+4. 通过后合并到主分支，进入可变层
+5. 失败则丢弃 branch，记录失败原因
+
+**目的**：把安全拦截从"7 天后 curator 发现"提前到"skill 诞生即刻"。
+
+### 8.8 分层经验归档（Hierarchical Learnings）
+
+将 `.learnings/` 重构为两级命名空间：
+
+```
+.learnings/
+├── <project-name>/
+│   └── 项目私有经验（默认写入位置）
+├── _global/
+│   └── 经 curator 审核的跨项目经验
+└── _pending/
+    └── 待审核的跨项目晋升请求
+```
+
+**规则：**
+- 经验默认写入项目命名空间
+- 只有显式标记为 `cross-project: true` 且通过 curator 审核（quality score >= 60）的条目才进入 `_global/`
+- agent 查找经验时同时查询项目池和全局池，项目池优先
+
+**目的**：用文件系统级隔离实现"默认私有、审核后共享"，从根上阻断跨项目经验污染。
+
 ---
 
-## 9. 端到端流程示例
+## 9. 全链路可观测性与故障定位
 
-### 场景：用户要求"给项目 Alpha 加用户认证模块"
+### 9.1 设计目标
+
+当任何任务失败（`crashed` / `timed_out` / `gave_up`）或反复回滚（`rollback_count ≥ 2`）时，系统能在 **1 分钟内**自动定位根因，输出结构化报告。可观测性覆盖：
+
+```
+代码层 → 审查层 → 验收层 → 环境层 → 资源层 → 部署层 → 外部层 → 策略层
+```
+
+### 9.2 Observability Plugin（零侵入采集）
+
+通过 Hermes 官方 Plugin + Hook 机制实现，**不修改 Hermes 核心代码**：
+
+```python
+# ~/.hermes/plugins/observability/__init__.py
+
+def register(ctx):
+    # 1. 采集每个 tool call
+    def on_post_tool_call(tool_name, params, result):
+        trace_db.record(
+            task_id=os.environ.get("HERMES_KANBAN_TASK"),
+            tool_name=tool_name,
+            params_hash=hash_params(params),
+            result_status="ok" if not result.get("error") else "error",
+            duration_ms=result.get("_duration_ms", 0),
+            timestamp=utcnow(),
+        )
+    ctx.register_hook("post_tool_call", on_post_tool_call)
+
+    # 2. 会话结束时汇总
+    def on_session_end(session_info):
+        task_id = os.environ.get("HERMES_KANBAN_TASK")
+        trace_db.summarize_session(task_id, session_info)
+    ctx.register_hook("on_session_end", on_session_end)
+```
+
+**采集数据源：**
+
+| 数据源 | 采集方式 | 内容 |
+|--------|---------|------|
+| Tool Call Trace | `post_tool_call` hook | 工具名、参数摘要、结果状态、耗时 |
+| Session Summary | `on_session_end` hook | 总 tool 数、成功/失败数、运行时长 |
+| Kanban Runs | 读取 `kanban.db` | `task_runs` 的 outcome、summary、metadata、elapsed、rollback_count |
+| Kanban Events | 读取 `task_events` | 状态变迁历史、block 原因、unblock 决策、claim 时间 |
+| Worker Logs | 文件系统读取 | `~/.hermes/kanban/logs/<task_id>/` 终端输出 |
+| Audit Logs | 读取风险策略记录 | L3 拦截、Reviewer 写操作拦截 |
+| Environment Snapshot | Worker spawn 时采集 | `git status`、`df -h`、`hermes status` |
+
+### 9.3 SRE-Observer 角色
+
+**触发条件**：人工升级触发（不自动创建分析任务）
+
+Hermes 官方已内置 crash/timed_out/gave_up 的自动回收机制（任务回退到 ready），Worker 启动时会读到之前的 outcome 信息自行决策。SRE-Observer 仅在**人工判断需要深度分析**时介入。
+
+**人工升级场景：**
+1. 用户/Gateway 收到故障通知后手动创建 SRE 分析任务
+2. Orchestrator 在监控循环中发现反复失败（同一任务多次 crash）时建议升级
+3. QA-Tester 的 block reason 包含 `regression` / `critical_bug` / `security_flaw` 时建议升级
+
+**分析流程：**
+
+```
+1. kanban_show() → 读取故障任务基本信息
+2. 查询 trace.db → 获取该 task 最近 3 次 run 的 tool call 序列
+3. 读取 worker logs → 终端错误输出与堆栈
+4. 读取 task_events → 状态变迁时间线
+5. 读取 audit logs → 策略拦截记录
+6. 对比 parent handoff → 上游交付物是否携带缺陷
+7. 生成根因报告 → kanban_complete(metadata={...})
+```
+
+**根因报告 Metadata Schema：**
+
+```json
+{
+  "fault_task_id": "t_xxx",
+  "fault_run_id": "r_xxx",
+  "root_cause_category": "environment|code|deployment|external|policy",
+  "confidence": "high|medium|low",
+  "symptom": "pytest failed with ImportError: No module named 'jwt'",
+  "root_cause": "requirements.txt missing pyjwt",
+  "responsible_profile": "implementer",
+  "upstream_fault": null,
+  "recommended_action": "add pyjwt==2.8.0 to requirements.txt and re-run T2",
+  "trace_anchor": "tool_call_#7 terminal('pip install ...') exited 1"
+}
+```
+
+### 9.4 故障定位层次
+
+| 层级 | 典型症状 | 定位方式 |
+|------|---------|---------|
+| **代码层** | 语法错误、测试失败、逻辑缺陷 | 读取 worker logs + tool call trace |
+| **审查层** | Reviewer 拒绝、安全审计不通过 | 读取 tech-reviewer 的 `kanban_complete` findings |
+| **验收层** | QA 功能测试未通过、回归 Bug | 读取 qa-tester 的 block reason + test output |
+| **环境层** | 依赖缺失、配置错误、权限不足 | Environment Snapshot + `git status` 对比 |
+| **资源层** | 磁盘满、内存不足、API 限流 | `df -h` / `hermes status` + 工具调用耗时异常 |
+| **部署层** | CI/CD 失败、发布脚本错误 | DevOps worker logs + deployment trace |
+| **外部层** | 第三方服务不可用、网络超时 | `web` / `browser` tool 调用失败记录 |
+| **策略层** | Risk Policy 拦截、L3 未审批 | audit logs + `kanban_block` reason |
+
+### 9.5 全链路 Dashboard 视图
+
+基于现有 Kanban Dashboard 扩展（通过 dashboard plugin）：
+
+- **链路追踪图**：展开 task 的完整 parents→children 链路，显示每个节点耗时、状态、handoff
+- **故障热力图**：按 Profile / 项目 / 时间维度展示失败率
+- **实时背压看板**：各角色 ready 队列深度、吞吐率、阻塞任务
+- **SRE 报告列表**：历史根因分析报告，可按 category / confidence 筛选
+- **Audit 时间线**：L3 拦截、写操作拒绝、权限事件的时序展示
+
+---
+
+## 10. 端到端流程示例
+
+### 场景：用户要求"改善登录体验"（老板只给一句话，不带技术细节）
 
 ```
 ═══════════════════════════════════════════════════════════════
- Phase 1: 需求提交
+ Phase 1: 需求提交 + 技术发现 + 需求澄清
 ═══════════════════════════════════════════════════════════════
 
-用户 → Hermes: "给项目 Alpha 加用户认证模块，用 JWT"
+用户 → Hermes: "登录体验太差了，每次都要重新登录"
+  （不带技术细节，只描述问题）
 
-Hermes (orchestrator profile):
-  kanban_create(title="规划: 用户认证模块", assignee="orchestrator")
+Hermes (pm profile):
+  kanban_create(title="改善登录体验", assignee="pm", triage=true)
+
+PM 被 dispatcher 派发：
+
+  第1步: 自动技术发现（从入口出发，按需深入）
+    读 AGENTS.md → 项目入口和路由指引
+    按指引读 Cargo.toml → Axum 0.7, sqlx, argon2, 无 JWT 依赖
+    按指引读 src/ → 现有代码结构
+    按需深入: src/routes/users.rs:45-72 → session-based 登录
+    按需深入: src/middleware/mod.rs:8-15 → 无 auth 中间件
+    输出: 技术发现报告（含 8 项代码证据，具体到文件:行号）
+
+  第2步: 需求澄清（一次一问，逐步收缩）
+    Q1: 核心目标？→ "7天免登录"（排除了无限期/短会话）
+    Q2: 用户群体？→ "外部客户"（安全标准确定）
+    Q3: 时间压力？→ "1-2周"（复杂度上界确定）
+    Q4: 登录方式？→ "邮箱+密码"（排除第三方登录）
+    Q5: 处理方式？→ "替换session"（排除叠加方案）
+    Q6: 过期交互？→ "静默刷新"（排除弹窗/跳转）
+    Q7: 验收方式？→ "自动化+手动"
+    Q8: 影响范围？→ "仅登录接口"
+    Q9: 可观测性？→ "基础日志"
+    Q10: MVP范围？→ "完整认证流程"
+    Q11: 实现方式？→ "第三方库"
+    （每个问题: ⭐推荐标签 + 大白话理由 + "其他"选项）
+    （选了"其他"→ 追加一次一问细化）
+
+  第3步: 可行性检查
+    检查需求 vs 代码现实 → 发现冲突？
+    冲突示例: 范围(完整认证+密码重置) vs 时间(本周) → 不可行
+    → 主动沟通Jacky，给出证据和建议选项
+    → Jacky选择缩小范围 → 冲突解决
+
+  → 生成标准化需求文档（含证据索引 + 可行性确认表）
+  → 所有判断有代码证据（文件:行号），任何角色可无歧义理解
 
 ═══════════════════════════════════════════════════════════════
- Phase 2: 任务拆解（Orchestrator）
+ Phase 1.5: 技术研判（Research + POC，按需）
 ═══════════════════════════════════════════════════════════════
 
-Orchestrator 被 dispatcher 派发，执行：
+PM 判断："JWT 认证"涉及项目中从未用过的 JWT 技术栈 → 需要 Research
 
-  kanban_show() → 读取任务详情
+PM 创建子任务:
+  T0.1 = kanban_create(
+      title="JWT 技术方案调研",
+      assignee="researcher",
+      body="调研 JWT 签名方案（RS256 vs HS256）、库选型、安全性考虑",
+      parents=[T0]  # 依赖原始需求任务
+  )
+
+Researcher 被唤醒:
+  kanban_show() → 读取需求文档
+  读取 AGENTS.md → 路由到 Cargo.toml（当前无 JWT 依赖）
+  web research → 对比 jsonwebtoken vs jwt-simple
+
+  kanban_complete(
+      summary="技术方案: 推荐 RS256 + jsonwebtoken 库",
+      metadata={
+          "proposal": "RS256 支持密钥轮换，jsonwebtoken 是 Rust 生态最成熟的 JWT 库",
+          "needs_poc": true,
+          "poc_scope": "验证 RS256 签名性能和密钥轮换流程"
+      }
+  )
+
+PM 判断 Researcher 建议 POC:
+  T0.2 = kanban_create(
+      title="JWT RS256 POC 验证",
+      assignee="implementer",
+      body="在独立 worktree 中验证 RS256 签名性能和密钥轮换",
+      parents=[T0.1]
+  )
+
+Implementer 执行 POC:
+  git worktree add .worktrees/poc-jwt-rs256 -b poc/jwt-rs256
+  # ... POC 代码 ...
+  kanban_complete(
+      summary="RS256 POC 通过: 签名 1000 次/秒，密钥轮换正常",
+      metadata={"poc_result": "success", "benchmark": "1000 ops/sec"}
+  )
+
+═══════════════════════════════════════════════════════════════
+ Phase 2: 任务拆解（PM）
+═══════════════════════════════════════════════════════════════
+
+PM 读取澄清后的需求文档（含证据链）和技术方案，执行：
+
+  kanban_show() → 读取需求文档（含 8 项代码证据）
 
   # 拆解为子任务
   T1 = kanban_create(
@@ -601,6 +1112,45 @@ Implementer (T4):
   skill_manage create "jwt-auth-checklist" → 新 skill
 
 ═══════════════════════════════════════════════════════════════
+ Phase 5.5: 故障场景 — 部署失败触发 SRE-Observer（异常分支）
+═══════════════════════════════════════════════════════════════
+
+T5 (devops-engineer: 部署发布) crashed：
+  - 部署脚本在 production 环境返回 exit code 1
+  - Dispatcher 检测到 outcome='crashed'
+  - 自动创建 T5-sre = kanban_create(
+      title="根因分析: T5 部署失败",
+      assignee="sre-observer",
+      body="T5 (devops-engineer) 部署失败，请定位根因",
+      parents=[T5],
+  )
+
+SRE-Observer:
+  kanban_show() → 读取 T5 详情
+  查询 trace.db → T5 的 tool call 序列
+  读取 worker logs → 部署脚本的 stderr
+  读取 task_events → T5 的 claim → crashed 时间线
+  Environment Snapshot → production git status / hermes status
+
+  kanban_complete(
+      summary="根因定位: 生产环境缺少环境变量 DATABASE_URL",
+      metadata={
+          "fault_task_id": "T5",
+          "root_cause_category": "environment",
+          "confidence": "high",
+          "symptom": "deploy.sh exited 1: 'DATABASE_URL: parameter not set'",
+          "responsible_profile": "devops-engineer",
+          "recommended_action": "在 ~/.env.production 中补全 DATABASE_URL 并重新部署",
+          "trace_anchor": "tool_call_#3 terminal('deploy.sh production') exited 1",
+      }
+  )
+
+Dispatcher 通知 CEO：
+  "项目 Alpha 部署失败，SRE-Observer 已定位根因：
+   类别: environment | 置信度: high
+   建议: 补全 DATABASE_URL 后重新部署 T5"
+
+═══════════════════════════════════════════════════════════════
  Phase 6: 完成通知
 ═══════════════════════════════════════════════════════════════
 
@@ -613,7 +1163,7 @@ Implementer (T4):
 
 ---
 
-## 10. 与现有 dev-orchestra skill 的迁移路径
+## 11. 与现有 dev-orchestra skill 的迁移路径
 
 | 组件 | 当前设计 | 新设计 | 迁移动作 |
 |------|---------|--------|---------|
@@ -629,7 +1179,7 @@ Implementer (T4):
 
 ---
 
-## 11. 前置条件
+## 12. 前置条件
 
 | 依赖 | 最低版本 | 检查命令 |
 |------|---------|---------|
@@ -641,7 +1191,7 @@ Implementer (T4):
 
 ---
 
-## 12. 配置文件结构
+## 13. 配置文件结构
 
 ```
 ~/.hermes/
@@ -652,15 +1202,39 @@ Implementer (T4):
 │   ├── MEMORY.md            # 持久记忆（2200 字符）
 │   └── USER.md              # 用户画像（1375 字符）
 ├── profiles/
-│   ├── orchestrator/
-│   │   ├── config.yaml      # model + toolsets
-│   │   ├── SOUL.md          # 角色定义
-│   │   └── .env             # 可选的 profile 级 keys
-│   ├── implementer/
+│   ├── orchestrator/          # 🟢 启用：AI 项目经理
 │   │   ├── config.yaml
 │   │   ├── SOUL.md
 │   │   └── .env
-│   └── reviewer/
+│   ├── implementer/           # 🟢 启用：开发工程师
+│   │   ├── config.yaml
+│   │   ├── SOUL.md
+│   │   └── .env
+│   ├── tech-reviewer/         # 🟢 启用：技术审查员
+│   │   ├── config.yaml
+│   │   ├── SOUL.md
+│   │   └── .env
+│   ├── qa-tester/             # 🟢 启用：测试验收员
+│   │   ├── config.yaml
+│   │   ├── SOUL.md
+│   │   └── .env
+│   ├── devops-engineer/       # 🟢 启用：发布工程师
+│   │   ├── config.yaml
+│   │   ├── SOUL.md
+│   │   └── .env
+│   ├── sre-observer/          # 🟢 启用：可观测性工程师
+│   │   ├── config.yaml
+│   │   ├── SOUL.md
+│   │   └── .env
+│   ├── pm-researcher/         # ⚪ 预留：产品调研员
+│   │   ├── config.yaml        #   toolsets.enabled: []
+│   │   ├── SOUL.md            #   占位状态
+│   │   └── .env
+│   ├── product-designer/      # ⚪ 预留：产品设计师
+│   │   ├── config.yaml
+│   │   ├── SOUL.md
+│   │   └── .env
+│   └── growth-marketer/       # ⚪ 预留：增长运营官
 │       ├── config.yaml
 │       ├── SOUL.md
 │       └── .env
@@ -724,3 +1298,73 @@ Implementer (T4):
 - 知识缺口 → 创建 research task
 
 > 注：本设计使用 Hermes 原生的 memory + skill_manage 替代 `.learnings/` 文件存储，保留其触发条件和分类体系。
+
+---
+
+## 附录 C：终端权限模型（Terminal Permission Model）
+
+为 reviewer 等 read-only 角色实现技术层面的"只读"约束：
+
+**Read-Only Terminal Proxy：**
+- 拦截所有写命令（`rm`, `write`, `git push`, `DROP TABLE` 等）
+- 转为 dry-run 模式返回预期结果，不实际执行
+- 读命令正常透传
+- 写操作尝试记录到审计日志 `~/.hermes/audit/terminal.log`
+
+**实现方式：**
+- 在 Hermes 层拦截 `terminal()` tool call 的 `command` 参数
+- 使用命令白名单/黑名单 + 正则匹配
+- 对模糊命令（如 `curl` 可能触发 POST）标记为 `ambiguous` 并要求二次确认
+
+**目的**：解决 `terminal(只读)` 只有 prompt 约束、没有技术 enforce 的问题。
+
+## 附录 D：动态 Agent 上下文（Kanban State as Living Context）
+
+每次启动 agent 时，动态从当前 Kanban board 生成项目专属上下文：
+
+**注入内容：**
+- 当前 board 的活跃任务列表（running + blocked）
+- 最近 3 个已完成任务的 handoff 摘要
+- 当前项目的 block 原因统计
+- 当前 board 的 backpressure 状态
+
+**格式：**
+```markdown
+## 当前项目上下文（自动生成，请勿手动编辑）
+
+**活跃任务：**
+- T42 (implementer): 实现 JWT 认证模块 — running, 15 min
+- T43 (reviewer): 审查 JWT 代码 — blocked, 等待用户确认
+
+**最近完成：**
+- T41 (orchestrator): 拆解认证模块为 4 个子任务
+
+**项目状态：** 正常 | 积压比: 1.2
+```
+
+**目的**：替代静态 AGENTS.md，让 agent 每次启动都携带项目的实时上下文，减少重复澄清和错误假设。
+
+## 附录 E：脚本自注册机制（Self-Registering Commands）
+
+将 `orch-*` 脚本从 `docs/orchestra/scripts/` 迁移到根目录 `scripts/`，并通过 manifest 自动注册：
+
+**Phase Manifest DSL（`scripts/manifest.yaml`）：**
+```yaml
+commands:
+  - name: orch-init
+    script: orch-init.sh
+    description: 初始化项目 orchestra 环境
+    profiles: [orchestrator]
+
+  - name: orch-dispatch
+    script: orch-dispatch.sh
+    description: 派发任务到指定 profile
+    profiles: [orchestrator, implementer]
+```
+
+**自动注册行为：**
+- `make init` 时读取 manifest，生成 Makefile target
+- `make register` 将命令注入当前 board 的 agent 上下文
+- 新增/删除脚本时，修改 manifest 即可，无需手动更新 Makefile
+
+**目的**：解决脚本 buried 在深层目录、根目录 `scripts/` 为空的问题。
