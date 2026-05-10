@@ -122,7 +122,7 @@ Phases execute in numeric order: 20 → 21 → 22 → 23 → 24 → 25
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 20. Capability Verification & Boundary Lock | v1.3 | 0/1 | Planned | — |
+| 20. Capability Verification & Boundary Lock | v1.3 | 1/1 | Complete | 2026-05-10 |
 | 21. Profiles, Overrides & Board Isolation | v1.3 | 0/1 | Planned | — |
 | 22. State-Machine Routing & Kanban Handoff | v1.3 | 0/1 | Planned | — |
 | 23. Risk Policy & Role Guardrails | v1.3 | 0/1 | Planned | — |
