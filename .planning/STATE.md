@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Hermes 原生工作流 MVP 实现
-status: Defining requirements
-stopped_at: Phase 20 planned
-last_updated: "2026-05-10T10:06:14.338Z"
-last_activity: 2026-05-10 -- Milestone v1.3 started from phase 19 workflow design docs
+status: Phase 20 executed
+stopped_at: Phase 20 executed
+last_updated: "2026-05-10T10:21:31.160Z"
+last_activity: 2026-05-10 -- Phase 20 capability verification matrix and boundary lock executed
 progress:
   total_phases: 6
   completed_phases: 0
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-10)
 
 **Core value:** 用户可以通过 SSH/Hermes CLI 随时追加开发任务，让 Hermes 自动调度 Claude 与 Codex 推进多个项目，只在高风险或产品级决策时打断用户。
-**Current focus:** v1.3 planning — Hermes 原生工作流 MVP 实现
+**Current focus:** v1.3 execution — Phase 20 complete, Phase 21 pending
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-05-10 -- Milestone v1.3 started from phase 19 workflow design docs
+Phase: 20 — Capability Verification & Boundary Lock (complete)
+Plan: 20-01 complete
+Status: Phase 20 executed
+Last activity: 2026-05-10 -- Phase 20 capability verification matrix and boundary lock executed
 
-Progress: [----------] 0%
+Progress: [##--------] 17%
 
 ## Requirements Alignment
 
@@ -64,10 +64,10 @@ None.
 
 ### Blockers/Concerns
 
-None at milestone start.
+- Aggregate repo gate is not fully green: `rtk make test` currently fails `upstream-status` because the local Hermes runtime pin does not match `.planning/upstream/hermes-agent-pin.json`. Phase 20 static checks passed; this mismatch is an external follow-up item.
 
 ## Session Continuity
 
-Last session: 2026-05-10T10:06:14.333Z
-Stopped at: Phase 20 planned
-Resume: Start Phase 20 planning
+Last session: 2026-05-10T10:21:31.155Z
+Stopped at: Phase 20 executed
+Resume: Plan or execute Phase 21, after accounting for the upstream pin mismatch if a fully green repo gate is required

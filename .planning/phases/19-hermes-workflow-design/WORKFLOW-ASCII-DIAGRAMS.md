@@ -9,6 +9,8 @@ topic: hermes-workflow-design
 > 每个图包含：参与者、流程步骤、判断分支、数据流向。
 >
 > 由于完整内容篇幅较长（约 2,200+ 行），本文档按 **章节主题** 拆分为多个子文件。以下提供目录索引，你可按需跳转阅读。
+>
+> **Phase 20 boundary lock note:** 本索引及其子图中凡涉及“官方能力”前提，应以 `.planning/phases/20-capability-verification-boundary-lock/20-CAPABILITY-MATRIX.md` 的 `verified / unsupported / local-extension` 判定为准。
 
 ---
 

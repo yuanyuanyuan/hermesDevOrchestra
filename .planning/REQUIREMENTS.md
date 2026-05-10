@@ -1,10 +1,73 @@
 # Requirements: Hermes Dev Orchestra
 
-**Defined:** 2026-04-28  
-**Milestone:** v1.2 — Hermes Dev Orchestra 规范化与迁移  
+**Defined:** 2026-05-10  
+**Milestone:** v1.3 — Hermes 原生工作流 MVP 实现  
 **Core Value:** 用户可以通过 SSH/Hermes CLI 随时追加开发任务，让 Hermes 自动调度 Claude 与 Codex 推进多个项目，只在高风险或产品级决策时打断用户。
 
-## v1.2 Requirements
+## v1.3 Requirements
+
+**Milestone:** v1.3 — Hermes 原生工作流 MVP 实现  
+**Goal:** 基于 `.planning/phases/19-hermes-workflow-design/` 的非归档设计文档，先完成 Hermes Agent 原生工作流的 MVP 纵向切片：验证官方能力边界，落成 8 个 profile 与项目级隔离，打通 Kanban 路由、风险护栏、worker 生命周期和基础可观测性。
+
+### 能力对齐与边界锁定
+
+- [x] **VFY-01**: 用户可以查看一份 capability-verification matrix，用命令、退出码和关键输出片段证明 phase 19 文档引用的 Hermes 官方能力在当前运行时可用。
+- [x] **VFY-02**: 任何 capability-verification 未通过的“官方能力”声明，都会在进入实现前被重新归类为本地增量需求并写回规划文档。
+
+### Profiles 与项目隔离
+
+- [ ] **PROF-01**: 用户可以在不污染 `~/.hermes/profiles/` 全局配置的前提下，为单个项目覆盖 profile 的 model、toolsets 和 SOUL 规则。
+- [ ] **PROF-02**: 系统提供 8 个启用中的 workflow profiles 和 3 个禁用的预留 profiles，每个 profile 都有明确的 toolset allowlist、SOUL 边界和职责说明。
+- [ ] **FLOW-02**: 用户可以并行运行多个 project boards，而不会出现 task、workspace、profile 或评论跨项目串线。
+- [ ] **MEM-01**: Learnings 默认写入项目命名空间；只有显式 cross-project 标记并经过编排层批准的条目才允许进入全局命名空间。
+
+### 路由与任务流转
+
+- [ ] **ROUTE-01**: PM 可以把需求澄清结果转换成带依赖的 Kanban 任务图，由 Orchestrator 按状态机把任务派给 Researcher、Implementer、Reviewer 和 QA-Tester。
+- [ ] **ROUTE-02**: Worker 在遇到澄清、审查或恢复场景时，可以通过 `kanban_block` / `kanban_comment` / `kanban_complete` 完成 block-resume 交接，不再依赖旧文件总线。
+
+### 风险与角色护栏
+
+- [ ] **SAFE-01**: Risk policy YAML 通过 Hermes `pre_tool_call` hook 将命令分级为 L1/L2/L3，并保证 L3 操作永不自动批准。
+- [ ] **SAFE-02**: Reviewer 与 Orchestrator 采用 allowlist toolsets 和只读 terminal guardrails，不能通过 shell 或文件写操作绕过角色边界。
+- [ ] **SAFE-03**: Implementer 的 SOUL/skills 强制在架构决策、外部依赖不可用、风险策略拦截和关键测试失败时触发 `kanban_block`。
+
+### Worker 生命周期与交接
+
+- [ ] **EXEC-01**: 每个 worker task 都声明 `expected_duration_max`，dispatcher 能在超时后执行回收并把任务重派。
+- [ ] **EXEC-02**: worker crash、timeout 或 cancel 后，系统会把该任务占用的 worktree 恢复到开始前的干净状态。
+- [ ] **EXEC-03**: `kanban_complete` 输出结构化 handoff metadata，且下游 worker 只能把这些 metadata 当作 untrusted input 使用。
+- [ ] **FLOW-01**: Dispatcher 能根据按 profile 分类的 ready 队列深度进行基础限流或暂停，避免上游 worker 把下游审查/测试队列压垮。
+
+### 基础可观测性
+
+- [ ] **OBS-01**: Observability plugin 通过 Hermes 官方 hooks 采集 `post_tool_call` 和 `on_session_end` 事件，不修改 Hermes 核心代码。
+- [ ] **OBS-02**: Dispatcher 在 spawn worker 时附带环境快照（至少包含 `git status`、`df -h` 前 5 行、`hermes status`）到 task run metadata，供后续调试使用。
+
+---
+
+## Future Requirements
+
+Deferred to v1.4 — Hermes 原生工作流完整实现。
+
+### Curator、跨项目经验与自我进化
+
+- **MEM-02**: Curator 支持跨项目 learning 的语义相似聚类、复审任务生成和显式晋升流程。
+- **MEM-03**: 查询 learning 时，项目命名空间与全局命名空间的冲突必须返回明确的 conflict warning；删除 learning 时必须声明影响范围并触发相应复审。
+
+### 高级调度与故障升级
+
+- **FLOW-03**: 背压判定采用滑动窗口与死锁升级机制，当下游长时间 throughput=0 且 ready 队列非空时，必须自动升级给用户或 orchestrator。
+- **RCA-01**: crash、timeout、gave_up、重复 rollback 或关键 blocked 任务可以升级为 SRE-Observer 分析任务，并产出结构化 RCA metadata。
+- **RCA-02**: QA critical bug 和 deploy failure 的告警必须包含审计链路、日志摘要、环境差异和责任角色定位信息。
+
+### 部署、验收与发布闭环
+
+- **DEP-01**: DevOps-Engineer 支持 dev/test → staging → production 三层部署与分层验证门控。
+- **DEP-02**: staging UAT 与 production 发布必须通过 Gateway/Kanban 获得显式用户批准；UAT 失败时自动创建修复任务。
+- **DEP-03**: 部署失败时支持环境级回滚、阻塞后续发布，并在完成后输出结构化部署报告、git tag 和分阶段进度记录。
+
+## v1.2 Requirements (Completed)
 
 **Milestone:** v1.2 — Hermes Dev Orchestra 规范化与迁移  
 **Goal:** 通过证据盘点和 gap audit，修复根目录可发现性，按需迁移目录结构，规范化规格体系和开发工作流。
@@ -38,9 +101,7 @@
 ### 架构约束
 
 - [x] **ARCH-01**: 明确固定文件名 file bus 表示单活动任务限制；若需支持多任务并行，必须另起设计（JSONL bus、per-task locks 等）。Validated in Phase 18.
-- [x] **ARCH-02**: 当前 v1.1 的 10x 承诺仅限于"单人多项目，每项目单活动任务"，不得扩展为"同一项目多任务并行"。Validated in Phase 18.
-
----
+- [x] **ARCH-02**: 当前 v1.1 的 10x 承诺仅限于“单人多项目，每项目单活动任务”，不得扩展为“同一项目多任务并行”。Validated in Phase 18.
 
 ## v1.1 Requirements (Completed)
 
@@ -82,57 +143,46 @@ This milestone turns the v1.0 specification package into an upstream-first imple
 - [x] **VER-03**: 覆盖矩阵标注哪些 v1.0 规格由上游 Hermes Agent 原生提供、哪些由本仓库适配层提供、哪些仍待实现。
 - [x] **VER-04**: handoff 列出后续 remote adapter、生产化审计、容器隔离、gbrain 集成或 dashboard 的边界。
 
-## Future Requirements
-
-Deferred to later milestones. Tracked but not in v1.1 scope.
-
-### Remote Adapters
-
-- **ADPT-01**: Hermes supports a concrete Remote Decision Channel adapter after transport selection.
-- **ADPT-02**: Adapter identity verification, message truncation, replay protection, and delivery retries are implemented.
-
-### Product Extensions
-
-- **EXT-01**: Optional gbrain integration or memory backend.
-- **EXT-02**: Web/mobile dashboard for multi-project status.
-- **EXT-03**: Low-risk unattended mode with budgets and no-go rules.
-
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
+| v1.4 的 curator 语义合并、SRE RCA 自动化和三层部署闭环 | 本次只创建 v1.3 MVP，完整能力已拆分到下一 milestone。 |
 | Reimplementing Hermes Agent core runtime | User direction requires building on community `NousResearch/hermes-agent`. |
 | Concrete Telegram/Discord/webhook adapter as the mandatory channel | v1.0 keeps Remote Decision Channel abstract; concrete adapters need a separate identity/replay design pass. |
 | Team collaboration or multi-user approvals | Project remains focused on a single developer. |
 | gbrain integration | Upstream Hermes Agent integration first; integration remains optional future work. |
 | Unrestricted unattended execution | Safety budgets and no-go operations are future work. |
-| Production deployment or package publishing | This milestone targets a local upstream integration slice and verification fixtures. |
+| Production deployment or package publishing | This milestone targets a Hermes-native MVP slice, not full production rollout. |
 
 ## Traceability
 
+### v1.3 Traceability
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| UP-01 | Phase 9 | Completed |
-| UP-02 | Phase 9 | Completed |
-| UP-03 | Phase 9 | Completed |
-| UP-04 | Phase 9 | Completed |
-| PKG-01 | Phase 10 | Completed |
-| PKG-02 | Phase 10 | Completed |
-| PKG-03 | Phase 10 | Completed |
-| PKG-04 | Phase 10 | Completed |
-| RUN-01 | Phase 11 | Completed |
-| RUN-02 | Phase 11 | Completed |
-| RUN-03 | Phase 11 | Completed |
-| RUN-04 | Phase 11 | Completed |
-| RUN-05 | Phase 11 | Completed |
-| SAFE-01 | Phase 12 | Complete |
-| SAFE-02 | Phase 12 | Complete |
-| DEC-01 | Phase 12 | Complete |
-| DEC-02 | Phase 12 | Complete |
-| VER-01 | Phase 12 | Complete |
-| VER-02 | Phase 12 | Complete |
-| VER-03 | Phase 12 | Complete |
-| VER-04 | Phase 12 | Complete |
+| VFY-01 | Phase 20 | Complete |
+| VFY-02 | Phase 20 | Complete |
+| PROF-01 | Phase 21 | Planned |
+| PROF-02 | Phase 21 | Planned |
+| FLOW-02 | Phase 21 | Planned |
+| MEM-01 | Phase 21 | Planned |
+| ROUTE-01 | Phase 22 | Planned |
+| ROUTE-02 | Phase 22 | Planned |
+| SAFE-01 | Phase 23 | Planned |
+| SAFE-02 | Phase 23 | Planned |
+| SAFE-03 | Phase 23 | Planned |
+| EXEC-01 | Phase 24 | Planned |
+| EXEC-02 | Phase 24 | Planned |
+| EXEC-03 | Phase 24 | Planned |
+| FLOW-01 | Phase 24 | Planned |
+| OBS-01 | Phase 25 | Planned |
+| OBS-02 | Phase 25 | Planned |
+
+**Coverage:**
+- v1.3 requirements: 17 total
+- Mapped to phases: 17
+- Unmapped: 0 ✓
 
 ### v1.2 Traceability
 
@@ -192,5 +242,5 @@ Deferred to later milestones. Tracked but not in v1.1 scope.
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-04-28*
-*Last updated: 2026-04-29 — Phase 18 completed*
+*Requirements defined: 2026-05-10*
+*Last updated: 2026-05-10 — v1.3 MVP scope defined; v1.4 full scope captured as future requirements*

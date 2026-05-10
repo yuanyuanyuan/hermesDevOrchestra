@@ -191,6 +191,13 @@ Hermes Agent v0.13.0 原生提供了：
 - R1. 在引用 DESIGN.md 中任何"标记为官方覆盖"的能力之前，必须有一份 capability-verification 表用代码级证据（命令调用、退出码、关键输出片段）证明该能力在当前安装的 Hermes Agent 版本上能跑通最小端到端用例。
 - R2. 验证表中标记为"未通过"的项目，必须重新归类为真增量需求（合并到 R3-R8 的相应类别），并在 doc 中显式追加 R-ID。
 
+**Phase 0 verification outcome (2026-05-10)**
+
+- Phase 20 matrix authority: `.planning/phases/20-capability-verification-boundary-lock/20-CAPABILITY-MATRIX.md`
+- `Gateway` 的官方命令/服务面被保留为 `verified`，但“当前环境已具备可复现消息投递闭环”的 claim 被降级为 `unsupported`，后续执行入口已进入 roadmap backlog。
+- `skill_manage` 的官方工具面被保留为 `verified (doc-only)`，但 phase 19 叙事中“自动创建 skill + 自动演进 workflow 已可直接落地”的 claim 被降级为 `local-extension`。
+- R3-R24 的本地实现边界保持不变；Phase 20 的作用是锁定哪些前置假设仍可保留为官方覆盖，哪些必须明确作为本地工程范围继续实施。
+
 **真增量工程需求**
 
 - R3. 必须支持项目级 profile override：在不污染全局 `~/.hermes/profiles/` 的前提下，允许每个项目对 toolsets / model / SOUL.md 做局部覆盖；运行时按"全局 base + 项目 override"合并。

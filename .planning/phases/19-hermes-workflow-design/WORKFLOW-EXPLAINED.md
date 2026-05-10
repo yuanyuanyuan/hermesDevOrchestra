@@ -17,7 +17,7 @@ topic: hermes-workflow-design
 
 本文档描述的系统能力分为三类，用方括号标注在相关段落旁：
 
-- **`[Hermes 官方]`** — Hermes Agent v0.13.0 原生支持的能力。可直接使用，无需增量开发。
+- **`[Hermes 官方]`** — Hermes Agent v0.13.0 原生支持、且在 Phase 20 capability-verification matrix 中仍被保留为 `verified` 的能力。可直接作为官方覆盖引用。
 - **`[Phase 19 增量]`** — 本工作（Phase 19）计划通过 Plugin/Skill/SOUL.md 等扩展点新增的能力。需要工程实现，详见 `REQUIREMENTS.md` R3-R24。
 - **`[设计假设]`** — 文档为叙事流畅性假设的行为或性能特征，尚未有代码级验证。可能随实现调整。
 
@@ -90,7 +90,7 @@ topic: hermes-workflow-design
 - 需求 R19-R24（可观测性）→ Phase 5.5（SRE-Observer）、Phase 4 Step 4.5
 
 **如果你要审计技术准确性**：
-- 每个子文件中的 `[Hermes 官方]` 标注段落已通过 `archive/VALIDATION-REPORT.md` 与 Hermes v0.13.0 官方文档交叉核对
+- 每个子文件中的 `[Hermes 官方]` 标注，应以 Phase 20 matrix 为最终权威：`.planning/phases/20-capability-verification-boundary-lock/20-CAPABILITY-MATRIX.md`
 - `[Phase 19 增量]` 标注段落的可行性详见 `archive/FEASIBILITY-REPORT.md`
 - `[设计假设]` 标注段落为叙事需要，非技术承诺
 

@@ -1308,23 +1308,27 @@ Dispatcher 通知 CEO：
 
 ## 附录 A：Hermes 官方能力引用
 
-| 能力 | 官方来源 | 本文使用方式 | 验证状态 |
-|------|---------|-------------|---------|
-| Kanban 系统 | `hermes kanban --help` + 官方文档 | 任务生命周期管理 | ✅ Phase 0 验证 |
-| Profile 系统 | `hermes profile --help` | 角色隔离 | ✅ Phase 0 验证 |
-| Dispatcher | Kanban 内置，嵌入 Gateway | 自动派发 worker | ✅ Phase 0 验证 |
-| Curator | `hermes curator --help` + 官方文档 | Skill 生命周期维护 | ✅ Phase 0 验证 |
-| Memory | `hermes memory --help` + 官方文档 | 跨会话持久记忆 | ✅ Phase 0 验证 |
-| skill_manage | Agent 内置工具 | 自动创建 skill | ✅ Phase 0 验证 |
-| Session Search | `hermes sessions --help` | 历史回溯 | ✅ Phase 0 验证 |
-| terminal() | 内置工具 | 执行任意 CLI | ✅ Phase 0 验证 |
-| clarify() | 内置工具 | 向用户请求决策 | ✅ Phase 0 验证 |
-| Gateway | `hermes gateway --help` | 多平台消息通知 | ✅ Phase 0 验证 |
-| Plugin `pre_tool_call` hook | Event Hooks 文档 | Risk Policy 硬拦截 | ✅ 文档验证 |
-| Plugin `post_tool_call` hook | Event Hooks 文档 | Observability 采集 | ✅ 文档验证 |
-| Plugin `on_session_end` hook | Event Hooks 文档 | Observability 汇总 | ✅ 文档验证 |
-| `approvals.mode` 配置 | `config.yaml` + Security 文档 | 命令级审批（官方两层） | ✅ 文档验证 |
-| RFC #16102 | GitHub Issue | approval gates 属于 user-space | ✅ DoubleCheck 验证 |
+> **Capability verification status:** Phase 20 已将本附录中的“官方能力”声明统一回写到 `.planning/phases/20-capability-verification-boundary-lock/20-CAPABILITY-MATRIX.md`。状态值只使用 `verified` / `unsupported` / `local-extension` 三种。
+
+| 能力 | 官方来源 | 本文使用方式 | Capability verification status |
+|------|---------|-------------|--------------------------------|
+| Kanban 系统 | `hermes kanban --help` + 官方文档 | 任务生命周期管理 | `verified (runtime)` |
+| Profile 系统 | `hermes profile --help` + 官方文档 | 角色隔离 | `verified (runtime)` |
+| Dispatcher | `hermes kanban dispatch --help` + 官方文档 | 自动派发 worker | `verified (runtime)` |
+| Curator | `hermes curator --help` + 官方文档 | Skill 生命周期维护 | `verified (hybrid)` |
+| Memory | `hermes memory --help` + 官方文档 | 跨会话持久记忆 | `verified (hybrid)` |
+| skill_manage（官方工具面） | 官方配置/skill 文档 | 官方 skill 创建能力存在 | `verified (doc-only)` |
+| skill_manage（Phase 19 自动创建 skill 工作流语义） | 同上 | 自动创建 + 持续演进 workflow | `local-extension` |
+| Session Search | `hermes sessions --help` + toolsets 文档 | 历史回溯 | `verified (runtime)` |
+| terminal() | tools/toolsets 文档 | 执行任意 CLI | `verified (hybrid)` |
+| clarify() | tools/toolsets 文档 | 向用户请求决策 | `verified (hybrid)` |
+| Gateway（命令/服务面） | `hermes gateway --help` + CLI 文档 | 多平台消息能力存在 | `verified (hybrid)` |
+| Gateway（当前环境消息投递闭环） | 同上 | 真实消息通知闭环 | `unsupported` |
+| Plugin `pre_tool_call` hook | hooks/Event Hooks 文档 | Risk Policy 硬拦截 | `verified (hybrid)` |
+| Plugin `post_tool_call` hook | hooks/Event Hooks 文档 | Observability 采集 | `verified (hybrid)` |
+| Plugin `on_session_end` hook | hooks/Event Hooks 文档 | Observability 汇总 | `verified (hybrid)` |
+| `approvals.mode` 配置 | `config.yaml` + Security 文档 | 命令级审批（官方两层） | `verified (hybrid)` |
+| RFC #16102 | GitHub Issue | approval gates 属于 user-space | `verified (doc-only)` |
 
 ## 附录 B：self-improving-agent 规则参考
 
