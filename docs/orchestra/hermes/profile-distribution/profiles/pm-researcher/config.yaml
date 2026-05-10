@@ -1,0 +1,5 @@
+status: reserved
+model: none
+toolsets:
+  enabled: []
+  disabled: [terminal, file, code_execution, web, browser, kanban, memory, clarify, delegation, messaging]

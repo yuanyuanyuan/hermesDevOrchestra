@@ -1,0 +1,5 @@
+status: active
+model: codex
+toolsets:
+  enabled: [terminal, file, code_execution, kanban, memory]
+  disabled: [delegation, messaging, web, browser]

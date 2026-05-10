@@ -1,0 +1,5 @@
+status: active
+model: claude
+toolsets:
+  enabled: [terminal, file, code_execution, browser, kanban, memory]
+  disabled: [delegation, messaging]

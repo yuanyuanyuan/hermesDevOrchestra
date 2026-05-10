@@ -1,0 +1,6 @@
+version: 2026-05-10-phase21
+canonical_reviewer_slug: reviewer
+legacy_aliases:
+  tech-reviewer: reviewer
+active_profiles: [pm, orchestrator, researcher, implementer, reviewer, qa-tester, devops-engineer, sre-observer]
+reserved_profiles: [pm-researcher, product-designer, growth-marketer]

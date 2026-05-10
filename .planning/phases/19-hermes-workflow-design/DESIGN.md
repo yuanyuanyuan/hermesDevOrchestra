@@ -91,7 +91,7 @@ Profile = config.yaml (model + toolsets)
 | `orchestrator` | 🟢 启用 | 中枢路由、进度监控、审计追踪 | "按状态机路由表执行；所有角色通信经由本角色中转；不做分析不做执行" | `kanban`, `memory`, `clarify` | kimi-coding / mimo 2.5pro |
 | `researcher` | 🟢 启用 | 技术方案调研、POC 建议 | "只分析不写代码；产出技术方案文档；建议是否需要 POC" | `file_read`, `web`, `clarify`, `kanban`, `memory` | claude |
 | `implementer` | 🟢 启用 | 编码、测试、重构、POC 验证 | "只执行编码，不做架构决策；POC 在独立 worktree 中执行" | `terminal`, `file`, `code_execution`, `memory`, `kanban` | codex / claude |
-| `tech-reviewer` | 🟢 启用 | 代码审查、安全审计（硬门禁） | "审查质量，标记危险操作；只读；block 直到 pass" | `file_read`, `kanban_read`, `kanban_block`, `kanban_complete`, `clarify` | claude |
+| `reviewer` | 🟢 启用 | 代码审查、安全审计（硬门禁） | "审查质量，标记危险操作；只读；block 直到 pass" | `file_read`, `kanban_read`, `kanban_block`, `kanban_complete`, `clarify` | claude |
 | `qa-tester` | 🟢 启用 | 功能验收、集成测试、场景验证 | "站在用户角度验收，不站在开发者角度" | `terminal`, `file`, `code_execution`, `browser`, `kanban`, `memory` | claude |
 | `devops-engineer` | 🟢 启用 | 三层部署（dev/test→staging→production）、验证门控、UAT 配合、回滚、git tag | "发布前必须通过 QA 验收；staging/production 必须用户批准；不能修改业务代码" | `terminal`, `file`, `code_execution`, `kanban`, `memory` | codex |
 | `sre-observer` | 🟢 启用 | 故障根因分析（人工升级触发） | "只观测不修复；输出结构化根因报告" | `file`, `kanban`, `memory`, `clarify`, `web` | claude |
@@ -189,7 +189,7 @@ toolsets:
   enabled: [terminal, file, code_execution, memory, kanban]
   disabled: [delegation, messaging]
 
-# tech-reviewer/config.yaml
+# reviewer/config.yaml
 toolsets:
   enabled: [file_read, kanban_read, kanban_block, kanban_complete, clarify]
   disabled: [code_execution, delegation, messaging, file_write, terminal]
@@ -220,11 +220,11 @@ toolsets:
 
 ### 3.6 Project-Level Profile Override Registry
 
-全局 profile 存放在 `~/.hermes/profiles/` 作为 base，每个项目可通过 `.hermes/profiles/<name>.override.yaml` 做层级覆盖。运行时按 `global + project_override` 合并，项目的 SOUL.md 修改仅影响本地，不污染全局。
+Phase 21 执行后，canonical base profile catalog 存放在仓库 `docs/orchestra/hermes/profile-distribution/`，每个项目通过 `.hermes/profiles/` 提供 override source，运行时由 `orch-profile-sync` 编译到 `.hermes/projects/{project_slug}/`。这样项目的 SOUL.md 与 config 修改仅影响本项目，不污染全局 `~/.hermes/profiles/`。
 
 **覆盖规则：**
 - `toolsets.enabled/disabled`：取并集后按 project_override 优先
-- `SOUL.md`：使用 YAML frontmatter 声明 `extends: global`，运行时按顺序拼接：通用规则 → 项目规则 → 角色规则
+- `SOUL.md`：项目使用 `{role}.project.md` 作为 SOUL fragment，运行时按顺序拼接：通用规则 → 项目规则 → 角色规则
 - `config.yaml` 中的 `model`：project_override 可覆盖全局配置
 
 **示例：**
@@ -237,6 +237,11 @@ toolsets:
 model: codex
 ```
 
+```markdown
+# project-alpha/.hermes/profiles/implementer.project.md
+Project-only rule: prefer local service fixtures over shared staging resources.
+```
+
 **目的**：防止一个项目的经验（如新增检查清单、工具陷阱）自动污染所有项目的全局 profile，同时保留全局更新的传播能力。
 
 ### 3.7 预留角色占位配置
@@ -245,7 +250,7 @@ model: codex
 
 ```bash
 # 预创建目录结构（实施阶段一次性执行）
-mkdir -p ~/.hermes/profiles/{pm-researcher,product-designer,growth-marketer}
+mkdir -p docs/orchestra/hermes/profile-distribution/profiles/{pm-researcher,product-designer,growth-marketer}
 ```
 
 每个预留 Profile 的最小配置：
@@ -897,7 +902,7 @@ Hermes 官方已内置 crash/timed_out/gave_up 的自动回收机制（任务回
 | 层级 | 典型症状 | 定位方式 |
 |------|---------|---------|
 | **代码层** | 语法错误、测试失败、逻辑缺陷 | 读取 worker logs + tool call trace |
-| **审查层** | Reviewer 拒绝、安全审计不通过 | 读取 tech-reviewer 的 `kanban_complete` findings |
+| **审查层** | Reviewer 拒绝、安全审计不通过 | 读取 reviewer 的 `kanban_complete` findings |
 | **验收层** | QA 功能测试未通过、回归 Bug | 读取 qa-tester 的 block reason + test output |
 | **环境层** | 依赖缺失、配置错误、权限不足 | Environment Snapshot + `git status` 对比 |
 | **资源层** | 磁盘满、内存不足、API 限流 | `df -h` / `hermes status` + 工具调用耗时异常 |
@@ -1258,7 +1263,7 @@ Dispatcher 通知 CEO：
 │   │   ├── config.yaml
 │   │   ├── SOUL.md
 │   │   └── .env
-│   ├── tech-reviewer/         # 🟢 启用：技术审查员
+│   ├── reviewer/              # 🟢 启用：技术审查员
 │   │   ├── config.yaml
 │   │   ├── SOUL.md
 │   │   └── .env

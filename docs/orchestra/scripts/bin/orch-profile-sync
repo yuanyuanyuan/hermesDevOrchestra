@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PACKAGE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
+
+if [ -f "$ORCHESTRA_HOME/lib/orch-common.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ORCHESTRA_HOME/lib/orch-common.sh"
+else
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/../lib/orch-common.sh"
+fi
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: orch-profile-sync <project-id> <project-dir>" >&2
+    exit 1
+fi
+
+PROJECT_ID="$1"
+PROJECT_DIR_INPUT="$2"
+
+orch_validate_project_id "$PROJECT_ID"
+
+if [ ! -d "$PROJECT_DIR_INPUT" ]; then
+    echo "Project directory not found: $PROJECT_DIR_INPUT" >&2
+    exit 1
+fi
+
+PROJECT_DIR="$(cd "$PROJECT_DIR_INPUT" && pwd)"
+CATALOG_DIR="$(orch_profile_catalog_dir)"
+WORKSPACE_ROOT="$(orch_project_workspace_root "$PROJECT_DIR" "$PROJECT_ID")"
+OVERRIDE_DIR="$(orch_project_override_dir "$PROJECT_DIR")"
+BOARD_SLUG="$(orch_project_board_slug "$PROJECT_ID")"
+MEMORY_NAMESPACE="$(orch_project_memory_namespace "$PROJECT_ID")"
+
+if [ ! -d "$CATALOG_DIR/profiles" ]; then
+    echo "Profile catalog not found: $CATALOG_DIR/profiles" >&2
+    exit 1
+fi
+
+mkdir -p "$WORKSPACE_ROOT" "$OVERRIDE_DIR"
+
+python3 - "$CATALOG_DIR" "$PROJECT_DIR" "$PROJECT_ID" "$WORKSPACE_ROOT" "$OVERRIDE_DIR" "$BOARD_SLUG" "$MEMORY_NAMESPACE" <<'PY'
+import json
+import os
+import re
+import shutil
+import sys
+
+catalog_dir, project_dir, project_id, workspace_root, override_dir, board_slug, memory_namespace = sys.argv[1:]
+profiles_root = os.path.join(catalog_dir, "profiles")
+global_soul_path = os.path.join(catalog_dir, "global", "SOUL.md")
+distribution_path = os.path.join(catalog_dir, "distribution.yaml")
+
+if not os.path.isfile(global_soul_path):
+    raise SystemExit(f"Global SOUL source missing: {global_soul_path}")
+
+
+def parse_inline_list(text: str):
+    text = text.strip()
+    if not text.startswith("[") or not text.endswith("]"):
+        return []
+    body = text[1:-1].strip()
+    if not body:
+        return []
+    return [item.strip() for item in body.split(",") if item.strip()]
+
+
+def parse_config(path: str):
+    data = {"model": "", "status": "", "enabled": [], "disabled": []}
+    if not os.path.isfile(path):
+        return data
+    with open(path, encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            if line.startswith("model:"):
+                data["model"] = line.split(":", 1)[1].strip()
+            elif line.startswith("status:"):
+                data["status"] = line.split(":", 1)[1].strip()
+            elif line.startswith("enabled:"):
+                data["enabled"] = parse_inline_list(line.split(":", 1)[1].strip())
+            elif line.startswith("disabled:"):
+                data["disabled"] = parse_inline_list(line.split(":", 1)[1].strip())
+    return data
+
+
+def unique(seq):
+    out = []
+    seen = set()
+    for item in seq:
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def merge_toolsets(base_enabled, base_disabled, override_enabled, override_disabled):
+    enabled = unique(base_enabled)
+    disabled = unique(base_disabled)
+    for item in override_enabled:
+        if item in disabled:
+            disabled.remove(item)
+        if item not in enabled:
+            enabled.append(item)
+    for item in override_disabled:
+        if item in enabled:
+            enabled.remove(item)
+        if item not in disabled:
+            disabled.append(item)
+    return enabled, disabled
+
+
+def read_text(path: str):
+    if not os.path.isfile(path):
+        return ""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read().strip()
+
+
+def parse_distribution_version(path: str):
+    if not os.path.isfile(path):
+        return "unknown"
+    with open(path, encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if line.startswith("version:"):
+                return line.split(":", 1)[1].strip()
+    return "unknown"
+
+
+def write_config(path: str, status: str, model: str, enabled, disabled):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(f"status: {status}\n")
+        handle.write(f"model: {model}\n")
+        handle.write("toolsets:\n")
+        handle.write(f"  enabled: [{', '.join(enabled)}]\n")
+        handle.write(f"  disabled: [{', '.join(disabled)}]\n")
+
+
+def write_soul(path: str, role: str, global_text: str, project_text: str, role_text: str):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("---\n")
+        handle.write(f"project_slug: {project_id}\n")
+        handle.write(f"role: {role}\n")
+        handle.write("extends: global\n")
+        handle.write("assembly_order: [global, project, role]\n")
+        handle.write("---\n\n")
+        handle.write(f"# SOUL.md — {role}\n\n")
+        handle.write("## Global Rules\n")
+        handle.write(global_text + "\n\n")
+        handle.write("## Project Rules\n")
+        handle.write((project_text or "No project-specific rules.") + "\n\n")
+        handle.write("## Role Rules\n")
+        handle.write(role_text + "\n")
+
+
+def write_root_soul(path: str, global_text: str):
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("---\n")
+        handle.write(f"project_slug: {project_id}\n")
+        handle.write("scope: project-home\n")
+        handle.write("---\n\n")
+        handle.write("# Project Hermes Home\n\n")
+        handle.write(global_text + "\n")
+
+
+catalog_version = parse_distribution_version(distribution_path)
+global_text = read_text(global_soul_path)
+role_names = sorted([name for name in os.listdir(profiles_root) if os.path.isdir(os.path.join(profiles_root, name))])
+
+profiles_out = os.path.join(workspace_root, "profiles")
+if os.path.isdir(profiles_out):
+    shutil.rmtree(profiles_out)
+os.makedirs(profiles_out, exist_ok=True)
+
+for role in role_names:
+    base_config = parse_config(os.path.join(profiles_root, role, "config.yaml"))
+    override_config = parse_config(os.path.join(override_dir, f"{role}.override.yaml"))
+    enabled, disabled = merge_toolsets(
+        base_config["enabled"],
+        base_config["disabled"],
+        override_config["enabled"],
+        override_config["disabled"],
+    )
+    model = override_config["model"] or base_config["model"]
+    role_text = read_text(os.path.join(profiles_root, role, "SOUL.md"))
+    project_text = read_text(os.path.join(override_dir, f"{role}.project.md"))
+    role_out = os.path.join(profiles_out, role)
+    write_config(os.path.join(role_out, "config.yaml"), base_config["status"], model, enabled, disabled)
+    write_soul(os.path.join(role_out, "SOUL.md"), role, global_text, project_text, role_text)
+
+project_json = {
+    "project_slug": project_id,
+    "project_dir": project_dir,
+    "board_slug": board_slug,
+    "workspace_root": workspace_root,
+    "override_dir": override_dir,
+    "memory_namespace": memory_namespace,
+    "profile_catalog_version": catalog_version,
+    "profiles_dir": profiles_out,
+}
+with open(os.path.join(workspace_root, "project.json"), "w", encoding="utf-8") as handle:
+    json.dump(project_json, handle, indent=2)
+    handle.write("\n")
+
+write_root_soul(os.path.join(workspace_root, "SOUL.md"), global_text)
+PY
+
+echo "Profiles assembled: $WORKSPACE_ROOT/profiles"
+echo "Board: $BOARD_SLUG"
+echo "Memory: $MEMORY_NAMESPACE"

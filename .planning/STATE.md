@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Hermes 原生工作流 MVP 实现
-status: Phase 20 executed
-stopped_at: Phase 20 executed
-last_updated: "2026-05-10T10:21:31.160Z"
-last_activity: 2026-05-10 -- Phase 20 capability verification matrix and boundary lock executed
+status: Phase 21 executed
+stopped_at: Phase 21 execution complete
+last_updated: "2026-05-10T13:20:00.000Z"
+last_activity: 2026-05-10 -- Phase 21 profile packaging and project isolation executed
 progress:
   total_phases: 6
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
-  percent: 17
+  completed_phases: 2
+  total_plans: 2
+  completed_plans: 2
+  percent: 33
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-10)
 
 **Core value:** 用户可以通过 SSH/Hermes CLI 随时追加开发任务，让 Hermes 自动调度 Claude 与 Codex 推进多个项目，只在高风险或产品级决策时打断用户。
-**Current focus:** v1.3 execution — Phase 20 complete, Phase 21 pending
+**Current focus:** v1.3 execution — Phase 21 complete, Phase 22 pending
 
 ## Current Position
 
-Phase: 20 — Capability Verification & Boundary Lock (complete)
-Plan: 20-01 complete
-Status: Phase 20 executed
-Last activity: 2026-05-10 -- Phase 20 capability verification matrix and boundary lock executed
+Phase: 21 — Profiles, Overrides & Board Isolation (complete)
+Plan: 21-01 complete
+Status: Phase 21 executed
+Last activity: 2026-05-10 -- Phase 21 profile packaging and project isolation executed
 
-Progress: [##--------] 17%
+Progress: [###-------] 33%
 
 ## Requirements Alignment
 
@@ -57,6 +57,7 @@ All v1.1 decisions remain valid.
 - [Phase 18]: Architecture bounds and v1.2 closeout verified. — Fixed Runtime bus single-slot wording, same-project parallelism future-work boundary, 10x limitation, `rtk make test`, and Phase 13-18 traceability all passed.
 - [Milestone v1.3]: Split phase 19 workflow design into two execution milestones. — v1.3 covers the MVP path; v1.4 keeps curator semantics, SRE RCA, and deploy/UAT full-scope items.
 - [Milestone v1.3]: Start execution numbering at Phase 20. — `.planning/phases/19-hermes-workflow-design/` remains a stable design-source directory and is not reused as a GSD execution phase.
+- [Phase 21]: Normalize runtime reviewer naming to `reviewer` and generate project-scoped Hermes homes under `.hermes/projects/{project_slug}/`. — Canonical profile catalog now lives in `docs/orchestra/hermes/profile-distribution/`; repo-local overrides compile via `orch-profile-sync`; board/workspace/profile/memory isolation all derive from the same `project_slug`.
 
 ### Pending Todos
 
@@ -68,6 +69,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-10T10:21:31.155Z
-Stopped at: Phase 20 executed
-Resume: Plan or execute Phase 21, after accounting for the upstream pin mismatch if a fully green repo gate is required
+Last session: 2026-05-10T13:20:00.000Z
+Stopped at: Phase 21 execution complete
+Resume: Verify Phase 21 closeout or advance to Phase 22, after accounting for the upstream pin mismatch if a fully green repo gate is required

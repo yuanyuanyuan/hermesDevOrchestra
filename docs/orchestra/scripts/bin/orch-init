@@ -38,8 +38,12 @@ if ! git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 orch_project_dirs "$PROJECT_ID"
+WORKSPACE_ROOT="$(orch_project_workspace_root "$PROJECT_DIR" "$PROJECT_ID")"
+OVERRIDE_DIR="$(orch_project_override_dir "$PROJECT_DIR")"
+BOARD_SLUG="$(orch_project_board_slug "$PROJECT_ID")"
+MEMORY_NAMESPACE="$(orch_project_memory_namespace "$PROJECT_ID")"
 
-mkdir -p "$RUNTIME_DIR" "$STATE_DIR" "$AUDIT_DIR/archive" "$AUDIT_DIR/pending" "$CACHE_DIR"
+mkdir -p "$RUNTIME_DIR" "$STATE_DIR" "$AUDIT_DIR/archive" "$AUDIT_DIR/pending" "$CACHE_DIR" "$WORKSPACE_ROOT" "$OVERRIDE_DIR"
 
 SETTINGS_SRC="$ORCHESTRA_HOME/claude-config-template/.claude/settings.json"
 if [ ! -f "$SETTINGS_SRC" ]; then
@@ -66,11 +70,15 @@ fi
     printf 'CACHE_DIR=%q\n' "$CACHE_DIR"
     printf 'CLAUDE_SESSION=%q\n' "$CLAUDE_SESSION"
     printf 'CODEX_SESSION=%q\n' "$CODEX_SESSION"
+    printf 'WORKSPACE_ROOT=%q\n' "$WORKSPACE_ROOT"
+    printf 'OVERRIDE_DIR=%q\n' "$OVERRIDE_DIR"
+    printf 'BOARD_SLUG=%q\n' "$BOARD_SLUG"
+    printf 'MEMORY_NAMESPACE=%q\n' "$MEMORY_NAMESPACE"
 } > "$STATE_DIR/project.env"
 
-python3 - "$STATE_DIR/paths.json" "$PROJECT_ID" "$PROJECT_DIR" "$RUNTIME_DIR" "$STATE_DIR" "$AUDIT_DIR" "$CACHE_DIR" <<'PY'
+python3 - "$STATE_DIR/paths.json" "$PROJECT_ID" "$PROJECT_DIR" "$RUNTIME_DIR" "$STATE_DIR" "$AUDIT_DIR" "$CACHE_DIR" "$WORKSPACE_ROOT" "$OVERRIDE_DIR" "$BOARD_SLUG" "$MEMORY_NAMESPACE" <<'PY'
 import json, sys
-path, project_id, project_dir, runtime_dir, state_dir, audit_dir, cache_dir = sys.argv[1:]
+path, project_id, project_dir, runtime_dir, state_dir, audit_dir, cache_dir, workspace_root, override_dir, board_slug, memory_namespace = sys.argv[1:]
 with open(path, "w", encoding="utf-8") as handle:
     json.dump({
         "project_id": project_id,
@@ -79,14 +87,18 @@ with open(path, "w", encoding="utf-8") as handle:
         "state_dir": state_dir,
         "audit_dir": audit_dir,
         "cache_dir": cache_dir,
+        "workspace_root": workspace_root,
+        "override_dir": override_dir,
+        "board_slug": board_slug,
+        "memory_namespace": memory_namespace,
     }, handle, indent=2)
     handle.write("\n")
 PY
 
 mkdir -p "$STATE_ROOT"
-python3 - "$STATE_ROOT/projects.json" "$PROJECT_ID" "$PROJECT_DIR" "$RUNTIME_DIR" "$STATE_DIR" "$AUDIT_DIR" "$CACHE_DIR" "$(orch_now)" <<'PY'
+python3 - "$STATE_ROOT/projects.json" "$PROJECT_ID" "$PROJECT_DIR" "$RUNTIME_DIR" "$STATE_DIR" "$AUDIT_DIR" "$CACHE_DIR" "$WORKSPACE_ROOT" "$OVERRIDE_DIR" "$BOARD_SLUG" "$MEMORY_NAMESPACE" "$(orch_now)" <<'PY'
 import json, os, sys
-path, project_id, project_dir, runtime_dir, state_dir, audit_dir, cache_dir, updated_at = sys.argv[1:]
+path, project_id, project_dir, runtime_dir, state_dir, audit_dir, cache_dir, workspace_root, override_dir, board_slug, memory_namespace, updated_at = sys.argv[1:]
 try:
     with open(path, encoding="utf-8") as handle:
         projects = json.load(handle)
@@ -102,6 +114,10 @@ entry = {
     "state_dir": state_dir,
     "audit_dir": audit_dir,
     "cache_dir": cache_dir,
+    "workspace_root": workspace_root,
+    "override_dir": override_dir,
+    "board_slug": board_slug,
+    "memory_namespace": memory_namespace,
     "updated_at": updated_at,
 }
 projects = [project for project in projects if project.get("project_id") != project_id]
@@ -123,6 +139,14 @@ with open(path, "w", encoding="utf-8") as handle:
     handle.write("\n")
 PY
 
+SYNC_HELPER="$ORCHESTRA_HOME/bin/orch-profile-sync"
+if [ ! -x "$SYNC_HELPER" ]; then
+    SYNC_HELPER="$SCRIPT_DIR/orch-profile-sync"
+fi
+if [ -x "$SYNC_HELPER" ]; then
+    "$SYNC_HELPER" "$PROJECT_ID" "$PROJECT_DIR" >/dev/null
+fi
+
 orch_append_audit "project_init" "$PROJECT_ID" "L1" "RECORDED" "" "Project initialized at $PROJECT_DIR" "" "" "" "" "orch-init" ""
 
 echo "Project initialized: $PROJECT_ID"
@@ -130,3 +154,7 @@ echo "Runtime: $RUNTIME_DIR"
 echo "State:   $STATE_DIR"
 echo "Audit:   $AUDIT_DIR"
 echo "Cache:   $CACHE_DIR"
+echo "Workspace: $WORKSPACE_ROOT"
+echo "Overrides: $OVERRIDE_DIR"
+echo "Board: $BOARD_SLUG"
+echo "Memory: $MEMORY_NAMESPACE"

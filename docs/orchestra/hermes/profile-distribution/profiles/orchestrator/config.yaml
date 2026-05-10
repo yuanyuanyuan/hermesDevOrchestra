@@ -1,0 +1,5 @@
+status: active
+model: kimi-coding
+toolsets:
+  enabled: [kanban, memory, clarify]
+  disabled: [terminal, file, code_execution, web, browser, delegation]

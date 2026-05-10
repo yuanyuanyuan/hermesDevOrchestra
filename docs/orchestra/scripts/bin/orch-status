@@ -89,9 +89,31 @@ fi
 
 orch_validate_project_id "$PROJECT_ID"
 orch_project_dirs "$PROJECT_ID"
+PROJECT_DIR_PATH="$(orch_json_field "$STATE_DIR/paths.json" "project_dir")"
+WORKSPACE_ROOT="$(orch_json_field "$STATE_DIR/paths.json" "workspace_root")"
+OVERRIDE_DIR="$(orch_json_field "$STATE_DIR/paths.json" "override_dir")"
+BOARD_SLUG="$(orch_json_field "$STATE_DIR/paths.json" "board_slug")"
+MEMORY_NAMESPACE="$(orch_json_field "$STATE_DIR/paths.json" "memory_namespace")"
+
+if [ -z "$WORKSPACE_ROOT" ] && [ -n "$PROJECT_DIR_PATH" ]; then
+    WORKSPACE_ROOT="$(orch_project_workspace_root "$PROJECT_DIR_PATH" "$PROJECT_ID")"
+fi
+if [ -z "$OVERRIDE_DIR" ] && [ -n "$PROJECT_DIR_PATH" ]; then
+    OVERRIDE_DIR="$(orch_project_override_dir "$PROJECT_DIR_PATH")"
+fi
+if [ -z "$BOARD_SLUG" ]; then
+    BOARD_SLUG="$(orch_project_board_slug "$PROJECT_ID")"
+fi
+if [ -z "$MEMORY_NAMESPACE" ]; then
+    MEMORY_NAMESPACE="$(orch_project_memory_namespace "$PROJECT_ID")"
+fi
 
 project_prefix "Project: $PROJECT_ID"
 project_prefix "Stage: $(orch_stage_for_project "$PROJECT_ID")"
+project_prefix "Board: $BOARD_SLUG"
+project_prefix "Workspace root: $WORKSPACE_ROOT"
+project_prefix "Override dir: $OVERRIDE_DIR"
+project_prefix "Memory namespace: $MEMORY_NAMESPACE"
 project_prefix "Claude session: $CLAUDE_SESSION $(session_state "$CLAUDE_SESSION")"
 project_prefix "Codex session: $CODEX_SESSION $(session_state "$CODEX_SESSION")"
 

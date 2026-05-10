@@ -1,0 +1,5 @@
+status: active
+model: claude
+toolsets:
+  enabled: [file_read, web, clarify, kanban, memory]
+  disabled: [terminal, file, code_execution, browser, delegation]

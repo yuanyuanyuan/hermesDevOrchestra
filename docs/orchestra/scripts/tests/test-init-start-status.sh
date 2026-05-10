@@ -53,8 +53,12 @@ git -C "$PROJECT_DIR" init >/dev/null
 
 assert_contains "Project: test-proj" /tmp/orch-init-start-status.out "status missing project"
 assert_contains "Stage:" /tmp/orch-init-start-status.out "status missing stage"
+assert_contains "Board: test-proj" /tmp/orch-init-start-status.out "status missing board"
+assert_contains "Workspace root:" /tmp/orch-init-start-status.out "status missing workspace root"
+assert_contains "Memory namespace: project:test-proj" /tmp/orch-init-start-status.out "status missing memory namespace"
 assert_contains "Claude session: hermes-test-proj-claude" /tmp/orch-init-start-status.out "status missing Claude session"
 assert_contains "Codex session: hermes-test-proj-codex" /tmp/orch-init-start-status.out "status missing Codex session"
 assert_contains "Watcher:" /tmp/orch-init-start-status.out "status missing watcher"
+assert_file_exists "$PROJECT_DIR/.hermes/projects/test-proj/project.json" "project metadata not generated"
 
 test_done

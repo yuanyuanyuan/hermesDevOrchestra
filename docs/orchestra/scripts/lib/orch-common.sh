@@ -44,6 +44,38 @@ orch_project_dirs() {
     export PROJECT_ID RUNTIME_DIR STATE_DIR AUDIT_DIR CACHE_DIR CLAUDE_SESSION CODEX_SESSION
 }
 
+orch_project_workspace_root() {
+    local project_dir="$1"
+    local project_id="$2"
+
+    printf '%s/.hermes/projects/%s' "$project_dir" "$project_id"
+}
+
+orch_project_override_dir() {
+    local project_dir="$1"
+
+    printf '%s/.hermes/profiles' "$project_dir"
+}
+
+orch_project_board_slug() {
+    printf '%s' "$1"
+}
+
+orch_project_memory_namespace() {
+    printf 'project:%s' "$1"
+}
+
+orch_profile_catalog_dir() {
+    if [ -d "$ORCHESTRA_HOME/profile-distribution" ]; then
+        printf '%s/profile-distribution' "$ORCHESTRA_HOME"
+        return
+    fi
+
+    local fallback
+    fallback="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../hermes/profile-distribution" && pwd)"
+    printf '%s' "$fallback"
+}
+
 orch_atomic_write() {
     local target="$1"
     local content_file="$2"

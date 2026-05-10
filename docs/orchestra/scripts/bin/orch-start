@@ -38,6 +38,9 @@ if ! git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 orch_project_dirs "$PROJECT_ID"
+WORKSPACE_ROOT="$(orch_project_workspace_root "$PROJECT_DIR" "$PROJECT_ID")"
+BOARD_SLUG="$(orch_project_board_slug "$PROJECT_ID")"
+MEMORY_NAMESPACE="$(orch_project_memory_namespace "$PROJECT_ID")"
 
 EXPECTED_CLAUDE_SESSION="hermes-${PROJECT_ID}-claude"
 EXPECTED_CODEX_SESSION="hermes-${PROJECT_ID}-codex"
@@ -52,6 +55,14 @@ if [ ! -f "$STATE_DIR/project.env" ]; then
     else
         "$SCRIPT_DIR/orch-init" "$PROJECT_ID" "$PROJECT_DIR"
     fi
+fi
+
+SYNC_HELPER="$ORCHESTRA_HOME/bin/orch-profile-sync"
+if [ ! -x "$SYNC_HELPER" ]; then
+    SYNC_HELPER="$SCRIPT_DIR/orch-profile-sync"
+fi
+if [ -x "$SYNC_HELPER" ]; then
+    "$SYNC_HELPER" "$PROJECT_ID" "$PROJECT_DIR" >/dev/null
 fi
 
 start_or_reuse_session() {
@@ -75,7 +86,7 @@ start_or_reuse_session() {
     fi
 
     tmux new-session -d -s "$session" -x 180 -y 40 -c "$PROJECT_DIR" \
-        "env HERMES_ORCHESTRA_PROJECT='$PROJECT_ID' bash"
+        "env HERMES_ORCHESTRA_PROJECT='$PROJECT_ID' HERMES_HOME='$WORKSPACE_ROOT' HERMES_KANBAN_BOARD='$BOARD_SLUG' HERMES_MEMORY_NAMESPACE='$MEMORY_NAMESPACE' bash"
     echo "Started $label session: $session"
 }
 
@@ -102,5 +113,8 @@ fi
 orch_append_audit "session_start" "$PROJECT_ID" "L1" "RECORDED" "" "Claude=$CLAUDE_SESSION Codex=$CODEX_SESSION" "" "" "" "" "orch-start" ""
 
 echo "Hermes upstream: $(hermes --version 2>/dev/null || echo installed)"
+echo "Workspace root: $WORKSPACE_ROOT"
+echo "Board slug: $BOARD_SLUG"
+echo "Memory namespace: $MEMORY_NAMESPACE"
 echo "Attach Claude: tmux attach -t $CLAUDE_SESSION"
 echo "Attach Codex:  tmux attach -t $CODEX_SESSION"

@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Hermes Dev Orchestra 是一套“单人多项目 AI 开发编排系统”的产品、规格与原型实现项目。v1.0 已完成可交付规格包；v1.1 改为基于社区 `NousResearch/hermes-agent` 实现，而不是独立重写新的 Hermes Agent。当前实现重点是上游 Hermes Agent 安装/能力探测、SOUL/skills 适配、Claude/Codex tmux 编排、文件总线和风险决策层。
+Hermes Dev Orchestra 是一套“单人多项目 AI 开发编排系统”的产品、规格与原型实现项目。v1.0 已完成可交付规格包；v1.1 改为基于社区 `NousResearch/hermes-agent` 实现，而不是独立重写新的 Hermes Agent。当前实现重点转向 Hermes Agent 原生工作流：以 `19-hermes-workflow-design` 设计包为来源，把 Kanban/Profile/Plugin Hooks/Curator 驱动的多角色流程落成 MVP，并为完整实现预留下一里程碑。
 
 ## Core Value
 
@@ -31,7 +31,10 @@ Architecture boundary: "10x" means lower coordination overhead across multiple p
 
 ### Active
 
-None for the completed v1.1 milestone.
+- [ ] 用可执行证据验证 phase 19 文档中引用的 Hermes 官方能力，并在实现前钉死官方边界与本地增量边界。
+- [ ] 落成 8 个工作流 profile、项目级 override 合并能力，以及多 project board 的基础隔离约定。
+- [ ] 用 Kanban 状态机替换旧文件总线路由，打通 PM/Orchestrator/Worker 的 block-resume 交接。
+- [ ] 落成风险策略、只读审查护栏、worker cleanup/timeout、结构化 handoff 和基础可观测性。
 
 ### Out of Scope
 
@@ -39,6 +42,8 @@ None for the completed v1.1 milestone.
 - 将能力集成进 `gbrain` — 当前目标是上游 Hermes Agent 适配包，不做现有项目集成。
 - 面向小团队协作或 AI 工厂高吞吐 — v1 聚焦单人多项目开发与远程决策。
 - 自动批准 L3/L4 高风险操作 — 危险与紧急操作必须阻塞并等待用户明确确认。
+- 高级 curator 跨项目语义合并、冲突仲裁和 learning 删除传播策略 — 延后到 v1.4 完整实现。
+- staging/production UAT、分层部署回滚和 SRE 自动根因分析闭环 — 延后到 v1.4 完整实现。
 
 ## Context
 
@@ -67,9 +72,9 @@ v1.0 规格阶段的用户输入与决策：
 - **Privileges**: 目标环境可能无 sudo 权限 — 安装、配置和运行路径必须优先使用 `$HOME`、`~/.hermes-orchestra/`、`~/.hermes/` 和 `/tmp/hermes-orchestra/`。
 - **Agent Stack**: 方案围绕社区 `NousResearch/hermes-agent`、Claude Code CLI、Codex CLI 和 tmux — 规格需明确版本假设、认证要求、上游边界和各自职责。
 - **Safety**: L3/L4 风险不得自动批准 — 规格必须定义阻塞式确认、审计日志、默认安全动作和可恢复策略。
-- **Isolation**: 多项目必须隔离 — 每个项目应拥有独立 tmux 会话、文件总线目录、任务前缀和状态文件。
+- **Isolation**: 多项目必须隔离 — 每个项目应拥有独立 board、workspace、profile override 和状态上下文。
 - **Remote Channel**: 远程通知/决策不能绑定 Telegram — v1 使用 Remote Decision Channel 抽象，具体平台作为适配器。
-- **Deliverable**: v1.1 交付物是基于社区 Hermes Agent 的本地编排适配包、验证夹具、文档和实施 handoff — 不修改现有 `gbrain` 代码，不实现生产级最终工具。
+- **Deliverable**: v1.3 交付物是 Hermes Agent 原生工作流 MVP：完成能力确认、profile/override、Kanban 路由、风险护栏、worker 生命周期与基础可观测性，不在当前里程碑内补齐完整部署/SRE/curator 语义闭环。
 
 ## Key Decisions
 
@@ -82,12 +87,16 @@ v1.0 规格阶段的用户输入与决策：
 | 远程决策通道抽象化 | 用户不想绑定 Telegram，选择先抽象接口、不选具体实现 | Accepted in Phase 6 |
 | 暂不集成进 `gbrain` | 用户选择规格包目标，而非“集成进现有 gbrain 项目” | Accepted in Phase 1 |
 | 基于社区 Hermes Agent 实现 | 用户确认原方案要求基于 `NousResearch/hermes-agent`，而不是独立实现新的 Hermes Agents | Accepted in direction correction on 2026-04-25 |
+| phase 19 设计包拆成两个执行 milestone | `gsd-new-milestone` 只允许一个当前 milestone，因此将 MVP 和完整实现分层能同时满足规划与执行语义 | Accepted on 2026-05-10 |
+| 执行 phase 编号从 20 开始 | `.planning/phases/19-hermes-workflow-design/` 已作为设计源目录存在，复用 19 会与后续 GSD phase 目录冲突 | Accepted on 2026-05-10 |
 
 ## Current State
 
 v1.1 is complete. Phases 9-12 validated the upstream Hermes Agent baseline, package installer layer, local project runtime slice, risk rulebook enforcement, SSH/local decision fallback, durable Audit JSONL, smoke verification fixtures, coverage matrix, and next-milestone handoff.
 
-v1.2 Phase 18 clarified architecture bounds across `.planning/SPEC.md`, `specs/file-bus.md`, `docs/orchestra/README.md`, `docs/orchestra/WORKFLOW.md`, and `.planning/PROJECT.md`. The fixed Runtime bus is documented as one active task slot per project, same-project parallelism is out of scope for v1.2, and the "10x" claim is limited to single-developer multi-project coordination. Phase 18 verification passed, and the milestone is ready for completion via `$gsd-complete-milestone`.
+v1.2 Phase 18 clarified architecture bounds across `.planning/SPEC.md`, `specs/file-bus.md`, `docs/orchestra/README.md`, `docs/orchestra/WORKFLOW.md`, and `.planning/PROJECT.md`. The fixed Runtime bus is documented as one active task slot per project, same-project parallelism is out of scope for v1.2, and the "10x" claim is limited to single-developer multi-project coordination.
+
+Phase 19 produced a full Hermes-native workflow design package under `.planning/phases/19-hermes-workflow-design/`. That package now becomes the source for two execution milestones: v1.3 covers the MVP implementation path, and v1.4 covers the full implementation path. Execution phase numbering starts at 20 so the phase 19 design directory remains a stable reference set.
 
 ## Milestone: v1.1 Upstream Hermes Agent Integration
 
@@ -102,28 +111,26 @@ v1.2 Phase 18 clarified architecture bounds across `.planning/SPEC.md`, `specs/f
 - Per-project file bus connecting Hermes Agent, Claude Supervisor, and Codex Executor.
 - Risk rulebook, local decision fallback, smoke fixtures, integration docs, and handoff for remote adapters.
 
-## Current Milestone: v1.2 Hermes Dev Orchestra 规范化与迁移
+## Current Milestone: v1.3 Hermes 原生工作流 MVP 实现
 
-**Goal:** 通过证据盘点和 gap audit，修复根目录可发现性，按需迁移目录结构，规范化规格体系和开发工作流。
+**Goal:** 以 `19-hermes-workflow-design` 非归档文档为蓝本，把 Hermes Agent 原生工作流的 MVP 纵向切片落成可执行计划，优先完成能力对齐、角色边界、Kanban 路由、风险护栏、worker 生命周期与基础可观测性。
 
 **Target features:**
-- Phase 0: 证据盘点与 Gap Audit（当前仓库状态、路径引用、规格缺口）
-- Phase 1: 提交边界与回滚策略
-- Phase 2: 根目录可发现性修复（索引指针，保留现有结构）
-- Phase 3: 可选目录迁移（仅在证据支持时）
-- Phase 4: Upstream pin 与 submodule ADR
-- Phase 5: 规格体系整理（specs/ 派生文档）
-- Phase 6: Agents 规则合并（AGENTS.md 追加，不覆盖）
-- Phase 7: Makefile 与开发工作流
-- Phase 8: 10x 压力边界明确
+- Phase 20: 平台能力确认与官方边界锁定
+- Phase 21: Profile 包装、项目级 override 与多项目基础隔离
+- Phase 22: PM/Orchestrator/Worker 状态机路由与 block-resume 交接
+- Phase 23: 风险策略、只读审查护栏与角色边界
+- Phase 24: Worker cleanup、timeout、structured handoff 与基础背压控制
+- Phase 25: 可观测性落地、环境快照与 MVP 端到端验收
+
+**Latest execution update:** Phase 21 is now complete. The repo contains a canonical workflow profile catalog, repo-local override contract, `orch-profile-sync`, and project-scoped Hermes home generation at `.hermes/projects/{project_slug}/`. Runtime naming is normalized to `reviewer`, and board/workspace/profile/memory isolation is derived from a single `project_slug`.
 
 ## Next Milestone Goals
 
-- Design concrete Remote Decision Channel adapter identity, replay, and delivery semantics.
-- Harden Audit with retention, backup, and tamper-evidence policy.
-- Harden isolation boundaries around container, worktree, and sandbox execution.
-- Keep optional product extensions (`gbrain`, dashboard, team approvals) outside the core v1.1 slice until explicitly prioritized.
-
+- 完成 curator 驱动的跨项目 learning 晋升、冲突警告、删除传播与人工复审闭环。
+- 完成滑动窗口背压、死锁升级、SRE-Observer 结构化 RCA 与故障通知闭环。
+- 完成 dev/test → staging → production 三层部署、验证门控、UAT 和 production 审批。
+- 完成部署回滚、git tag、结构化部署报告与完整发布审计链路。
 
 ## Evolution
 
@@ -143,4 +150,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-28 — Phase 17 completed*
+*Last updated: 2026-05-10 — v1.3 milestone opened from phase 19 workflow design docs*

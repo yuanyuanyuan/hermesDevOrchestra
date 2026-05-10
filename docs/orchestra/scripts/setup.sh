@@ -82,7 +82,7 @@ fi
 
 log_info "Creating orchestra directories..."
 mkdir -p "$HERMES_HOME" "$HERMES_SKILLS_DIR" "$ORCHESTRA_HOME" "$ORCHESTRA_BIN_DIR" \
-    "$ORCHESTRA_HOME/backups" "$ORCHESTRA_HOME/lib" "$ORCHESTRA_HOME/tests" "$ORCHESTRA_HOME/claude-config-template/.claude" \
+    "$ORCHESTRA_HOME/backups" "$ORCHESTRA_HOME/lib" "$ORCHESTRA_HOME/tests" "$ORCHESTRA_HOME/profile-distribution" "$ORCHESTRA_HOME/claude-config-template/.claude" \
     "$LOCAL_BIN_DIR" "$RUNTIME_ROOT" "$STATE_ROOT" "$AUDIT_ROOT" "$CACHE_ROOT"
 log_ok "Directory roots ready"
 
@@ -147,6 +147,7 @@ HELPER_SRC_DIR="$PACKAGE_DIR/scripts/bin"
 HELPER_LIB_SRC_DIR="$PACKAGE_DIR/scripts/lib"
 TEST_SRC_DIR="$PACKAGE_DIR/scripts/tests"
 RULES_SRC="$PACKAGE_DIR/config/rules.json"
+PROFILE_DIST_SRC="$PACKAGE_DIR/hermes/profile-distribution"
 
 if [ ! -f "$HELPER_LIB_SRC_DIR/orch-common.sh" ]; then
     log_err "Helper library missing: $HELPER_LIB_SRC_DIR/orch-common.sh"
@@ -162,6 +163,16 @@ cp "$HELPER_LIB_SRC_DIR/orch-common.sh" "$ORCHESTRA_HOME/lib/orch-common.sh"
 chmod +x "$ORCHESTRA_HOME/lib/orch-common.sh"
 log_ok "Helper library installed: $ORCHESTRA_HOME/lib/orch-common.sh"
 
+if [ ! -d "$PROFILE_DIST_SRC/profiles" ]; then
+    log_err "Profile distribution missing: $PROFILE_DIST_SRC/profiles"
+    exit 1
+fi
+
+rm -rf "$ORCHESTRA_HOME/profile-distribution"
+mkdir -p "$ORCHESTRA_HOME/profile-distribution"
+cp -R "$PROFILE_DIST_SRC"/. "$ORCHESTRA_HOME/profile-distribution"/
+log_ok "Profile distribution installed: $ORCHESTRA_HOME/profile-distribution"
+
 if [ ! -f "$ORCHESTRA_HOME/rules.json" ]; then
     cp "$RULES_SRC" "$ORCHESTRA_HOME/rules.json"
     log_ok "Default risk rules installed: $ORCHESTRA_HOME/rules.json"
@@ -169,7 +180,7 @@ else
     log_warn "Existing risk rules preserved: $ORCHESTRA_HOME/rules.json"
 fi
 
-for helper in orch-init orch-start orch-stop orch-status orch-bus-loop orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify; do
+for helper in orch-init orch-start orch-stop orch-status orch-bus-loop orch-profile-sync orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify; do
     if [ ! -f "$HELPER_SRC_DIR/$helper" ]; then
         log_err "Helper source missing: $HELPER_SRC_DIR/$helper"
         exit 1
@@ -178,7 +189,7 @@ for helper in orch-init orch-start orch-stop orch-status orch-bus-loop orch-risk
     cp "$HELPER_SRC_DIR/$helper" "$ORCHESTRA_BIN_DIR/$helper"
 done
 
-for helper in orch-init orch-start orch-stop orch-status orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify; do
+for helper in orch-init orch-start orch-stop orch-status orch-profile-sync orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify; do
     install_helper_link "$helper"
 done
 
@@ -208,6 +219,7 @@ echo "  Skills:     $HERMES_SKILLS_DIR/{dev-orchestra,claude-supervisor,codex-ex
 echo "  Template:   $SETTINGS_DST"
 echo "  Helpers:    $LOCAL_BIN_DIR/orch-*"
 echo "  Rules:      $ORCHESTRA_HOME/rules.json"
+echo "  Profiles:   $ORCHESTRA_HOME/profile-distribution"
 echo "  Tests:      $ORCHESTRA_HOME/tests"
 echo "  Runtime:    $RUNTIME_ROOT"
 echo "  State:      $STATE_ROOT"

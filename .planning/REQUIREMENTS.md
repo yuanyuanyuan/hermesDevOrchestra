@@ -163,10 +163,10 @@ This milestone turns the v1.0 specification package into an upstream-first imple
 |-------------|-------|--------|
 | VFY-01 | Phase 20 | Complete |
 | VFY-02 | Phase 20 | Complete |
-| PROF-01 | Phase 21 | Planned |
-| PROF-02 | Phase 21 | Planned |
-| FLOW-02 | Phase 21 | Planned |
-| MEM-01 | Phase 21 | Planned |
+| PROF-01 | Phase 21 | Complete |
+| PROF-02 | Phase 21 | Complete |
+| FLOW-02 | Phase 21 | Complete |
+| MEM-01 | Phase 21 | Complete |
 | ROUTE-01 | Phase 22 | Planned |
 | ROUTE-02 | Phase 22 | Planned |
 | SAFE-01 | Phase 23 | Planned |

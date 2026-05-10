@@ -81,6 +81,7 @@ bash docs/orchestra/scripts/setup.sh
 `setup.sh` 会自动完成：
 - 检查上游 `hermes` 和 `tmux` 是否已安装
 - 安装 SOUL.md、4 个自定义 Skills、Claude hooks 模板
+- 安装 canonical profile catalog 到 `~/.hermes-orchestra/profile-distribution/`
 - 创建目录结构：`/tmp/hermes-orchestra/`、`~/.local/state/hermes-orchestra/`、`~/.local/share/hermes-orchestra/`、`~/.cache/hermes-orchestra/`
 - 安装 `orch-*` helper 命令到 PATH
 
@@ -168,9 +169,11 @@ orch-init ml-pipeline ~/projects/ml-pipeline
 `orch-init` 会：
 1. 确保项目是 git 仓库（Codex 强制要求）
 2. 创建独立的 Runtime/State/Audit/Cache per-project 目录
-3. 在 State 中写入 `project.env`、`paths.json`、`current-task.json`
-4. 在 `projects.json` 注册项目
-5. 复制 Claude Code `settings.json`（含 Hooks 配置）到项目目录
+3. 创建仓库内 `.hermes/profiles/` 和 `.hermes/projects/{project_slug}/`
+4. 在 State 中写入 `project.env`、`paths.json`、`current-task.json`
+5. 在 `projects.json` 注册项目
+6. 写入 `.hermes/projects/{project_slug}/project.json`，锁定 board/workspace/override/memory 命名
+7. 复制 Claude Code `settings.json`（含 Hooks 配置）到项目目录
 
 #### 2.2.2 启动编排会话
 
@@ -188,6 +191,8 @@ orch-start ml-pipeline ~/projects/ml-pipeline
 `orch-start` 会：
 - 启动/复用 `hermes-{project}-claude` tmux 会话（Claude Supervisor）
 - 启动/复用 `hermes-{project}-codex` tmux 会话（Codex Executor）
+- 启动前运行 `orch-profile-sync`，把 canonical profile catalog + repo-local overrides 编译到 `.hermes/projects/{project_slug}/`
+- 为会话注入 `HERMES_HOME`, `HERMES_KANBAN_BOARD`, `HERMES_MEMORY_NAMESPACE`
 - 启动 per-project internal watcher，负责扫描 Runtime bus、派发 task.md
 
 #### 2.2.3 验证启动状态
@@ -199,6 +204,9 @@ orch-status
 预期看到：
 ```
 Project: api-gateway
+  Board: api-gateway
+  Workspace root: /path/to/repo/.hermes/projects/api-gateway
+  Memory namespace: project:api-gateway
   Claude tmux: hermes-api-gateway-claude  [running]
   Codex tmux:  hermes-api-gateway-codex   [running]
   Watcher PID: 12345
@@ -207,6 +215,14 @@ Project: api-gateway
 Project: web-frontend
   ...
 ```
+
+#### 2.2.4 Profile packaging contract
+
+- Canonical base profiles: `docs/orchestra/hermes/profile-distribution/`
+- Repo-local project overrides: `.hermes/profiles/{role}.override.yaml`
+- Repo-local project SOUL fragments: `.hermes/profiles/{role}.project.md`
+- Generated project-scoped Hermes home: `.hermes/projects/{project_slug}/`
+- Runtime canonical reviewer slug: `reviewer`
 
 ---
 

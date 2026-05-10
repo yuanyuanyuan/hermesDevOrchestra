@@ -42,7 +42,9 @@ assert_contains "0.11.0" /tmp/orch-install-probe.out "setup must probe upstream 
 assert_file_exists "$HOME/.hermes/SOUL.md" "SOUL not installed"
 assert_file_exists "$HOME/.hermes/skills/dev-orchestra/SKILL.md" "dev-orchestra skill missing"
 assert_executable "$LOCAL_BIN_DIR/orch-init" "orch-init not linked"
+assert_executable "$LOCAL_BIN_DIR/orch-profile-sync" "orch-profile-sync not linked"
 assert_executable "$LOCAL_BIN_DIR/orch-risk-check" "orch-risk-check not linked"
 assert_executable "$LOCAL_BIN_DIR/orch-verify" "orch-verify not linked"
+assert_file_exists "$ORCHESTRA_HOME/profile-distribution/distribution.yaml" "profile distribution not installed"
 
 test_done

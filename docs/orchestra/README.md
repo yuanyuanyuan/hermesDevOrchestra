@@ -155,10 +155,11 @@ setup.sh 会自动完成：
 - 检查上游 `hermes` 和 `tmux` 是否已安装
 - 提示 `claude` 和 `codex` CLI 是否可用，但不安装或更新它们
 - setup.sh installs Dev Orchestra SOUL、4 个自定义 Skills、4 层目录根、Claude hooks 模板、默认 `rules.json` 和 `orch-*` helper
+- 安装 canonical profile catalog 到 `~/.hermes-orchestra/profile-distribution/`
 - 创建目录结构 `/tmp/hermes-orchestra/`、`~/.local/state/hermes-orchestra/`、`~/.local/share/hermes-orchestra/`、`~/.cache/hermes-orchestra/` 和 `~/.hermes-orchestra/`
 - 将 4 个自定义 Skills 安装到上游 layout：`~/.hermes/skills/{skill-name}/`
 - 备份并安装 SOUL.md 到上游读取路径：`~/.hermes/SOUL.md`
-- 安装 PATH helper：`orch-init`, `orch-start`, `orch-stop`, `orch-status`, `orch-risk-check`, `orch-decisions`, `orch-approve`, `orch-reject`, `orch-audit`, `orch-verify`
+- 安装 PATH helper：`orch-init`, `orch-start`, `orch-stop`, `orch-status`, `orch-profile-sync`, `orch-risk-check`, `orch-decisions`, `orch-approve`, `orch-reject`, `orch-audit`, `orch-verify`
 
 ### Step 2: 配置 API Key 和认证
 
@@ -215,8 +216,10 @@ orch-init ml-pipeline ~/projects/ml-pipeline
 `orch-init` 会：
 1. 确保项目是 git 仓库（Codex 强制要求）
 2. 创建独立的 Runtime/State/Audit/Cache per-project 目录
-3. 在 State 中写入 `project.env`、`paths.json`、`current-task.json`，并在 `projects.json` 注册项目
-4. 复制 Claude Code `settings.json`（含 Hooks 配置）到项目目录（若项目尚未配置）
+3. 创建仓库内隔离目录 `.hermes/profiles/` 和 `.hermes/projects/{project_slug}/`
+4. 在 State 中写入 `project.env`、`paths.json`、`current-task.json`，并在 `projects.json` 注册项目
+5. 生成 `project.json`，固定 `board={project_slug}`、`memory=project:{project_slug}`、`workspace=.hermes/projects/{project_slug}/`
+6. 复制 Claude Code `settings.json`（含 Hooks 配置）到项目目录（若项目尚未配置）
 
 ### Step 5: 启动编排会话
 
@@ -234,7 +237,21 @@ orch-start ml-pipeline ~/projects/ml-pipeline
 orch-status
 ```
 
-`orch-start` 会启动或复用两个 tmux shell 会话（`hermes-<project>-claude`、`hermes-<project>-codex`），并启动一个 per-project internal watcher。watcher 负责扫描 Runtime bus、派发 `task.md`、转发 Claude/Codex 文件并记录 State。
+`orch-start` 会在启动 tmux 会话前执行 `orch-profile-sync`，把 canonical profile catalog 与 repo-local overrides 编译到 `.hermes/projects/{project_slug}/`。随后为两个 tmux shell 会话注入：
+
+- `HERMES_HOME=.hermes/projects/{project_slug}/`
+- `HERMES_KANBAN_BOARD={project_slug}`
+- `HERMES_MEMORY_NAMESPACE=project:{project_slug}`
+
+watcher 仍负责扫描 Runtime bus、派发 `task.md`、转发 Claude/Codex 文件并记录 State。
+
+### Profile 包装与隔离
+
+- Canonical base profile source 在 `docs/orchestra/hermes/profile-distribution/`
+- 项目 override source 在 `{repo}/.hermes/profiles/`
+- `reviewer` 是 runtime canonical slug；`tech-reviewer` 只保留为设计期旧名
+- 生成后的项目级 Hermes home 在 `{repo}/.hermes/projects/{project_slug}/`
+- `SOUL.md` 组装顺序固定为 `global -> project -> role`
 
 ### Step 6: 启动 Hermes 主控
 

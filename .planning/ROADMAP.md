@@ -69,7 +69,7 @@
   1. 全局 profile 与项目 override 的合并路径已定义且不会污染 `~/.hermes/profiles/`。
   2. 8 个 active profiles 与 3 个 reserved profiles 的 toolsets/SOUL 边界已落在仓库产物中。
   3. board、workspace、profile 和 memory 命名约定已防止多项目串线。
-**Plans:** 0/1 plans complete
+**Plans:** 1/1 plans complete
 
 ### Phase 22: State-Machine Routing & Kanban Handoff
 **Goal:** 用 Kanban 状态机替换旧文件总线路由，打通 PM、Orchestrator 和 Worker 的主链路交接。  
@@ -123,7 +123,7 @@ Phases execute in numeric order: 20 → 21 → 22 → 23 → 24 → 25
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 20. Capability Verification & Boundary Lock | v1.3 | 1/1 | Complete | 2026-05-10 |
-| 21. Profiles, Overrides & Board Isolation | v1.3 | 0/1 | Planned | — |
+| 21. Profiles, Overrides & Board Isolation | v1.3 | 1/1 | Complete | 2026-05-10 |
 | 22. State-Machine Routing & Kanban Handoff | v1.3 | 0/1 | Planned | — |
 | 23. Risk Policy & Role Guardrails | v1.3 | 0/1 | Planned | — |
 | 24. Worker Lifecycle, Cleanup & Admission Control | v1.3 | 0/1 | Planned | — |
