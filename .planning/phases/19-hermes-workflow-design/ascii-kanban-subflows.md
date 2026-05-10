@@ -1,3 +1,5 @@
+> **架构说明（2026-05-11 更新）：** 本文档中的 "spawn worker" 流程包含两层：Hermes Dispatcher 派发 Profile 进程 → Profile 委托外部 CLI 引擎。详见 [EXTERNAL-CLI-ENGINE.md](./EXTERNAL-CLI-ENGINE.md)。
+
 ## 二、Kanban 任务管理子流程（§4）
 
 > 📎 **相关叙事文档**：
@@ -167,6 +169,11 @@
                     │  HERMES_KANBAN_BOARD │                 │
                     └──────────┬──────────┘                 │
                                │                            │
+               ┌───────────────┴───────────────┐            │
+               │  两层 spawn 架构:              │            │
+               │  ① Dispatcher → Profile 进程  │            │
+               │  ② Profile → CLI 引擎(JSON)   │            │
+               └───────────────┬───────────────┘            │
                                ▼                            │
                     ┌─────────────────────┐                 │
                     │  Worker 进程启动     │                 │

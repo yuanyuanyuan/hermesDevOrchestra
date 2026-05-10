@@ -1,0 +1,44 @@
+/* Hermes Workflow Lab — Styles */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+[x-cloak] { display: none !important; }
+
+/* Role colors */
+.role-pm { color: #60a5fa; }
+.role-orch { color: #c084fc; }
+.role-impl { color: #34d399; }
+.role-rev { color: #fbbf24; }
+.role-qa { color: #f472b6; }
+.role-devops { color: #fb923c; }
+.role-sre { color: #f87171; }
+.role-research { color: #22d3ee; }
+
+/* Column top-border colors */
+.col-triage { border-top-color: #9ca3af; }
+.col-todo { border-top-color: #6b7280; }
+.col-ready { border-top-color: #34d399; }
+.col-running { border-top-color: #60a5fa; }
+.col-blocked { border-top-color: #fbbf24; }
+.col-done { border-top-color: #34d399; }
+.col-archived { border-top-color: #4b5563; }
+
+/* Notification badge pulse */
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.notify-pulse {
+  animation: pulse-red 1.5s ease-in-out infinite;
+}
+
+/* Terminal cursor blink */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.term-cursor::after {
+  content: '▋';
+  animation: blink 1s step-end infinite;
+  color: #34d399;
+}

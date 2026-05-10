@@ -1,3 +1,5 @@
+> **架构说明（2026-05-11 更新）：** 本文档中的 "worker 进程" 是 Hermes Profile 进程（轻量编排层），通过 JSON 协议委托给外部 CLI 引擎执行实际工作。详见 [EXTERNAL-CLI-ENGINE.md](./EXTERNAL-CLI-ENGINE.md)。
+
 ## 一、核心业务流程（Key Flows F0–F7）
 
 > 📎 **相关文档**：
@@ -131,6 +133,14 @@
                     │  (注入 TASK_ID/BOARD)   │           │
                     └───────────┬─────────────┘           │
                                 │                         │
+                  ┌─────────────┴─────────────┐           │
+                  │ External CLI Engine 架构:  │           │
+                  │ Dispatcher spawns Hermes   │           │
+                  │ Profile → Profile constructs│          │
+                  │ JSON Request → Profile calls│          │
+                  │ CLI engine → CLI engine     │          │
+                  │ returns JSON Response       │          │
+                  └─────────────┬─────────────┘           │
                                 ▼                         │
                     ┌─────────────────────────┐           │
                     │   Worker 在隔离 worktree │           │
