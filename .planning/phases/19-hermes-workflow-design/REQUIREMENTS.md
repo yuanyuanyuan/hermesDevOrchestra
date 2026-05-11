@@ -239,6 +239,17 @@ Hermes Agent v0.13.0 原生提供了：
 - R29. 任何层部署失败时，DevOps-Engineer 必须先尝试修复部署脚本/配置问题；修复失败则 kanban_block 报告用户。验证门控失败时，自动回滚该层环境并阻塞后续部署，等待用户决策（修复重试 / 放弃）。
 - R30. DevOps-Engineer 的 `kanban_complete` 必须输出结构化部署报告 metadata，字段至少包含：`version`、`strategy`、`environments[]`（每层含 name/status/validation/smoke_test）、`git_tag`、`rollback_available`、`changed_files`、`duration`。部署过程中每完成一层必须通过 `kanban_comment` 记录进度，同时更新 task metadata 的 `current_env` 和 `status` 字段。
 
+**外部 CLI 引擎需求**
+
+- R31. 每个 Profile 的 `config.yaml` 必须支持 `engine` 字段，声明外部 CLI 引擎类型（`claude` / `codex`）、执行模式（`-p` / `exec`）、额外 flags、以及可选的降级引擎（`fallback`）。Profile 的 `model` 字段仅控制 Hermes 路由层的 LLM，不控制 CLI 引擎。
+- R32. Hermes Profile 调用 CLI 引擎时，必须通过统一的 JSON Request Envelope 传入上下文（包含 `protocol`、`role`、`task_type`、`project_workspace`、`task_body`、`conversation_history`、`instructions`，以及仅用于追踪的 `correlation_id`）。CLI 引擎的输出必须为 JSON Response Envelope（统一包含 `status`、`next_action`、角色特定 payload；defer 场景下额外包含 `deferred_tool_use` 与 `conversation_context`）。协议版本为 `hermes-role-engine/v1`。
+- R33. 多轮对话（如 PM 需求澄清）必须采用**上下文累积模式**：每次调用 CLI 引擎时传入完整对话历史（从 Kanban task metadata 的 `pm_clarification_history` 字段读取），CLI 引擎无状态，不依赖 session resume 机制。
+- R34. PM 引擎的生命周期包含三个阶段：技术发现 + 需求澄清（多轮）、生成需求文档、任务拆解。三阶段属于同一个 PM 引擎逻辑流程，但实现上由多次**无状态** CLI 调用通过上下文累积串联完成，不依赖 `--resume` 或持久 session。当 PM 引擎输出 `status: "needs_research"` 时，Hermes PM 必须先创建 Research 任务，Research 完成后再调用 PM 引擎做正式任务拆解。
+- R35. CLI 引擎调用失败时，Hermes Profile 必须执行以下恢复策略：超时（>300s）→ kill + retry 1 次 → kanban_block；崩溃（exit code ≠ 0）→ retry 1 次 → kanban_block；JSON 解析失败 → log raw output + kanban_block；API 限流（429）→ backoff 60s + retry → kanban_block。所有无法自动恢复的错误必须升级为 kanban_block，由用户决定下一步。
+- R36. 需求澄清超过 15 轮时，PM 引擎必须强制生成 `status: "requirement_ready"`，使用已有澄清信息拼接需求文档，不允许无限澄清循环。
+- R37. CLI 引擎的工具访问必须通过 `--allowedTools` 参数做第一层白名单限制：PM（`Read,Glob,Grep,Bash`）、Researcher（`Read,Glob,Grep,Bash,WebFetch,WebSearch`）、Implementer（codex `--full-auto`）、Reviewer（`Read,Glob,Grep`，严格只读）、QA-Tester（`Read,Glob,Grep,Bash`）、DevOps（codex `--full-auto`）、SRE-Observer（`Read,Glob,Grep,Bash`）。Reviewer 的白名单必须严格只读，禁止任何写操作工具。
+- R38. Orchestrator Profile 不使用外部 CLI 引擎，路由决策基于预定义的状态机路由表执行，不依赖 LLM 推理。Hermes 的轻量 LLM 仅用于理解自然语言指令。
+
 ---
 
 ## Acceptance Examples
@@ -290,6 +301,7 @@ Hermes Agent v0.13.0 原生提供了：
 - 三层纵深风险拦截（SOUL.md + Plugin hook + CLI 安全）
 - per-board 完全隔离的多项目并行管理
 - Hermes 原生能力的确认与利用
+- 外部 CLI 引擎统一模式（Hermes 调度 + `claude -p` / `codex exec` 引擎）
 
 **本工作不包含：**
 - 实现细节（schema、文件路径、API 形态、SQL 语句）— 留给实施阶段
@@ -302,6 +314,8 @@ Hermes Agent v0.13.0 原生提供了：
 - DESIGN §8.7 Skill Sandbox + 三阶段晋升 — 与官方 prune→archive→restore 模型冲突
 - DESIGN 附录 D 动态 Living Context — 官方 `hermes kanban context` 已覆盖
 - DESIGN 附录 E 脚本自注册机制 — 项目脚手架问题，与 Hermes 能力无关
+- CLI 引擎的安装和认证配置（假设 `claude` 和 `codex` CLI 已安装并认证）
+- CLI 引擎的模型选择（由各 CLI 自身配置决定，如 `claude -p` 默认使用 claude sonnet）
 
 ---
 
@@ -322,7 +336,7 @@ Hermes Agent v0.13.0 原生提供了：
 
 - Hermes Agent v0.13.0 已在目标环境安装并通过 `hermes status` 自检（已实测验证）
 - v1.0 SPEC.md 的 actor 权责定义（§AUTH-01/02）保持不变，本 requirements 在其之上扩展但不替换
-- v1.2 milestone 已完成，文件总线 runtime 仍可作为兼容回退（在 Phase 0 验证未完成前）
+- v1.2 milestone 已完成；本 phase 的目标实现以 Hermes Profile + 外部 CLI 引擎 JSON 协议为唯一主路径，历史文件总线 runtime 仅可作为迁移参考，不作为兼容回退方案
 - 假设 Hermes Agent 后续小版本（0.13.x）不会破坏本 doc 引用的能力（Kanban / Profile / Curator / Memory 等）；若发生破坏性变更，需重新触发 Phase 0 验证
 - 假设 worker 是 OS 进程而非常驻 LLM 会话（已通过 Hermes Kanban v1 spec §3.3 "no in-process subagent swarms" 确认）
 

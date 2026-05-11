@@ -1,5 +1,7 @@
 ## 附录 C：全流程时间线 `[设计假设]`
 
+> **架构说明（2026-05-11 更新）：** 时间线中的角色执行实际由外部 CLI 引擎完成。PM→`claude -p`，Implementer→`codex exec`，Reviewer→`claude -p`。详见 [EXTERNAL-CLI-ENGINE.md](./EXTERNAL-CLI-ENGINE.md)。
+
 > **能力来源说明：** 本时间线展示的完整流程（从需求提交到部署归档）中，Kanban/Dispatcher/Gateway 属于 `[Hermes 官方]`；需求澄清、Research+POC、TDD、L3 风险拦截、三层部署属于 `[Phase 19 增量]`。时间数据为 `[设计假设]`，实际耗时取决于 LLM 响应速度和用户决策延迟。
 
 ```

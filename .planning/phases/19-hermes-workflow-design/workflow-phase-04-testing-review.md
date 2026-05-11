@@ -1,12 +1,18 @@
 ## Phase 4: 测试 + 审查（并行）
 
+> **架构说明（2026-05-11 更新）：** 本文档中的 Reviewer 和 Implementer 角色均采用"外部 CLI 引擎"模式。
+> - **Reviewer Profile** → 委托给 `claude -p` 审查引擎（`--allowedTools 'Read,Glob,Grep'`，严格只读）
+> - **Implementer Profile** → 委托给 `codex exec` 实现引擎（或 `claude -p`）
+>
+> 详见 [`EXTERNAL-CLI-ENGINE.md`](./EXTERNAL-CLI-ENGINE.md)。
+
 > 📎 **相关 ASCII 流程图**：
 > - [`ascii-end-to-end.md`](./ascii-end-to-end.md) — Phase 4 测试+审查（并行）
 > - [`ascii-decision-matrix.md`](./ascii-decision-matrix.md) — L3 升级流程（完整路径）、声明式风险策略引擎
 > - [`ascii-core-flows.md`](./ascii-core-flows.md) — F3 L3 风险升级与用户决策
 > - [`ascii-kanban-subflows.md`](./ascii-kanban-subflows.md) — Handoff 机制
 >
-> **能力来源说明：** Dispatcher 并行派发、`kanban_show`/`kanban_complete`/`kanban_block` 工具、Reviewer Profile 隔离属于 `[Hermes 官方]`。Reviewer toolsets 白名单（R10）、terminal 写操作拦截（R8）、L1/L2/L3 风险分级、Risk Policy Engine、背压检查属于 `[Phase 19 增量]`。L1/L2/L3 为项目设计概念，非 Hermes 官方机制。
+> **能力来源说明：** Dispatcher 并行派发、`kanban_show`/`kanban_complete`/`kanban_block` 工具、Reviewer Profile 隔离属于 `[Hermes 官方]`。Reviewer toolsets 白名单（R10）、terminal 写操作拦截（R8）、L1/L2/L3 风险分级、Risk Policy Engine、背压检查属于 `[Phase 19 增量]`。L1/L2/L3 为项目设计概念，非 Hermes 官方机制。**Risk Policy Engine 拦截位置：** 在 Hermes Plugin 的 `pre_tool_call` 层拦截，该层包裹了调用 CLI 引擎的 `terminal()` 调用——即 Profile 在调用 `claude -p` 或 `codex exec` 之前，所有工具调用均经过 Risk Policy Engine 的风险评估。
 
 ---
 
@@ -51,7 +57,7 @@ T4: 技术审查 JWT 实现（安全+规范）
 
 ### Step 4.2: Tech-Reviewer 被唤醒，读取 T1 Handoff
 
-**【Tech-Reviewer 内心OS】**
+**【审查引擎输出（claude -p）】**
 
 > "我被派发了审查任务 T4。让我先读取父任务 T1 的 handoff，了解 Implementer 做了什么。
 > 根据 R10，我的 toolsets 是白名单：file_read、kanban_read、kanban_block、kanban_complete、clarify。
@@ -96,7 +102,7 @@ review_context = {
 }
 ```
 
-**【Tech-Reviewer 内心OS】**
+**【审查引擎输出（claude -p）】**
 
 > "Implementer 改了 5 个文件，做了 4 个关键决策，发现了 3 个 pitfalls。
 > TDD 行为清单有 3 个行为，回归测试 13/13 通过。
@@ -121,7 +127,7 @@ cd /data/hermes/workspaces/project-alpha/worktree-t4-alpha-001
 cat src/auth/jwt.rs
 ```
 
-**【Tech-Reviewer 逐行审查内心OS】**
+**【审查引擎逐行审查输出（claude -p）】**
 
 > "让我逐段审查...
 >
@@ -252,7 +258,7 @@ warning: function `base64url_encode` is never used outside of tests
 src/auth/jwt.rs: diff found
 ```
 
-**【Tech-Reviewer 内心OS】**
+**【审查引擎输出（claude -p）】**
 
 > "Clippy 有两个 warning：
 > 1. unused import Mutex — Implementer 尝试修复 OnceLock 问题时加的，但没用到。清洁问题。
@@ -296,7 +302,7 @@ grep -c "fn test_" src/auth/jwt.rs
 5 tests found
 ```
 
-**【Tech-Reviewer 内心OS】**
+**【审查引擎输出（claude -p）】**
 
 > "5 个测试都过了。但我注意到测试没有覆盖所有边界情况：
 > - 缺少 malformed token 测试（不是 3 段的 token）
@@ -313,7 +319,7 @@ grep -c "fn test_" src/auth/jwt.rs
 
 ### Step 4.6: Tech-Reviewer 提交审查报告
 
-**【Tech-Reviewer 内心OS】**
+**【审查引擎输出（claude -p）】**
 
 > "让我按严重性分类 findings：
 >
@@ -425,7 +431,7 @@ kanban_complete(
 **【场景上下文】**
 在 Tech-Reviewer 审查 T1 的同时，Implementer 正在执行 T2（HTTP 接口）。这两个任务是并行的。
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "我现在在执行 T2：实现 4 个 HTTP 接口。
 > 让我读取 T1 的 handoff，了解 JWT 核心逻辑的 API。"
@@ -436,7 +442,7 @@ kanban_complete(
 parent = kanban_show(task_id="t1_alpha_001")
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "T1 已经完成。JWT 核心逻辑提供了这些 API：
 > - generate_token(user_id, token_type) -> String
@@ -522,7 +528,7 @@ async fn main() {
 }
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "好的，现有代码结构清晰：
 > - User 模型已有 id, email, password_hash
@@ -737,7 +743,7 @@ pub async fn logout_handler(
 EOF
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "等等，refresh_handler 有一个 bug！
 > 我调用了 `generate_token("unknown", "refresh")` 来生成新的 refresh token。
@@ -878,7 +884,7 @@ Jacky 在 Telegram 中回复：
 
 ### Step 4.11: Implementer 恢复执行，实现旋转机制
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "Jacky 选了 B。我需要：
 > 1. 创建 jti_blacklist 表
@@ -941,7 +947,7 @@ cargo test auth --lib 2>&1
  test result: ok. 8 passed; 0 failed
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "编译通过，测试通过。T2 完成了。
 > 但我没有写完整的集成测试——那是 T3 的任务。
@@ -994,5 +1000,16 @@ kanban_complete(
 ```
 
 ---
+
+## 架构说明：Reviewer / Implementer 与 CLI 引擎的关系
+
+| 角色 | 编排层 | 执行引擎 | 工具白名单 |
+|------|--------|---------|-----------|
+| Reviewer | Hermes Profile（轻量 LLM） | `claude -p` 审查引擎 | `Read,Glob,Grep`（严格只读） |
+| Implementer | Hermes Profile（轻量 LLM） | `codex exec` 实现引擎 | `--full-auto`（全工具） |
+
+审查引擎的输出（findings、安全评估）通过 JSON Response Envelope 返回给 Reviewer Profile，由 Profile 解析后写入 Kanban。
+
+通信协议详见 [`EXTERNAL-CLI-ENGINE.md`](./EXTERNAL-CLI-ENGINE.md) §5。
 
 

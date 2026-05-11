@@ -1,5 +1,7 @@
 ## 四、决策矩阵子流程（§6）
 
+> **架构说明（2026-05-11 更新）：** 本文档中的 Reviewer 通过 `claude -p` 审查引擎执行审查（`--allowedTools 'Read,Glob,Grep'`）。详见 [EXTERNAL-CLI-ENGINE.md](./EXTERNAL-CLI-ENGINE.md)。
+
 > 📎 **相关叙事文档**：
 > - L3 升级事件 → [`workflow-phase-04-testing-review.md`](./workflow-phase-04-testing-review.md) — Step 4.10 阻塞通知与决策
 > - 风险策略设计讨论 → [`workflow-appendix-decisions.md`](./workflow-appendix-decisions.md) — 决策 2：Reviewer 只读终端

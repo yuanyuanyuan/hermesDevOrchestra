@@ -1,5 +1,7 @@
 ## Phase 3: 执行（Implementer）
 
+> **架构说明（2026-05-11 更新）：** 本文档中的 Implementer 角色采用"外部 CLI 引擎"模式。Implementer Profile 是轻量编排层，实际编码、TDD、测试由 `codex exec`（或 `claude -p`）实现引擎完成。详见 [`EXTERNAL-CLI-ENGINE.md`](./EXTERNAL-CLI-ENGINE.md)。
+
 > 📎 **相关 ASCII 流程图**：
 > - [`ascii-end-to-end.md`](./ascii-end-to-end.md) — Phase 3 执行（Implementer）
 > - [`ascii-kanban-subflows.md`](./ascii-kanban-subflows.md) — Handoff 机制（任务交接）
@@ -50,7 +52,7 @@ T1: 实现 JWT 核心逻辑（生成/验证/刷新 token）
 
 ### Step 3.2: Implementer 被唤醒，读取任务并推导行为清单
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "我被 Dispatcher 派发了。任务 ID 是 t1_alpha_001，board 是 project-alpha。
 > 让我先看看任务详情。"
@@ -76,7 +78,7 @@ kanban_show(task_id="t1_alpha_001")
 }
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "好的，我需要在一个隔离的 worktree 中工作。
 > 工作区是 /data/hermes/workspaces/project-alpha/worktree-t1-alpha-001。
@@ -97,6 +99,8 @@ kanban_show(task_id="t1_alpha_001")
 ### Step 3.3: Implementer 建立上下文
 
 **【Implementer 执行的具体指令】**
+
+> **外部 CLI 引擎模式：** 以下 bash 命令在新架构中由 `codex exec` 引擎在 worktree 内部执行，Implementer Profile 仅接收结构化输出。以下展示的是引擎执行的命令及其返回结果。
 
 ```bash
 # 检查当前工作区
@@ -134,7 +138,7 @@ Cargo.toml 依赖:
 - argon2 = "0.5"
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "项目结构清晰。没有 auth 目录，我需要新建 src/auth/。
 > Cargo.toml 里没有 crypto 相关的依赖。我需要添加：
@@ -155,6 +159,8 @@ Cargo.toml 依赖:
 
 **【Implementer 执行的具体指令】**
 
+> **外部 CLI 引擎模式：** `cargo test` 由 `codex exec` 引擎在 worktree 内执行，Implementer Profile 仅接收测试结果的结构化输出。
+
 ```bash
 cargo test --lib
 ```
@@ -173,7 +179,7 @@ test middleware::rate_limit::test_rate_limit ... ok
  test result: ok. 8 passed; 0 failed; 0 ignored
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "基线测试全过（8/8）。TDD 门禁通过。
 >
@@ -188,6 +194,8 @@ test middleware::rate_limit::test_rate_limit ... ok
 ### Step 3.5: Implementer 添加依赖并创建文件结构
 
 **【Implementer 执行的具体指令】**
+
+> **外部 CLI 引擎模式：** 以下文件创建和编辑操作由 `codex exec` 引擎在 worktree 内完成，Implementer Profile 仅组装任务描述并接收引擎返回的变更清单。
 
 ```bash
 # 编辑 Cargo.toml，添加依赖
@@ -248,7 +256,7 @@ openssl genrsa -out /tmp/test_private.pem 2048 2>/dev/null
 openssl rsa -in /tmp/test_private.pem -pubout -out /tmp/test_public.pem 2>/dev/null
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "依赖和基础结构就绪。现在进入 TDD 循环。
 > 关于 RS256：JWT 标准用的是 RSASSA-PKCS1-v1_5（不是 PSS），ring 中对应 RSA_PKCS1_SHA256。
@@ -258,12 +266,14 @@ openssl rsa -in /tmp/test_private.pem -pubout -out /tmp/test_public.pem 2>/dev/n
 
 ### Step 3.6: TDD 行为 A — RED（生成 access token → 失败）
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "行为 A：生成 access token 返回有效 JWT。
 > 先写测试，再写实现。RED 阶段——测试必须失败。"
 
 **【Implementer 执行：写测试】**
+
+> **外部 CLI 引擎模式：** 以下测试编写和 `cargo test` 执行由 `codex exec` 引擎完成，Implementer Profile 接收测试结果（pass/fail）。
 
 ```bash
 cat > src/auth/jwt.rs << 'EOF'
@@ -328,7 +338,7 @@ test auth::jwt::tests::test_generate_access_token ... FAILED
 thread 'main' panicked at 'not yet implemented: 行为 A: RED 阶段'
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "RED 确认：测试失败，因为 todo!()。符合预期。
 > 如果测试意外通过，我会加强断言（比如验证 token 可被 verify_token 解析）。
@@ -339,6 +349,8 @@ thread 'main' panicked at 'not yet implemented: 行为 A: RED 阶段'
 ### Step 3.7: TDD 行为 A — GREEN（生成 access token → 通过）
 
 **【Implementer 执行：写最简实现】**
+
+> **外部 CLI 引擎模式：** 实现代码编写由 `codex exec` 引擎在 worktree 内完成，Implementer Profile 仅传递行为规格并接收编译/测试结果。
 
 ```bash
 # 补全 generate_token 实现（verify_token 和 refresh 保持 todo!()）
@@ -443,7 +455,7 @@ cargo test auth::jwt::tests::test_generate_access_token --lib
 test auth::jwt::tests::test_generate_access_token ... ok
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "GREEN 确认：行为 A 通过。
 > 行为 A 完成：generate_token 生成有效 JWT。
@@ -453,12 +465,14 @@ test auth::jwt::tests::test_generate_access_token ... ok
 
 ### Step 3.8: TDD 行为 B — RED→GREEN（验证过期 token → Expired 错误）
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "行为 B：验证过期 token 返回 Expired 错误。
 > 需要先实现 verify_token，然后写测试。"
 
 **【Implementer 执行：RED — 写测试】**
+
+> **外部 CLI 引擎模式：** 测试编写和执行由 `codex exec` 引擎完成，Implementer Profile 接收测试结果。
 
 ```bash
 # 在 tests 模块追加行为 B 的测试
@@ -490,7 +504,7 @@ test auth::jwt::tests::test_verify_expired_token ... FAILED
 thread 'main' panicked at 'not yet implemented: 行为 B'
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "RED 确认：verify_token 还是 todo!()，测试失败。符合预期。
 > 现在实现 verify_token（GREEN 阶段）。"
@@ -510,7 +524,7 @@ cargo test auth::jwt::tests::test_verify_expired_token --lib
 test auth::jwt::tests::test_verify_expired_token ... ok
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "GREEN 确认：行为 B 通过。
 > 行为 B 完成：verify_token 正确检测过期 token。
@@ -520,13 +534,15 @@ test auth::jwt::tests::test_verify_expired_token ... ok
 
 ### Step 3.9: TDD 行为 C — RED→GREEN（refresh token 换取新 access token）
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "行为 C：用 refresh token 换取新 access token。
 > refresh_access_token 依赖 verify_token（已完成）+ generate_token（已完成）。
 > 先写测试（RED），再实现（GREEN）。"
 
 **【Implementer 执行：RED — 写测试 + GREEN — 实现】**
+
+> **外部 CLI 引擎模式：** 测试编写、实现代码和 `cargo test` 均由 `codex exec` 引擎在 worktree 内完成，Implementer Profile 仅传递行为规格并接收结构化结果。
 
 ```bash
 # 补全 refresh_access_token 实现 + 追加测试
@@ -539,7 +555,7 @@ cargo test auth::jwt::tests::test_refresh_access_token --lib
 test auth::jwt::tests::test_refresh_access_token ... ok
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "GREEN 确认：行为 C 通过。
 > 三个行为全部完成。现在跑全量回归测试。"
@@ -549,6 +565,8 @@ test auth::jwt::tests::test_refresh_access_token ... ok
 ### Step 3.10: 全量回归测试 + 完成
 
 **【Implementer 执行：回归测试】**
+
+> **外部 CLI 引擎模式：** 全量回归测试由 `codex exec` 引擎在 worktree 内执行，Implementer Profile 接收测试结果汇总。
 
 ```bash
 cargo test --lib
@@ -571,7 +589,7 @@ test auth::jwt::tests::test_refresh_access_token ... ok
 test result: ok. 13 passed; 0 failed; 0 ignored
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出】**
 
 > "回归全过（13/13）。所有行为的测试 + 原有测试均通过。
 > 填写 TDD 交接单。"
@@ -676,4 +694,15 @@ Jacky 没有干预，继续处理其他工作。
 
 ---
 
+## 架构说明：Implementer Profile 与实现引擎的关系
 
+| 层 | 组件 | 职责 |
+|----|------|------|
+| 编排层 | Hermes Implementer Profile（轻量 LLM） | 从 Kanban 读取任务、组装 Request Envelope、调用 `codex exec`、解析 Response Envelope、写入 Kanban |
+| 执行层 | `codex exec` 实现引擎（默认）/ `claude -p`（可切换） | TDD 编码、测试执行、worktree 管理、handoff metadata 生成 |
+
+Implementer Profile 的 `config.yaml` 中 `engine.cli` 字段决定使用哪个 CLI 引擎（默认 `codex`，可切换为 `claude`）。
+
+通信协议详见 [`EXTERNAL-CLI-ENGINE.md`](./EXTERNAL-CLI-ENGINE.md) §5。
+
+---

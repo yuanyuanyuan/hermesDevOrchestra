@@ -1,5 +1,7 @@
 ## 九、流程全景图（总览）
 
+> **架构说明（2026-05-11 更新）：** 架构全景图中的 Worker 层为两层结构：Hermes Profile（编排）+ 外部 CLI 引擎（执行）。详见 [EXTERNAL-CLI-ENGINE.md](./EXTERNAL-CLI-ENGINE.md)。
+
 ```
                             ┌─────────────────┐
                             │   用户（CEO）    │

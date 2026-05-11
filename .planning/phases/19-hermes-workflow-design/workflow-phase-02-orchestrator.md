@@ -1,5 +1,7 @@
 ## Phase 2: 任务拆解（PM）
 
+> **架构说明（2026-05-11 更新）：** 本文档中的 PM 任务拆解采用"外部 CLI 引擎"模式。PM Profile 委托 `claude -p` PM 引擎完成任务拆解，Profile 解析 JSON Response Envelope 中的 `tasks` 数组后调用 `kanban_create()` 创建任务。详见 [`EXTERNAL-CLI-ENGINE.md`](./EXTERNAL-CLI-ENGINE.md) §6.4。
+
 > 📎 **相关 ASCII 流程图**：
 > - [`ascii-end-to-end.md`](./ascii-end-to-end.md) — Phase 1-2 需求提交→任务拆解
 > - [`ascii-kanban-subflows.md`](./ascii-kanban-subflows.md) — 任务依赖链、Dispatcher 工作循环
@@ -86,6 +88,8 @@ kanban_show(task_id="t_alpha_001")
 ---
 
 ### Step 2.3: PM 拆解任务
+
+> **外部引擎注解：** 以下任务拆解逻辑由 `claude -p` PM 引擎实际执行。PM Profile 将需求文档发送给 PM 引擎，引擎返回 JSON Response Envelope（含 `tasks` 数组），Profile 解析后逐条调用 `kanban_create()` 创建任务。下方伪代码展示的是 Profile 解析引擎响应后执行的操作序列。
 
 **【PM 执行的具体指令】**
 
@@ -385,5 +389,13 @@ Jacky 正在处理 Project Beta 的代码，手机震动了。
 Jacky 没有干预，让系统继续运行。
 
 ---
+
+### 架构注记：PM 任务拆解数据流
+
+| 层级 | 组件 | 职责 |
+|------|------|------|
+| 编排层 | PM Profile | 接收 Dispatcher 派发，读取需求文档，调用 `claude -p` PM 引擎，解析响应后调用 `kanban_create()` 创建任务 |
+| 引擎层 | `claude -p` PM 引擎 | 接收需求上下文，执行任务拆解推理，返回 JSON Response Envelope（`tasks` 数组含 title、body、deps、metadata） |
+| 持久层 | `kanban_create()` | 将任务写入 Kanban 存储，建立依赖关系，触发 Dispatcher 调度 |
 
 

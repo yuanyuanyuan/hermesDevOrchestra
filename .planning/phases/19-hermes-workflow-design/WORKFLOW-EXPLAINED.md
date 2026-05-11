@@ -55,7 +55,7 @@ topic: hermes-workflow-design
 
 | Phase | 标题 | 文件 | 行数 | 核心内容 |
 |-------|------|------|------|----------|
-| 1 | 需求提交与澄清（PM） | [`workflow-phase-01-requirements.md`](./workflow-phase-01-requirements.md) | ~1050 | Jacky 提交模糊需求、多需求优先级排序、按需技术发现（与澄清交织）、动态顺序一次一问逐步收缩澄清（含推荐标签/大白话理由/其他选项/追加轮次/收敛上限）、持续可行性检查+冲突沟通+阻塞升级、崩溃恢复（comments 保存进度）+异步澄清、DoR 验证门、Jacky 显式确认+收敛修改限制+需求版本控制+质量反馈、Reviewer/QA 交叉校正、生成含证据链的标准化需求文档 |
+| 1 | 需求提交与澄清（PM） | [`workflow-phase-01-requirements.md`](./workflow-phase-01-requirements.md) | ~1050 | Jacky 提交模糊需求、多需求优先级排序、按需技术发现（与澄清交织）、动态顺序一次一问逐步收缩澄清（含推荐标签/大白话理由/其他选项/追加轮次/收敛上限）、持续可行性检查+冲突沟通+阻塞升级、崩溃恢复（metadata 保存结构化历史，comments 仅审计）+异步澄清、DoR 验证门、Jacky 显式确认+收敛修改限制+需求版本控制+质量反馈、Reviewer/QA 交叉校正、生成含证据链的标准化需求文档 |
 | 1.5 | Research + POC（Researcher） | *(内嵌于 Phase 1-2 之间)* | ~100 | PM 发起技术调研任务、Researcher 产出技术方案文档（含 POC 验证）、PM 拿到方案后进入任务拆解 |
 | 2 | 任务拆解（PM） + 派发（Orchestrator） | [`workflow-phase-02-orchestrator.md`](./workflow-phase-02-orchestrator.md) | ~360 | PM 读取需求文档+技术方案、拆分为 6 个子任务、Orchestrator 按状态机路由派发、Jacky 确认任务图 |
 | 3 | 执行（Implementer） | [`workflow-phase-03-implementation.md`](./workflow-phase-03-implementation.md) | ~740 | Implementer 被唤醒、建立上下文、编写 JWT 核心逻辑和测试、发送心跳 |
@@ -77,6 +77,8 @@ topic: hermes-workflow-design
 ---
 
 ## 如何阅读本文档
+
+> **架构说明（2026-05-11 更新）：** 所有角色采用"外部 CLI 引擎"统一模式。需求 R31-R38 定义了 CLI 引擎协议。详见 [EXTERNAL-CLI-ENGINE.md](./EXTERNAL-CLI-ENGINE.md)。
 
 **如果你刚接触这个工作流**：
 1. 先读 **Phase 1 → Phase 2 → Phase 3**，理解需求如何变成可执行的任务

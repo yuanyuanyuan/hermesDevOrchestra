@@ -44,6 +44,8 @@ topic: hermes-workflow-design
 
 ## 如何阅读本文档
 
+> **架构说明（2026-05-11 更新）：** 所有流程图中的 Worker 均为 Hermes Profile + 外部 CLI 引擎两层架构。详见 [EXTERNAL-CLI-ENGINE.md](./EXTERNAL-CLI-ENGINE.md)。
+
 **如果你需要验证某个具体需求**：
 - R1-R2（Phase 0 平台能力确认）→ **核心业务流程** F0
 - R3（Profile Override）→ **Kanban 子流程** Dispatcher 工作循环

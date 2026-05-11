@@ -1,5 +1,7 @@
 ## Phase 1: 需求提交与澄清
 
+> **架构说明（2026-05-11 更新）：** 本文档中的 PM 角色采用"外部 CLI 引擎"模式。PM Profile 是轻量编排层，实际需求分析、技术发现、澄清对话由 `claude -p` PM 引擎完成。详见 [`EXTERNAL-CLI-ENGINE.md`](./EXTERNAL-CLI-ENGINE.md) §6。
+
 > 📎 **相关 ASCII 流程图**：[`ascii-end-to-end.md`](./ascii-end-to-end.md) — Phase 1-2 需求提交→澄清→任务拆解
 >
 > **能力来源说明：** `kanban_create`/`kanban_show`/`kanban_block`/`kanban_complete` 工具、Profile 隔离、Dispatcher 派发属于 `[Hermes 官方]`。需求澄清方法论（一次一问/动态顺序/推荐标签/收敛机制）、Research + POC 技术研判流程、DoR 验证门、异步澄清（崩溃恢复/分级超时）、多需求优先级排序、持续可行性检查、需求版本控制属于 `[Phase 19 增量]`。
@@ -26,7 +28,7 @@
 
 **问题顺序遵循维度依赖图，冲突时动态调整。** 11 个维度必须全部覆盖，默认顺序为：目标→用户→时间→登录方式→现有处理→交互→验收→影响→可观测→MVP→技术方案。当可行性检查发现冲突时，可跳过或重排后续维度优先澄清冲突项。如果用户输入已隐含某些维度（如「企业 SSO」隐含了用户群体），可跳过已回答的维度。
 
-**澄清流程是异步的，但有分级超时。** 老板可能中途去开会、出差、睡觉。每轮通过 kanban comments 保存进度，崩溃后可从检查点恢复（v1 依赖自然语言 comments 恢复上下文）。但澄清任务不能无限期阻塞：24h 未回复发送提醒 → 72h 升级通知渠道 → 7 天标记为 stale 并通知将在 48h 后归档 → 归档后回到 backlog 不阻塞 Board。同一时间只允许一个需求处于「等待用户回答」状态，其他排队。
+**澄清流程是异步的，但有分级超时。** 老板可能中途去开会、出差、睡觉。每轮通过 task metadata 保存结构化历史，必要时补充 `kanban_comment` 作为人类可读审计摘要；崩溃后可从 metadata 检查点恢复。但澄清任务不能无限期阻塞：24h 未回复发送提醒 → 72h 升级通知渠道 → 7 天标记为 stale 并通知将在 48h 后归档 → 归档后回到 backlog 不阻塞 Board。同一时间只允许一个需求处于「等待用户回答」状态，其他排队。
 
 ---
 
@@ -34,7 +36,7 @@
 
 | 角色 | 职责 |
 |------|------|
-| **pm** | 需求分析、任务分解、任务分配 |
+| **pm** | 需求分析、任务分解、任务分配（轻量编排层，通过 `claude -p` 委托实际分析工作） |
 | **orchestrator** | 派发/监控/消息路由（状态机驱动，不做分析） |
 | **researcher** | 技术方案调研（不写代码） |
 | **implementer** | TDD 编码（RED→GREEN）、回归测试、POC 验证 |
@@ -88,6 +90,8 @@
 
 ### Step 1.1: Jacky 产生需求
 
+> **[CLI 引擎注]** 此步骤为用户行为，不涉及 PM 引擎调用。后续步骤中，PM Profile 会将此需求组装为 Request Envelope 发送给 `claude -p` PM 引擎。
+
 **【场景上下文】**
 早上 9:30，Jacky 在 Review Alpha 项目的 backlog。用户反馈说"每次操作都要重新登录，体验很差"。
 
@@ -119,6 +123,8 @@ $ hermes kanban create \
 
 ### Step 1.3: Dispatcher 派发 PM
 
+> **[CLI 引擎注]** Dispatcher 将任务派发给 PM Profile。PM Profile 接收后，会从 Kanban 读取任务详情，组装 Request Envelope 并调用 `claude -p` PM 引擎执行实际分析。
+
 **【系统内部】Dispatcher 决策日志：**
 
 ```
@@ -139,8 +145,10 @@ $ hermes kanban create \
 
 **【PM 执行优先级排序】**
 
+> **[CLI 引擎注]** 以下优先级排序逻辑由 `claude -p` PM 引擎执行。PM Profile 将 triage 任务列表封装为 Request Envelope，PM 引擎返回排序结果。
+
 ```python
-# PM 被派发后，先检查 Board 上所有 triage 需求
+# PM 引擎被调用后，先检查 Board 上所有 triage 需求
 triage_tasks = kanban_list(board="project-alpha", status="triage")
 
 # 如果有多个需求，先排序再逐个处理
@@ -198,10 +206,12 @@ clarify(
 
 ### Step 1.4: PM 自动发现技术上下文 `[Phase 19 增量]`
 
+> **[CLI 引擎注]** 技术发现由 `claude -p` PM 引擎完成。PM Profile 将项目工作区路径和需求描述封装在 Request Envelope 中，PM 引擎执行实际的代码读取、分析和技术画像构建，将发现结果通过 Response Envelope 返回。
+
 **【PM 工具权限】**
 
-> PM 允许 `file_read` + `terminal(只读)`，禁止 `file_write` + `terminal(写操作)`。
-> 这是 R11 的放宽版本——PM 需要读代码来理解项目上下文，但不能亲自写代码。
+> PM 引擎允许 `file_read` + `terminal(只读)`，禁止 `file_write` + `terminal(写操作)`。
+> 这是 R11 的放宽版本——PM 引擎需要读代码来理解项目上下文，但不能亲自写代码。
 > 详见 REQUIREMENTS.md R11 修订。
 
 **【技术发现：按需触发，与澄清交织】**
@@ -215,10 +225,10 @@ clarify(
 | **可行性检查发现盲区时** | 如果检查需要的数据不在初始发现中，触发补充发现 |
 | **每轮澄清后** | 如果回答改变了技术方向，更新技术画像 |
 
-**【PM 内心OS】**
+**【PM 引擎输出：技术发现启动分析】**
 
 > "Jacky 只说了'登录体验差'，没给任何技术细节。
-> 我需要自己去读项目代码和文档，搞清楚现有系统是什么样的。
+> 需要读取项目代码和文档，搞清楚现有系统是什么样的。
 > 先做初始发现，后续根据 Jacky 的回答按需补充。"
 
 **【初始技术发现（澄清开始前）】**
@@ -316,6 +326,8 @@ file_read("src/routes/users.rs", offset=44, limit=28)
 
 ### Step 1.5: PM 执行需求澄清流程（一次一问，逐步收缩，维度依赖图驱动顺序）
 
+> **[CLI 引擎注]** 以下澄清流程中，PM Profile 负责：(1) 将每轮上下文（已回答维度、技术发现结果、可行性检查状态）组装为 Request Envelope；(2) 调用 `claude -p` PM 引擎；(3) 解析 Response Envelope 中的问题和选项；(4) 通过 Gateway 将问题推送给 Jacky；(5) 将 Jacky 回复写入下一轮 Request Envelope。所有"分析"、"推导"、"可行性检查"等思考工作均由 PM 引擎完成。
+
 **【核心设计：一次一个问题，维度依赖图驱动顺序，冲突时动态调整】**
 
 需求澄清不是一次性抛出所有问题，而是**一次问一个最关键的问题**，根据老板的回答和已掌握的上下文来决定下一个问题。**11 个维度必须全部覆盖**，默认顺序为：目标→用户→时间→登录方式→现有处理→交互→验收→影响→可观测→MVP→技术方案。当可行性检查发现冲突时，可跳过或重排后续维度优先澄清冲突项。如果用户输入已隐含某些维度，可跳过已回答的维度。支持快速模式：前 3 轮无冲突时可按层合并后续问题。
@@ -365,7 +377,7 @@ Q11后: 实现方式确认为"第三方库" — 技术方案确定
 
 #### 1.5.1 第 1 问：核心目标（价值层 — 最关键的问题先问）
 
-**【PM 内心OS】**
+**【PM 引擎输出：第 1 问分析】**
 
 > "Jacky 说'登录体验差'，但具体要改善到什么程度？
 > 这是最核心的问题，决定了后面所有技术选型的方向。
@@ -417,7 +429,7 @@ clarify(
 
 #### 1.5.2 第 2 问：用户群体（价值层 — 基于 Q1 的目标推导）
 
-**【PM 内心OS】**
+**【PM 引擎输出：第 2 问分析】**
 
 > "Q1 确认了 7 天免登录。接下来要知道给谁用——
 > 外部客户和内部团队的安全要求完全不同。"
@@ -998,12 +1010,26 @@ pm_action = {
 
 #### 1.5.14: 崩溃恢复与异步澄清 `[Phase 19 增量]`
 
-**【崩溃恢复：通过 kanban comments 保存进度】**
+**【崩溃恢复：task metadata 作为真相源，comments 仅做人类审计】**
 
-澄清过程中，PM 每轮回答后将当前进度写入 task comments（自然语言格式，v1 不使用结构化 JSON checkpoint）：
+澄清过程中，PM 每轮回答后先更新 task metadata 中的 `pm_clarification_history`，再选填一条自然语言 `kanban_comment` 供 Jacky 审计：
 
 ```python
-# 每轮澄清后保存进度（自然语言）
+# 真相源：Hermes Profile wrapper 持久化结构化 metadata
+persist_task_metadata(
+    task_id="t_alpha_001",
+    patch={
+        "pm_clarification_history": [
+            {"turn": 1, "question": "核心目标是什么？", "user_answer": "7天免登录"},
+            {"turn": 2, "question": "用户群体？", "user_answer": "外部客户"},
+            {"turn": 3, "question": "时间要求？", "user_answer": "1-2周"},
+            {"turn": 4, "question": "登录方式？", "user_answer": "邮箱密码"}
+        ],
+        "pm_next_question": "Q5 — 现有 session 处理方式"
+    }
+)
+
+# 审计层：给人看的自然语言摘要
 kanban_comment(
     task_id="t_alpha_001",
     body="""澄清进度更新：
@@ -1022,7 +1048,7 @@ PM 崩溃/超时
     ↓
 Dispatcher 回滚任务到 ready，重新 spawn 新 PM
     ↓
-新 PM 读取 task comments，找到最近的进度更新
+新 PM 读取 task metadata.pm_clarification_history
     ↓
 恢复上下文：已回答 Q1-Q4，待澄清 6 个维度
     ↓
@@ -1037,14 +1063,16 @@ Dispatcher 回滚任务到 ready，重新 spawn 新 PM
 |------|---------|
 | **Jacky 不回复** | 24h 发提醒通知 → 72h 升级通知渠道 → 7 天标记 stale → 48h 后归档回 backlog |
 | **Research 任务阻塞** | 澄清暂停，task 状态变为 `waiting`。Research 超时 72h，超时后跳过该证据继续澄清 |
-| **Jacky 说"明天继续"** | task 状态变为 `paused`。PM 保存进度到 comments 后安全退出。Jacky 随时可以恢复。 |
-| **多天澄清** | 每轮通过 comments 保存进度。PM 可以被安全回收和重建，不会丢失上下文。 |
+| **Jacky 说"明天继续"** | task 状态变为 `paused`。PM 先写 metadata，再补一条 comments 审计摘要后安全退出。Jacky 随时可以恢复。 |
+| **多天澄清** | 每轮通过 metadata 保存结构化历史，comments 只做人类摘要。PM 可以被安全回收和重建，不会丢失上下文。 |
 | **Jacky 明确放弃** | task 状态变为 `cancelled`。已有的澄清进度保留在 comments 中，供后续参考。 |
 | **多需求排队** | 同一时间只允许一个需求处于「等待回答」状态，其他排队。支持跳过被阻塞需求处理下一个。 |
 
 ---
 
 ### Step 1.6: 可行性检查与冲突沟通 `[Phase 19 增量]`
+
+> **[CLI 引擎注]** 可行性检查由 `claude -p` PM 引擎在每轮澄清后自动执行。PM Profile 将最新上下文（已确认维度 + 技术发现 + 新回答）封装在 Request Envelope 中，PM 引擎执行可行性分析并通过 Response Envelope 返回检查结果和冲突说明。PM Profile 根据结果决定是继续澄清还是推送冲突沟通。
 
 **【核心设计：持续可行性检查】**
 
@@ -1224,7 +1252,7 @@ final_feasibility = {
 | **前置需求未完成** | "加协作编辑"但实时通信模块还没做 | 技术发现时 |
 | **合规要求未满足** | "存储用户健康数据"但没有 HIPAA 合规 | Q2 确认用户群体时 |
 
-**【PM 处理阻塞】**
+**【PM 引擎处理阻塞】**
 
 ```python
 # 示例: Jacky 要密码重置，但项目没有邮件服务
@@ -1300,7 +1328,7 @@ block_resolution = {
 
 ---
 
-**【PM 内心OS】**
+**【PM 引擎输出：需求文档生成】**
 
 > "所有问题都问完了，冲突也都解决了。
 > 现在生成最终的需求文档，每一条都要有证据。"
@@ -1425,7 +1453,7 @@ Alpha SaaS 产品的外部付费客户。
 
 ## 5. 技术背景（系统自动发现，非老板提供）
 
-> 以下所有技术信息均由 PM 自动读取项目代码获得。
+> 以下所有技术信息均由 `claude -p` PM 引擎自动读取项目代码获得（通过 Request/Response Envelope 传递）。
 > 发现路径: CLAUDE.md → Cargo.toml → src/ → 按需深入
 
 | 组件 | 状态 | 证据 |
@@ -1460,6 +1488,8 @@ Alpha SaaS 产品的外部付费客户。
 ---
 
 ### Step 1.7.5: Definition of Ready 验证门 `[Phase 19 增量]`
+
+> **[CLI 引擎注]** DoR 验证由 `claude -p` PM 引擎执行。PM Profile 将需求文档内容封装在 Request Envelope 中，PM 引擎执行机器可验证项和 LLM 自检，将验证结果通过 Response Envelope 返回。PM Profile 根据结果决定是否写入 Kanban 或触发补问。
 
 **【DoR 验证：机器可验证项 + LLM 自检】**
 
@@ -1584,6 +1614,8 @@ clarify(
 ---
 
 ### Step 1.8: Jacky 确认需求文档 `[Phase 19 增量]`
+
+> **[CLI 引擎注]** 需求文档由 `claude -p` PM 引擎生成（通过 Response Envelope 返回）。PM Profile 解析后写入 Kanban task，并通过 Gateway 推送给 Jacky 确认。Jacky 的确认/修改指令由 PM Profile 接收后，再次封装为 Request Envelope 发送给 PM 引擎处理。
 
 **【核心设计：显式确认关卡】**
 
@@ -1834,6 +1866,8 @@ E4 (现有登录)       ←→     src/routes/users.rs:45-72
 
 ### Step 1.9: PM 完成需求澄清任务
 
+> **[CLI 引擎注]** PM Profile 接收 PM 引擎的最终确认（需求文档已通过 DoR + Jacky 确认），调用 `kanban_complete` 写入完成状态和 metadata。
+
 ```python
 kanban_complete(
     task_id="t_alpha_001",
@@ -1862,6 +1896,8 @@ kanban_complete(
 
 ### Step 1.10: 系统自动创建规划任务（含追溯）
 
+> **[CLI 引擎注]** PM Profile 在需求澄清任务完成后，自动创建规划任务。此步骤由 PM Profile 直接执行（调用 `kanban_create`），不经过 PM 引擎。后续的规划任务执行阶段才会再次调用 `claude -p` PM 引擎。
+
 ```python
 t_plan = kanban_create(
     title="任务拆解: 用户认证模块 (v1)",
@@ -1877,3 +1913,16 @@ t_plan = kanban_create(
 ```
 
 ---
+
+## 架构说明：PM Profile 与 PM 引擎的关系
+
+在本文档描述的流程中，"PM" 实际上由两层组成：
+
+| 层 | 组件 | 职责 |
+|----|------|------|
+| 编排层 | Hermes PM Profile（轻量 LLM） | 从 Kanban 读取任务、组装 Request Envelope、调用 `claude -p`、解析 Response Envelope、写入 Kanban |
+| 思考层 | `claude -p` PM 引擎 | 技术发现（读代码）、需求澄清（生成问题）、可行性检查、需求文档生成、任务拆解 |
+
+PM Profile 的 `config.yaml` 中 `model` 字段仅控制编排层的 LLM（用于路由决策），实际思考能力来自 `claude -p` PM 引擎。
+
+通信协议详见 [`EXTERNAL-CLI-ENGINE.md`](./EXTERNAL-CLI-ENGINE.md) §5-§6。

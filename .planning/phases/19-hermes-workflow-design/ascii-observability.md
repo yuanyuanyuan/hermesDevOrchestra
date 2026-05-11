@@ -1,5 +1,7 @@
 ## 七、全链路可观测性子流程（§9）
 
+> **架构说明（2026-05-11 更新）：** 本文档中的可观测性流程已更新。tool call trace 现在包含 CLI 引擎调用记录。SRE-Observer 分析的是 CLI 引擎的执行日志。详见 [EXTERNAL-CLI-ENGINE.md](./EXTERNAL-CLI-ENGINE.md)。
+
 > 📎 **相关叙事文档**：
 > - SRE-Observer 触发与调查 → [`workflow-phase-05-fix-evolution.md`](./workflow-phase-05-fix-evolution.md) — Phase 5.5 故障场景
 > - SRE 独立 Profile 设计讨论 → [`workflow-appendix-decisions.md`](./workflow-appendix-decisions.md) — 决策 1
@@ -128,10 +130,12 @@
    │            ▼                                                    │
    │   ② ──→ 查询 trace.db                                          │
    │          最近 3 次 run 的 tool call 序列                         │
+   │          (含 CLI 引擎调用记录: claude/codex exec 等)            │
    │            │                                                    │
    │            ▼                                                    │
    │   ③ ──→ 读取 worker logs                                       │
    │          终端错误输出与堆栈                                      │
+   │          (含 CLI 引擎执行日志: stdout/stderr/exit code)        │
    │            │                                                    │
    │            ▼                                                    │
    │   ④ ──→ 读取 task_events                                       │

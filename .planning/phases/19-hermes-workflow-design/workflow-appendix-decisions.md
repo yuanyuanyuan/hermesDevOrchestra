@@ -136,3 +136,29 @@ Implementer: "收到，用 RS256。"
 > 这个边界需要在 SOUL.md 中明确。"
 
 ---
+
+## D. 外部 CLI 引擎统一模式决策
+
+**日期：** 2026-05-11
+
+**背景：** Phase 19 原设计中，每个 Profile 是一个完整的 Hermes LLM 进程。Grill-Me 讨论中，用户提出 Claude Code `-p` 等 CLI 工具的工程化能力（文件操作工具链、subagents、worktrees、MCP tools）优于 Hermes 内置 LLM，建议将实际思考工作委托给外部 CLI 引擎。
+
+**决策：** 采用 "Hermes 调度 + 外部 CLI 引擎" 统一模式。
+
+**备选方案：**
+1. Hermes 内置 LLM 执行（Phase 19 原设计）— 被否决，因为 CLI 工具的工程化更成熟
+2. 仅 PM 用外部 CLI 引擎，其他角色保持原设计 — 被否决，架构不一致
+3. 统一所有角色用外部 CLI 引擎 — **被采纳**
+
+**理由：**
+- Hermes 的核心优势是调度（Kanban、Dispatcher、Gateway、Plugin Hooks），不是 LLM 推理
+- Claude Code / Codex CLI 在代码分析、文件操作、TDD 等方面有更成熟的工具链
+- 统一模式降低架构复杂度，所有角色遵循相同的协议和错误处理模式
+- CLI 引擎可配置切换（如 Implementer 可从 codex 切换到 claude），不绑定供应商
+
+**影响：**
+- 新增 EXTERNAL-CLI-ENGINE.md 设计文档
+- DESIGN.md 新增 §14 引用
+- REQUIREMENTS.md 新增 R31-R38
+- Session Resume 机制被上下文累积模式替代
+- Risk Policy 拦截点从 LLM 内部移到 terminal() 调用层

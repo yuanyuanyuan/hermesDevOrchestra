@@ -1,5 +1,7 @@
 ## 五、多项目并行管理子流程（§7）
 
+> **架构说明（2026-05-11 更新）：** 跨项目经验共享机制不变。经验数据来源为 CLI 引擎执行结果。详见 [EXTERNAL-CLI-ENGINE.md](./EXTERNAL-CLI-ENGINE.md)。
+
 > 📎 **相关叙事文档**：
 > - 多项目上下文 → [`workflow-phase-02-orchestrator.md`](./workflow-phase-02-orchestrator.md) — PM 管理多项目任务分解
 > - 跨项目 Skill 进化 → [`workflow-phase-05-fix-evolution.md`](./workflow-phase-05-fix-evolution.md) — Step 5.4 记录经验教训

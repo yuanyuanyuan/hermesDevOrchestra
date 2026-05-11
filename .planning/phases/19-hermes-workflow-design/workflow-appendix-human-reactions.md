@@ -1,5 +1,7 @@
 ## 附录 E：人的真实反应
 
+> **架构说明（2026-05-11 更新）：** 本文档中的系统行为由"外部 CLI 引擎"模式执行。block/notification 机制不变，但 findings 来自 CLI 引擎输出。详见 [EXTERNAL-CLI-ENGINE.md](./EXTERNAL-CLI-ENGINE.md)。
+
 > 主文档中的 Jacky 是一个"理想用户"——24/7 在线、技术全面、冷静理性、逐条审阅。本节展示**真实的一人公司 CEO 可能出现的反应**，用于校准系统对人类的期望。
 >
 > **能力来源说明：** 本附录讨论的系统支持机制中，Gateway 推送、`kanban_block`/`kanban_unblock` 属于 `[Hermes 官方]`。分级通知、批量决策、信任模式、通知批量化等建议为 `[Phase 19 增量]` 或未来改进方向。

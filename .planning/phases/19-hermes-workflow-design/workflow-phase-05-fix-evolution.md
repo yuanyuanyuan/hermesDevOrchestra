@@ -1,5 +1,12 @@
 ## Phase 5: 修复 + 自我进化
 
+> **架构说明（2026-05-11 更新）：** 本文档中的 Implementer、DevOps-Engineer、SRE-Observer 角色均采用"外部 CLI 引擎"模式。
+> - **Implementer** → `codex exec` 实现引擎（修复 + 测试）
+> - **DevOps-Engineer** → `codex exec` DevOps 引擎（部署脚本）
+> - **SRE-Observer** → `claude -p` SRE 引擎（根因分析）
+>
+> 详见 [`EXTERNAL-CLI-ENGINE.md`](./EXTERNAL-CLI-ENGINE.md)。
+
 > 📎 **相关 ASCII 流程图**：
 > - [`ascii-end-to-end.md`](./ascii-end-to-end.md) — Phase 5 修复+进化、Phase 5.5 故障场景→SRE-Observer
 > - [`ascii-self-evolution.md`](./ascii-self-evolution.md) — 三层架构、实时/定期层进化
@@ -32,7 +39,7 @@ Dispatcher 的决策：先 claim T3（因为 T3 在任务图中更靠前，是 T
 
 ### Step 5.2: Implementer 执行 T3（写测试）
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "我现在在执行 T3：写单元测试和集成测试，覆盖率 ≥ 80%。
 > 让我先读取 T1 和 T2 的 handoff，了解所有已实现的功能。"
@@ -44,7 +51,7 @@ t1_handoff = kanban_show(task_id="t1_alpha_001")
 t2_handoff = kanban_show(task_id="t2_alpha_001")
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "T1 实现了 JWT 核心逻辑（5 个单元测试）。
 > T2 实现了 4 个 HTTP 接口 + token 旋转 + jti_blacklist。
@@ -167,7 +174,7 @@ async fn test_protected_route_without_token() {
 EOF
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "集成测试写好了。但我发现一个问题——测试需要真实的数据库连接。
 > 这在 CI 环境中可能不可用。我需要用 sqlx 的 offline 模式或者 mock。
@@ -199,7 +206,7 @@ Unit tests in jwt.rs: 5
 Integration tests: 3 (需要 DB)
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "集成测试因为数据库未运行而失败。这不是代码问题，是环境配置问题。
 > 我需要：
@@ -240,7 +247,7 @@ kanban_complete(
 
 ### Step 5.3: Implementer 执行 T5（修复审查问题）
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "T3 完成了。现在执行 T5：修复 Tech-Reviewer 发现的问题。
 > 让我读取 T4 的审查 findings。"
@@ -252,7 +259,7 @@ review = kanban_show(task_id="t4_alpha_001")
 findings = review["metadata"]["findings"]
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "Reviewer 发现了 8 个问题：3 个 medium，5 个 low。
 > 让我逐一修复：
@@ -311,7 +318,7 @@ cargo test auth --lib
  test result: ok. 8 passed; 0 failed
 ```
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "所有修复完成，测试全过。现在进行'自我进化'——记录经验教训。"
 
@@ -319,7 +326,7 @@ cargo test auth --lib
 
 ### Step 5.4: 自我进化 —— 记录经验教训 `[Hermes 官方]` + `[Phase 19 增量]`
 
-**【Implementer 内心OS】**
+**【实现引擎输出（codex exec）】**
 
 > "在这个任务中学到了一些东西，应该记录到记忆中，以便未来项目复用。
 >
@@ -459,11 +466,11 @@ kanban_complete(
 **【场景上下文】**
 本地测试通过后，DevOps-Engineer 尝试部署到生产环境。项目没有现成的 deploy.sh，DevOps 需要写一个快速部署脚本。
 
-**【DevOps-Engineer 内心OS】**
+**【DevOps 引擎输出（codex exec）】**
 
 > "本地测试 11/11 通过。现在部署生产。
 > 项目没有 deploy.sh，我需要写一个最小化的部署流程。
-> 
+>
 > 生产环境信息：
 > - 服务器：通过 HERMES_DEPLOY_HOST 环境变量
 > - 部署方式：scp 二进制 + ssh 重启服务
@@ -491,11 +498,11 @@ No .env.production
 No deploy.sh
 ```
 
-**【DevOps-Engineer 内心OS】**
+**【DevOps 引擎输出（codex exec）】**
 
 > "有基本的部署环境变量。但没有 .env.production——
 > 这意味着生产环境的数据库连接、JWT 密钥等都没有配置。
-> 
+>
 > 让我先写一个临时的 deploy.sh，然后执行部署。
 > 但首先，我需要确认生产环境是否有 DATABASE_URL 配置。"
 
@@ -510,7 +517,7 @@ ssh deploy@prod-alpha-01.internal "cat /etc/alpha/env 2>/dev/null || echo 'No en
 Connection refused: prod-alpha-01.internal:22
 ```
 
-**【DevOps-Engineer 内心OS】**
+**【DevOps 引擎输出（codex exec）】**
 
 > "SSH 连接失败。可能是：
 > 1. 服务器没开机
@@ -532,7 +539,7 @@ ping: unknown host prod-alpha-01.internal
 ssh: Could not resolve hostname prod-alpha-01.internal: Name or service not known
 ```
 
-**【DevOps-Engineer 内心OS】**
+**【DevOps 引擎输出（codex exec）】**
 
 > "主机名无法解析。这意味着：
 > - DNS 中没有这个记录
@@ -559,14 +566,14 @@ No railway.yaml
 No render.yaml
 ```
 
-**【DevOps-Engineer 内心OS】**
+**【DevOps 引擎输出（codex exec）】**
 
 > "没有任何部署配置。这意味着项目从来没有部署过。
 > 我需要 block 并报告这个问题。
-> 
+>
 > 但等等，我可以写一个 Dockerfile 和 docker-compose.yml 作为交付物。
 > 这样至少可以本地 docker 部署。但这超出了 T6 的任务范围。
-> 
+>
 > 让我 block，详细说明生产环境缺失的问题。"
 
 **【DevOps-Engineer 执行 block】**
@@ -620,7 +627,7 @@ kanban_block(
 [2026-05-10T13:15:03Z] Worker PID: 18821
 ```
 
-**【DevOps-Engineer (Beta) 内心OS】**
+**【DevOps 引擎输出（codex exec）— Project Beta】**
 
 > "Project Beta 的部署任务。让我执行 deploy.sh。"
 
@@ -645,12 +652,12 @@ cd /data/hermes/workspaces/project-beta/worktree-t-beta-deploy-001
 FATAL: Deployment failed. Manual intervention required.
 ```
 
-**【DevOps-Engineer (Beta) 内心OS】**
+**【DevOps 引擎输出（codex exec）— Project Beta】**
 
 > "部署失败了！exit code 1。
 > 错误是 DATABASE_URL 环境变量未设置。
 > 但 rollback 也失败了——备份二进制文件损坏。
-> 
+>
 > 这是一个严重故障。我需要立即报告。
 > 等等，系统应该会自动检测到这个崩溃。"
 
@@ -712,10 +719,12 @@ sre_task = kanban_create(
 )
 ```
 
-**【SRE-Observer 内心OS】**
+**【SRE 引擎输出（claude -p）】**
 
 > "我被 Jacky 手动升级派发了。任务是调查 Project Beta 的部署失败。
 > 让我按 7 步流程分析。"
+
+> **Profile 与 claude -p 的交互说明：** Profile 负责构造分析请求 JSON（包含 fault_task_id、trace_anchor、worker_logs 路径等），通过 `claude -p` 调用 SRE 引擎。SRE 引擎执行 7 步分析后返回结构化根因报告 JSON，Profile 解析后写入 `kanban_complete` 的 metadata。
 
 **【SRE-Observer 执行第 1 步：读取故障任务信息】**
 
@@ -765,12 +774,12 @@ tool_call_#3: terminal(command="echo 'FATAL: Deployment failed...'")
   -> status: ok, duration: 2ms
 ```
 
-**【SRE-Observer 内心OS】**
+**【SRE 引擎输出（claude -p）】**
 
 > "第 2 步完成。关键证据：
 > - deploy.sh 执行了 48 秒，最后 exit code 1
 > - 明确错误：DATABASE_URL 未设置
-> 
+>
 > 继续第 3 步：读取 worker logs。"
 
 **【SRE-Observer 执行第 3 步：读取 worker logs】**
@@ -797,7 +806,7 @@ cat /data/hermes/kanban/logs/t_beta_deploy_001/stderr.log
 FATAL: Deployment failed. Manual intervention required.
 ```
 
-**【SRE-Observer 内心OS】**
+**【SRE 引擎输出（claude -p）】**
 
 > "关键发现：
 > 1. 部署脚本成功编译了 release 二进制
@@ -829,14 +838,14 @@ heartbeat   | 2026-05-10T13:16:00Z | note: "Uploading..."
 crash       | 2026-05-10T13:16:45Z | exit_code: 1, stderr: "DATABASE_URL..."
 ```
 
-**【SRE-Observer 内心OS】**
+**【SRE 引擎输出（claude -p）】**
 
 > "时间线清晰：
 > - 13:15:03 任务被 claim
 > - 13:15:30 编译中
 > - 13:16:00 上传中
 > - 13:16:45 崩溃
-> 
+>
 > 整个流程约 1 分 42 秒。问题发生在最后的服务启动阶段。
 >
 > 继续第 5 步：读取 audit logs。"
@@ -855,7 +864,7 @@ ORDER BY timestamp;
 No audit records found for this task.
 ```
 
-**【SRE-Observer 内心OS】**
+**【SRE 引擎输出（claude -p）】**
 
 > "没有审计记录。这意味着：
 > - 没有 Risk Policy 拦截
@@ -892,7 +901,7 @@ if parent_tasks:
 }
 ```
 
-**【SRE-Observer 内心OS】**
+**【SRE 引擎输出（claude -p）】**
 
 > "上游构建任务没有问题——42/42 测试通过，二进制编译成功。
 > 缺陷不在代码或构建阶段，纯粹在部署阶段的环境配置。
@@ -903,7 +912,7 @@ if parent_tasks:
 
 ### Step 5.5.5: SRE-Observer 生成根因报告 `[Phase 19 增量]` `[设计假设]`
 
-**【SRE-Observer 内心OS】**
+**【SRE 引擎输出（claude -p）】**
 
 > "综合 7 步分析结果：
 >

@@ -1,5 +1,7 @@
 ## Phase 6: 完成通知 + 用户审核决策
 
+> **架构说明（2026-05-11 更新）：** 本文档描述的完成通知流程中，实际代码/测试执行由外部 CLI 引擎（`codex exec` / `claude -p`）完成，Hermes Profile 负责编排和结果汇总。详见 [`EXTERNAL-CLI-ENGINE.md`](./EXTERNAL-CLI-ENGINE.md)。
+
 > 📎 **相关 ASCII 流程图**：[`ascii-end-to-end.md`](./ascii-end-to-end.md) — Phase 6 完成通知
 
 ---
@@ -76,6 +78,8 @@
 
 🛠️ Skill (全局):
   • jwt-auth-rust: Rust + Axum JWT 认证完整流程
+
+> **架构说明（2026-05-11）：** 上述经验沉淀（memory add、skill_manage create）由 Hermes Profile 层在接收到外部 CLI 引擎（`codex exec` / `claude -p`）的执行输出后统一完成，而非 CLI 引擎内部自行写入。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 技术债务

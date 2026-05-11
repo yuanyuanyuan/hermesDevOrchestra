@@ -1,5 +1,7 @@
 ## 六、自我进化子流程（§8）
 
+> **架构说明（2026-05-11 更新）：** 自我进化机制不变。实时层触发条件（命令失败、用户纠正）发生在 CLI 引擎执行期间。详见 [EXTERNAL-CLI-ENGINE.md](./EXTERNAL-CLI-ENGINE.md)。
+
 > 📎 **相关叙事文档**：[`workflow-phase-05-fix-evolution.md`](./workflow-phase-05-fix-evolution.md) — Step 5.4 自我进化：记录经验教训 Skill
 >
 > **能力来源说明：** Memory、Skills、Curator 自动审查（每 7 天）、`memory add`/`skill_manage create` 工具属于 `[Hermes 官方]` 能力。`.learnings/` 分层命名空间、`cross-project` 标记限制（R7e）、查询冲突警告（R7c）、删除传染机制（R7d）、Curator 语义相似度合并（R7b）属于 `[Phase 19 增量]`。

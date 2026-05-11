@@ -403,18 +403,18 @@ kanban_complete(
 
 当 worker 调用 `kanban_block()` 进入 L3 等待时，dispatcher 执行以下操作：
 
-1. Worker 进程退出（`claude -p` 正常结束或 hook `defer` 导致 `tool_deferred`）
-2. 在 SQLite 中写入 `hibernation_snapshot`：
-   - `task_id`, `session_id`（用于 `--resume`）, `git_worktree_ref`, `workspace_snapshot_ref`
+1. Hermes Profile 将当前业务状态写回 Kanban metadata（包括累积的 `conversation_history`、最近一次引擎响应、workspace snapshot ref）
+2. Worker 进程退出（CLI 引擎正常结束，或 defer 场景下返回标准化 Response Envelope）
 3. 释放该 worker 占用的 API context window 和内存资源
 
 **恢复流程：**
 1. 用户 unblock 并附带决策
-2. dispatcher 校验 workspace 和 session 一致性
-3. 若一致，`claude -p --resume <session-id>` 恢复 worker；若不一致，从 snapshot 恢复后重新派发
-4. worker 继续执行
+2. dispatcher 校验 workspace snapshot 与 task metadata 一致性
+3. Hermes Profile 从 task metadata 读取 `conversation_history` 与 handoff 数据
+4. 重新发起一次新的 CLI 引擎调用，携带完整历史与用户决策
+5. worker 继续执行
 
-**目的**：L3 决策可能持续几小时到几天，避免挂起 worker 长期占用资源。
+**目的**：L3 决策可能持续几小时到几天，避免挂起 worker 长期占用资源；恢复依赖 Kanban 中的结构化状态，不依赖 CLI session resume。
 
 ### 4.7 Worker 崩溃状态回滚（Dirty-State Rollback）
 
@@ -432,10 +432,10 @@ git stash push -m "pre-task:${task_id}"
 **回滚流程：**
 1. 将 task 状态回退到 `ready`
 2. 执行 `git stash pop --index` 或从快照恢复 workspace
-3. 在 kanban metadata 中记录 `rollback_count`
-4. 重新派发 worker
+3. 保留 task metadata 中最近一次 `conversation_history`、`engine_error`、`rollback_count`
+4. 重新派发 worker，由 Hermes Profile 基于 Kanban 中的结构化状态重新调用 CLI 引擎
 
-**目的**：崩溃时 worker 可能已经修改了一半文件，确保下一个 worker 看到干净的初始状态。
+**目的**：崩溃时 worker 可能已经修改了一半文件，确保下一个 worker 看到干净的初始状态，同时保留足够的业务上下文用于重试。
 
 ### 4.8 背压感知任务准入（Backpressure-Aware Admission）
 
@@ -454,11 +454,11 @@ backpressure_ratio = ready_implementer_tasks / max(ready_reviewer_tasks, 1)
 
 ---
 
-## 5. Agent 间通信：Kanban Block + Defer
+## 5. Agent 间通信：Kanban Block + Deferred Question Routing
 
 ### 5.1 设计决策
 
-**不用 tmux，不用文件总线。** 所有 Agent 间通信通过 Kanban 原生机制（block/unblock）和 Claude Code 的 PreToolUse hook（defer 模式）实现。消息持久化在 SQLite 中，永不丢失。
+**不用 tmux，不用文件总线，不用 `--resume`。** 所有 Agent 间通信通过 Kanban 原生机制（block/unblock）和外部 CLI 引擎的标准化 JSON Response Envelope 实现。消息持久化在 SQLite 中，永不丢失。
 
 ### 5.2 通信场景
 
@@ -468,7 +468,7 @@ backpressure_ratio = ready_implementer_tasks / max(ready_reviewer_tasks, 1)
 | 任务完成 | Kanban complete | summary + metadata |
 | 任务阻塞 | Kanban block | 等待用户/Reviewer 输入 |
 | 依赖等待 | Kanban parents | 自动 promote |
-| Claude 主动提问 | PreToolUse hook → defer → resume | Worker 退出 → 路由 → 恢复 |
+| CLI 引擎主动提问 | Response Envelope `status=deferred` | Profile 退出 → 路由 → 携带完整历史重新调用 |
 | 用户决策 | clarify() | Hermes 直接问用户 |
 
 ### 5.3 技术疑问处理：两条路径
@@ -484,7 +484,7 @@ Implementer 的 system prompt 规定"遇到架构决策必须 block"，Implement
 2. 调用 kanban_block(reason="reviewer-needed: 用 RS256 还是 HS256?")
 3. Dispatcher 检测到 "reviewer-needed:" 前缀
 4. 自动创建高优先级 Reviewer 子任务
-5. Reviewer 通过 claude -p 一次性给出决策，kanban_complete()
+5. Reviewer 通过外部 Review 引擎给出决策，kanban_complete()
 6. Dispatcher 将决策写入原 task metadata，unblock
 7. Implementer 读取 handoff 继续执行
 ```
@@ -492,42 +492,31 @@ Implementer 的 system prompt 规定"遇到架构决策必须 block"，Implement
 - **优点**：零额外基础设施，消息永不丢失（SQLite 持久化），天然支持重试
 - **触发条件**：Implementer 遵守 prompt 指令，主动 block
 
-**路径 B：Claude Code AskUserQuestion → defer（兜底）**
+**路径 B：CLI 引擎 AskUserQuestion → defer_to_human（兜底）**
 
-当 Claude Code 运行时自行决定调用 `AskUserQuestion`（Implementer 未遵守 block 指令，或问题不在架构决策范围内）：
+当 CLI 引擎运行时自行决定调用 `AskUserQuestion`（Implementer 未遵守 block 指令，或问题不在架构决策范围内）：
 
 ```
-1. Claude Code 调用 AskUserQuestion 工具
-2. PreToolUse hook 拦截，返回 permissionDecision: "defer"
-3. Worker 进程退出，stop_reason: "tool_deferred"
-   deferred_tool_use 包含完整问题内容：
+1. CLI 引擎触发 AskUserQuestion
+2. adapter 将原始 defer 响应标准化为：
    {
-     "name": "AskUserQuestion",
-     "input": {
-       "questions": [{
-         "question": "用 RS256 还是 HS256?",
-         "header": "JWT算法",
-         "options": [{"label": "RS256"}, {"label": "HS256"}],
-         "multiSelect": false
-       }]
-     }
+     "protocol": "hermes-role-engine/v1",
+     "status": "deferred",
+     "next_action": "defer_to_human",
+     "deferred_tool_use": {...},
+     "conversation_context": [...]
    }
+3. Hermes Profile 将 conversation_context 写入 task metadata
 4. Dispatcher 读取 deferred_tool_use，路由给 Reviewer 或用户
-5. 拿到答案后，claude -p --resume <session-id> 恢复 Worker
-6. PreToolUse hook 再次触发，这次返回 allow + answers：
-   {
-     "permissionDecision": "allow",
-     "updatedInput": {
-       "questions": [...],
-       "answers": {"用 RS256 还是 HS256?": "RS256"}
-     }
-   }
+5. 拿到答案后，Hermes Profile 构造新 Request Envelope：
+   history = 旧 conversation_context + deferred_answer
+6. 重新调用 CLI 引擎
 7. Worker 继续执行，完全无感知
 ```
 
-- **优点**：原生 Claude Code 机制，不依赖 prompt 遵守
-- **限制**：defer 仅在 `claude -p` 非交互模式生效，且单次 turn 只能有一个工具调用
-- **版本要求**：Claude Code >= 2.1.89
+- **优点**：保留原生 Claude Code defer 能力，但统一收口到 Hermes 协议层
+- **限制**：defer 仅在 CLI/SDK 支持该能力时生效；Hermes 侧必须先做标准化
+- **版本要求**：Claude Code >= 2.1.89（若使用 defer 路径）
 
 ### 5.4 决策路由优先级
 
@@ -536,7 +525,7 @@ Implementer 的 system prompt 规定"遇到架构决策必须 block"，Implement
     │
     ├── Implementer 主动调用 kanban_block()?  ──→ 路径 A（主流程）
     │
-    └── Claude 自动调用 AskUserQuestion?      ──→ 路径 B（defer 兜底）
+    └── CLI 引擎返回 status=deferred ?       ──→ 路径 B（兜底）
                                                     │
                                                     ▼
                                               Dispatcher 读取问题
@@ -545,13 +534,13 @@ Implementer 的 system prompt 规定"遇到架构决策必须 block"，Implement
                                                     └── 安全/产品方向  ──→ 用户
 ```
 
-### 5.5 Session 管理
+### 5.5 对话状态管理
 
-Worker 通过 `claude -p` 启动，退出后 session 保留在磁盘上。Dispatcher 通过 `session_id` 追踪：
+Worker 不依赖 `claude -p --resume`。Hermes Profile 通过 Kanban metadata 持有业务状态：
 
-- **正常完成**：`stop_reason: "end_turn"`，任务标记 done
-- **defer 等待**：`stop_reason: "tool_deferred"`，任务保持 running，等待 resume
-- **崩溃/超时**：Dispatcher 通过 PID 探测（R12）判定，Hermes 官方自动回收任务到 ready；通知用户后由用户决定是否创建 SRE 分析任务（见 §9.3）
+- **正常完成**：CLI 引擎返回 `status=...` + `next_action=complete/continue`，任务继续流转
+- **defer 等待**：CLI 引擎返回 `status=deferred`，Profile 将 `conversation_context` 写入 metadata，等待下一次调用
+- **崩溃/超时**：Dispatcher 通过 PID 探测（R12）判定，任务回到 ready；重试时从 metadata 恢复累积历史
 
 ---
 
@@ -1083,7 +1072,7 @@ Implementer (TDD 流程):
 
   # 遇到疑问（如不确定用 RS256 还是 HS256）
   # 路径 A: kanban_block(reason="reviewer-needed: ...") → Dispatcher 创建 Reviewer 任务
-  # 路径 B: AskUserQuestion → PreToolUse hook defer → Dispatcher 路由 → --resume 恢复
+  # 路径 B: AskUserQuestion → adapter 标准化 deferred 响应 → Dispatcher 路由 → 携带完整历史重新调用
 
   # 全量回归测试
   terminal(command="cargo test --lib")
@@ -1430,3 +1419,45 @@ commands:
 - 新增/删除脚本时，修改 manifest 即可，无需手动更新 Makefile
 
 **目的**：解决脚本 buried 在深层目录、根目录 `scripts/` 为空的问题。
+
+---
+
+## 14. 外部 CLI 引擎架构（统一模式）
+
+> **详细设计文档：** [`EXTERNAL-CLI-ENGINE.md`](./EXTERNAL-CLI-ENGINE.md)
+
+### 14.1 设计决策
+
+Phase 19 原设计中，每个 Profile 是一个完整的 Hermes LLM 进程，自身负责所有思考和执行。经过 Grill-Me 讨论，决定采用**统一外部 CLI 引擎模式**：
+
+- **Hermes Profile** = 轻量 LLM（路由 + 编排）+ 协议层
+- **外部 CLI 引擎** = 实际思考和执行（`claude -p` / `codex exec`）
+
+**理由：** Claude Code 和 Codex CLI 等专用工具拥有更成熟的工程化能力（文件操作工具链、subagents、worktrees、MCP tools），Hermes 的调度能力（Kanban、Dispatcher、Gateway、Plugin Hooks）更适合做编排层。
+
+### 14.2 角色 → CLI 引擎映射
+
+| 角色 | CLI 引擎 | Hermes Profile 职责 |
+|------|----------|-------------------|
+| PM | `claude -p` | 组装上下文、管理对话历史、解析输出、创建 Kanban 任务 |
+| Researcher | `claude -p` | 传入调研主题、解析技术方案文档 |
+| Implementer | `codex exec`（可切换 `claude -p`） | 传入任务 + 验收标准、解析 handoff metadata |
+| Reviewer | `claude -p`（只读白名单） | 传入变更文件列表、解析 findings |
+| QA-Tester | `claude -p` | 传入需求文档 + 测试计划、解析测试结果 |
+| DevOps | `codex exec`（可切换 `claude -p`） | 传入部署配置、解析部署报告 |
+| SRE-Observer | `claude -p` | 传入故障上下文、解析根因报告 |
+| Orchestrator | 无（规则驱动） | 纯规则引擎，按路由表派发 |
+
+### 14.3 与原设计的兼容性
+
+以下 Phase 19 机制保持不变，仅将"Profile 内置 LLM 执行"替换为"Profile 调用外部 CLI 引擎"：
+
+- Kanban 任务管理（§4）
+- Dispatcher 派发（§4.4）
+- Risk Policy Engine（§6.2）— 拦截点从 LLM 内部移到 terminal() 调用层
+- Backpressure（§4.8）
+- SRE-Observer（§9.3）— 读取 CLI 引擎执行日志
+- Self-evolution（§8）— 经验通过 Profile 写入 Memory
+- Observability Plugin（§9.2）— 采集 terminal() 调用链
+
+**变更点：** Session Resume 机制（§5.5）被**上下文累积模式**替代——每次调用 CLI 引擎传入完整对话历史，引擎无状态。

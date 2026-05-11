@@ -1,10 +1,19 @@
 ## 三、实时通信子流程（§5）
 
+> **架构说明（2026-05-11 更新）：** 本文档中的通信流程已更新为"外部 CLI 引擎"模式。
+> - Worker 是 Hermes Profile 进程（轻量编排层），通过 JSON 协议委托给外部 CLI 引擎
+> - `--resume <session-id>` 机制被**上下文累积模式**替代（每次传入完整对话历史，CLI 引擎无状态）
+> - 详见 [`EXTERNAL-CLI-ENGINE.md`](./EXTERNAL-CLI-ENGINE.md) §7
+
+> **两层通信模型：**
+> - **Layer 1 — Hermes Profile ↔ Kanban**：任务状态流转（block/unblock、task 创建/完成）
+> - **Layer 2 — Hermes Profile ↔ CLI 引擎**：JSON Request/Response Envelope（工具调用委托、上下文累积）
+
 > 📎 **相关叙事文档**：
 > - 实时问答 → [`workflow-phase-04-testing-review.md`](./workflow-phase-04-testing-review.md) — Step 4.10 Jacky 收到 block 通知并决策
 > - 人与 Agent 沟通 → [`workflow-appendix-human-reactions.md`](./workflow-appendix-human-reactions.md) — 人的真实反应场景
 >
-> **能力来源说明：** `kanban_block()`/`kanban_complete()`、`AskUserQuestion`、PreToolUse hook + defer 机制属于 `[Hermes 官方]` 或 Claude Code 原生能力。`kanban_block` reason 前缀（如 `reviewer-needed:`）触发自动创建 Reviewer 子任务属于 `[Phase 19 增量]`。
+> **能力来源说明：** `kanban_block()`/`kanban_complete()`、`AskUserQuestion`、PreToolUse hook + defer 机制属于 `[Hermes 官方]` 或 Claude Code 原生能力。`kanban_block` reason 前缀（如 `reviewer-needed:`）触发自动创建 Reviewer 子任务属于 `[Phase 19 增量]`。defer 的原始返回会先由 adapter 规整为 `hermes-role-engine/v1` Response Envelope。
 
 ---
 
@@ -77,45 +86,72 @@
 
 ---
 
-**路径 B：Claude Code AskUserQuestion → defer（兜底）**
+**路径 B：CLI 引擎 AskUserQuestion → defer → 上下文累积（兜底）**
 
-当 Claude Code 运行时自行调用 `AskUserQuestion`（Implementer 未遵守 block 指令）：
+当 CLI 引擎运行时自行调用 `AskUserQuestion`（Implementer 未遵守 block 指令）：
+
+> **关键变化（2026-05-11）：** 原 `--resume <session-id>` 机制已替换为**上下文累积模式**。
+> CLI 引擎无状态，每次调用都通过 Request Envelope 传入完整对话历史。
+> Profile 从上一次 Response Envelope 中提取对话上下文，追加新消息后重新发起调用。
 
 ```
         时序图:
-        Worker (claude -p)     PreToolUse Hook      Dispatcher
+        Profile (编排层)     CLI 引擎 (无状态)      Dispatcher
              │                   │                  │
-             │ ① 调用            │                  │
-             │ AskUserQuestion   │                  │
+             │ ① 发送 Request    │                  │
+             │ Envelope          │                  │
+             │ (含完整对话历史)   │                  │
              │──────────────────►│                  │
-             │                   │ ② 返回 defer     │
+             │                   │                  │
+             │ ② 返回 Response   │                  │
+             │ Envelope          │                  │
+             │ status: deferred  │                  │
+             │ next_action:      │                  │
+             │ defer_to_human    │                  │
              │◄──────────────────│                  │
              │                   │                  │
-             │ 进程退出           │                  │
-             │ stop_reason:      │                  │
-             │ "tool_deferred"   │                  │
+             │ ③ 读取            │                  │
+             │ deferred_tool_use │                  │
+             │ + 提取对话上下文   │                  │
+             │ 写入 Kanban       │                  │
              │──────────────────────────────────────►│
              │                   │                  │
-             │                   │                  │ ③ 读取
-             │                   │                  │ deferred_tool_use
-             │                   │                  │ 路由给 Reviewer
+             │                   │                  │ ④ 路由给 Reviewer
+             │                   │                  │    获取回答
              │                   │                  │
-             │                   │                  │ ④ --resume 恢复
+             │ ⑤ 读取回答        │                  │
              │◄──────────────────────────────────────│
              │                   │                  │
-             │ ⑤ hook 再次触发   │                  │
-             │ 返回 allow +      │                  │
-             │    answers        │                  │
+             │ ⑥ 构造新 Request  │                  │
+             │ Envelope          │                  │
+             │ = 旧对话历史      │                  │
+             │ + 用户回答        │                  │
              │──────────────────►│                  │
+             │                   │                  │
+             │ ⑦ CLI 引擎        │                  │
+             │ 以 allow +        │                  │
+             │ answers 继续      │                  │
+             │◄──────────────────│                  │
              │                   │                  │
              │ 继续执行           │                  │
 ```
 
-deferred_tool_use 结构示例：
+> **上下文累积示意：**
+> ```
+> 调用 1: Request{ history: [user_msg_1, assistant_msg_1, ...] }
+>         Response{ status: "deferred", next_action: "defer_to_human", conversation_context: [...] }
+>
+> 调用 2: Request{ history: [user_msg_1, assistant_msg_1, ..., deferred_answer] }
+>         Response{ status: "task_complete", next_action: "continue", result: "..." }
+> ```
+> Profile 负责维护和累积对话历史；CLI 引擎每次都是全新调用，不保留任何状态。
+
+defer 场景的标准化 Response Envelope 示例：
 ```json
 {
-  "stop_reason": "tool_deferred",
-  "session_id": "abc123",
+  "protocol": "hermes-role-engine/v1",
+  "status": "deferred",
+  "next_action": "defer_to_human",
   "deferred_tool_use": {
     "id": "toolu_01abc",
     "name": "AskUserQuestion",
@@ -127,11 +163,17 @@ deferred_tool_use 结构示例：
         "multiSelect": false
       }]
     }
-  }
+  },
+  "conversation_context": [
+    {"role": "user", "content": "..."},
+    {"role": "assistant", "content": "..."}
+  ]
 }
 ```
 
-**大白话：** 工人 A 写代码时自己犹豫了，系统自动"暂停"A，把问题转给专家 B，拿到答案后"恢复"A 继续干。全程不用 tmux，用 Claude Code 原生机制。
+> **注意：** 原始 CLI/SDK 返回如果是 `stop_reason: "tool_deferred"`，必须先由 adapter 映射成上面的标准化 Response Envelope。
+> `conversation_context` 是下一次调用的唯一恢复输入；不再依赖 `session_id` 进行会话恢复。
+
+**大白话：** 工人 A（CLI 引擎）写代码时犹豫了，返回一个"暂停+问题"响应。Profile 层把问题转给专家 B，拿到答案后，把"之前的全部对话 + 答案"打包成新请求，重新调用 CLI 引擎。CLI 引擎每次都从头开始，但因为收到了完整历史，所以能无缝继续。全程不用 tmux，不用 --resume。
 
 ---
-
