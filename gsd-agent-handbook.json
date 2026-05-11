@@ -482,6 +482,89 @@
     ]
   },
 
+  "mcp_cross_ai_integration": {
+    "description": "When the main controller (Claude TUI) uses MCP tools to call external AI (Codex, etc.) for review/discuss tasks instead of CLI subprocesses. Results return directly to Claude's context and can be followed up on.",
+
+    "architecture": {
+      "pattern": "Claude TUI (orchestrator) → GSD Skills (workflow) → MCP Tools (external AI) → .planning/ files (state)",
+      "key_difference_from_cli": "MCP results return to Claude's context window directly; CLI results write to temp files. MCP enables follow-up questions; CLI is fire-and-forget.",
+      "state_truth_source": ".planning/ files remain the single source of truth regardless of whether Claude or Codex provided the input."
+    },
+
+    "workflows": {
+      "plan_review_via_mcp": {
+        "description": "After /gsd-plan-phase, call MCP tool for independent plan review before execution.",
+        "steps": [
+          "1. Execute /gsd-plan-phase N → PLAN.md files created",
+          "2. Read PLAN.md + PROJECT.md + REQUIREMENTS.md + CONTEXT.md",
+          "3. Build structured review prompt (see template below)",
+          "4. Call MCP tool with review prompt → returns structured feedback",
+          "5. Write feedback to {phase}-REVIEWS.md",
+          "6. If HIGH concerns found: /gsd-plan-phase N --reviews → re-plan",
+          "7. Execute /gsd-execute-phase N"
+        ],
+        "prompt_template": "Review this implementation plan. Analyze: completeness, feasibility, risks, dependency ordering, and suggestions. Project context: {PROJECT.md}. Phase goal: {ROADMAP phase}. Requirements: {REQ-IDs}. Plans: {PLAN.md contents}. Decisions: {CONTEXT.md}.",
+        "output_file": "{phase_dir}/{padded_phase}-REVIEWS.md"
+      },
+
+      "code_review_via_mcp": {
+        "description": "After /gsd-execute-phase, call MCP tool for code review before verification.",
+        "steps": [
+          "1. Execute /gsd-execute-phase N → code changes + SUMMARY.md",
+          "2. Collect changed files from SUMMARY.md or git diff",
+          "3. Call MCP tool with code review prompt → returns findings",
+          "4. Classify findings: Critical (fix now), Warning (fix plan), Info (record)",
+          "5. Write to {phase}-REVIEW.md",
+          "6. Fix Critical issues directly or via /gsd-quick",
+          "7. Execute /gsd-verify-work N"
+        ],
+        "prompt_template": "Review this code for bugs, security issues, and quality problems. Files changed: {file list}. Code: {file contents}. Phase goal: {phase goal from ROADMAP}.",
+        "output_file": "{phase_dir}/{padded_phase}-REVIEW.md"
+      },
+
+      "discuss_via_mcp": {
+        "description": "Before or after /gsd-discuss-phase, get independent perspective from external AI.",
+        "steps": [
+          "1. Read phase definition from ROADMAP.md",
+          "2. Call MCP tool: 'For this phase goal, what is the best implementation approach?'",
+          "3. Claude synthesizes its own view + Codex's view",
+          "4. Update CONTEXT.md with combined decisions"
+        ],
+        "prompt_template": "I'm planning phase {N}: {phase goal}. Requirements: {REQ-IDs}. What is the optimal implementation approach? Consider: tech choices, patterns, edge cases, risks.",
+        "output_file": ".planning/phases/{NN}-{slug}/CONTEXT.md (update)"
+      },
+
+      "convergence_loop_via_mcp": {
+        "description": "Iterative review-replan loop until no HIGH concerns remain.",
+        "steps": [
+          "1. /gsd-plan-phase N",
+          "2. MCP review → get concerns",
+          "3. If HIGH concerns: /gsd-plan-phase N --reviews → re-plan",
+          "4. MCP re-review → check if HIGHs resolved",
+          "5. Repeat until clean or max 3 cycles",
+          "6. /gsd-execute-phase N"
+        ],
+        "max_cycles": 3
+      }
+    },
+
+    "mcp_tool_selection": {
+      "description": "Which MCP tool to use for which task. Check your settings.json mcpServers for available tools.",
+      "mapping": {
+        "plan_review": ["mcp__spec-workflow__*", "any MCP with analysis capability"],
+        "code_review": ["mcp__serena__*", "dedicated review MCP"],
+        "discuss": ["any MCP with conversational capability"],
+        "research": ["mcp__context7__*", "mcp__exa__*", "mcp__open-websearch__*"]
+      }
+    },
+
+    "vs_cli_mode": {
+      "cli_advantages": ["Fully automated by GSD (/gsd-review --codex)", "Structured output parsing", "Automatic REVIEWS.md generation"],
+      "mcp_advantages": ["Results in Claude context (can follow up)", "No CLI installation needed", "Real-time synthesis of multiple AI views", "Leverages existing MCP config"],
+      "recommendation": "Use MCP for interactive/iterative reviews. Use CLI for batch/automated reviews."
+    }
+  },
+
   "safety_budgets": {
     "description": "Built-in safety mechanisms for autonomous execution.",
     "limits": {
