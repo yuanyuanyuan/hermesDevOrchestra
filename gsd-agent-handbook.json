@@ -548,13 +548,35 @@
       }
     },
 
-    "mcp_tool_selection": {
-      "description": "Which MCP tool to use for which task. Check your settings.json mcpServers for available tools.",
-      "mapping": {
-        "plan_review": ["mcp__spec-workflow__*", "any MCP with analysis capability"],
-        "code_review": ["mcp__serena__*", "dedicated review MCP"],
-        "discuss": ["any MCP with conversational capability"],
-        "research": ["mcp__context7__*", "mcp__exa__*", "mcp__open-websearch__*"]
+    "tool_selection": {
+      "description": "Available external AI integration methods. Codex uses slash commands (not MCP tools).",
+      "codex_plugin_commands": {
+        "description": "OpenAI Codex plugin — invoked as slash commands, not MCP tools",
+        "commands": {
+          "/codex:review": "Code review against local git state. Flags: --wait, --background, --base <ref>, --scope auto|working-tree|branch",
+          "/codex:adversarial-review": "Adversarial review that challenges implementation approach and design choices. Same flags as review + [focus ...]",
+          "/codex:setup": "Setup and configure Codex integration",
+          "/codex:status": "Check Codex status",
+          "/codex:result": "View review results",
+          "/codex:cancel": "Cancel running review"
+        }
+      },
+      "gstack_codex": {
+        "description": "gstack /codex skill — three modes",
+        "modes": {
+          "/codex": "Code review with pass/fail gate",
+          "/codex challenge": "Adversarial mode that tries to break code",
+          "/codex consult": "Ask codex anything with session continuity"
+        }
+      },
+      "gsd_native_cli": {
+        "description": "GSD built-in cross-AI review via CLI subprocess",
+        "command": "/gsd-review --codex",
+        "mechanism": "Bash('codex exec ...')"
+      },
+      "mcp_tools": {
+        "description": "MCP tools for research (not Codex-specific)",
+        "tools": ["mcp__context7__*", "mcp__exa__*", "mcp__open-websearch__*"]
       }
     },
 

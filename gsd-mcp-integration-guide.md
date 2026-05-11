@@ -130,7 +130,7 @@
 
 ## 实操模板
 
-### 模板 1：MCP Plan Review
+### 模板 1：Codex Plan Review
 
 以下是在 Claude TUI 中实际执行的步骤：
 
@@ -141,13 +141,14 @@
 # 2. 读取产出的计划文件
 # (Claude 会自动读取 .planning/phases/01-xxx/ 下的文件)
 
-# 3. 调用 MCP 工具进行审查
-#    使用你配置的 MCP 工具，例如：
-#    - mcp__serena__* (如果 Serena 配置了 review 能力)
-#    - mcp__spec-workflow__* (规格审查)
-#    - 或其他你配置的 MCP review 工具
+# 3. 调用 Codex 审查计划
+#    方式 A：使用 Codex 插件命令
+/codex:review --scope branch
 
-# 4. 将 MCP 返回的审查意见整合
+#    方式 B：使用对抗性审查（更严格）
+/codex:adversarial-review --scope branch
+
+# 4. Codex 返回审查意见后，Claude 将其结构化
 #    写入 .planning/phases/01-xxx/01-REVIEWS.md
 
 # 5. 根据审查反馈重新规划（如果需要）
@@ -228,16 +229,26 @@ Codex 的审查意见是参考，Claude（主控）做最终决策。
 
 ---
 
-## MCP 工具选择建议
+## 工具选择建议
 
-| 任务类型 | 推荐 MCP 工具 | 原因 |
-|----------|---------------|------|
-| Plan Review | `mcp__spec-workflow__*` | 规格审查专长 |
-| Code Review | `mcp__serena__*` 或专用 review MCP | 代码分析能力 |
-| Discuss | 任何支持对话的 MCP 工具 | 需要多轮交互 |
-| Research | `mcp__context7__*`, `mcp__exa__*` | 文档和搜索 |
+| 任务类型 | 推荐工具 | 调用方式 | 原因 |
+|----------|----------|----------|------|
+| Plan Review | `/codex:review` | 斜杠命令 | Codex 独立审查计划 |
+| Adversarial Review | `/codex:adversarial-review` | 斜杠命令 | 挑战设计选择，更严格 |
+| Code Review | `/codex:review` | 斜杠命令 | 审查 git diff 中的代码 |
+| Discuss | Claude 内置能力 | 直接对话 | 多轮交互讨论 |
+| Research | `mcp__context7__*`, `mcp__exa__*` | MCP 工具 | 文档和搜索 |
 
-> **注意：** 具体可用的 MCP 工具取决于你的配置。检查 `~/.claude/settings.json` 中的 `mcpServers` 部分确认可用工具。
+### 可用的外部 AI 集成方式
+
+| 集成方式 | 工具 | 适用场景 |
+|----------|------|----------|
+| **OpenAI Codex 插件** | `/codex:review`, `/codex:adversarial-review` | 代码审查、对抗性审查 |
+| **GSD 原生 CLI** | `/gsd-review --codex` (Bash 子进程) | 批量自动化审查 |
+| **MCP 工具** | `mcp__context7__*`, `mcp__exa__*` | 文档研究、搜索 |
+| **gstack Codex** | `/codex` (gstack 技能) | 代码审查、挑战、咨询 |
+
+> **注意：** Codex 集成通过 OpenAI Codex 插件提供，使用斜杠命令（`/codex:review`）而非 MCP 工具。内部通过 `app-server-broker.mjs`（JSON-RPC）与 Codex 通信。
 
 ---
 
