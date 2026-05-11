@@ -52,7 +52,7 @@ Architecture boundary: "10x" means lower coordination overhead across multiple p
 
 ## Context
 
-已有输入资料位于 `docs/orchestra/`，包括：
+已有输入资料位于仓库根目录实现包中，包括：
 
 - `README.md`：描述多项目 AI 开发编排系统、三层代理架构、文件通信总线、三级决策流转、多项目管理、部署步骤、日常使用、配置文件、故障排查、安全最佳实践和扩展路线。
 - `hermes/SOUL.md`：定义 Hermes 顶层编排器人格，强调“管理者而非编码者”、信任 Claude 技术决策、只在危险/产品级问题上升级用户、多项目隔离和审计记录。
@@ -99,7 +99,7 @@ v1.0 规格阶段的用户输入与决策：
 
 v1.1 is complete. Phases 9-12 validated the upstream Hermes Agent baseline, package installer layer, local project runtime slice, risk rulebook enforcement, SSH/local decision fallback, durable Audit JSONL, smoke verification fixtures, coverage matrix, and next-milestone handoff.
 
-v1.2 Phase 18 clarified architecture bounds across `.planning/SPEC.md`, `specs/file-bus.md`, `docs/orchestra/README.md`, `docs/orchestra/WORKFLOW.md`, and `.planning/PROJECT.md`. The fixed Runtime bus is documented as one active task slot per project, same-project parallelism is out of scope for v1.2, and the "10x" claim is limited to single-developer multi-project coordination.
+v1.2 Phase 18 clarified architecture bounds across `.planning/SPEC.md`, `specs/file-bus.md`, `README.md`, `WORKFLOW.md`, and `.planning/PROJECT.md`. The fixed Runtime bus is documented as one active task slot per project, same-project parallelism is out of scope for v1.2, and the "10x" claim is limited to single-developer multi-project coordination.
 
 Phase 19 produced a full Hermes-native workflow design package under `.planning/phases/19-hermes-workflow-design/`. On 2026-05-11, commit `3976c42` added the External CLI Engine architecture and standardized the design around “Hermes scheduling + external CLI execution”. That package remains the source for two execution milestones: v1.3 covered the MVP implementation path, and v1.4 remains the full implementation path. Execution phase numbering starts at 20 so the phase 19 design directory remains a stable reference set.
 

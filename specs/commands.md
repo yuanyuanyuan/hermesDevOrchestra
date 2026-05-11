@@ -4,26 +4,26 @@
 
 Primary: `.planning/SPEC.md` §§CMD-01..CMD-02.
 
-`docs/orchestra/README.md` and `docs/orchestra/WORKFLOW.md` are projections only. If either projection conflicts with `.planning/SPEC.md`, update the projection or this derived spec to match `.planning/SPEC.md`.
+`README.md` and `WORKFLOW.md` are projections only. If either projection conflicts with `.planning/SPEC.md`, update the projection or this derived spec to match `.planning/SPEC.md`.
 
-Downstream read order: `.planning/SPEC.md`, then this derived spec, then `docs/orchestra/*` implementation projections.
+Downstream read order: `.planning/SPEC.md`, then this derived spec, then the root-package implementation projections (`README.md`, `WORKFLOW.md`, `scripts/`, `config/`, `hermes/`, `skills/`, `claude-config/`).
 
 ## Consumers
 
-- `docs/orchestra/scripts/bin/orch-init` - initializes project state and bus paths.
-- `docs/orchestra/scripts/bin/orch-start` - starts or reuses project sessions.
-- `docs/orchestra/scripts/bin/orch-stop` - stops project sessions.
-- `docs/orchestra/scripts/bin/orch-status` - reports project state.
-- `docs/orchestra/scripts/bin/orch-bus-loop` - runs local bus dispatch.
-- `docs/orchestra/scripts/bin/orch-risk-check` - exposes risk classification.
-- `docs/orchestra/scripts/bin/orch-decisions` - lists pending local fallback decisions.
-- `docs/orchestra/scripts/bin/orch-approve` - approves a pending local fallback decision.
-- `docs/orchestra/scripts/bin/orch-reject` - rejects a pending local fallback decision.
-- `docs/orchestra/scripts/bin/orch-audit` - reads durable audit records.
-- `docs/orchestra/scripts/bin/orch-verify` - runs smoke verification.
-- `docs/orchestra/README.md` - human-facing command projection.
-- `docs/orchestra/WORKFLOW.md` - workflow command projection.
-- `docs/orchestra/scripts/tests/test-docs.sh` - smoke-tests documented command coverage.
+- `scripts/bin/orch-init` - initializes project state and bus paths.
+- `scripts/bin/orch-start` - starts or reuses project sessions.
+- `scripts/bin/orch-stop` - stops project sessions.
+- `scripts/bin/orch-status` - reports project state.
+- `scripts/bin/orch-bus-loop` - runs local bus dispatch.
+- `scripts/bin/orch-risk-check` - exposes risk classification.
+- `scripts/bin/orch-decisions` - lists pending local fallback decisions.
+- `scripts/bin/orch-approve` - approves a pending local fallback decision.
+- `scripts/bin/orch-reject` - rejects a pending local fallback decision.
+- `scripts/bin/orch-audit` - reads durable audit records.
+- `scripts/bin/orch-verify` - runs smoke verification.
+- `README.md` - human-facing command projection.
+- `WORKFLOW.md` - workflow command projection.
+- `scripts/tests/test-docs.sh` - smoke-tests documented command coverage.
 
 ## Contract
 
@@ -37,11 +37,11 @@ Downstream read order: `.planning/SPEC.md`, then this derived spec, then `docs/o
 ## Drift Check
 
 ```bash
-for cmd in orch-init orch-start orch-stop orch-status orch-bus-loop orch-risk-check orch-decisions orch-approve orch-reject orch-audit orch-verify; do test -x "docs/orchestra/scripts/bin/$cmd"; done && bash docs/orchestra/scripts/tests/test-specs.sh && bash docs/orchestra/scripts/tests/test-docs.sh
+for cmd in orch-init orch-start orch-stop orch-status orch-bus-loop orch-risk-check orch-decisions orch-approve orch-reject orch-audit orch-verify; do test -x "scripts/bin/$cmd"; done && bash scripts/tests/test-specs.sh && bash scripts/tests/test-docs.sh
 ```
 
 ## Conformance Checks
 
-- `bash docs/orchestra/scripts/tests/test-specs.sh`
-- `bash docs/orchestra/scripts/tests/test-docs.sh`
-- `for cmd in orch-init orch-start orch-stop orch-status orch-bus-loop orch-risk-check orch-decisions orch-approve orch-reject orch-audit orch-verify; do test -x "docs/orchestra/scripts/bin/$cmd"; done`
+- `bash scripts/tests/test-specs.sh`
+- `bash scripts/tests/test-docs.sh`
+- `for cmd in orch-init orch-start orch-stop orch-status orch-bus-loop orch-risk-check orch-decisions orch-approve orch-reject orch-audit orch-verify; do test -x "scripts/bin/$cmd"; done`

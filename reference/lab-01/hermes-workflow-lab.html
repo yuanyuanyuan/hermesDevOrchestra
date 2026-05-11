@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes 多项目 AI 开发工作流 — 完整功能模拟器</title>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        surface: '#161b22',
+        border: '#30363d',
+      }
+    }
+  }
+}
+</script>
+<link rel="stylesheet" href="css/hermes-workflow-lab.css">
+</head>
+<body class="bg-gray-950 text-gray-200 font-mono h-screen flex flex-col overflow-hidden">
+
+<script src="js/hermes-workflow-config.js"></script>
+<script src="js/hermes-workflow-engine.js"></script>
+
+<div x-data="masterEngine(CONFIG, PHASES)" class="h-screen flex flex-col overflow-hidden">
+
+<!-- ==================== HEADER ==================== -->
+<header class="shrink-0 px-6 pt-4 pb-0 border-b border-gray-700">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl text-blue-400 font-bold mb-1" x-text="title"></h1>
+      <p class="text-sm text-gray-500 mb-3" x-text="subtitle"></p>
+    </div>
+    <div class="text-xs text-gray-600 text-right">
+      <div>Hermes v0.13.0</div>
+      <div>Phase 19 Design</div>
+    </div>
+  </div>
+  <div class="flex gap-0.5 border-b-2 border-gray-700">
+    <template x-for="(tab, i) in tabs" :key="i">
+      <button @click="switchTab(i)"
+        class="px-4 py-2 border border-gray-700 border-b-0 rounded-t text-sm transition-colors"
+        :class="activeTab === i ? 'text-blue-400 bg-gray-950 -mb-[2px] z-10 relative' : 'text-gray-500 hover:text-gray-200 bg-surface'"
+        x-text="tab"></button>
+    </template>
+  </div>
+</header>
+
+<!-- ==================== MAIN ==================== -->
+<main class="flex-1 overflow-hidden min-h-0 relative">
+
+<!-- === Tabs 0-3: Narrative === -->
+<template x-for="(tab, ti) in tabs.slice(0,4)" :key="ti">
+  <div x-show="activeTab === ti" x-cloak
+       x-transition:enter="transition-opacity duration-200"
+       x-transition:enter-start="opacity-0"
+       x-transition:enter-end="opacity-100"
+       class="h-full flex flex-col absolute inset-0">
+    <div class="shrink-0 px-6 py-3 flex gap-3 items-center">
+      <button @click="prev()" class="px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm"
+              :disabled="current === 0" :class="current === 0 ? 'opacity-40' : ''">&#9664;</button>
+      <button @click="next()" class="px-4 py-2 bg-blue-500 text-gray-950 rounded text-sm font-semibold">下一步 &#9654;</button>
+      <button @click="togglePlay()" class="px-4 py-2 rounded text-sm border"
+              :class="isPlaying ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-gray-800 border-gray-700'"
+              x-text="isPlaying ? '&#9208; 暂停' : '&#9654; 自动'"></button>
+      <button @click="reset()" class="px-4 py-2 bg-red-500 text-white rounded text-sm">重置</button>
+      <span class="text-sm text-gray-500" x-text="progress"></span>
+      <span class="text-xs text-gray-500 ml-2">速度</span>
+      <input type="range" min="200" max="2000" x-model="speed" class="w-24 accent-blue-500">
+    </div>
+    <div class="flex-1 grid grid-cols-[2fr_1fr] gap-4 px-6 pb-4 overflow-hidden min-h-0">
+      <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col">
+        <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5 flex justify-between">
+          <span x-text="tabs[activeTab] + ' 视图'"></span>
+          <span class="text-xs text-gray-600 uppercase tracking-wider" x-text="tabStepName"></span>
+        </div>
+        <div class="flex-1 p-4 overflow-y-auto min-h-0">
+          <div class="text-sm leading-7" x-html="step?.flow ?? ''"></div>
+        </div>
+      </div>
+      <div class="flex flex-col gap-4 overflow-hidden">
+        <template x-for="(label, pi) in panelLabels" :key="pi">
+          <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col flex-1 min-h-0">
+            <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5" x-text="label"></div>
+            <div class="flex-1 p-4 overflow-y-auto min-h-0 text-sm" x-html="state(label.toLowerCase())"></div>
+          </div>
+        </template>
+      </div>
+    </div>
+    <div class="shrink-0 px-6 py-3 border-t border-gray-700">
+      <div class="border-l-4 border-purple-500 bg-purple-500/5 rounded-r px-4 py-2 text-sm" x-html="step?.explain ?? ''"></div>
+    </div>
+  </div>
+</template>
+
+<!-- === Tab 4: Full Workflow Simulator === -->
+<div x-show="activeTab === 4" x-cloak
+     x-transition:enter="transition-opacity duration-200"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     class="h-full flex flex-col absolute inset-0">
+
+  <!-- Toolbar -->
+  <div class="shrink-0 px-4 py-2 flex gap-2 items-center border-b border-gray-700 bg-gray-950 flex-wrap">
+    <select x-model="activeProject" @change="switchProject($event.target.value)"
+            class="bg-gray-800 border border-gray-700 rounded text-xs px-2 py-1 text-gray-300">
+      <template x-for="p in projects" :key="p.id">
+        <option :value="p.id" x-text="p.name + ' (' + p.tech + ')'"></option>
+      </template>
+    </select>
+    <div class="w-px h-5 bg-gray-700 mx-1"></div>
+    <button @click="simPrev()" class="px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs"
+            :disabled="simPhase === 0 || pendingDeploy" :class="simPhase === 0 || pendingDeploy ? 'opacity-40' : ''">&#9664; 上一步</button>
+    <button @click="simNext()" class="px-3 py-1 bg-blue-500 text-gray-950 rounded text-xs font-semibold"
+            :disabled="simPhase >= maxPhase || pendingDeploy">下一步 &#9654;</button>
+    <button @click="simReset()" class="px-2 py-1 bg-red-500 text-white rounded text-xs">重置</button>
+    <button @click="startClarification()" class="px-2 py-1 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded text-xs">PM 澄清</button>
+    <div class="ml-2 flex flex-col">
+      <span class="text-[10px] text-gray-500" x-text="'Phase ' + simPhase + ' / ' + maxPhase"></span>
+      <span class="text-xs font-bold text-blue-400" x-text="currentPhase?.name ?? ''"></span>
+    </div>
+    <div class="ml-auto flex gap-3 text-xs items-center flex-wrap">
+      <!-- Notification Bell -->
+      <button @click="showNotificationPanel = !showNotificationPanel; if(showNotificationPanel) unreadNotifications = 0"
+              class="relative px-2 py-1 rounded text-xs"
+              :class="unreadNotifications > 0 ? 'bg-red-500/20 text-red-400 notify-pulse' : 'text-gray-500'">
+        &#128276; <span x-show="unreadNotifications > 0" x-text="unreadNotifications"></span>
+      </button>
+      <button @click="activeSimPanel = activeSimPanel === 'risk' ? 'phase' : 'risk'"
+              :class="activeSimPanel === 'risk' ? 'text-amber-400' : 'text-gray-500'" class="hover:text-gray-300 text-xs">Risk Policy</button>
+      <button @click="activeSimPanel = activeSimPanel === 'obs' ? 'phase' : 'obs'"
+              :class="activeSimPanel === 'obs' ? 'text-cyan-400' : 'text-gray-500'" class="hover:text-gray-300 text-xs">Observability</button>
+      <button @click="activeSimPanel = activeSimPanel === 'memory' ? 'phase' : 'memory'"
+              :class="activeSimPanel === 'memory' ? 'text-purple-400' : 'text-gray-500'" class="hover:text-gray-300 text-xs">Memory</button>
+      <button @click="activeSimPanel = activeSimPanel === 'toolsets' ? 'phase' : 'toolsets'"
+              :class="activeSimPanel === 'toolsets' ? 'text-emerald-400' : 'text-gray-500'" class="hover:text-gray-300 text-xs">Toolsets</button>
+      <button @click="showDashboard = !showDashboard"
+              :class="showDashboard ? 'text-blue-400' : 'text-gray-500'" class="hover:text-gray-300 text-xs">Dashboard</button>
+      <div class="w-px h-4 bg-gray-700"></div>
+      <div class="flex items-center gap-1"><span class="text-gray-500">背压:</span><span class="font-bold" :class="bpClass()" x-text="bpRatio().toFixed(1)"></span><span class="text-gray-600" x-text="bpLabel()"></span></div>
+      <div class="flex items-center gap-1"><span class="text-gray-500">Ready:</span><span class="text-emerald-400 font-bold" x-text="readyCount()"></span></div>
+      <div class="flex items-center gap-1"><span class="text-gray-500">Running:</span><span class="text-blue-400 font-bold" x-text="runningCount()"></span></div>
+      <div class="flex items-center gap-1"><span class="text-gray-500">Blocked:</span><span class="text-amber-400 font-bold" x-text="blockedCount()"></span></div>
+    </div>
+  </div>
+
+  <!-- Notification Panel (overlay) -->
+  <div x-show="showNotificationPanel" x-cloak @click.away="showNotificationPanel = false"
+       class="absolute top-12 right-4 z-50 w-80 bg-gray-900 border border-gray-700 rounded-lg shadow-xl max-h-96 overflow-hidden flex flex-col">
+    <div class="shrink-0 px-3 py-2 border-b border-gray-700 flex justify-between items-center">
+      <span class="text-xs font-bold text-gray-300">通知中心</span>
+      <button @click="showNotificationPanel = false" class="text-gray-500 text-xs">&times;</button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-2 space-y-1">
+      <template x-for="n in notifications" :key="n.id">
+        <div class="p-2 rounded text-[11px] border"
+             :class="n.read ? 'bg-gray-800/50 border-gray-700 text-gray-500' : 'bg-gray-800 border-gray-600 text-gray-300'"
+             @click="readNotification(n.id)">
+          <div class="flex justify-between">
+            <span class="font-bold" :class="n.type === 'qa-block' || n.type === 'crash-alert' || n.type === 'deploy-failure' ? 'text-red-400' : (n.type === 'complete' ? 'text-emerald-400' : 'text-blue-400')" x-text="n.title"></span>
+            <span class="text-gray-600 text-[9px]" x-text="n.time?.split('T')[1]?.substring(0,5) || ''"></span>
+          </div>
+          <div x-text="n.message"></div>
+          <div class="flex gap-1 mt-1" x-show="n.actions.length > 0">
+            <template x-for="a in n.actions" :key="a.label">
+              <button @click.stop="if(a.action==='sre') createSRE(n.message.split(':')[0]?.trim()); if(a.action==='deploy-report') showDeployReport=true;"
+                      class="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded text-[9px]" x-text="a.label"></button>
+            </template>
+          </div>
+        </div>
+      </template>
+      <div x-show="notifications.length === 0" class="text-gray-600 text-xs text-center py-4">暂无通知</div>
+    </div>
+  </div>
+
+  <!-- Dashboard Overlay -->
+  <div x-show="showDashboard" x-cloak
+       class="absolute inset-0 z-40 bg-gray-950/95 flex flex-col">
+    <div class="shrink-0 px-4 py-2 border-b border-gray-700 flex justify-between items-center">
+      <span class="text-sm font-bold text-blue-400">Dashboard</span>
+      <button @click="showDashboard = false" class="text-gray-500 text-sm">&times; 关闭</button>
+    </div>
+    <div class="flex-1 p-4 overflow-y-auto">
+      <div class="grid grid-cols-3 gap-4 mb-4">
+        <div class="bg-gray-900 border border-gray-700 rounded p-3">
+          <div class="text-[10px] text-gray-500">任务状态分布</div>
+          <div class="mt-2 space-y-1 text-xs">
+            <div class="flex justify-between"><span class="text-gray-400">triage</span><span x-text="tasksByStatus('triage').length"></span></div>
+            <div class="flex justify-between"><span class="text-gray-400">todo</span><span x-text="tasksByStatus('todo').length"></span></div>
+            <div class="flex justify-between"><span class="text-emerald-400">ready</span><span x-text="tasksByStatus('ready').length"></span></div>
+            <div class="flex justify-between"><span class="text-blue-400">running</span><span x-text="tasksByStatus('running').length"></span></div>
+            <div class="flex justify-between"><span class="text-amber-400">blocked</span><span x-text="tasksByStatus('blocked').length"></span></div>
+            <div class="flex justify-between"><span class="text-emerald-400">done</span><span x-text="tasksByStatus('done').length"></span></div>
+          </div>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded p-3">
+          <div class="text-[10px] text-gray-500">背压监控</div>
+          <div class="mt-2 text-2xl font-bold" :class="bpClass()" x-text="bpRatio().toFixed(2)"></div>
+          <div class="text-xs text-gray-500" x-text="bpLabel()"></div>
+          <div class="mt-2 h-2 bg-gray-800 rounded overflow-hidden">
+            <div class="h-full transition-all" :class="bpClass().replace('text-','bg-')" :style="'width:' + Math.min(100, (bpRatio()/5)*100) + '%'"></div>
+          </div>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded p-3">
+          <div class="text-[10px] text-gray-500">故障统计</div>
+          <div class="mt-2 space-y-1 text-xs">
+            <div class="flex justify-between"><span class="text-red-400">崩溃次数</span><span x-text="tasks.reduce((a,t)=>a+(t.rollbackCount||0),0)"></span></div>
+            <div class="flex justify-between"><span class="text-amber-400">阻塞任务</span><span x-text="blockedCount()"></span></div>
+            <div class="flex justify-between"><span class="text-red-400">SRE 报告</span><span x-text="sreReports.length"></span></div>
+            <div class="flex justify-between"><span class="text-purple-400">Audit 事件</span><span x-text="auditLogs.length"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="bg-gray-900 border border-gray-700 rounded p-3">
+          <div class="text-[10px] text-gray-500 mb-2">链路追踪</div>
+          <div class="space-y-1 text-[10px]">
+            <template x-for="t in tasks" :key="t.id">
+              <div class="flex items-center gap-2">
+                <span class="text-gray-500" x-text="t.id"></span>
+                <span :class="roleColor(t.assignee)" x-text="t.assignee"></span>
+                <span :class="colColor(t.status)" x-text="t.status"></span>
+                <span x-show="t.parents.length" class="text-gray-600" x-text="'\u2190 ' + t.parents.join(', ')"></span>
+                <span x-show="t.handoff" class="text-emerald-400 text-[9px]">handoff</span>
+              </div>
+            </template>
+          </div>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded p-3">
+          <div class="text-[10px] text-gray-500 mb-2">审计时间线</div>
+          <div class="space-y-1 text-[10px] max-h-40 overflow-y-auto">
+            <template x-for="a in auditLogs.slice(0,20)" :key="a.id">
+              <div class="flex gap-2">
+                <span class="text-gray-600" x-text="a.time?.split('T')[1]?.substring(0,8)||''"></span>
+                <span class="text-amber-400" x-text="a.event"></span>
+                <span class="text-gray-500" x-text="JSON.stringify(a.details).substring(0,60)"></span>
+              </div>
+            </template>
+            <div x-show="auditLogs.length===0" class="text-gray-600">暂无审计记录</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clarification Modal -->
+  <div x-show="showClarificationPanel" x-cloak
+       class="absolute inset-0 z-40 bg-gray-950/90 flex items-center justify-center">
+    <div class="bg-gray-900 border border-gray-700 rounded-lg p-6 w-[500px] max-h-[80vh] overflow-y-auto">
+      <div class="flex justify-between items-center mb-4">
+        <span class="text-sm font-bold text-purple-400">PM 澄清问题</span>
+        <button @click="showClarificationPanel = false" class="text-gray-500">&times;</button>
+      </div>
+      <div class="space-y-4">
+        <template x-for="(q, idx) in CLARIFICATION_QUESTIONS" :key="q.id">
+          <div x-show="clarificationStep === idx">
+            <div class="text-sm text-gray-300 mb-2">
+              <span class="text-purple-400 font-bold" x-text="(idx+1) + '. '"></span>
+              <span x-text="q.text"></span>
+            </div>
+            <div class="space-y-1">
+              <template x-for="opt in q.options" :key="opt">
+                <button @click="answerClarification(q.id, opt)"
+                        class="w-full text-left px-3 py-2 rounded text-xs border"
+                        :class="opt === q.recommended ? 'bg-purple-500/10 border-purple-500/50 text-purple-300' : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'">
+                  <span x-show="opt === q.recommended">&#9733; </span>
+                  <span x-text="opt"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+        </template>
+        <div x-show="clarificationStep >= CLARIFICATION_QUESTIONS.length" class="text-emerald-400 text-sm text-center py-4">
+          &#10003; 所有澄清问题已回答
+        </div>
+      </div>
+      <div class="mt-4 text-[10px] text-gray-500 text-center">
+        问题 <span x-text="clarificationStep + 1"></span> / <span x-text="CLARIFICATION_QUESTIONS.length"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deploy Report Modal -->
+  <div x-show="showDeployReport" x-cloak @click.away="showDeployReport = false"
+       class="absolute top-16 right-4 z-50 w-[400px] bg-gray-900 border border-gray-700 rounded-lg shadow-xl max-h-[80vh] overflow-hidden flex flex-col">
+    <div class="shrink-0 px-3 py-2 border-b border-gray-700 flex justify-between items-center">
+      <span class="text-xs font-bold text-orange-400">部署报告</span>
+      <button @click="showDeployReport = false" class="text-gray-500 text-xs">&times;</button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-3 text-xs" x-show="selectedDeployReport">
+      <div class="mb-2"><span class="text-gray-500">版本:</span> <span class="text-emerald-400 font-bold" x-text="selectedDeployReport?.version"></span></div>
+      <div class="mb-2"><span class="text-gray-500">策略:</span> <span class="text-gray-300" x-text="selectedDeployReport?.strategy"></span></div>
+      <div class="mb-2"><span class="text-gray-500">Git Tag:</span> <span class="text-emerald-400" x-text="selectedDeployReport?.git_tag"></span></div>
+      <div class="mb-2"><span class="text-gray-500">耗时:</span> <span class="text-gray-300" x-text="selectedDeployReport?.duration"></span></div>
+      <div class="mb-2"><span class="text-gray-500">回滚可用:</span> <span class="text-emerald-400" x-text="selectedDeployReport?.rollback_available ? '是' : '否'"></span></div>
+      <div class="text-[10px] text-gray-500 font-bold mb-1">环境验证</div>
+      <div class="space-y-1">
+        <template x-for="env in selectedDeployReport?.environments" :key="env.name">
+          <div class="bg-gray-800 rounded p-2 text-[10px]">
+            <div class="flex justify-between"><span class="text-gray-300" x-text="env.name"></span><span class="text-emerald-400" x-text="env.status"></span></div>
+            <div class="text-gray-500" x-text="env.validation"></div>
+            <div x-show="env.smoke_test !== 'N/A'" class="text-gray-500">smoke: <span class="text-emerald-400" x-text="env.smoke_test"></span></div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Simulator Area -->
+  <div class="flex-1 overflow-hidden min-h-0 flex flex-col">
+    <!-- Kanban Board -->
+    <div class="flex-1 overflow-x-auto overflow-y-hidden px-4 py-3">
+      <div class="flex gap-2 h-full" style="min-width: 1400px;">
+        <template x-for="col in columns" :key="col">
+          <div class="flex-1 min-w-[170px] flex flex-col">
+            <div class="shrink-0 px-2 py-1.5 rounded-t border-t-2 bg-gray-900 border border-gray-700" :class="'col-' + col">
+              <div class="flex justify-between items-center">
+                <span class="text-[10px] font-bold uppercase tracking-wider" :class="colColor(col)" x-text="col"></span>
+                <span class="text-[10px] text-gray-600" x-text="tasksByStatus(col).length"></span>
+              </div>
+            </div>
+            <div class="flex-1 overflow-y-auto min-h-0 bg-gray-900/50 border-x border-b border-gray-700 rounded-b p-1.5 space-y-1.5">
+              <template x-for="task in tasksByStatus(col)" :key="task.id">
+                <div @click="selectTask(task.id)"
+                     class="p-1.5 rounded border cursor-pointer transition-colors hover:bg-gray-800"
+                     :class="selectedTask === task.id ? 'border-blue-500 bg-blue-500/10' : 'border-gray-700 bg-gray-900'">
+                  <div class="flex justify-between items-start mb-0.5">
+                    <span class="text-[10px] text-gray-500" x-text="task.id"></span>
+                    <span class="text-[9px] px-1 py-0.5 rounded bg-gray-800" :class="roleColor(task.assignee)" x-text="task.assignee"></span>
+                  </div>
+                  <div class="text-[11px] text-gray-200 leading-relaxed mb-0.5" x-text="task.title"></div>
+                  <div class="flex gap-1 flex-wrap" x-show="task.parents.length > 0">
+                    <template x-for="p in task.parents" :key="p">
+                      <span class="text-[9px] text-gray-500 bg-gray-800 px-1 rounded">&larr; <span x-text="p"></span></span>
+                    </template>
+                  </div>
+                  <div class="flex gap-1 mt-0.5" x-show="task.rollbackCount > 0">
+                    <span class="text-[9px] text-red-400">&#x21bb; <span x-text="task.rollbackCount"></span></span>
+                  </div>
+                  <div class="flex gap-1 mt-0.5" x-show="task.handoff">
+                    <span class="text-[9px] text-emerald-400">&#10003; handoff</span>
+                  </div>
+                  <div class="flex gap-1 mt-0.5" x-show="task.trace && task.trace.length > 0">
+                    <span class="text-[9px] text-cyan-400">&#9889; <span x-text="task.trace.length"></span> traces</span>
+                  </div>
+                  <div class="flex gap-1 mt-0.5" x-show="task.deferred">
+                    <span class="text-[9px] text-purple-400">&#9208; deferred</span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Bottom Panel -->
+    <div class="shrink-0 border-t border-gray-700 bg-gray-950">
+      <!-- Panel Tabs -->
+      <div class="px-4 py-1.5 flex gap-2 border-b border-gray-700/50 flex-wrap">
+        <button @click="activeSimPanel = 'phase'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'phase' ? 'bg-blue-500/20 text-blue-400' : 'text-gray-500 hover:text-gray-300'">Phase</button>
+        <button @click="activeSimPanel = 'task'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'task' ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-500 hover:text-gray-300'">任务详情</button>
+        <button @click="activeSimPanel = 'risk'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'risk' ? 'bg-amber-500/20 text-amber-400' : 'text-gray-500 hover:text-gray-300'">Risk Policy</button>
+        <button @click="activeSimPanel = 'deploy'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'deploy' ? 'bg-orange-500/20 text-orange-400' : 'text-gray-500 hover:text-gray-300'">部署流水线</button>
+        <button @click="activeSimPanel = 'obs'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'obs' ? 'bg-cyan-500/20 text-cyan-400' : 'text-gray-500 hover:text-gray-300'">Observability</button>
+        <button @click="activeSimPanel = 'sre'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'sre' ? 'bg-red-500/20 text-red-400' : 'text-gray-500 hover:text-gray-300'">SRE</button>
+        <button @click="activeSimPanel = 'memory'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'memory' ? 'bg-purple-500/20 text-purple-400' : 'text-gray-500 hover:text-gray-300'">Memory</button>
+        <button @click="activeSimPanel = 'toolsets'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'toolsets' ? 'bg-green-500/20 text-green-400' : 'text-gray-500 hover:text-gray-300'">Toolsets</button>
+        <button @click="activeSimPanel = 'audit'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'audit' ? 'bg-amber-500/20 text-amber-400' : 'text-gray-500 hover:text-gray-300'">审计日志</button>
+        <button @click="activeSimPanel = 'terminal'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'terminal' ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-500 hover:text-gray-300'">终端代理</button>
+        <button @click="activeSimPanel = 'curator'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'curator' ? 'bg-purple-500/20 text-purple-400' : 'text-gray-500 hover:text-gray-300'">Curator</button>
+        <button @click="activeSimPanel = 'defer'" class="px-2 py-0.5 rounded text-[11px]"
+                :class="activeSimPanel === 'defer' ? 'bg-pink-500/20 text-pink-400' : 'text-gray-500 hover:text-gray-300'">Defer</button>
+      </div>
+
+      <!-- Panel Content -->
+      <div class="h-52 px-4 py-2 overflow-y-auto">
+
+        <!-- Phase Panel -->
+        <div x-show="activeSimPanel === 'phase'" class="space-y-2">
+          <div class="text-[11px] text-gray-500" x-html="(currentPhase?.actor ? currentPhase?.actor + ' &middot; ' : '') + (currentPhase?.desc ?? '')"></div>
+          <div class="text-xs text-gray-300" x-text="currentPhase?.detail ?? '点击\"下一步\"开始模拟整个工作流'"></div>
+          <div x-show="pendingDeploy" class="mt-2 p-2 bg-orange-500/10 border border-orange-500/30 rounded text-xs">
+            <div class="text-orange-400 font-bold mb-1">&#9888; 部署进行中</div>
+            <div class="text-gray-400" x-text="'当前阶段: ' + (pendingDeploy?.currentStage?.name ?? '') + ' | 状态: ' + (pendingDeploy?.status ?? '')"></div>
+            <div class="text-gray-500 text-[10px] mt-1">请在"部署流水线"面板中操作</div>
+          </div>
+        </div>
+
+        <!-- Task Detail Panel -->
+        <div x-show="activeSimPanel === 'task'" class="space-y-2">
+          <div x-show="!selectedTaskObj" class="text-gray-500 text-xs">点击看板中的任务卡片查看详情</div>
+          <div x-show="selectedTaskObj" class="space-y-2">
+            <div class="flex gap-2 items-center flex-wrap">
+              <span class="text-gray-500 text-xs font-bold" x-text="selectedTaskObj.id"></span>
+              <span class="font-bold text-xs" :class="roleColor(selectedTaskObj.assignee)" x-text="selectedTaskObj.assignee"></span>
+              <span class="text-gray-400 text-xs" x-text="selectedTaskObj.status"></span>
+              <span x-show="selectedTaskObj.rollbackCount > 0" class="text-red-400 text-[10px]">&#x21bb; <span x-text="selectedTaskObj.rollbackCount"></span></span>
+              <span x-show="selectedTaskObj.deferred" class="text-purple-400 text-[10px]">&#9208; deferred</span>
+            </div>
+            <div class="text-gray-300 text-xs" x-text="selectedTaskObj.title"></div>
+            <div class="text-gray-500 text-[11px]" x-text="selectedTaskObj.body"></div>
+            <div x-show="selectedTaskObj.expectedDurationMax" class="text-[10px] text-gray-500">expected_duration_max: <span x-text="selectedTaskObj.expectedDurationMax"></span> min</div>
+            <div x-show="selectedTaskObj.blockReason" class="text-[10px] text-red-400">block reason: <span x-text="selectedTaskObj.blockReason"></span></div>
+            <div x-show="selectedTaskObj.handoff" class="bg-gray-900 border border-gray-700 rounded p-2">
+              <div class="text-[10px] text-emerald-400 font-bold mb-1">&#10003; Handoff Metadata</div>
+              <div x-show="selectedTaskObj.handoff.behaviors && selectedTaskObj.handoff.behaviors.length > 0" class="mb-1">
+                <div class="text-[10px] text-gray-500">behaviors:</div>
+                <template x-for="b in selectedTaskObj.handoff.behaviors" :key="b.name">
+                  <div class="text-[10px] text-gray-400 ml-2">- <span x-text="b.name"></span> (<span x-text="b.test"></span>): <span :class="b.status === 'passed' ? 'text-emerald-400' : 'text-red-400'" x-text="b.status"></span></div>
+                </template>
+              </div>
+              <div x-show="selectedTaskObj.handoff.regression" class="mb-1">
+                <div class="text-[10px] text-gray-500">regression: <span x-text="selectedTaskObj.handoff.regression.run + ' run, ' + selectedTaskObj.handoff.regression.passed + ' passed, ' + selectedTaskObj.handoff.regression.failed + ' failed'"></span></div>
+              </div>
+              <div x-show="selectedTaskObj.handoff.changed_files && selectedTaskObj.handoff.changed_files.length > 0" class="mb-1">
+                <div class="text-[10px] text-gray-500">changed_files:</div>
+                <template x-for="f in selectedTaskObj.handoff.changed_files" :key="f">
+                  <div class="text-[10px] text-gray-400 ml-2">- <span x-text="f"></span></div>
+                </template>
+              </div>
+              <div x-show="selectedTaskObj.handoff.decisions && selectedTaskObj.handoff.decisions.length > 0" class="mb-1">
+                <div class="text-[10px] text-gray-500">decisions:</div>
+                <template x-for="d in selectedTaskObj.handoff.decisions" :key="d">
+                  <div class="text-[10px] text-gray-400 ml-2">- <span x-text="d"></span></div>
+                </template>
+              </div>
+              <div x-show="selectedTaskObj.handoff.findings && selectedTaskObj.handoff.findings.length > 0" class="mb-1">
+                <div class="text-[10px] text-gray-500">findings:</div>
+                <template x-for="f in selectedTaskObj.handoff.findings" :key="f.file + f.issue">
+                  <div class="text-[10px] ml-2"><span :class="f.severity === 'high' ? 'text-red-400' : (f.severity === 'medium' ? 'text-amber-400' : 'text-emerald-400')" x-text="'[' + f.severity + ']'"></span> <span class="text-gray-400" x-text="f.file + ': ' + f.issue"></span></div>
+                </template>
+              </div>
+              <div x-show="selectedTaskObj.handoff.pitfalls && selectedTaskObj.handoff.pitfalls.length > 0">
+                <div class="text-[10px] text-gray-500">pitfalls:</div>
+                <template x-for="p in selectedTaskObj.handoff.pitfalls" :key="p">
+                  <div class="text-[10px] text-amber-400 ml-2">- <span x-text="p"></span></div>
+                </template>
+              </div>
+              <div x-show="selectedTaskObj.handoff.deployReport">
+                <div class="text-[10px] text-orange-400 font-bold mt-1">&#9889; Deploy Report</div>
+                <button @click="viewDeployReport(selectedTaskObj.id)" class="text-[10px] text-blue-400 hover:underline">查看部署报告</button>
+              </div>
+            </div>
+            <div x-show="selectedTaskObj.trace && selectedTaskObj.trace.length > 0" class="bg-gray-900 border border-gray-700 rounded p-2">
+              <div class="text-[10px] text-cyan-400 font-bold mb-1">&#9889; Tool Call Trace</div>
+              <template x-for="tr in selectedTaskObj.trace" :key="tr.id">
+                <div class="text-[10px] text-gray-400 flex justify-between">
+                  <span><span x-text="tr.tool"></span>: <span x-text="tr.command?.substring(0,40) ?? ''"></span></span>
+                  <span :class="tr.status === 'ok' ? 'text-emerald-400' : 'text-red-400'" x-text="tr.status + ' (' + tr.duration + 'ms)'"></span>
+                </div>
+              </template>
+            </div>
+            <div x-show="selectedTaskObj.envSnapshot" class="bg-gray-900 border border-gray-700 rounded p-2">
+              <div class="text-[10px] text-blue-400 font-bold mb-1">&#128190; Environment Snapshot</div>
+              <div class="text-[10px] text-gray-400">git status: <span class="text-gray-500" x-text="selectedTaskObj.envSnapshot?.gitStatus ?? 'N/A'"></span></div>
+              <div class="text-[10px] text-gray-400">disk free: <span class="text-gray-500" x-text="selectedTaskObj.envSnapshot?.diskFree ?? 'N/A'"></span></div>
+              <div class="text-[10px] text-gray-400">hermes status: <span class="text-gray-500" x-text="selectedTaskObj.envSnapshot?.hermesStatus ?? 'N/A'"></span></div>
+            </div>
+            <div class="flex gap-2 mt-2 flex-wrap">
+              <button x-show="selectedTaskObj.status === 'running'" @click="simulateCrash(selectedTaskObj.id)" class="px-2 py-1 bg-red-500/20 border border-red-500/50 text-red-400 rounded text-[10px]">&#9888; 模拟崩溃</button>
+              <button x-show="selectedTaskObj.status === 'blocked'" @click="unblockTask(selectedTaskObj.id, unblockDecision || 'user-approved')" class="px-2 py-1 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 rounded text-[10px]">&#10003; 解除阻塞</button>
+              <input x-show="selectedTaskObj.status === 'blocked'" x-model="unblockDecision" placeholder="决策理由 (可选)" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-[10px] text-gray-300 w-32">
+              <button x-show="selectedTaskObj.status === 'done'" @click="archiveTask(selectedTaskObj.id)" class="px-2 py-1 bg-gray-700 border border-gray-600 text-gray-300 rounded text-[10px]">&#128193; 归档</button>
+              <button x-show="(selectedTaskObj.status === 'crashed' || selectedTaskObj.status === 'blocked') && selectedTaskObj.assignee !== 'sre-observer'" @click="createSRE(selectedTaskObj.id)" class="px-2 py-1 bg-red-500/20 border border-red-500/50 text-red-400 rounded text-[10px]">&#128269; 创建 SRE 分析</button>
+              <button x-show="selectedTaskObj.status === 'running'" @click="deferTask(selectedTaskObj.id, '需要用户确认技术方案')" class="px-2 py-1 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded text-[10px]">&#9208; Defer</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Risk Policy Panel -->
+        <div x-show="activeSimPanel === 'risk'" class="space-y-2">
+          <div class="flex gap-2 items-end">
+            <div class="flex-1">
+              <div class="text-[10px] text-gray-500 mb-1">命令分级测试器</div>
+              <input x-model="riskTestInput" @keyup.enter="testRiskPolicy()" placeholder="输入命令，如: git push --force" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300">
+            </div>
+            <button @click="testRiskPolicy()" class="px-3 py-1 bg-amber-500/20 border border-amber-500/50 text-amber-400 rounded text-xs">测试</button>
+          </div>
+          <div x-show="riskTestResult" class="p-2 rounded text-xs" :class="riskTestResult?.level === 'L3' ? 'bg-red-500/10 border border-red-500/30' : (riskTestResult?.level === 'L2' ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-emerald-500/10 border border-emerald-500/30')">
+            <div class="font-bold" :class="riskTestResult?.level === 'L3' ? 'text-red-400' : (riskTestResult?.level === 'L2' ? 'text-amber-400' : 'text-emerald-400')" x-text="riskTestResult?.level + ' | 审批者: ' + riskTestResult?.approver"></div>
+            <div class="text-gray-400 text-[10px]" x-text="'匹配规则: ' + riskTestResult?.matchedPattern"></div>
+          </div>
+          <div class="text-[10px] text-gray-500 font-bold mt-2">当前 Risk Policy 规则</div>
+          <div class="grid grid-cols-1 gap-1">
+            <template x-for="rp in riskPolicies" :key="rp.id">
+              <div class="flex justify-between items-center bg-gray-900 border border-gray-700 rounded px-2 py-1">
+                <div class="text-[10px]">
+                  <span :class="rp.level === 'L3' ? 'text-red-400' : (rp.level === 'L2' ? 'text-amber-400' : 'text-emerald-400')" class="font-bold" x-text="rp.level"></span>
+                  <span class="text-gray-400 ml-1" x-text="rp.pattern"></span>
+                  <span class="text-gray-500 ml-1" x-text="'(' + rp.approver + ')'"></span>
+                </div>
+                <button @click="removeRiskPolicy(rp.id)" class="text-red-400 text-[10px] hover:text-red-300">&#10005;</button>
+              </div>
+            </template>
+          </div>
+          <div class="flex gap-2 mt-2">
+            <input x-model="newRiskPattern" placeholder="pattern" class="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-[10px] text-gray-300">
+            <select x-model="newRiskLevel" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-[10px] text-gray-300">
+              <option value="L1">L1</option>
+              <option value="L2">L2</option>
+              <option value="L3">L3</option>
+            </select>
+            <select x-model="newRiskApprover" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-[10px] text-gray-300">
+              <option value="self">self</option>
+              <option value="reviewer">reviewer</option>
+              <option value="user">user</option>
+            </select>
+            <button @click="addRiskPolicy()" class="px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded text-[10px]">添加</button>
+          </div>
+        </div>
+
+        <!-- Deploy Pipeline Panel -->
+        <div x-show="activeSimPanel === 'deploy'" class="space-y-2">
+          <div x-show="!pendingDeploy" class="text-gray-500 text-xs">部署流水线在当前 Phase 激活时显示</div>
+          <div x-show="pendingDeploy" class="space-y-2">
+            <div class="text-xs text-gray-300" x-text="'部署任务: ' + pendingDeploy?.taskId"></div>
+            <div class="flex gap-2">
+              <template x-for="(stage, idx) in pendingDeploy?.config?.stages" :key="stage.name">
+                <div class="flex-1 rounded border p-2 text-center" :class="pendingDeploy?.currentIdx === idx ? 'border-orange-500 bg-orange-500/10' : (pendingDeploy?.currentIdx > idx ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-gray-700 bg-gray-900')">
+                  <div class="text-[10px] font-bold" :class="pendingDeploy?.currentIdx === idx ? 'text-orange-400' : (pendingDeploy?.currentIdx > idx ? 'text-emerald-400' : 'text-gray-500')" x-text="stage.name"></div>
+                  <div x-show="stage.auto" class="text-[9px] text-emerald-400">自动</div>
+                  <div x-show="!stage.auto" class="text-[9px] text-amber-400">需批准</div>
+                  <div x-show="pendingDeploy?.currentIdx > idx" class="text-[9px] text-emerald-400">&#10003; 完成</div>
+                </div>
+              </template>
+            </div>
+            <div x-show="pendingDeploy?.currentStage" class="bg-gray-900 border border-gray-700 rounded p-2">
+              <div class="text-[10px] text-gray-500 mb-1">当前阶段: <span class="text-orange-400 font-bold" x-text="pendingDeploy?.currentStage?.name"></span></div>
+              <div x-show="pendingDeploy?.currentStage?.validations" class="space-y-1">
+                <template x-for="v in pendingDeploy?.currentStage?.validations" :key="v.type">
+                  <div class="text-[10px] text-gray-400 flex justify-between">
+                    <span x-text="v.type"></span>
+                    <span :class="v.status === 'passed' ? 'text-emerald-400' : 'text-gray-500'" x-text="v.status"></span>
+                  </div>
+                </template>
+              </div>
+              <div x-show="pendingDeploy?.currentStage?.needsUAT" class="mt-1 p-1 bg-purple-500/10 border border-purple-500/30 rounded text-[10px] text-purple-400">&#9733; 需要 UAT 验收</div>
+              <div x-show="pendingDeploy?.currentStage?.gitTag" class="mt-1 text-[10px] text-gray-500">部署成功后自动打 tag: <span class="text-emerald-400" x-text="pendingDeploy?.currentStage?.gitTag"></span></div>
+            </div>
+            <div class="flex gap-2">
+              <button x-show="pendingDeploy?.currentStage?.needsApproval" @click="approveDeployStage()" class="px-3 py-1 bg-emerald-500 text-gray-950 rounded text-xs font-bold">&#10003; 批准部署</button>
+              <button x-show="pendingDeploy?.currentStage?.needsApproval" @click="rejectDeployStage()" class="px-3 py-1 bg-red-500 text-white rounded text-xs">&#10005; 拒绝/回滚</button>
+              <button x-show="pendingDeploy?.currentStage?.needsUAT && !pendingDeploy?.uatPassed" @click="passUAT()" class="px-3 py-1 bg-purple-500 text-white rounded text-xs">UAT 通过</button>
+              <button x-show="pendingDeploy?.currentStage?.needsUAT && !pendingDeploy?.uatPassed" @click="failUAT()" class="px-3 py-1 bg-red-500/50 text-red-200 rounded text-xs">UAT 失败</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Observability Panel -->
+        <div x-show="activeSimPanel === 'obs'" class="space-y-2">
+          <div class="text-[10px] text-gray-500">Observability Trace (post_tool_call / on_session_end hooks)</div>
+          <div class="space-y-1 max-h-40 overflow-y-auto">
+            <template x-for="trace in obsTraces" :key="trace.id">
+              <div class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-[10px]">
+                <div class="flex justify-between">
+                  <span class="text-gray-400"><span class="text-blue-400" x-text="trace.taskId"></span> &middot; <span x-text="trace.tool"></span></span>
+                  <span :class="trace.status === 'ok' ? 'text-emerald-400' : 'text-red-400'" x-text="trace.status + ' ' + trace.duration + 'ms'"></span>
+                </div>
+                <div class="text-gray-500" x-text="trace.command?.substring(0,60) ?? ''"></div>
+              </div>
+            </template>
+            <div x-show="obsTraces.length === 0" class="text-gray-600 text-[10px]">暂无 trace 记录</div>
+          </div>
+        </div>
+
+        <!-- SRE Panel -->
+        <div x-show="activeSimPanel === 'sre'" class="space-y-2">
+          <div class="text-[10px] text-gray-500">SRE-Observer 根因分析报告</div>
+          <div class="space-y-1 max-h-40 overflow-y-auto">
+            <template x-for="report in sreReports" :key="report.id">
+              <div class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-[10px]">
+                <div class="flex justify-between">
+                  <span class="text-gray-400"><span class="text-red-400" x-text="report.id"></span> &middot; <span x-text="report.faultTaskId"></span></span>
+                  <span class="text-gray-500" x-text="report.confidence + ' confidence'"></span>
+                </div>
+                <div class="text-gray-300" x-text="report.symptom"></div>
+                <div class="text-gray-500">root_cause: <span class="text-gray-400" x-text="report.rootCause"></span></div>
+                <div class="text-gray-500">responsible: <span :class="report.responsibleProfile === 'implementer' ? 'text-emerald-400' : 'text-amber-400'" x-text="report.responsibleProfile"></span></div>
+                <div class="text-gray-500">action: <span class="text-blue-400" x-text="report.recommendedAction"></span></div>
+              </div>
+            </template>
+            <div x-show="sreReports.length === 0" class="text-gray-600 text-[10px]">暂无 SRE 报告</div>
+          </div>
+        </div>
+
+        <!-- Memory Panel -->
+        <div x-show="activeSimPanel === 'memory'" class="space-y-2">
+          <div class="flex gap-4">
+            <template x-for="ns in ['project-alpha', '_global', '_pending']" :key="ns">
+              <div class="flex-1">
+                <div class="text-[10px] font-bold mb-1" :class="ns === 'project-alpha' ? 'text-blue-400' : (ns === '_global' ? 'text-purple-400' : 'text-gray-400')" x-text="ns"></div>
+                <div class="space-y-1">
+                  <template x-for="m in memories[ns]" :key="m.id">
+                    <div class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-[10px]">
+                      <div class="flex justify-between">
+                        <span class="text-gray-300" x-text="m.content"></span>
+                        <span x-show="m.pinned" class="text-amber-400">&#9733;</span>
+                        <span x-show="m.archived" class="text-gray-600">[archived]</span>
+                      </div>
+                      <div class="flex justify-between mt-0.5">
+                        <span class="text-gray-500" x-text="'source: ' + m.source"></span>
+                        <span class="text-gray-500" x-text="'Q:' + m.quality"></span>
+                      </div>
+                      <div class="flex gap-1 mt-1">
+                        <button @click="pinMemory(ns, m.id)" x-show="!m.pinned" class="text-[9px] text-amber-400 hover:underline">pin</button>
+                        <button @click="unpinMemory(ns, m.id)" x-show="m.pinned" class="text-[9px] text-gray-500 hover:underline">unpin</button>
+                        <button @click="deleteMemory(ns, m.id, 'project')" class="text-[9px] text-red-400 hover:underline">delete</button>
+                        <button @click="promoteToGlobal(m.id)" x-show="ns === '_pending'" class="text-[9px] text-emerald-400 hover:underline">promote</button>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+          <div x-show="hasConflictWarning" class="p-2 bg-red-500/10 border border-red-500/30 rounded text-[10px]">
+            <div class="text-red-400 font-bold">&#9888; conflict_warning</div>
+            <div class="text-gray-400">项目 Alpha 与全局 learning 在 "JWT 配置" 主题上存在矛盾内容</div>
+          </div>
+        </div>
+
+        <!-- Toolsets Panel -->
+        <div x-show="activeSimPanel === 'toolsets'" class="space-y-2">
+          <div class="flex gap-2 items-center mb-2">
+            <span class="text-[10px] text-gray-500">选择角色:</span>
+            <select x-model="selectedProfileForToolset" @change="updateToolsetView()" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-[10px] text-gray-300">
+              <option value="pm">PM</option>
+              <option value="orchestrator">Orchestrator</option>
+              <option value="researcher">Researcher</option>
+              <option value="implementer">Implementer</option>
+              <option value="reviewer">Reviewer</option>
+              <option value="qa-tester">QA-Tester</option>
+              <option value="devops-engineer">DevOps-Engineer</option>
+              <option value="sre-observer">SRE-Observer</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-gray-900 border border-gray-700 rounded p-2">
+              <div class="text-[10px] text-emerald-400 font-bold mb-1">&#10003; enabled</div>
+              <template x-for="t in currentToolset.enabled" :key="t">
+                <div class="text-[10px] text-gray-400" x-text="t"></div>
+              </template>
+            </div>
+            <div class="bg-gray-900 border border-gray-700 rounded p-2">
+              <div class="text-[10px] text-red-400 font-bold mb-1">&#10005; disabled</div>
+              <template x-for="t in currentToolset.disabled" :key="t">
+                <div class="text-[10px] text-gray-400" x-text="t"></div>
+              </template>
+            </div>
+          </div>
+          <div x-show="selectedProfileForToolset === 'reviewer'" class="text-[10px] text-amber-400 mt-1">Reviewer 严格只读：terminal / file_write 被技术性拦截（R8 兜底）</div>
+        </div>
+
+        <!-- Audit Log Panel -->
+        <div x-show="activeSimPanel === 'audit'" class="space-y-2">
+          <div class="text-[10px] text-gray-500 font-bold">审计日志时间线</div>
+          <div class="space-y-1 max-h-44 overflow-y-auto">
+            <template x-for="a in auditLogs" :key="a.id">
+              <div class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-[10px]">
+                <div class="flex justify-between">
+                  <span class="text-amber-400 font-bold" x-text="a.event"></span>
+                  <span class="text-gray-600" x-text="a.time?.split('T')[1]?.substring(0,8)||''"></span>
+                </div>
+                <div class="text-gray-500 font-mono" x-text="JSON.stringify(a.details)"></div>
+              </div>
+            </template>
+            <div x-show="auditLogs.length === 0" class="text-gray-600 text-[10px]">暂无审计记录 — 执行 Risk Policy 测试、部署操作或任务交互后将自动记录</div>
+          </div>
+        </div>
+
+        <!-- Terminal Proxy Panel -->
+        <div x-show="activeSimPanel === 'terminal'" class="space-y-2">
+          <div class="text-[10px] text-gray-500 font-bold">Reviewer 只读终端代理模拟 (R8)</div>
+          <div class="bg-gray-950 border border-gray-700 rounded p-2 font-mono text-[10px] h-32 overflow-y-auto" id="term-output">
+            <div class="text-gray-500">$ Reviewer Terminal Proxy (read-only mode)</div>
+            <div class="text-gray-500">$ 所有写操作将被技术性拦截</div>
+            <template x-for="h in terminalProxyHistory" :key="h.time">
+              <div class="mt-1">
+                <div class="text-gray-400">$ <span x-text="h.cmd"></span> <span class="text-gray-600">[role: <span x-text="h.role"></span>]</span></div>
+                <div x-show="h.result === 'blocked'" class="text-red-400">ERROR: <span x-text="h.reason"></span></div>
+                <div x-show="h.result === 'ok'" class="text-gray-300 whitespace-pre-line" x-text="h.output"></div>
+              </div>
+            </template>
+          </div>
+          <div class="flex gap-2">
+            <input x-model="terminalProxyInput" @keyup.enter="execTerminalProxy(terminalProxyInput, 'reviewer'); terminalProxyInput = ''"
+                   placeholder="输入命令 (Reviewer 角色)..." class="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 font-mono">
+            <button @click="execTerminalProxy(terminalProxyInput, 'reviewer'); terminalProxyInput = ''" class="px-3 py-1 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 rounded text-xs">执行</button>
+          </div>
+          <div class="text-[10px] text-gray-500">快捷: <button @click="execTerminalProxy('cat src/auth/jwt.rs', 'reviewer')" class="text-blue-400 hover:underline">cat</button> |
+            <button @click="execTerminalProxy('echo fix >> src/auth/jwt.rs', 'reviewer')" class="text-blue-400 hover:underline">write(blocked)</button> |
+            <button @click="execTerminalProxy('rm test.txt', 'reviewer')" class="text-blue-400 hover:underline">rm(blocked)</button> |
+            <button @click="execTerminalProxy('cargo test --lib', 'reviewer')" class="text-blue-400 hover:underline">test(ok)</button>
+          </div>
+        </div>
+
+        <!-- Curator Panel -->
+        <div x-show="activeSimPanel === 'curator'" class="space-y-2">
+          <div class="flex gap-2 items-center">
+            <span class="text-[10px] text-gray-500 font-bold">Curator 管理</span>
+            <button @click="runCuratorReview()" class="px-2 py-0.5 bg-purple-500/20 border border-purple-500/50 text-purple-400 rounded text-[10px]">&#9654; 运行审查</button>
+          </div>
+          <div class="grid grid-cols-3 gap-2 text-[10px]">
+            <div class="bg-gray-900 border border-gray-700 rounded p-2">
+              <div class="text-blue-400 font-bold">project-alpha</div>
+              <div class="text-gray-500 mt-1"><span x-text="memories['project-alpha']?.filter(m=>m.archived).length||0"></span> archived / <span x-text="memories['project-alpha']?.length||0"></span> total</div>
+            </div>
+            <div class="bg-gray-900 border border-gray-700 rounded p-2">
+              <div class="text-purple-400 font-bold">_global</div>
+              <div class="text-gray-500 mt-1"><span x-text="memories['_global']?.filter(m=>m.pinned).length||0"></span> pinned / <span x-text="memories['_global']?.length||0"></span> total</div>
+            </div>
+            <div class="bg-gray-900 border border-gray-700 rounded p-2">
+              <div class="text-gray-400 font-bold">_pending</div>
+              <div class="text-gray-500 mt-1"><span x-text="memories['_pending']?.length||0"></span> 待审核</div>
+            </div>
+          </div>
+          <div class="text-[10px] text-gray-500">
+            Curator 每 7 天自动运行：清理过时 skills（半年未用 &rarr; archive）、合并重叠 skills、patch 改进、Memory 容量检查。
+          </div>
+        </div>
+
+        <!-- Defer Panel -->
+        <div x-show="activeSimPanel === 'defer'" class="space-y-2">
+          <div class="text-[10px] text-gray-500 font-bold">Deferred Tasks (Path B — Claude AskUserQuestion)</div>
+          <div class="space-y-1 max-h-44 overflow-y-auto">
+            <template x-for="d in deferTasks" :key="d.time">
+              <div class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-[10px]">
+                <div class="flex justify-between">
+                  <span class="text-purple-400 font-bold" x-text="d.taskId"></span>
+                  <span class="text-gray-600" x-text="d.time?.split('T')[1]?.substring(0,8)||''"></span>
+                </div>
+                <div class="text-gray-300" x-text="d.question"></div>
+                <div class="flex gap-2 mt-1">
+                  <button @click="resumeDeferred(d.taskId, 'approved')" class="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-[9px]">批准并恢复</button>
+                  <button @click="resumeDeferred(d.taskId, 'denied')" class="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-[9px]">拒绝</button>
+                  <button @click="resumeDeferred(d.taskId, 'need_more_info')" class="px-2 py-0.5 bg-amber-500/20 text-amber-400 rounded text-[9px]">需要更多信息</button>
+                </div>
+              </div>
+            </template>
+            <div x-show="deferTasks.length === 0" class="text-gray-600 text-[10px]">暂无 deferred 任务 — 在任务详情中点击 "Defer" 按钮创建</div>
+          </div>
+          <div class="text-[10px] text-gray-500 border-t border-gray-700 pt-1">
+            Path B 流程：Claude AskUserQuestion &rarr; PreToolUse hook defer &rarr; Worker 退出 &rarr; Dispatcher 从 Kanban metadata 恢复上下文 &rarr; 重新 spawn worker 继续执行
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Log Panel -->
+      <div class="px-4 py-1 border-t border-gray-700/50">
+        <div class="bg-gray-900 border border-gray-700 rounded overflow-hidden flex flex-col h-20">
+          <div class="shrink-0 px-2 py-0.5 border-b border-gray-700 text-[10px] text-gray-500 bg-white/5">操作日志</div>
+          <div class="flex-1 overflow-y-auto p-1.5 space-y-0.5 text-[10px] font-mono">
+            <template x-for="(log, i) in logs" :key="i">
+              <div class="text-gray-400" x-html="log"></div>
+            </template>
+            <div x-show="logs.length === 0" class="text-gray-600">等待操作...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+</body>
+</html>

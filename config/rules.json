@@ -1,0 +1,38 @@
+[
+  {
+    "id": "risk-broad-irreversible-delete",
+    "level": "L4",
+    "patterns": ["rm -rf /", "rm -rf .", "rm -rf *", "find . -delete"],
+    "description": "Broad irreversible delete"
+  },
+  {
+    "id": "risk-db-wipe",
+    "level": "L4",
+    "patterns": ["DROP DATABASE", "TRUNCATE DATABASE"],
+    "description": "Destructive database wipe"
+  },
+  {
+    "id": "risk-privilege-escalation",
+    "level": "L3",
+    "patterns": ["sudo", "chmod 777"],
+    "description": "System privilege escalation"
+  },
+  {
+    "id": "risk-system-prune",
+    "level": "L3",
+    "patterns": ["docker system prune", "kubectl delete"],
+    "description": "High-risk system cleanup"
+  },
+  {
+    "id": "risk-schema-change",
+    "level": "L3",
+    "patterns": ["ALTER TABLE", "CREATE TABLE", "DROP TABLE"],
+    "description": "Database schema change"
+  },
+  {
+    "id": "risk-auth-secret-change",
+    "level": "L3",
+    "patterns": ["修改 .env", "修改密钥", "修改认证", "修改 JWT", "rotate secret", "change auth", "update jwt"],
+    "description": "Authentication or secret change"
+  }
+]

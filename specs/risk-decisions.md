@@ -6,19 +6,19 @@ Primary: `.planning/SPEC.md` §§AUTH-03, RISK-01..RISK-05, REMOTE-05, Appendix 
 
 If this derived spec conflicts with `.planning/SPEC.md`, update this derived spec to match `.planning/SPEC.md`.
 
-Downstream read order: `.planning/SPEC.md`, then this derived spec, then `docs/orchestra/*` implementation projections.
+Downstream read order: `.planning/SPEC.md`, then this derived spec, then the root-package implementation projections (`README.md`, `WORKFLOW.md`, `scripts/`, `config/`, `hermes/`, `skills/`, `claude-config/`).
 
 ## Consumers
 
-- `docs/orchestra/scripts/bin/orch-risk-check` - classifies command and file-change risk floors.
-- `docs/orchestra/config/rules.json` - stores static rule floor data.
-- `docs/orchestra/scripts/bin/orch-decisions` - lists pending local fallback decisions.
-- `docs/orchestra/scripts/bin/orch-approve` - writes local approval responses.
-- `docs/orchestra/scripts/bin/orch-reject` - writes local rejection responses.
-- `docs/orchestra/scripts/tests/test-risk-check.sh` - smoke-tests risk classification.
-- `docs/orchestra/scripts/tests/test-risk-decisions.sh` - smoke-tests L3/L4 blocking behavior.
-- `docs/orchestra/scripts/tests/test-decision-cli.sh` - smoke-tests local decision CLI behavior.
-- `docs/orchestra/scripts/tests/test-decision-replay.sh` - smoke-tests replay prevention.
+- `scripts/bin/orch-risk-check` - classifies command and file-change risk floors.
+- `config/rules.json` - stores static rule floor data.
+- `scripts/bin/orch-decisions` - lists pending local fallback decisions.
+- `scripts/bin/orch-approve` - writes local approval responses.
+- `scripts/bin/orch-reject` - writes local rejection responses.
+- `scripts/tests/test-risk-check.sh` - smoke-tests risk classification.
+- `scripts/tests/test-risk-decisions.sh` - smoke-tests L3/L4 blocking behavior.
+- `scripts/tests/test-decision-cli.sh` - smoke-tests local decision CLI behavior.
+- `scripts/tests/test-decision-replay.sh` - smoke-tests replay prevention.
 
 ## Contract
 
@@ -35,13 +35,13 @@ Downstream read order: `.planning/SPEC.md`, then this derived spec, then `docs/o
 ## Drift Check
 
 ```bash
-bash docs/orchestra/scripts/tests/test-specs.sh && bash docs/orchestra/scripts/tests/test-risk-check.sh && bash docs/orchestra/scripts/tests/test-risk-decisions.sh && bash docs/orchestra/scripts/tests/test-decision-cli.sh && bash docs/orchestra/scripts/tests/test-decision-replay.sh
+bash scripts/tests/test-specs.sh && bash scripts/tests/test-risk-check.sh && bash scripts/tests/test-risk-decisions.sh && bash scripts/tests/test-decision-cli.sh && bash scripts/tests/test-decision-replay.sh
 ```
 
 ## Conformance Checks
 
-- `bash docs/orchestra/scripts/tests/test-specs.sh`
-- `bash docs/orchestra/scripts/tests/test-risk-check.sh`
-- `bash docs/orchestra/scripts/tests/test-risk-decisions.sh`
-- `bash docs/orchestra/scripts/tests/test-decision-cli.sh`
-- `bash docs/orchestra/scripts/tests/test-decision-replay.sh`
+- `bash scripts/tests/test-specs.sh`
+- `bash scripts/tests/test-risk-check.sh`
+- `bash scripts/tests/test-risk-decisions.sh`
+- `bash scripts/tests/test-decision-cli.sh`
+- `bash scripts/tests/test-decision-replay.sh`

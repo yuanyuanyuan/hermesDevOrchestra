@@ -42,7 +42,7 @@ v1.4 remains the next milestone preview; fresh milestone-scoped requirements hav
 
 All v1.1 decisions remain valid.
 
-- Phase 14: Dev Orchestra active package path is `docs/orchestra/`; no old-path compatibility shim is supported.
+- Phase 14: Dev Orchestra active package path is the repository root package layout (`README.md`, `WORKFLOW.md`, `scripts/`, `skills/`, `config/`, `hermes/`, `claude-config/`); no old-path compatibility shim is supported.
 - Phase 14: Upstream Hermes Agent pin strategy is repo-local manifest pin at `.planning/upstream/hermes-agent-pin.json`; git submodule is not selected.
 - [Phase 15]: Used existing smoke runner discovery for spec conformance. — Phase 15 defers Makefile work to Phase 16 and run-all.sh already discovers test-*.sh scripts.
 - [Phase 15]: Created only derived specs with current repository consumers. — Phase 15 requires no consumerless derived specs and keeps the inventory limited to file bus, risk decisions, and commands.
@@ -55,7 +55,7 @@ All v1.1 decisions remain valid.
 - [Phase 18]: Architecture bounds and v1.2 closeout verified. — Fixed Runtime bus single-slot wording, same-project parallelism future-work boundary, 10x limitation, `rtk make test`, and Phase 13-18 traceability all passed.
 - [Milestone v1.3]: Split phase 19 workflow design into two execution milestones. — v1.3 covers the MVP path; v1.4 keeps curator semantics, SRE RCA, and deploy/UAT full-scope items.
 - [Milestone v1.3]: Start execution numbering at Phase 20. — `.planning/phases/19-hermes-workflow-design/` remains a stable design-source directory and is not reused as a GSD execution phase.
-- [Phase 21]: Normalize runtime reviewer naming to `reviewer` and generate project-scoped Hermes homes under `.hermes/projects/{project_slug}/`. — Canonical profile catalog now lives in `docs/orchestra/hermes/profile-distribution/`; repo-local overrides compile via `orch-profile-sync`; board/workspace/profile/memory isolation all derive from the same `project_slug`.
+- [Phase 21]: Normalize runtime reviewer naming to `reviewer` and generate project-scoped Hermes homes under `.hermes/projects/{project_slug}/`. — Canonical profile catalog now lives in `hermes/profile-distribution/`; repo-local overrides compile via `orch-profile-sync`; board/workspace/profile/memory isolation all derive from the same `project_slug`.
 - [Phase 19 Design Update]: Adopt “Hermes scheduling + external CLI execution” as the execution baseline. — Commit `3976c42` added `EXTERNAL-CLI-ENGINE.md`, standardized `hermes-role-engine/v1`, and requires Phase 22+ to land engine protocol work before routing/guardrail implementation.
 - [Phase 23]: Keep Hermes-native `status + parents` primary and add only four routing metadata fields. — `workflow_state`, `routing_reason`, `resume_target`, and `handoff_ref` now drive stateful routing checkpoints; same-role unblock resumes the original task while cross-role transitions create explicit child/follow-up tasks.
 - [Phase 24 Plan]: Keep one canonical risk-policy surface with role branches and four runtime levels. — `L4` is reserved for narrow accident-button actions only; Reviewer / Orchestrator guardrails use allowlists plus `pre_tool_call`; Implementer must emit structured blocks for four fixed trigger categories.

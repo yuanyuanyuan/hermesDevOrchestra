@@ -1,7 +1,7 @@
 .PHONY: test test-unit test-risk lint-json lint-shell upstream-status
 
-TEST_RUNNER := docs/orchestra/scripts/tests/run-all.sh
-RISK_TESTS := docs/orchestra/scripts/tests/test-risk-check.sh docs/orchestra/scripts/tests/test-risk-decisions.sh docs/orchestra/scripts/tests/test-decision-cli.sh
+TEST_RUNNER := scripts/tests/run-all.sh
+RISK_TESTS := scripts/tests/test-risk-check.sh scripts/tests/test-risk-decisions.sh scripts/tests/test-decision-cli.sh
 PIN_MANIFEST := .planning/upstream/hermes-agent-pin.json
 HERMES_AGENT_DIR ?= $(HOME)/.hermes/hermes-agent
 
@@ -21,7 +21,7 @@ lint-json:
 
 lint-shell:
 	@if command -v shellcheck >/dev/null 2>&1; then \
-		shellcheck docs/orchestra/scripts/setup.sh docs/orchestra/scripts/lib/*.sh docs/orchestra/scripts/bin/orch-* docs/orchestra/scripts/tests/*.sh docs/orchestra/scripts/tests/lib/*.sh; \
+		shellcheck scripts/setup.sh scripts/lib/*.sh scripts/bin/orch-* scripts/tests/*.sh scripts/tests/lib/*.sh; \
 	else \
 		echo "shellcheck not found; skipping shell lint"; \
 	fi
