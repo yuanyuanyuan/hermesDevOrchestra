@@ -115,6 +115,6 @@ make test-risk
 
 ## 相关文档
 
-- [`WORKFLOW.md`](WORKFLOW.md) — 单人全周期工作流详细指南
+- [`WORKFLOW.md`](docs/WORKFLOW.md) — 单人全周期工作流详细指南
 - [`specs/`](specs/) — 派生规范（命令集、文件总线、风险决策）
 - [`docs/COVERAGE-MATRIX.md`](docs/COVERAGE-MATRIX.md) — 功能覆盖矩阵
