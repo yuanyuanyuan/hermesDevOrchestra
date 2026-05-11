@@ -1,5 +1,24 @@
 # Milestones
 
+## v1.3 Hermes 原生工作流 MVP 实现 (Shipped: 2026-05-11)
+
+**Phases completed:** 6 phases, 6 plans, 4 tasks
+
+**Key accomplishments:**
+
+- Built a capability verification matrix, reclassified phase 19 official claims, and locked the Hermes official/local boundary for v1.3
+- Added project-scoped profile assembly, repo-local overrides, and multi-project isolation rooted at `.hermes/projects/{project_slug}/`
+- Shipped the first `hermes-role-engine/v1` external CLI engine contract for `pm`, `implementer`, and `reviewer`
+- Switched the main workflow path to Kanban-native routing with parent-linked handoffs and metadata-driven block/resume
+- Landed one canonical `risk-policy.yaml`, reviewer/orchestrator guardrails, and the implementer mandatory block contract
+- Closed the MVP slice with timeout/reclaim, structured handoff validation, sidecar observability, environment snapshots, and one end-to-end acceptance chain
+
+**Known deferred items:**
+
+- Inherited aggregate repo gate mismatch remains open: `rtk make test` still fails `upstream-status` because the local Hermes runtime pin does not match `.planning/upstream/hermes-agent-pin.json`.
+
+---
+
 ## v1.0: Hermes Dev Orchestra Specification Package
 
 **Status:** ✅ Shipped  
@@ -39,4 +58,3 @@
 ### Known Deferred Items
 
 None from open-artifact audit. Implementation work, concrete remote adapters, and product extensions remain intentionally deferred to future milestones.
-

@@ -1,0 +1,95 @@
+version: 2026-05-11-phase24
+approval:
+  L3:
+    mode: explicit
+  L4:
+    mode: fixed_phrase
+    phrase_template: "APPROVE-L4 {approval_id}"
+common:
+  rules:
+    - id: risk-db-wipe
+      level: L4
+      description: Destructive database wipe
+      match_regex:
+        - '(?i)\b(drop\s+database|truncate\s+database)\b'
+    - id: risk-prod-resource-delete
+      level: L4
+      description: Destructive production resource, cluster, or volume deletion
+      match_regex:
+        - '(?i)\b(kubectl\s+delete\s+(namespace|ns|persistentvolume|pv|persistentvolumeclaim|pvc|statefulset)|docker\s+volume\s+rm|gcloud\s+container\s+clusters\s+delete|aws\s+eks\s+delete-cluster|terraform\s+destroy\s+-auto-approve)\b'
+    - id: risk-critical-branch-rewrite
+      level: L4
+      description: Force-push or history rewrite on a critical branch
+      match_regex:
+        - '(?i)\bgit\s+push\b[^\n]*\s(--force|-f)\b[^\n]*\b(main|master|release|production)\b'
+        - '(?i)\bgit\s+(push\b[^\n]*\b(main|master|release|production)\b[^\n]*\s(--force|-f)|reset\s+--hard\s+(origin/)?(main|master|release|production)|rebase\s+-i\s+(origin/)?(main|master|release|production))\b'
+    - id: risk-broad-irreversible-delete
+      level: L4
+      description: Broad irreversible delete
+      match_any:
+        - rm -rf /
+        - rm -rf .
+        - rm -rf *
+        - find . -delete
+    - id: risk-schema-change
+      level: L3
+      description: Database schema change
+      match_regex:
+        - '(?i)\b(alter\s+table|create\s+table|drop\s+table)\b'
+    - id: risk-system-prune
+      level: L3
+      description: High-risk system cleanup
+      match_any:
+        - docker system prune
+        - kubectl delete
+    - id: risk-auth-secret-change
+      level: L3
+      description: Authentication or secret change
+      match_any:
+        - 修改 .env
+        - 修改密钥
+        - 修改认证
+        - 修改 JWT
+        - rotate secret
+        - change auth
+        - update jwt
+    - id: risk-privilege-escalation
+      level: L3
+      description: System privilege escalation
+      match_any:
+        - sudo
+        - chmod 777
+    - id: risk-supervisor-intervention
+      level: L2
+      description: Task-flow intervention recommended
+      match_any:
+        - production migration
+        - rollback plan
+        - data backfill
+roles:
+  reviewer:
+    guardrails:
+      denied_tools:
+        - terminal
+        - Bash
+        - file_write
+        - Write
+        - Edit
+        - code_execution
+      read_only_cli_tools:
+        - Read
+        - Glob
+        - Grep
+  orchestrator:
+    guardrails:
+      denied_tools:
+        - terminal
+        - Bash
+        - file_write
+        - Write
+        - Edit
+        - code_execution
+      read_only_cli_tools:
+        - Read
+        - Glob
+        - Grep

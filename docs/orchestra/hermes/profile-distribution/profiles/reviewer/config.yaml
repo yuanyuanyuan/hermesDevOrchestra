@@ -1,5 +1,10 @@
 status: active
 model: claude
+engine:
+  cli: claude
+  mode: -p
+  flags: --output-format json --allowedTools Read,Glob,Grep
+  fallback: null
 toolsets:
   enabled: [file_read, kanban_read, kanban_block, kanban_complete, clarify]
   disabled: [terminal, file_write, code_execution, delegation, messaging, browser, web]

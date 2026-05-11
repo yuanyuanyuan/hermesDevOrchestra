@@ -25,6 +25,7 @@ orch_validate_project_id "$PROJECT_ID"
 orch_require_command python3
 
 PROJECT_DIR="$(cd "$PROJECT_DIR_INPUT" && pwd)"
+HERMES_KANBAN_BOARD="${HERMES_KANBAN_BOARD:-$PROJECT_ID}"
 orch_project_dirs "$PROJECT_ID"
 mkdir -p "$RUNTIME_DIR" "$STATE_DIR" "$AUDIT_DIR/pending"
 
@@ -222,9 +223,476 @@ review_decision_value() {
     fi
 }
 
+current_task_role() {
+    local role
+
+    role="$(orch_json_field "$RUNTIME_DIR/task.md" "role")"
+    if [ -z "$role" ] || [ "$role" = "null" ]; then
+        role="$(orch_json_field "$RUNTIME_DIR/task.md" "assignee")"
+    fi
+    if [ -z "$role" ] || [ "$role" = "null" ]; then
+        role="implementer"
+    fi
+    printf '%s\n' "$role"
+}
+
+task_handoff_summary() {
+    local file="$1"
+
+    python3 - "$file" <<'PY' 2>/dev/null || true
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+
+def get(obj, dotted):
+    value = obj
+    for part in dotted.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    return value
+
+def text(value):
+    if isinstance(value, str):
+        value = " ".join(value.split()).strip()
+        if value:
+            return value
+    return None
+
+for field in (
+    "role_specific_payload.summary",
+    "role_specific_payload.required_follow_up",
+    "role_specific_payload.block_reason",
+    "role_specific_payload.question.text",
+    "role_specific_payload.requirement_summary",
+    "research.topic",
+    "description",
+    "task_summary",
+):
+    value = text(get(data, field))
+    if value:
+        print(value[:160])
+        sys.exit(0)
+
+print("routing handoff")
+PY
+}
+
+archive_handoff_artifact() {
+    local file="$1"
+    local label="$2"
+    local target
+
+    mkdir -p "$AUDIT_DIR/handoffs"
+    target="$AUDIT_DIR/handoffs/${label}.$(date +%s).json"
+    cp "$file" "$target"
+    printf '%s\n' "$target"
+}
+
+reset_runtime_route_artifacts() {
+    rm -f "$RUNTIME_DIR/codex-question.md" "$RUNTIME_DIR/claude-decision.md" "$RUNTIME_DIR/codex-result.md" "$RUNTIME_DIR/review-result.md" "$RUNTIME_DIR/escalation.md" "$RUNTIME_DIR/.codex-done" "$RUNTIME_DIR/.codex-signal"
+    rm -f "$STATE_DIR/last-task.hash" "$STATE_DIR/last-question.hash" "$STATE_DIR/last-decision.hash" "$STATE_DIR/last-result.hash"
+}
+
+block_invalid_handoff_payload() {
+    local task_id="$1"
+    local role="$2"
+    local detail="$3"
+    local handoff_ref
+    local routing_reason
+
+    handoff_ref="$(archive_handoff_artifact "$RUNTIME_DIR/codex-result.md" "invalid-handoff")"
+    mv "$RUNTIME_DIR/codex-result.md" "$RUNTIME_DIR/codex-question.md"
+    rm -f "$RUNTIME_DIR/claude-decision.md" "$STATE_DIR/last-result.hash" "$STATE_DIR/last-question.hash" "$STATE_DIR/last-decision.hash"
+    orch_clear_active_run
+    routing_reason="$(orch_normalize_block_reason "needs-review:" "invalid handoff payload: $detail")"
+    orch_task_graph_upsert "$task_id" "$role" "blocked" "" "$handoff_ref" "invalid handoff payload"
+    orch_write_project_state "blocked" "$task_id" "blocked" "$routing_reason" "$(orch_build_resume_target task "$task_id")" "$handoff_ref"
+    orch_record_lifecycle_event "$task_id" "$role" "handoff_rejected" "$detail"
+    log_loop "blocked $task_id due to invalid handoff payload: $detail"
+}
+
+maybe_reclaim_active_run() {
+    local active_run_file
+    local task_id
+    local role
+    local runner_kind
+    local runner_id
+    local workspace
+    local expected_duration_seconds
+    local started_at_epoch
+    local reclaim_reason=""
+    local reclaim_detail=""
+    local now_epoch
+    local cleaned_workspace="false"
+
+    active_run_file="$(orch_active_run_file)"
+    [ -f "$active_run_file" ] || return 1
+
+    task_id="$(orch_json_field "$active_run_file" "task_id")"
+    role="$(orch_json_field "$active_run_file" "role")"
+    runner_kind="$(orch_json_field "$active_run_file" "runner_kind")"
+    runner_id="$(orch_json_field "$active_run_file" "runner_id")"
+    workspace="$(orch_json_field "$active_run_file" "workspace")"
+    expected_duration_seconds="$(orch_json_field "$active_run_file" "expected_duration_seconds")"
+    started_at_epoch="$(orch_json_field "$active_run_file" "started_at_epoch")"
+    now_epoch="$(date +%s)"
+
+    if [ -f "$STATE_DIR/cancel-request" ] || [ -f "$RUNTIME_DIR/cancel-task" ]; then
+        reclaim_reason="cancelled"
+        reclaim_detail="cancel request detected"
+    elif [ -n "$expected_duration_seconds" ] && [ "$expected_duration_seconds" != "null" ] && [ "$expected_duration_seconds" -gt 0 ] && [ $((now_epoch - started_at_epoch)) -ge "$expected_duration_seconds" ]; then
+        reclaim_reason="timed_out"
+        reclaim_detail="expected_duration_max exceeded"
+    elif [ "$runner_kind" = "tmux_session" ] && [ -n "$runner_id" ] && ! orch_tmux_session_healthy "$runner_id"; then
+        reclaim_reason="crashed"
+        reclaim_detail="runner session unhealthy"
+    else
+        return 1
+    fi
+
+    if [ "$runner_kind" = "tmux_session" ] && [ -n "$runner_id" ] && orch_tmux_session_running "$runner_id"; then
+        tmux send-keys -t "$runner_id" C-c 2>/dev/null || true
+    fi
+
+    if [ -n "$workspace" ] && [ "$workspace" != "null" ] && orch_cleanup_workspace "$workspace"; then
+        cleaned_workspace="true"
+    fi
+
+    rm -f "$STATE_DIR/cancel-request" "$RUNTIME_DIR/cancel-task"
+    reset_runtime_route_artifacts
+    orch_clear_active_run
+    orch_clear_backpressure_state
+    orch_task_graph_upsert "$task_id" "$role" "ready" "" "" "$role reclaimed"
+    orch_write_project_state "queued" "$task_id" "reclaim_ready" "$(orch_normalize_block_reason "needs-review:" "$reclaim_reason reclaim: $reclaim_detail")" "$(orch_build_resume_target task "$task_id")" ""
+    orch_record_lifecycle_event "$task_id" "$role" "$reclaim_reason" "workspace_cleaned=$cleaned_workspace"
+    log_loop "reclaimed active run task=$task_id role=$role reason=$reclaim_reason workspace_cleaned=$cleaned_workspace"
+    return 0
+}
+
+maybe_pause_for_backpressure() {
+    local current_role
+    local task_id
+    local pause_data
+    local downstream_role
+    local ready_count
+    local downstream_ready_count
+    local ratio
+
+    current_role="$(current_task_role)"
+    task_id="$(task_id_from_bus)"
+
+    if ! pause_data="$(orch_backpressure_reason_for_role "$current_role" 2>/dev/null)"; then
+        orch_clear_backpressure_state
+        return 1
+    fi
+
+    IFS='|' read -r current_role downstream_role ready_count downstream_ready_count ratio <<EOF
+$pause_data
+EOF
+
+    orch_write_backpressure_state "$current_role" "$downstream_role" "$ready_count" "$downstream_ready_count" "$ratio" "$task_id"
+    orch_write_project_state "waiting" "$task_id" "backpressure_paused" "$(orch_normalize_block_reason "needs-review:" "backpressure paused: ratio=$ratio")" "$(orch_build_resume_target task "$task_id")" ""
+    orch_record_lifecycle_event "$task_id" "$current_role" "backpressure_paused" "downstream=$downstream_role ratio=$ratio"
+    log_loop "backpressure paused role=$current_role downstream=$downstream_role ratio=$ratio task=$task_id"
+    return 0
+}
+
+create_child_task_from_source() {
+    local source_file="$1"
+    local target_role="$2"
+    local task_type="$3"
+    local parent_task_id="$4"
+    local handoff_ref="$5"
+    local current_stage="$6"
+    local title="$7"
+    local child_task_id
+
+    child_task_id="${parent_task_id}-${target_role}-$(orch_uuid | cut -d- -f1)"
+    python3 - "$RUNTIME_DIR/task.md" "$PROJECT_ID" "$PROJECT_DIR" "$HERMES_KANBAN_BOARD" "$child_task_id" "$parent_task_id" "$target_role" "$task_type" "$handoff_ref" "$current_stage" "$title" "$(orch_now)" "$source_file" "$(orch_role_default_expected_duration "$target_role")" <<'PY'
+import json
+import sys
+
+path, project_id, project_dir, board_slug, child_task_id, parent_task_id, target_role, task_type, handoff_ref, current_stage, title, now, source_file, default_duration = sys.argv[1:]
+with open(source_file, encoding="utf-8") as handle:
+    source = json.load(handle)
+
+def get(obj, dotted):
+    value = obj
+    for part in dotted.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    return value
+
+def text(value):
+    if isinstance(value, str):
+        value = " ".join(value.split()).strip()
+        if value:
+            return value
+    return None
+
+planned_task = None
+tasks = source.get("tasks")
+if isinstance(tasks, list):
+    for item in tasks:
+        if not isinstance(item, dict):
+            continue
+        assignee = item.get("assignee") or item.get("role")
+        if assignee == target_role:
+            planned_task = item
+            break
+
+summary = None
+description = None
+if isinstance(planned_task, dict):
+    summary = text(planned_task.get("title"))
+    description = text(planned_task.get("body"))
+
+for field in (
+    "role_specific_payload.summary",
+    "role_specific_payload.required_follow_up",
+    "role_specific_payload.requirement_summary",
+    "role_specific_payload.question.text",
+    "role_specific_payload.block_reason",
+    "research.topic",
+    "task_summary",
+    "description",
+):
+    if summary:
+        break
+    summary = text(get(source, field))
+
+for field in (
+    "description",
+    "task_body",
+    "role_specific_payload.summary",
+    "role_specific_payload.required_follow_up",
+    "role_specific_payload.requirement_summary",
+):
+    if description:
+        break
+    description = text(get(source, field))
+
+summary = summary or text(title) or f"{target_role} handoff"
+description = description or text(title) or summary
+expected_duration = default_duration
+if isinstance(planned_task, dict) and planned_task.get("expected_duration_max"):
+    expected_duration = str(planned_task.get("expected_duration_max")).strip() or default_duration
+
+untrusted_context = None
+if handoff_ref:
+    escaped_summary = (summary or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    untrusted_context = f'<untrusted-handoff source="{parent_task_id}">{escaped_summary}</untrusted-handoff>'
+
+payload = {
+    "protocol": "hermes-role-engine/v1",
+    "role": target_role,
+    "task_type": task_type,
+    "correlation_id": source.get("correlation_id") or child_task_id,
+    "turn": int(source.get("turn") or 0) + 1,
+    "project_workspace": project_dir,
+    "task_id": child_task_id,
+    "parent_task_id": parent_task_id,
+    "parents": [parent_task_id],
+    "task_body": description,
+    "task_summary": summary,
+    "current_stage": current_stage,
+    "conversation_history": {
+        "summary": summary,
+        "recent_turns": [],
+    },
+    "handoff_from_parent": {
+        "summary": summary,
+        "artifact_refs": [handoff_ref] if handoff_ref else [],
+        "trust_level": "untrusted",
+        "untrusted_context": untrusted_context,
+    },
+    "last_engine_error": None,
+    "rollback_count": 0,
+    "instructions": {
+        "source_role": source.get("role"),
+        "handoff_ref": handoff_ref or None,
+        "board": board_slug,
+        "handoff_input_mode": "untrusted" if handoff_ref else "none",
+    },
+    "expected_duration_max": expected_duration,
+    "status": "queued",
+    "author": "orchestrator",
+    "authority": "orchestrator",
+    "timestamp": now,
+}
+
+if isinstance(planned_task, dict) and planned_task.get("acceptance_criteria"):
+    payload["instructions"]["acceptance_criteria"] = planned_task.get("acceptance_criteria")
+
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+PY
+    printf '%s\n' "$child_task_id"
+}
+
+role_engine_response_present() {
+    [ "$(orch_json_field "$RUNTIME_DIR/codex-result.md" "protocol")" = "hermes-role-engine/v1" ]
+}
+
+handle_role_engine_result_if_present() {
+    local role
+    local status
+    local next_action
+    local task_id
+    local task_role
+    local handoff_ref
+    local routing_reason
+    local child_task_id
+    local detail
+
+    role_engine_response_present || return 1
+
+    role="$(orch_json_field "$RUNTIME_DIR/codex-result.md" "role")"
+    status="$(orch_json_field "$RUNTIME_DIR/codex-result.md" "status")"
+    next_action="$(orch_json_field "$RUNTIME_DIR/codex-result.md" "next_action")"
+    task_id="$(orch_json_field "$RUNTIME_DIR/codex-result.md" "task_id")"
+    [ -n "$task_id" ] && [ "$task_id" != "null" ] || task_id="$(task_id_from_bus)"
+    task_role="$(current_task_role)"
+
+    orch_task_graph_upsert "$task_id" "$task_role" "running" "" "" "$task_role $task_id"
+    orch_clear_active_run
+
+    if [ "$role" = "pm" ] && [ "$status" = "question" ] && [ "$next_action" = "wait_for_user" ]; then
+        handoff_ref="$(archive_handoff_artifact "$RUNTIME_DIR/codex-result.md" "pm-question")"
+        routing_reason="$(orch_normalize_block_reason "needs-user:" "$(task_handoff_summary "$RUNTIME_DIR/codex-result.md")")"
+        mv "$RUNTIME_DIR/codex-result.md" "$RUNTIME_DIR/codex-question.md"
+        rm -f "$RUNTIME_DIR/claude-decision.md" "$STATE_DIR/last-result.hash" "$STATE_DIR/last-question.hash" "$STATE_DIR/last-decision.hash"
+        orch_task_graph_upsert "$task_id" "pm" "blocked" "" "$handoff_ref" "pm question"
+        orch_write_project_state "blocked" "$task_id" "blocked" "$routing_reason" "$(orch_build_resume_target task "$task_id")" "$handoff_ref"
+        log_loop "pm question routed into same-task block on $HERMES_KANBAN_BOARD"
+        return 0
+    fi
+
+    if [ "$role" = "pm" ] && [ "$status" = "needs_research" ] && [ "$next_action" = "create_research_task" ] && orch_task_needs_research "$RUNTIME_DIR/codex-result.md"; then
+        handoff_ref="$(archive_handoff_artifact "$RUNTIME_DIR/codex-result.md" "pm-research")"
+        routing_reason="$(orch_normalize_block_reason "research-required:" "$(task_handoff_summary "$RUNTIME_DIR/codex-result.md")")"
+        child_task_id="$(create_child_task_from_source "$RUNTIME_DIR/codex-result.md" "researcher" "research" "$task_id" "$handoff_ref" "research" "Research follow-up for $task_id")"
+        reset_runtime_route_artifacts
+        orch_task_graph_upsert "$task_id" "pm" "blocked" "" "$handoff_ref" "pm research gate"
+        orch_task_graph_upsert "$child_task_id" "researcher" "ready" "$task_id" "$handoff_ref" "researcher follow-up"
+        orch_write_project_state "queued" "$child_task_id" "research_handoff" "$routing_reason" "$(orch_build_resume_target task "$child_task_id")" "$handoff_ref"
+        log_loop "pm create_research_task created child $child_task_id on $HERMES_KANBAN_BOARD"
+        return 0
+    fi
+
+    if [ "$role" = "pm" ] && [ "$status" = "requirement_ready" ] && [ "$next_action" = "create_tasks" ]; then
+        handoff_ref="$(archive_handoff_artifact "$RUNTIME_DIR/codex-result.md" "pm-skeleton")"
+        routing_reason="$(orch_normalize_block_reason "needs-review:" "skeleton graph created for implementation")"
+        child_task_id="$(create_child_task_from_source "$RUNTIME_DIR/codex-result.md" "implementer" "implementation" "$task_id" "$handoff_ref" "implementation" "Implementation task for $task_id")"
+        reset_runtime_route_artifacts
+        orch_task_graph_upsert "$task_id" "pm" "completed" "" "$handoff_ref" "pm requirement ready"
+        orch_task_graph_upsert "$child_task_id" "implementer" "ready" "$task_id" "$handoff_ref" "implementation skeleton"
+        orch_task_graph_upsert "${child_task_id}-review" "reviewer" "planned" "$child_task_id" "" "review placeholder"
+        orch_write_project_state "queued" "$child_task_id" "task_graph_ready" "$routing_reason" "$(orch_build_resume_target task "$child_task_id")" "$handoff_ref"
+        log_loop "pm create_tasks created skeleton graph rooted at $child_task_id on $HERMES_KANBAN_BOARD"
+        return 0
+    fi
+
+    if [ "$role" = "implementer" ] && [ "$status" = "needs_decision" ] && { [ "$next_action" = "wait_for_user" ] || [ "$next_action" = "defer_to_human" ]; }; then
+        handoff_ref="$(archive_handoff_artifact "$RUNTIME_DIR/codex-result.md" "implementer-decision")"
+        routing_reason="$(orch_normalize_block_reason "needs-user:" "$(task_handoff_summary "$RUNTIME_DIR/codex-result.md")")"
+        mv "$RUNTIME_DIR/codex-result.md" "$RUNTIME_DIR/codex-question.md"
+        rm -f "$RUNTIME_DIR/claude-decision.md" "$STATE_DIR/last-result.hash" "$STATE_DIR/last-question.hash" "$STATE_DIR/last-decision.hash"
+        orch_task_graph_upsert "$task_id" "implementer" "blocked" "" "$handoff_ref" "implementer decision needed"
+        orch_write_project_state "blocked" "$task_id" "blocked" "$routing_reason" "$(orch_build_resume_target task "$task_id")" "$handoff_ref"
+        log_loop "implementer needs_decision blocked same task $task_id"
+        return 0
+    fi
+
+    if [ "$role" = "implementer" ] && { [ "$status" = "blocked" ] || [ "$status" = "test_failed" ]; } && [ "$next_action" = "block" ]; then
+        handoff_ref="$(archive_handoff_artifact "$RUNTIME_DIR/codex-result.md" "implementer-blocked")"
+        detail="$(orch_json_field "$RUNTIME_DIR/codex-result.md" "role_specific_payload.block_reason")"
+        [ -n "$detail" ] || detail="$(task_handoff_summary "$RUNTIME_DIR/codex-result.md")"
+        block_category="$(orch_infer_implementer_block_category "$status" "$(orch_json_field "$RUNTIME_DIR/codex-result.md" "role_specific_payload.block_category")" "$detail")"
+        detail="$block_category: $detail"
+        routing_reason="$(orch_normalize_block_reason "needs-review:" "$detail")"
+        mv "$RUNTIME_DIR/codex-result.md" "$RUNTIME_DIR/codex-question.md"
+        rm -f "$RUNTIME_DIR/claude-decision.md" "$STATE_DIR/last-result.hash" "$STATE_DIR/last-question.hash" "$STATE_DIR/last-decision.hash"
+        orch_task_graph_upsert "$task_id" "implementer" "blocked" "" "$handoff_ref" "implementer blocked"
+        orch_write_project_state "blocked" "$task_id" "blocked" "$routing_reason" "$(orch_build_resume_target task "$task_id")" "$handoff_ref"
+        log_loop "implementer block preserved same task identity for $task_id"
+        return 0
+    fi
+
+    if [ "$role" = "implementer" ] && [ "$status" = "task_complete" ] && [ "$next_action" = "complete" ]; then
+        if ! orch_validate_handoff_payload "$RUNTIME_DIR/codex-result.md" >/dev/null 2>&1; then
+            block_invalid_handoff_payload "$task_id" "implementer" "$(orch_validate_handoff_payload "$RUNTIME_DIR/codex-result.md" 2>&1 >/dev/null || true)"
+            return 0
+        fi
+        handoff_ref="$(archive_handoff_artifact "$RUNTIME_DIR/codex-result.md" "implementer-complete")"
+        routing_reason="$(orch_normalize_block_reason "needs-review:" "implementation complete; reviewer required")"
+        child_task_id="$(create_child_task_from_source "$RUNTIME_DIR/codex-result.md" "reviewer" "review" "$task_id" "$handoff_ref" "review" "Review task for $task_id")"
+        reset_runtime_route_artifacts
+        orch_task_graph_upsert "$task_id" "implementer" "completed" "" "$handoff_ref" "implementation complete"
+        orch_task_graph_upsert "$child_task_id" "reviewer" "ready" "$task_id" "$handoff_ref" "reviewer handoff"
+        orch_write_project_state "queued" "$child_task_id" "review_handoff" "$routing_reason" "$(orch_build_resume_target task "$child_task_id")" "$handoff_ref"
+        log_loop "implementer task_complete created reviewer child $child_task_id"
+        return 0
+    fi
+
+    if [ "$role" = "reviewer" ] && [ "$status" = "approved" ] && [ "$next_action" = "complete" ]; then
+        if ! orch_validate_handoff_payload "$RUNTIME_DIR/codex-result.md" >/dev/null 2>&1; then
+            block_invalid_handoff_payload "$task_id" "reviewer" "$(orch_validate_handoff_payload "$RUNTIME_DIR/codex-result.md" 2>&1 >/dev/null || true)"
+            return 0
+        fi
+        handoff_ref="$(archive_handoff_artifact "$RUNTIME_DIR/codex-result.md" "reviewer-approved")"
+        orch_task_graph_upsert "$task_id" "reviewer" "completed" "" "$handoff_ref" "review approved"
+        if orch_task_needs_qa "$RUNTIME_DIR/codex-result.md"; then
+            routing_reason="$(orch_normalize_block_reason "needs-review:" "qa-required after approval")"
+            child_task_id="$(create_child_task_from_source "$RUNTIME_DIR/codex-result.md" "qa-tester" "qa" "$task_id" "$handoff_ref" "qa" "QA task for $task_id")"
+            reset_runtime_route_artifacts
+            orch_task_graph_upsert "$child_task_id" "qa-tester" "ready" "$task_id" "$handoff_ref" "qa handoff"
+            orch_write_project_state "queued" "$child_task_id" "qa_handoff" "$routing_reason" "$(orch_build_resume_target task "$child_task_id")" "$handoff_ref"
+            log_loop "reviewer approved with qa-needed; created child $child_task_id"
+            return 0
+        fi
+
+        orch_archive_task_artifacts "$task_id"
+        orch_write_project_state "completed" "$task_id" "completed" "" "$(orch_build_resume_target task "$task_id")" "$handoff_ref"
+        log_loop "reviewer approved; completed chain for $task_id"
+        rm -f "$RUNTIME_DIR/task.md" "$RUNTIME_DIR/codex-question.md" "$RUNTIME_DIR/claude-decision.md" "$RUNTIME_DIR/codex-result.md" "$RUNTIME_DIR/review-result.md" "$RUNTIME_DIR/escalation.md"
+        rm -f "$STATE_DIR/last-task.hash" "$STATE_DIR/last-question.hash" "$STATE_DIR/last-decision.hash" "$STATE_DIR/last-result.hash"
+        return 0
+    fi
+
+    if [ "$role" = "reviewer" ] && [ "$status" = "findings" ] && [ "$next_action" = "block" ]; then
+        if ! orch_validate_handoff_payload "$RUNTIME_DIR/codex-result.md" >/dev/null 2>&1; then
+            block_invalid_handoff_payload "$task_id" "reviewer" "$(orch_validate_handoff_payload "$RUNTIME_DIR/codex-result.md" 2>&1 >/dev/null || true)"
+            return 0
+        fi
+        handoff_ref="$(archive_handoff_artifact "$RUNTIME_DIR/codex-result.md" "reviewer-findings")"
+        routing_reason="$(orch_normalize_block_reason "needs-review:" "review findings require implementer follow-up")"
+        child_task_id="$(create_child_task_from_source "$RUNTIME_DIR/codex-result.md" "implementer" "implementation" "$task_id" "$handoff_ref" "implementation" "Implementer follow-up for $task_id")"
+        reset_runtime_route_artifacts
+        orch_task_graph_upsert "$task_id" "reviewer" "completed" "" "$handoff_ref" "review findings"
+        orch_task_graph_upsert "$child_task_id" "implementer" "ready" "$task_id" "$handoff_ref" "implementer follow-up"
+        orch_write_project_state "queued" "$child_task_id" "followup_handoff" "$routing_reason" "$(orch_build_resume_target task "$child_task_id")" "$handoff_ref"
+        log_loop "reviewer findings created implementer follow-up $child_task_id"
+        return 0
+    fi
+
+    return 1
+}
+
 dispatch_codex_task() {
     local task_hash="$1"
     local runner="$STATE_DIR/run-codex-task.sh"
+    local task_id
+    local task_role
+    local expected_duration
+    local snapshot_path
+    local workspace
 
     write_runner "$runner" cat <<EOF
 {
@@ -234,7 +702,15 @@ dispatch_codex_task() {
 touch $(quote "$RUNTIME_DIR/.codex-done")
 EOF
 
-    orch_write_project_state "executing" "$(task_id_from_bus)"
+    task_id="$(task_id_from_bus)"
+    task_role="$(current_task_role)"
+    expected_duration="$(orch_task_expected_duration "$RUNTIME_DIR/task.md" "$task_role")"
+    workspace="$(orch_json_field "$RUNTIME_DIR/task.md" "project_workspace")"
+    [ -n "$workspace" ] && [ "$workspace" != "null" ] || workspace=""
+    snapshot_path="$(orch_capture_env_snapshot "$task_id" "$PROJECT_DIR")"
+    orch_write_active_run "$task_id" "$task_role" "tmux_session" "$CODEX_SESSION" "$workspace" "$expected_duration" "$snapshot_path" "codex"
+    orch_write_project_state "executing" "$task_id" "running" "" "$(orch_build_resume_target task "$task_id")" ""
+    orch_record_lifecycle_event "$task_id" "$task_role" "run_started" "engine=codex duration=$expected_duration"
     echo "$task_hash" > "$STATE_DIR/last-task.hash"
     send_runner "$CODEX_SESSION" "$runner"
     log_loop "dispatched task.md to $CODEX_SESSION"
@@ -253,6 +729,8 @@ route_question_to_claude() {
     if [ -f "$STATE_DIR/last-question.hash" ] && [ "$(cat "$STATE_DIR/last-question.hash")" = "$question_hash" ]; then
         return 0
     fi
+
+    orch_clear_active_run
 
     write_runner "$runner" cat <<EOF
 cat $(quote "$RUNTIME_DIR/codex-question.md") | claude -p --output-format json --permission-mode auto "You are Claude Supervisor for project [$PROJECT_ID]. Read the Codex question from stdin and write a JSON decision envelope for claude-decision.md. Include schema_version, message_id, project_id, task_id, correlation_id, status, author, authority, timestamp, decision, rationale, and execution.authority_sufficient. Do not approve L3/L4; write escalation guidance instead." > $(quote "$STATE_DIR/claude-decision.raw.json") 2>> $(quote "$STATE_DIR/claude.err")
@@ -273,7 +751,7 @@ PY
 rm -f $(quote "$STATE_DIR/claude-decision.raw.json")
 EOF
 
-    orch_write_project_state "waiting" "$(task_id_from_bus)"
+    orch_write_project_state "waiting" "$(task_id_from_bus)" "awaiting_decision" "__KEEP__" "$(orch_build_resume_target task "$(task_id_from_bus)")" "__KEEP__"
     echo "$question_hash" > "$STATE_DIR/last-question.hash"
     send_runner "$CLAUDE_SESSION" "$runner"
     log_loop "routed codex-question.md to $CLAUDE_SESSION"
@@ -323,7 +801,7 @@ handle_escalation_if_present() {
                     ;;
                 REJECTED)
                     mv "$RUNTIME_DIR/escalation.md" "$AUDIT_DIR/pending/escalation.$(date +%s).md"
-                    orch_write_project_state "failed" "$task_id"
+                    orch_write_project_state "failed" "$task_id" "failed" "" "$(orch_build_resume_target task "$task_id")" ""
                     log_loop "rejected escalation $approval_id; project failed"
                     return 0
                     ;;
@@ -333,12 +811,12 @@ handle_escalation_if_present() {
 
     if [ "$(level_rank "$effective_level")" -ge 3 ]; then
         approval_id="$(ensure_pending_for_hash "escalation" "$escalation_hash" "$effective_level" "$request_type" "$details" "$task_id" "$escalation_id" "escalation-handler")"
-        orch_write_project_state "blocked" "$task_id"
+        orch_write_project_state "blocked" "$task_id" "blocked" "needs-user: escalation pending approval" "$(orch_build_resume_target task "$task_id")" "$RUNTIME_DIR/escalation.md"
         log_loop "pending approval $approval_id for escalation.md effective_level=$effective_level"
         return 0
     fi
 
-    orch_write_project_state "waiting" "$task_id"
+    orch_write_project_state "waiting" "$task_id" "awaiting_supervisor" "needs-review: supervisor handling escalation" "$(orch_build_resume_target task "$task_id")" "$RUNTIME_DIR/escalation.md"
     log_loop "escalation.md below L3; waiting for supervisor handling"
     return 0
 }
@@ -357,6 +835,10 @@ continue_codex_after_decision() {
     local task_id
     local details
     local approval_pending_id
+    local expected_duration
+    local snapshot_path
+    local task_role
+    local workspace
 
     orch_project_matches_if_present "$RUNTIME_DIR/claude-decision.md" || {
         log_loop "claude-decision.md project_id mismatch; not routing"
@@ -384,7 +866,7 @@ continue_codex_after_decision() {
     fi
 
     if [ "$author" = "user" ] && [ "$decision" = "REJECTED" ]; then
-        orch_write_project_state "failed" "$task_id"
+        orch_write_project_state "failed" "$task_id" "failed" "" "$(orch_build_resume_target task "$task_id")" ""
         orch_append_audit "decision_rejected" "$PROJECT_ID" "$effective_level" "REJECTED" "$(orch_json_field "$RUNTIME_DIR/claude-decision.md" "rationale")" "User rejected pending decision" "$(orch_json_field "$RUNTIME_DIR/claude-decision.md" "approval_id")" "" "$task_id" "" "orch-bus-loop" ""
         log_loop "user rejected decision; project failed"
         return 0
@@ -396,14 +878,14 @@ continue_codex_after_decision() {
             decision_hash="$(sha256sum "$RUNTIME_DIR/claude-decision.md" | awk '{print $1}')"
             details="$(decision_operation_text "$RUNTIME_DIR/claude-decision.md" | head -c 500)"
             approval_pending_id="$(ensure_pending_for_hash "decision" "$decision_hash" "$effective_level" "DECISION" "rulebook_override: $details" "$task_id" "$decision_hash" "orch-bus-loop")"
-            orch_write_project_state "blocked" "$task_id"
+            orch_write_project_state "blocked" "$task_id" "blocked" "needs-user: pending approval for claude decision" "$(orch_build_resume_target task "$task_id")" "$RUNTIME_DIR/claude-decision.md"
             log_loop "pending approval $approval_pending_id for claude-decision.md effective_level=$effective_level"
             return 0
         fi
     fi
 
     if [ "$sufficient" != "true" ]; then
-        orch_write_project_state "blocked" "$task_id"
+        orch_write_project_state "blocked" "$task_id" "blocked" "needs-user: authority insufficient" "$(orch_build_resume_target task "$task_id")" "$RUNTIME_DIR/claude-decision.md"
         log_loop "authority insufficient; project blocked"
         return 0
     fi
@@ -421,7 +903,14 @@ continue_codex_after_decision() {
 touch $(quote "$RUNTIME_DIR/.codex-done")
 EOF
 
-    orch_write_project_state "executing" "$task_id"
+    task_role="$(current_task_role)"
+    expected_duration="$(orch_task_expected_duration "$RUNTIME_DIR/task.md" "$task_role")"
+    workspace="$(orch_json_field "$RUNTIME_DIR/task.md" "project_workspace")"
+    [ -n "$workspace" ] && [ "$workspace" != "null" ] || workspace=""
+    snapshot_path="$(orch_capture_env_snapshot "$task_id" "$PROJECT_DIR")"
+    orch_write_active_run "$task_id" "$task_role" "tmux_session" "$CODEX_SESSION" "$workspace" "$expected_duration" "$snapshot_path" "codex"
+    orch_write_project_state "executing" "$task_id" "running" "" "$(orch_build_resume_target task "$task_id")" ""
+    orch_record_lifecycle_event "$task_id" "$task_role" "run_started" "engine=codex duration=$expected_duration resume=true"
     echo "$decision_hash" > "$STATE_DIR/last-decision.hash"
     send_runner "$CODEX_SESSION" "$runner"
     log_loop "continued Codex after claude-decision.md"
@@ -430,11 +919,17 @@ EOF
 route_result_to_review() {
     local result_hash
     local runner="$STATE_DIR/run-claude-review.sh"
+    local task_id
+    local expected_duration
+    local snapshot_path
+    local workspace
 
     result_hash="$(sha256sum "$RUNTIME_DIR/codex-result.md" | awk '{print $1}')"
     if [ -f "$STATE_DIR/last-result.hash" ] && [ "$(cat "$STATE_DIR/last-result.hash")" = "$result_hash" ]; then
         return 0
     fi
+
+    orch_clear_active_run
 
     write_runner "$runner" cat <<EOF
 cat $(quote "$RUNTIME_DIR/codex-result.md") | claude -p --output-format json --permission-mode auto "You are Claude Supervisor for project [$PROJECT_ID]. Review the Codex result from stdin and write a JSON review envelope for review-result.md. Preserve project_id, task_id, and correlation_id when present. Include decision APPROVED, REJECTED, or NEEDS_MODIFICATION." > $(quote "$STATE_DIR/review-result.raw.json") 2>> $(quote "$STATE_DIR/claude.err")
@@ -455,7 +950,14 @@ PY
 rm -f $(quote "$STATE_DIR/review-result.raw.json")
 EOF
 
-    orch_write_project_state "reviewing" "$(task_id_from_bus)"
+    task_id="$(task_id_from_bus)"
+    expected_duration="$(orch_task_expected_duration "$RUNTIME_DIR/task.md" "reviewer")"
+    workspace="$(orch_json_field "$RUNTIME_DIR/task.md" "project_workspace")"
+    [ -n "$workspace" ] && [ "$workspace" != "null" ] || workspace=""
+    snapshot_path="$(orch_capture_env_snapshot "$task_id" "$PROJECT_DIR")"
+    orch_write_active_run "$task_id" "reviewer" "tmux_session" "$CLAUDE_SESSION" "$workspace" "$expected_duration" "$snapshot_path" "claude-review"
+    orch_write_project_state "reviewing" "$task_id" "review_handoff" "needs-review: legacy review requested" "$(orch_build_resume_target task "$task_id")" "$RUNTIME_DIR/codex-result.md"
+    orch_record_lifecycle_event "$task_id" "reviewer" "run_started" "engine=claude-review duration=$expected_duration"
     echo "$result_hash" > "$STATE_DIR/last-result.hash"
     send_runner "$CLAUDE_SESSION" "$runner"
     log_loop "routed codex-result.md to $CLAUDE_SESSION for review"
@@ -468,6 +970,7 @@ finalize_review_if_ready() {
     local review_task_id
 
     task_id="$(task_id_from_bus)"
+    orch_clear_active_run
     review_task_id="$(orch_json_field "$RUNTIME_DIR/review-result.md" "task_id")"
     if [ -z "$review_task_id" ] || [ "$review_task_id" = "null" ] || [ "$review_task_id" != "$task_id" ]; then
         mkdir -p "$AUDIT_DIR/pending"
@@ -480,7 +983,7 @@ finalize_review_if_ready() {
     case "$decision" in
         APPROVED)
             orch_archive_task_artifacts "$task_id"
-            orch_write_project_state "completed" "$task_id"
+            orch_write_project_state "completed" "$task_id" "completed" "" "$(orch_build_resume_target task "$task_id")" ""
             log_loop "review approved; archived task artifacts"
             if [ -f "$RUNTIME_DIR/codex-question.md" ]; then
                 archived_question="$AUDIT_DIR/pending/codex-question.$(date +%s).md"
@@ -490,10 +993,10 @@ finalize_review_if_ready() {
             rm -f "$STATE_DIR/last-task.hash" "$STATE_DIR/last-question.hash" "$STATE_DIR/last-decision.hash" "$STATE_DIR/last-result.hash"
             ;;
         REJECTED)
-            orch_write_project_state "failed" "$task_id"
+            orch_write_project_state "failed" "$task_id" "failed" "" "$(orch_build_resume_target task "$task_id")" ""
             ;;
         NEEDS_MODIFICATION)
-            orch_write_project_state "waiting" "$task_id"
+            orch_write_project_state "waiting" "$task_id" "followup_pending" "needs-review: modification requested" "$(orch_build_resume_target task "$task_id")" "$RUNTIME_DIR/review-result.md"
             ;;
     esac
 }
@@ -502,6 +1005,10 @@ process_once() {
     local task_hash
 
     if handle_escalation_if_present; then
+        return 0
+    fi
+
+    if maybe_reclaim_active_run; then
         return 0
     fi
 
@@ -516,6 +1023,9 @@ process_once() {
     fi
 
     if [ -f "$RUNTIME_DIR/codex-result.md" ]; then
+        if handle_role_engine_result_if_present; then
+            return 0
+        fi
         route_result_to_review
         return 0
     fi
@@ -533,6 +1043,9 @@ process_once() {
     if [ -f "$RUNTIME_DIR/task.md" ]; then
         task_hash="$(orch_current_task_hash)"
         if [ -n "$task_hash" ] && { [ ! -f "$STATE_DIR/last-task.hash" ] || [ "$(cat "$STATE_DIR/last-task.hash")" != "$task_hash" ]; }; then
+            if maybe_pause_for_backpressure; then
+                return 0
+            fi
             dispatch_codex_task "$task_hash"
         fi
     fi

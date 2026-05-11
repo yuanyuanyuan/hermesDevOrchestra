@@ -127,6 +127,31 @@ if [ -f "$STATE_DIR/last-task.hash" ]; then
     project_prefix "Active task hash: $(cat "$STATE_DIR/last-task.hash")"
 fi
 
+WORKFLOW_STATE="$(orch_json_field "$STATE_DIR/current-task.json" "workflow_state")"
+ROUTING_REASON="$(orch_json_field "$STATE_DIR/current-task.json" "routing_reason")"
+RESUME_TARGET="$(orch_json_field "$STATE_DIR/current-task.json" "resume_target")"
+HANDOFF_REF="$(orch_json_field "$STATE_DIR/current-task.json" "handoff_ref")"
+
+[ -n "$WORKFLOW_STATE" ] && [ "$WORKFLOW_STATE" != "null" ] && project_prefix "Workflow state: $WORKFLOW_STATE"
+[ -n "$ROUTING_REASON" ] && [ "$ROUTING_REASON" != "null" ] && project_prefix "Routing reason: $ROUTING_REASON"
+[ -n "$RESUME_TARGET" ] && [ "$RESUME_TARGET" != "null" ] && project_prefix "Resume target: $RESUME_TARGET"
+[ -n "$HANDOFF_REF" ] && [ "$HANDOFF_REF" != "null" ] && project_prefix "Handoff ref: $HANDOFF_REF"
+
+ACTIVE_RUN_FILE="$(orch_active_run_file)"
+if [ -f "$ACTIVE_RUN_FILE" ]; then
+    project_prefix "Active run task: $(orch_json_field "$ACTIVE_RUN_FILE" "task_id")"
+    project_prefix "Active run role: $(orch_json_field "$ACTIVE_RUN_FILE" "role")"
+    project_prefix "Active run since: $(orch_json_field "$ACTIVE_RUN_FILE" "started_at")"
+    project_prefix "Expected duration: $(orch_json_field "$ACTIVE_RUN_FILE" "expected_duration_max")"
+    ACTIVE_RUN_SNAPSHOT="$(orch_json_field "$ACTIVE_RUN_FILE" "snapshot_path")"
+    [ -n "$ACTIVE_RUN_SNAPSHOT" ] && [ "$ACTIVE_RUN_SNAPSHOT" != "null" ] && project_prefix "Env snapshot: $ACTIVE_RUN_SNAPSHOT"
+fi
+
+BACKPRESSURE_FILE="$(orch_backpressure_file)"
+if [ -f "$BACKPRESSURE_FILE" ]; then
+    project_prefix "Backpressure: paused $(orch_json_field "$BACKPRESSURE_FILE" "current_role") -> $(orch_json_field "$BACKPRESSURE_FILE" "downstream_role") ratio=$(orch_json_field "$BACKPRESSURE_FILE" "ratio")"
+fi
+
 pending_approval_line() {
     python3 - "$STATE_DIR" <<'PY' 2>/dev/null || true
 import glob

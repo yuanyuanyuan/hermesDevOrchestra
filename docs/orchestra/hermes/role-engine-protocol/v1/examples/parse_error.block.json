@@ -1,0 +1,9 @@
+{
+  "failure_class": "parse_error",
+  "attempt_number": 1,
+  "fallback_declared": true,
+  "normalized_action": "block",
+  "audit_required": true,
+  "block_task": true,
+  "hard_stop": true
+}

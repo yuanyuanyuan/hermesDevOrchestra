@@ -1,0 +1,13 @@
+{
+  "failure_class": "rate_limit",
+  "attempt_number": 2,
+  "fallback_declared": true,
+  "normalized_action": "invoke_fallback_once",
+  "audit_required": true,
+  "block_task": false,
+  "audit_event": {
+    "original_engine": "codex",
+    "fallback_engine": "claude",
+    "trigger_reason": "rate_limit"
+  }
+}

@@ -5,49 +5,129 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
 
-RULES_FILE="$ORCHESTRA_HOME/rules.json"
-if [ ! -f "$RULES_FILE" ]; then
-    RULES_FILE="$PACKAGE_DIR/config/rules.json"
+POLICY_FILE="$ORCHESTRA_HOME/risk-policy.yaml"
+if [ ! -f "$POLICY_FILE" ]; then
+    POLICY_FILE="$PACKAGE_DIR/config/risk-policy.yaml"
 fi
 
-if [ ! -f "$RULES_FILE" ]; then
-    echo "rules.json not found" >&2
+if [ ! -f "$POLICY_FILE" ]; then
+    echo "risk-policy.yaml not found" >&2
     exit 1
 fi
 
-if [ "$#" -gt 0 ]; then
-    OPERATION="$*"
+ROLE=""
+TOOL_NAME="terminal"
+POSITIONAL=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --role)
+            ROLE="${2:-}"
+            shift 2
+            ;;
+        --tool)
+            TOOL_NAME="${2:-}"
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            POSITIONAL+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [ "${#POSITIONAL[@]}" -gt 0 ]; then
+    OPERATION="${POSITIONAL[*]}"
 else
     OPERATION="$(cat)"
 fi
 
-python3 - "$RULES_FILE" "$OPERATION" <<'PY'
+python3 - "$POLICY_FILE" "$ROLE" "$TOOL_NAME" "$OPERATION" <<'PY'
 import json
+import re
 import sys
 
-rules_path, operation = sys.argv[1:]
-with open(rules_path, encoding="utf-8") as handle:
-    rules = json.load(handle)
+import yaml
+
+policy_path, role, tool_name, operation = sys.argv[1:]
+with open(policy_path, encoding="utf-8") as handle:
+    policy = yaml.safe_load(handle) or {}
 
 rank = {"L0": 0, "L1": 1, "L2": 2, "L3": 3, "L4": 4}
+approval = policy.get("approval", {})
+roles = policy.get("roles", {})
+common = policy.get("common", {})
+role_policy = roles.get(role, {}) if role else {}
+guardrails = role_policy.get("guardrails", {})
+denied_tools = set(guardrails.get("denied_tools", []) or [])
+read_only_cli_tools = guardrails.get("read_only_cli_tools", []) or []
+
+if role and tool_name in denied_tools:
+    result = {
+        "decision": "block",
+        "source": "role_guardrail",
+        "role": role,
+        "tool": tool_name,
+        "level": "L3",
+        "rule_id": f"{role}-guardrail-{tool_name}",
+        "description": f"{role} cannot use {tool_name}",
+        "matched_pattern": tool_name,
+        "guardrail_blocked": True,
+        "read_only_cli_tools": read_only_cli_tools,
+        "approval_mode": "role_guardrail",
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    sys.exit(4)
+
+rules = list(common.get("rules", []) or [])
+rules.extend(role_policy.get("rules", []) or [])
 best = {
+    "decision": "allow",
+    "source": "risk_policy",
+    "role": role,
+    "tool": tool_name,
     "level": "L0",
     "rule_id": "",
     "description": "No static risk rule matched",
     "matched_pattern": "",
+    "guardrail_blocked": False,
 }
 operation_folded = operation.casefold()
 
 for rule in rules:
     level = str(rule.get("level", "L0"))
-    for pattern in rule.get("patterns", []):
-        if str(pattern).casefold() in operation_folded and rank.get(level, 0) > rank.get(best["level"], 0):
-            best = {
-                "level": level,
-                "rule_id": str(rule.get("id", "")),
-                "description": str(rule.get("description", "")),
-                "matched_pattern": str(pattern),
-            }
+    matches = []
+    for pattern in rule.get("match_any", []) or []:
+        pattern_text = str(pattern)
+        if pattern_text.casefold() in operation_folded:
+            matches.append(pattern_text)
+    for pattern in rule.get("match_regex", []) or []:
+        regex = str(pattern)
+        found = re.search(regex, operation, re.IGNORECASE)
+        if found:
+            matches.append(found.group(0))
+    if matches and rank.get(level, 0) > rank.get(best["level"], 0):
+        best = {
+            "decision": "block" if rank.get(level, 0) >= 3 else "allow",
+            "source": "risk_policy",
+            "role": role,
+            "tool": tool_name,
+            "level": level,
+            "rule_id": str(rule.get("id", "")),
+            "description": str(rule.get("description", "")),
+            "matched_pattern": matches[0],
+            "guardrail_blocked": False,
+        }
+
+approval_policy = approval.get(best["level"], {}) if best["level"] in approval else {}
+best["approval_mode"] = approval_policy.get("mode", "record")
+if "phrase_template" in approval_policy:
+    best["approval_phrase_template"] = approval_policy["phrase_template"]
+if best["level"] == "L2":
+    best["intervention_required"] = True
 
 print(json.dumps(best, ensure_ascii=False, indent=2))
 sys.exit({"L0": 0, "L1": 1, "L2": 1, "L3": 2, "L4": 3}.get(best["level"], 1))

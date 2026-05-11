@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Hermes Dev Orchestra 是一套“单人多项目 AI 开发编排系统”的产品、规格与原型实现项目。v1.0 已完成可交付规格包；v1.1 改为基于社区 `NousResearch/hermes-agent` 实现，而不是独立重写新的 Hermes Agent。当前实现重点转向 Hermes Agent 原生工作流：以 `19-hermes-workflow-design` 设计包为来源，把 Kanban/Profile/Plugin Hooks/Curator 驱动的多角色流程落成 MVP，并为完整实现预留下一里程碑。
+Hermes Dev Orchestra 是一套“单人多项目 AI 开发编排系统”的产品、规格与原型实现项目。v1.0 已完成可交付规格包；v1.1 改为基于社区 `NousResearch/hermes-agent` 实现，而不是独立重写新的 Hermes Agent。v1.3 现已把 Hermes Agent 原生工作流的 MVP 纵向切片落地：官方能力边界、项目级 profiles/overrides、外部 CLI 引擎协议、Kanban 路由、风险护栏、worker 生命周期和基础可观测性都已有可验证实现；下一里程碑转向完整闭环。
 
 ## Core Value
 
@@ -28,13 +28,18 @@ Architecture boundary: "10x" means lower coordination overhead across multiple p
 - [x] 支持项目初始化、Claude/Codex tmux 会话启动、任务写入、问题转发、审查结果回收和 per-project 文件总线 runtime。Validated in Phase 11.
 - [x] 保持 L3/L4 决策显式用户审批，不允许 timeout 或 fallback 自动批准。Validated in Phase 12.
 - [x] 通过 smoke/fixture 检查证明上游集成范围，并输出下一里程碑 handoff。Validated in Phase 12.
+- [x] 用可执行证据验证 phase 19 文档中引用的 Hermes 官方能力，并在实现前钉死官方边界与本地增量边界。Validated in Phase 20.
+- [x] 落成 8 个工作流 profile、项目级 override 合并能力，以及多 project board 的基础隔离约定。Validated in Phase 21.
+- [x] 在 Hermes 调度层之上补齐外部 CLI 引擎协议、无状态上下文累积和角色调用契约。Validated in Phase 22 and Phase 23.
+- [x] 用 Kanban 状态机替换旧文件总线路由，打通 PM/Researcher/Orchestrator/Worker 的 block-resume 交接。Validated in Phase 23.
+- [x] 落成风险策略、只读审查护栏、worker cleanup/timeout、结构化 handoff、基础可观测性和 MVP 端到端验收。Validated in Phases 24-25.
 
 ### Active
 
-- [ ] 用可执行证据验证 phase 19 文档中引用的 Hermes 官方能力，并在实现前钉死官方边界与本地增量边界。
-- [ ] 落成 8 个工作流 profile、项目级 override 合并能力，以及多 project board 的基础隔离约定。
-- [ ] 用 Kanban 状态机替换旧文件总线路由，打通 PM/Orchestrator/Worker 的 block-resume 交接。
-- [ ] 落成风险策略、只读审查护栏、worker cleanup/timeout、结构化 handoff 和基础可观测性。
+- [ ] 完成 curator 驱动的跨项目 learning 晋升、冲突 warning、删除传播和人工复审闭环。
+- [ ] 完成滑动窗口背压、死锁升级、SRE-Observer 结构化 RCA 与故障通知闭环。
+- [ ] 完成 dev/test → staging → production 三层部署、验证门控、UAT 和 production 审批。
+- [ ] 完成部署回滚、git tag、结构化部署报告与完整发布审计链路。
 
 ### Out of Scope
 
@@ -74,7 +79,7 @@ v1.0 规格阶段的用户输入与决策：
 - **Safety**: L3/L4 风险不得自动批准 — 规格必须定义阻塞式确认、审计日志、默认安全动作和可恢复策略。
 - **Isolation**: 多项目必须隔离 — 每个项目应拥有独立 board、workspace、profile override 和状态上下文。
 - **Remote Channel**: 远程通知/决策不能绑定 Telegram — v1 使用 Remote Decision Channel 抽象，具体平台作为适配器。
-- **Deliverable**: v1.3 交付物是 Hermes Agent 原生工作流 MVP：完成能力确认、profile/override、Kanban 路由、风险护栏、worker 生命周期与基础可观测性，不在当前里程碑内补齐完整部署/SRE/curator 语义闭环。
+- **Deliverable**: 下一里程碑的交付物是 Hermes Agent 原生工作流的完整闭环：在已完成的 v1.3 MVP 上补齐 curator、死锁/RCA、部署/UAT 和发布审计，而不是重新设计另一套 runtime。
 
 ## Key Decisions
 
@@ -96,7 +101,9 @@ v1.1 is complete. Phases 9-12 validated the upstream Hermes Agent baseline, pack
 
 v1.2 Phase 18 clarified architecture bounds across `.planning/SPEC.md`, `specs/file-bus.md`, `docs/orchestra/README.md`, `docs/orchestra/WORKFLOW.md`, and `.planning/PROJECT.md`. The fixed Runtime bus is documented as one active task slot per project, same-project parallelism is out of scope for v1.2, and the "10x" claim is limited to single-developer multi-project coordination.
 
-Phase 19 produced a full Hermes-native workflow design package under `.planning/phases/19-hermes-workflow-design/`. That package now becomes the source for two execution milestones: v1.3 covers the MVP implementation path, and v1.4 covers the full implementation path. Execution phase numbering starts at 20 so the phase 19 design directory remains a stable reference set.
+Phase 19 produced a full Hermes-native workflow design package under `.planning/phases/19-hermes-workflow-design/`. On 2026-05-11, commit `3976c42` added the External CLI Engine architecture and standardized the design around “Hermes scheduling + external CLI execution”. That package remains the source for two execution milestones: v1.3 covered the MVP implementation path, and v1.4 remains the full implementation path. Execution phase numbering starts at 20 so the phase 19 design directory remains a stable reference set.
+
+v1.3 shipped on 2026-05-11. Phases 20-25 landed the official/local capability boundary lock, project-scoped profile assembly, the `hermes-role-engine/v1` protocol, Kanban-native routing, canonical risk policy and role guardrails, task-level timeout/reclaim, structured handoff validation, hook-based observability, environment snapshots, and one MVP acceptance chain. Milestone closeout stats: 6 phases, 6 plans, timeline 2026-05-10 to 2026-05-11, and roughly 29 files changed with +1860/-175 diff in the active worktree during closeout. The only inherited blocker is the unresolved `upstream-status` runtime pin mismatch.
 
 ## Milestone: v1.1 Upstream Hermes Agent Integration
 
@@ -111,19 +118,20 @@ Phase 19 produced a full Hermes-native workflow design package under `.planning/
 - Per-project file bus connecting Hermes Agent, Claude Supervisor, and Codex Executor.
 - Risk rulebook, local decision fallback, smoke fixtures, integration docs, and handoff for remote adapters.
 
-## Current Milestone: v1.3 Hermes 原生工作流 MVP 实现
+## Latest Shipped Milestone: v1.3 Hermes 原生工作流 MVP 实现
 
-**Goal:** 以 `19-hermes-workflow-design` 非归档文档为蓝本，把 Hermes Agent 原生工作流的 MVP 纵向切片落成可执行计划，优先完成能力对齐、角色边界、Kanban 路由、风险护栏、worker 生命周期与基础可观测性。
+**Status:** ✅ Shipped (2026-05-11)  
+**Phases:** 20–25
 
-**Target features:**
-- Phase 20: 平台能力确认与官方边界锁定
-- Phase 21: Profile 包装、项目级 override 与多项目基础隔离
-- Phase 22: PM/Orchestrator/Worker 状态机路由与 block-resume 交接
-- Phase 23: 风险策略、只读审查护栏与角色边界
-- Phase 24: Worker cleanup、timeout、structured handoff 与基础背压控制
-- Phase 25: 可观测性落地、环境快照与 MVP 端到端验收
+**Delivered:**
+- Capability-verification matrix and official/local boundary lock for the phase 19 design package.
+- Project-scoped profiles, repo-local overrides, and baseline multi-project isolation.
+- `hermes-role-engine/v1` external CLI engine contract plus failure normalization.
+- Kanban-native routing, parent-linked handoff metadata, and metadata-first block/resume.
+- Canonical `risk-policy.yaml`, reviewer/orchestrator guardrails, and implementer block contract.
+- Timeout/reclaim, structured handoff hardening, sidecar observability, environment snapshots, conservative backpressure, and MVP acceptance evidence.
 
-**Latest execution update:** Phase 21 is now complete. The repo contains a canonical workflow profile catalog, repo-local override contract, `orch-profile-sync`, and project-scoped Hermes home generation at `.hermes/projects/{project_slug}/`. Runtime naming is normalized to `reviewer`, and board/workspace/profile/memory isolation is derived from a single `project_slug`.
+**Residual issue:** `rtk make test` still inherits the known `upstream-status` pin mismatch and is not globally green yet.
 
 ## Next Milestone Goals
 
@@ -150,4 +158,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-10 — v1.3 milestone opened from phase 19 workflow design docs*
+*Last updated: 2026-05-11 after shipping v1.3 milestone*

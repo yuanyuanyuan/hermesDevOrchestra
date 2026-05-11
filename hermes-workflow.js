@@ -138,6 +138,24 @@ function app() {
       { name: 'memory:RS256选型', score: 60 },
     ],
 
+    // --- Terminal Proxy (R8) ---
+    termHistory: [],
+    termInput: '',
+    // --- Toolsets (R10) ---
+    toolsetRole: 'reviewer',
+    toolsetEnabled: ['file_read','kanban_read','kanban_block','kanban_complete','clarify'],
+    toolsetDisabled: ['code_execution','delegation','messaging','file_write','terminal'],
+    toolsetsData: {
+      pm: { enabled: ['kanban','memory','clarify','file_read'], disabled: ['terminal','code_execution','web','browser','delegation'] },
+      orchestrator: { enabled: ['kanban','memory','clarify'], disabled: ['terminal','file','code_execution','web','browser','delegation'] },
+      researcher: { enabled: ['file_read','web','clarify','kanban','memory'], disabled: ['terminal','code_execution','delegation'] },
+      implementer: { enabled: ['terminal','file','code_execution','memory','kanban'], disabled: ['delegation','messaging'] },
+      reviewer: { enabled: ['file_read','kanban_read','kanban_block','kanban_complete','clarify'], disabled: ['code_execution','delegation','messaging','file_write','terminal'] },
+      'qa-tester': { enabled: ['terminal','file','code_execution','browser','kanban','memory'], disabled: ['delegation','messaging'] },
+      'devops-engineer': { enabled: ['terminal','file','code_execution','kanban','memory'], disabled: ['delegation','messaging','web'] },
+      'sre-observer': { enabled: ['file','kanban','memory','clarify','web'], disabled: ['terminal','code_execution','delegation'] },
+    },
+
     // --- SRE Reports History ---
     sreReports: [],
     // --- Deploy Report ---
@@ -1433,6 +1451,45 @@ function app() {
       this.addTrace('System', 'curator_review');
     },
 
+    // ==================== TERMINAL PROXY (R8) ====================
+    execTerm(cmd, role) {
+      role = role || 'reviewer';
+      const profile = this.toolsetsData[role];
+      let result = 'ok', reason = null, output = '$ ' + cmd + '\n';
+      const writeCmds = ['>', '>>', 'rm ', 'mv ', 'cp ', 'chmod ', 'chown ', 'mkdir ', 'touch ', 'DROP', 'git push', 'git reset'];
+      const isWrite = writeCmds.some(w => cmd.includes(w));
+      if (isWrite && role === 'reviewer') {
+        result = 'blocked';
+        reason = 'R8: Reviewer 只读 — 写操作被技术性拦截';
+        output += 'ERROR: ' + reason;
+      } else if (isWrite && profile && profile.disabled && profile.disabled.includes('file_write')) {
+        result = 'blocked';
+        reason = 'R8: toolset 已禁用 file_write';
+        output += 'ERROR: ' + reason;
+      } else {
+        if (cmd.startsWith('cat ')) output += '// JWT token implementation\nuse jsonwebtoken::{encode, decode, Header, Validation};\n...';
+        else if (cmd.startsWith('cargo test')) output += 'running 15 tests\ntest test_valid_login ... ok\n...\n15 passed';
+        else if (cmd.startsWith('git ')) output += 'git output...';
+        else output += 'command executed successfully';
+      }
+      this.termHistory.push({ cmd, role, result, reason, output, time: new Date().toISOString() });
+      if (result === 'blocked') {
+        this.log(`<span class="text-red-400">[R8]</span> 写操作拦截: ${cmd}`, 'text-amber-400');
+        this.addTrace('R8', 'terminal_blocked', cmd, 'warn');
+        this.addAuditEvent('TERMINAL_BLOCKED', `命令 "${cmd}" 被 R8 拦截 — ${reason}`, 'warn');
+      }
+      return { result, reason, output };
+    },
+
+    // ==================== TOOLSETS (R10) ====================
+    updateToolset() {
+      const data = this.toolsetsData[this.toolsetRole];
+      if (data) {
+        this.toolsetEnabled = data.enabled;
+        this.toolsetDisabled = data.disabled;
+      }
+    },
+
     // ==================== RESET ====================
     resetAll() {
       this.autoPlaying = false; clearTimeout(this.autoTimer);
@@ -1446,6 +1503,7 @@ function app() {
         deadlockCounter: 0, archiveCtx: { summary: '', options: [] },
         taskGraphDesc: '', taskGraphOptions: [], pocFailOptions: [],
         sreReports: [], deployReport: null, auditEvents: [],
+        termHistory: [], termInput: '', toolsetRole: 'reviewer',
         _pendingReq: '',
       });
       this.roles.forEach(r => { r.active = false; r.status = '待命'; r.task = ''; });

@@ -2,41 +2,39 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Hermes 原生工作流 MVP 实现
-status: Phase 21 executed
-stopped_at: Phase 21 execution complete
-last_updated: "2026-05-10T13:20:00.000Z"
-last_activity: 2026-05-10 -- Phase 21 profile packaging and project isolation executed
+status: Awaiting next milestone
+stopped_at: Phase 25 execution complete
+last_updated: "2026-05-11T07:10:48.266Z"
+last_activity: 2026-05-11 — Milestone v1.3 completed and archived
 progress:
   total_phases: 6
-  completed_phases: 2
-  total_plans: 2
-  completed_plans: 2
-  percent: 33
+  completed_phases: 6
+  total_plans: 6
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-10)
+See: .planning/PROJECT.md (updated 2026-05-11)
 
 **Core value:** 用户可以通过 SSH/Hermes CLI 随时追加开发任务，让 Hermes 自动调度 Claude 与 Codex 推进多个项目，只在高风险或产品级决策时打断用户。
-**Current focus:** v1.3 execution — Phase 21 complete, Phase 22 pending
+**Current focus:** v1.3 archived — either resolve the inherited aggregate-gate blocker or open v1.4
 
 ## Current Position
 
-Phase: 21 — Profiles, Overrides & Board Isolation (complete)
-Plan: 21-01 complete
-Status: Phase 21 executed
-Last activity: 2026-05-10 -- Phase 21 profile packaging and project isolation executed
-
-Progress: [###-------] 33%
+Phase: Milestone v1.3 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-05-11 — Milestone v1.3 completed and archived
 
 ## Requirements Alignment
 
-v1.3 requirements defined: 17 requirements across 6 categories.
-Roadmap created: 6 phases (20-25) with success criteria and traceability.
-v1.4 full-scope items captured in Future Requirements and roadmap preview.
+v1.3 requirements are archived at `.planning/milestones/v1.3-REQUIREMENTS.md`.
+Roadmap archive captured the 6 shipped phases (20-25) and milestone audit evidence.
+v1.4 remains the next milestone preview; fresh milestone-scoped requirements have not been created yet.
 
 ## Accumulated Context
 
@@ -58,6 +56,12 @@ All v1.1 decisions remain valid.
 - [Milestone v1.3]: Split phase 19 workflow design into two execution milestones. — v1.3 covers the MVP path; v1.4 keeps curator semantics, SRE RCA, and deploy/UAT full-scope items.
 - [Milestone v1.3]: Start execution numbering at Phase 20. — `.planning/phases/19-hermes-workflow-design/` remains a stable design-source directory and is not reused as a GSD execution phase.
 - [Phase 21]: Normalize runtime reviewer naming to `reviewer` and generate project-scoped Hermes homes under `.hermes/projects/{project_slug}/`. — Canonical profile catalog now lives in `docs/orchestra/hermes/profile-distribution/`; repo-local overrides compile via `orch-profile-sync`; board/workspace/profile/memory isolation all derive from the same `project_slug`.
+- [Phase 19 Design Update]: Adopt “Hermes scheduling + external CLI execution” as the execution baseline. — Commit `3976c42` added `EXTERNAL-CLI-ENGINE.md`, standardized `hermes-role-engine/v1`, and requires Phase 22+ to land engine protocol work before routing/guardrail implementation.
+- [Phase 23]: Keep Hermes-native `status + parents` primary and add only four routing metadata fields. — `workflow_state`, `routing_reason`, `resume_target`, and `handoff_ref` now drive stateful routing checkpoints; same-role unblock resumes the original task while cross-role transitions create explicit child/follow-up tasks.
+- [Phase 24 Plan]: Keep one canonical risk-policy surface with role branches and four runtime levels. — `L4` is reserved for narrow accident-button actions only; Reviewer / Orchestrator guardrails use allowlists plus `pre_tool_call`; Implementer must emit structured blocks for four fixed trigger categories.
+- [Phase 24]: Execute one canonical risk-policy and role-guardrail layer. — `risk-policy.yaml` is now the runtime source of truth, `APPROVE-L4 <approval_id>` is enforced for L4, hook assets block reviewer/orchestrator bypass paths, and Implementer block categories are preserved through the existing Phase 23 routing flow.
+- [Phase 25 Plan]: Close v1.3 with lifecycle control, structured handoff hardening, hook-based observability, and one MVP acceptance chain. — `25-CONTEXT.md` and `25-01-PLAN.md` lock task-level timeout/reclaim, untrusted handoff consumption, sidecar trace storage, spawn-time environment snapshots, conservative backpressure, and an end-to-end acceptance proof while deferring v1.4 deadlock/SRE/deploy scope.
+- [Phase 25]: Execute one lifecycle/observability closeout layer on top of the Phase 22-24 runtime. — `active-run.json`, `backpressure.json`, structured handoff validation, the observability plugin, env snapshots, and the MVP acceptance path are now landed and verified without modifying Hermes core.
 
 ### Pending Todos
 
@@ -69,6 +73,10 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-10T13:20:00.000Z
-Stopped at: Phase 21 execution complete
-Resume: Verify Phase 21 closeout or advance to Phase 22, after accounting for the upstream pin mismatch if a fully green repo gate is required
+Last session: 2026-05-11T07:00:07Z
+Stopped at: Phase 25 execution complete
+Resume: Start `v1.4` with `$gsd-new-milestone` or resolve the inherited `upstream-status` pin mismatch before treating the repo as globally green
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

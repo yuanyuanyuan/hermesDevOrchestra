@@ -82,7 +82,7 @@ fi
 
 log_info "Creating orchestra directories..."
 mkdir -p "$HERMES_HOME" "$HERMES_SKILLS_DIR" "$ORCHESTRA_HOME" "$ORCHESTRA_BIN_DIR" \
-    "$ORCHESTRA_HOME/backups" "$ORCHESTRA_HOME/lib" "$ORCHESTRA_HOME/tests" "$ORCHESTRA_HOME/profile-distribution" "$ORCHESTRA_HOME/claude-config-template/.claude" \
+    "$ORCHESTRA_HOME/backups" "$ORCHESTRA_HOME/lib" "$ORCHESTRA_HOME/tests" "$ORCHESTRA_HOME/profile-distribution" "$ORCHESTRA_HOME/plugins" "$ORCHESTRA_HOME/claude-config-template/.claude" \
     "$LOCAL_BIN_DIR" "$RUNTIME_ROOT" "$STATE_ROOT" "$AUDIT_ROOT" "$CACHE_ROOT"
 log_ok "Directory roots ready"
 
@@ -146,16 +146,18 @@ log_info "Installing orch-* helper commands..."
 HELPER_SRC_DIR="$PACKAGE_DIR/scripts/bin"
 HELPER_LIB_SRC_DIR="$PACKAGE_DIR/scripts/lib"
 TEST_SRC_DIR="$PACKAGE_DIR/scripts/tests"
-RULES_SRC="$PACKAGE_DIR/config/rules.json"
+POLICY_SRC="$PACKAGE_DIR/config/risk-policy.yaml"
 PROFILE_DIST_SRC="$PACKAGE_DIR/hermes/profile-distribution"
+HOOKS_SRC_DIR="$PACKAGE_DIR/hermes/hooks"
+PLUGINS_SRC_DIR="$PACKAGE_DIR/hermes/plugins"
 
 if [ ! -f "$HELPER_LIB_SRC_DIR/orch-common.sh" ]; then
     log_err "Helper library missing: $HELPER_LIB_SRC_DIR/orch-common.sh"
     exit 1
 fi
 
-if [ ! -f "$RULES_SRC" ]; then
-    log_err "Risk rulebook missing: $RULES_SRC"
+if [ ! -f "$POLICY_SRC" ]; then
+    log_err "Risk policy missing: $POLICY_SRC"
     exit 1
 fi
 
@@ -173,11 +175,26 @@ mkdir -p "$ORCHESTRA_HOME/profile-distribution"
 cp -R "$PROFILE_DIST_SRC"/. "$ORCHESTRA_HOME/profile-distribution"/
 log_ok "Profile distribution installed: $ORCHESTRA_HOME/profile-distribution"
 
-if [ ! -f "$ORCHESTRA_HOME/rules.json" ]; then
-    cp "$RULES_SRC" "$ORCHESTRA_HOME/rules.json"
-    log_ok "Default risk rules installed: $ORCHESTRA_HOME/rules.json"
+if [ ! -f "$ORCHESTRA_HOME/risk-policy.yaml" ]; then
+    cp "$POLICY_SRC" "$ORCHESTRA_HOME/risk-policy.yaml"
+    log_ok "Canonical risk policy installed: $ORCHESTRA_HOME/risk-policy.yaml"
 else
-    log_warn "Existing risk rules preserved: $ORCHESTRA_HOME/rules.json"
+    log_warn "Existing risk policy preserved: $ORCHESTRA_HOME/risk-policy.yaml"
+fi
+
+if [ -d "$HOOKS_SRC_DIR" ]; then
+    rm -rf "$ORCHESTRA_HOME/hooks"
+    mkdir -p "$ORCHESTRA_HOME/hooks"
+    cp -R "$HOOKS_SRC_DIR"/. "$ORCHESTRA_HOME/hooks"/
+    find "$ORCHESTRA_HOME/hooks" -type f -name "*.sh" -exec chmod +x {} \;
+    log_ok "Hermes hook assets installed: $ORCHESTRA_HOME/hooks"
+fi
+
+if [ -d "$PLUGINS_SRC_DIR" ]; then
+    rm -rf "$ORCHESTRA_HOME/plugins"
+    mkdir -p "$ORCHESTRA_HOME/plugins"
+    cp -R "$PLUGINS_SRC_DIR"/. "$ORCHESTRA_HOME/plugins"/
+    log_ok "Hermes plugin assets installed: $ORCHESTRA_HOME/plugins"
 fi
 
 for helper in orch-init orch-start orch-stop orch-status orch-bus-loop orch-profile-sync orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify; do
@@ -218,7 +235,9 @@ echo "  SOUL:       $SOUL_DST"
 echo "  Skills:     $HERMES_SKILLS_DIR/{dev-orchestra,claude-supervisor,codex-executor,escalation-handler}"
 echo "  Template:   $SETTINGS_DST"
 echo "  Helpers:    $LOCAL_BIN_DIR/orch-*"
-echo "  Rules:      $ORCHESTRA_HOME/rules.json"
+echo "  RiskPolicy: $ORCHESTRA_HOME/risk-policy.yaml"
+echo "  Hooks:      $ORCHESTRA_HOME/hooks"
+echo "  Plugins:    $ORCHESTRA_HOME/plugins"
 echo "  Profiles:   $ORCHESTRA_HOME/profile-distribution"
 echo "  Tests:      $ORCHESTRA_HOME/tests"
 echo "  Runtime:    $RUNTIME_ROOT"
@@ -231,4 +250,4 @@ echo "  1. Ensure Claude Code and Codex CLI are installed and authenticated."
 echo "  2. Run: orch-init my-app ~/projects/my-app"
 echo "  3. Run: orch-start my-app ~/projects/my-app"
 echo "  4. Start upstream Hermes with: hermes chat"
-echo "  5. Configure a Remote Decision Channel separately; v1 does not require a specific transport."
+echo "  5. Configure Hermes to call hooks/pre_tool_call-risk-gate.sh if you want runtime pre_tool_call enforcement."

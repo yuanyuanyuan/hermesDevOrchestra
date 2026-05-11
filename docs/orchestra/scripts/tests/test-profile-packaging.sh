@@ -26,6 +26,9 @@ git -C "$PROJECT_DIR" init >/dev/null
 
 cat > "$PROJECT_DIR/.hermes/profiles/implementer.override.yaml" <<'YAML'
 model: claude
+engine:
+  flags: --dangerously-skip-permissions --json
+  fallback: null
 toolsets:
   enabled: [web]
   disabled: [code_execution]
@@ -46,6 +49,11 @@ assert_file_exists "$SOUL_OUT" "generated implementer SOUL missing"
 assert_file_exists "$PROJECT_JSON" "project metadata missing"
 
 assert_contains "model: claude" "$CONFIG_OUT" "override model not applied"
+assert_contains "engine:" "$CONFIG_OUT" "engine block missing"
+assert_contains "cli: codex" "$CONFIG_OUT" "base engine cli missing"
+assert_contains "mode: exec" "$CONFIG_OUT" "base engine mode missing"
+assert_contains "flags: --dangerously-skip-permissions --json" "$CONFIG_OUT" "engine flags override missing"
+assert_contains "fallback: null" "$CONFIG_OUT" "engine fallback null override missing"
 assert_contains "enabled: [terminal, file, memory, kanban, web]" "$CONFIG_OUT" "toolset merge output incorrect"
 assert_contains "disabled: [delegation, messaging, browser, code_execution]" "$CONFIG_OUT" "disabled toolset merge output incorrect"
 assert_contains "Project-only rule: check project constraints before coding." "$SOUL_OUT" "project SOUL fragment missing"
@@ -69,7 +77,7 @@ data = json.load(open(sys.argv[1], encoding="utf-8"))
 assert data["project_slug"] == "test-proj"
 assert data["board_slug"] == "test-proj"
 assert data["memory_namespace"] == "project:test-proj"
-assert data["profile_catalog_version"] == "2026-05-10-phase21"
+assert data["profile_catalog_version"] == "2026-05-11-phase24"
 PY
 
 test_done

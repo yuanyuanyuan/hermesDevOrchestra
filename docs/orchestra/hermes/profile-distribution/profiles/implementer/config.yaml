@@ -1,5 +1,10 @@
 status: active
 model: codex
+engine:
+  cli: codex
+  mode: exec
+  flags: --full-auto --json
+  fallback: claude
 toolsets:
   enabled: [terminal, file, code_execution, memory, kanban]
   disabled: [delegation, messaging, browser]

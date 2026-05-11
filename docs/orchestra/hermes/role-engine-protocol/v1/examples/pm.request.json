@@ -1,0 +1,46 @@
+{
+  "protocol": "hermes-role-engine/v1",
+  "role": "pm",
+  "task_type": "clarification",
+  "correlation_id": "pm-call-alpha-t42-3",
+  "turn": 3,
+  "project_workspace": "/data/projects/alpha",
+  "task_id": "t_42",
+  "task_body": "用户反馈重启浏览器后需要重新登录。",
+  "task_summary": "确认登录态目标与会话保活约束。",
+  "current_stage": "clarification",
+  "conversation_history": {
+    "summary": "Earlier PM turns confirmed the issue is browser restart, not token refresh.",
+    "recent_turns": [
+      {
+        "turn": 1,
+        "role": "pm",
+        "content": "请确认目标是 7 天免登录还是会话级登录。",
+        "decision_tags": [
+          "clarify"
+        ]
+      },
+      {
+        "turn": 2,
+        "role": "user",
+        "content": "目标是 7 天免登录。",
+        "decision_tags": [
+          "approved"
+        ]
+      }
+    ]
+  },
+  "handoff_from_parent": null,
+  "last_engine_error": null,
+  "rollback_count": 0,
+  "instructions": {
+    "role": "PM",
+    "goal": "继续澄清需求直到可拆解任务。",
+    "constraints": [
+      "一次只问一个问题",
+      "不要做架构决策",
+      "输出必须是结构化 JSON"
+    ],
+    "output_format": "structured_json"
+  }
+}

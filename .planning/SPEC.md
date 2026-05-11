@@ -2,7 +2,7 @@
 
 **Version:** 1.0.0  
 **Date:** 2026-04-25  
-**Applies to:** REQUIREMENTS.md v1 (60 requirements)  
+**Applies to:** `.planning/milestones/v1.0-REQUIREMENTS.md` v1 archive (60 requirements)  
 **Status:** COMPLETE — v1 specification package verified by GSD phases 1-7  
 
 This document specifies the Hermes Dev Orchestra system: a single-developer, multi-project AI development orchestration layer that coordinates Claude Code CLI (supervision/decision) and Codex CLI (execution) through a per-project file bus, with three-layer risk authority and remote decision support.
@@ -13,7 +13,7 @@ This document specifies the Hermes Dev Orchestra system: a single-developer, mul
 
 ### SPEC-01 — Unified specification map
 
-This `SPEC.md` is the unified v1 specification package. Appendix C maps every v1 requirement from `.planning/REQUIREMENTS.md` to a concrete section in this document.
+This `SPEC.md` is the unified v1 specification package. Appendix C maps every v1 requirement from `.planning/milestones/v1.0-REQUIREMENTS.md` to a concrete section in this document.
 
 ### SPEC-02 — Inline implementable contracts
 
@@ -1071,6 +1071,6 @@ For JSON Schema validation, use draft-07 with the structural constraints above. 
 ---
 
 *Specification generated: 2026-04-25*  
-*Based on: REQUIREMENTS.md v1 (60 requirements)*  
+*Based on: `.planning/milestones/v1.0-REQUIREMENTS.md` v1 archive (60 requirements)*  
 *Input materials: README.md, SOUL.md, dev-orchestra/SKILL.md, claude-supervisor/SKILL.md, codex-executor/SKILL.md, escalation-handler/SKILL.md, setup.sh, settings.json*  
 *Design doc: ~/.gstack/projects/hermes/stark-main-design-20260425.md*

@@ -70,6 +70,30 @@ assert_file_exists "$CODEX_RESUME_LOG" "Codex should resume after user approval"
 rm -f "$CODEX_RESUME_LOG" "$RUNTIME_DIR/codex-result.md" "$RUNTIME_DIR/claude-decision.md"
 rm -rf "$STATE_ROOT/test-proj/pending-decisions"
 mkdir -p "$STATE_ROOT/test-proj/pending-decisions"
+cat > "$RUNTIME_DIR/task.md" <<'JSON'
+{"schema_version":"1.0","project_id":"test-proj","task_id":"task-l4","correlation_id":"corr-l4","description":"git push origin main --force"}
+JSON
+cat > "$RUNTIME_DIR/codex-question.md" <<'JSON'
+{"schema_version":"1.0","project_id":"test-proj","task_id":"task-l4","correlation_id":"corr-l4","question":"Need L4 approval"}
+JSON
+cat > "$RUNTIME_DIR/escalation.md" <<'JSON'
+{"schema_version":"1.0","project_id":"test-proj","task_id":"task-l4","correlation_id":"corr-l4","level":"L4","type":"SECURITY","details":"git push origin main --force"}
+JSON
+
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
+l4_approval_id="$(find "$STATE_ROOT/test-proj/pending-decisions" -name '*.json' -printf '%f\n' | sed 's/\.json$//')"
+set +e
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-approve" "$l4_approval_id" "approved fixture" >/tmp/orch-risk-l4-bad.out 2>/tmp/orch-risk-l4-bad.err
+bad_phrase_status=$?
+set -e
+assert_exit_code 7 "$bad_phrase_status" "L4 approval should require fixed phrase"
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-approve" "$l4_approval_id" "APPROVE-L4 $l4_approval_id" >/tmp/orch-risk-l4-good.out
+"$REPO_ROOT/docs/orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
+assert_file_exists "$CODEX_RESUME_LOG" "Codex should resume after exact L4 approval phrase"
+
+rm -f "$CODEX_RESUME_LOG" "$RUNTIME_DIR/codex-result.md" "$RUNTIME_DIR/claude-decision.md"
+rm -rf "$STATE_ROOT/test-proj/pending-decisions"
+mkdir -p "$STATE_ROOT/test-proj/pending-decisions"
 cat > "$RUNTIME_DIR/claude-decision.md" <<'JSON'
 {"schema_version":"1.0","project_id":"test-proj","task_id":"task-2","correlation_id":"corr-2","author":"claude","authority":"L2","level":"L2","decision":"APPROVED","details":"修改 JWT","assessment":{"assessed_level":"L2"},"execution":{"authority_sufficient":true}}
 JSON
@@ -80,7 +104,7 @@ cat > "$RUNTIME_DIR/codex-question.md" <<'JSON'
 {"schema_version":"1.0","project_id":"test-proj","task_id":"task-2","correlation_id":"corr-2","question":"Need decision"}
 JSON
 "$REPO_ROOT/docs/orchestra/scripts/bin/orch-bus-loop" test-proj "$PROJECT_DIR" --once
-find "$STATE_ROOT/test-proj/pending-decisions" -name '*.json' | grep -q . || fail "under-classified L2 with L4 text should create pending decision" "pending" "missing"
+find "$STATE_ROOT/test-proj/pending-decisions" -name '*.json' | grep -q . || fail "under-classified L2 with L3 text should create pending decision" "pending" "missing"
 [ ! -f "$CODEX_RESUME_LOG" ] || fail "under-classified Claude decision must not resume Codex" "no Codex" "resumed"
 
 test_done

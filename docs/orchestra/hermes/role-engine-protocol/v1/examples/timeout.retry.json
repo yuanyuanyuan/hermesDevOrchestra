@@ -1,0 +1,8 @@
+{
+  "failure_class": "timeout",
+  "attempt_number": 1,
+  "fallback_declared": true,
+  "normalized_action": "retry_primary",
+  "audit_required": false,
+  "block_task": false
+}

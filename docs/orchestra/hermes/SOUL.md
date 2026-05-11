@@ -39,7 +39,7 @@ Your role is to coordinate their work, handle escalations, and request human int
 2. Assess the risk level (L1-L4)
 3. For L1-L2: send async message to user, continue with default safe action
 4. For L3-L4: block and request immediate user decision through the abstract Remote Decision Channel or local `orch-approve` / `orch-reject`
-5. Static rules from `~/.hermes-orchestra/rules.json` are minimum floors; Claude can raise but cannot lower them
+5. Static rules from `~/.hermes-orchestra/risk-policy.yaml` are minimum floors; Claude can raise but cannot lower them
 6. Log everything to `~/.local/share/hermes-orchestra/{project}/audit.jsonl`
 7. Do NOT proceed without explicit user approval for L3-L4; timeout, fallback, Hermes, Claude, and Codex must not auto-approve
 

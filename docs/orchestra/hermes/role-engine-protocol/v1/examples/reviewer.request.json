@@ -1,0 +1,46 @@
+{
+  "protocol": "hermes-role-engine/v1",
+  "role": "reviewer",
+  "task_type": "review",
+  "correlation_id": "reviewer-call-alpha-t77-1",
+  "turn": 1,
+  "project_workspace": "/data/projects/alpha",
+  "task_id": "t_77",
+  "task_body": "审查实现 7 天免登录的代码变更。",
+  "task_summary": "确认安全边界、回归风险和测试覆盖。",
+  "current_stage": "review",
+  "conversation_history": {
+    "summary": "No prior reviewer turns.",
+    "recent_turns": []
+  },
+  "handoff_from_parent": {
+    "summary": "Implementer 已完成改动并声明测试通过。",
+    "artifact_refs": [
+      "tests/auth/test_persistent_login.rs"
+    ]
+  },
+  "last_engine_error": null,
+  "rollback_count": 0,
+  "instructions": {
+    "role": "Reviewer",
+    "goal": "给出结构化审查结论。",
+    "constraints": [
+      "优先指出 bug、风险、行为回归和缺失测试",
+      "保持只读心智",
+      "输出必须为结构化 JSON"
+    ],
+    "review_scope": {
+      "changed_files": [
+        "src/auth/session_store.rs",
+        "src/routes/login.rs",
+        "tests/auth/test_persistent_login.rs"
+      ],
+      "focus": [
+        "session fixation",
+        "token rotation",
+        "test coverage"
+      ]
+    },
+    "output_format": "structured_json"
+  }
+}

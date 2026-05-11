@@ -1,0 +1,8 @@
+{
+  "failure_class": "crash",
+  "attempt_number": 2,
+  "fallback_declared": false,
+  "normalized_action": "block",
+  "audit_required": true,
+  "block_task": true
+}

@@ -62,6 +62,20 @@
 
 边界：fixed Runtime bus filenames represent one active task slot per project。当前固定 Runtime bus 文件是 `task.md, codex-question.md, claude-decision.md, escalation.md, codex-result.md, review-result.md`；它们 are not a per-project multi-task parallel execution protocol。排队或追加任务可以存在于 State/todo 层，但同一项目的 Runtime bus 不表达多个同时活动任务。
 
+Phase 23 起，Runtime 只增加一层轻量 routing metadata，写入 `current-task.json`：
+- `workflow_state`
+- `routing_reason`
+- `resume_target`
+- `handoff_ref`
+
+这些字段只表达路由检查点，不复制 Hermes Kanban 的主状态机。block reason 使用固定前缀：`needs-user:`、`needs-review:`、`research-required:`。任务恢复依赖 task metadata + handoff artifact，不依赖 CLI session resume。
+
+Phase 25 在同一条 runtime 上补了 4 个最小执行面：
+- `active-run.json`：记录当前 worker run、`expected_duration_max`、snapshot path 和 runner identity
+- `backpressure.json`：记录 implementer/reviewer 的基础 ready-queue pause 状态
+- structured handoff validation：`task_complete` / reviewer completion 必须带 `behaviors`、`regression`、`changed_files`、`decisions`、`pitfalls`
+- `observability_trace.db`：`post_tool_call` / `on_session_end` traces 与 env snapshots 的 sidecar 存储
+
 ---
 
 ## 三、三级决策流转机制
@@ -154,7 +168,7 @@ bash docs/orchestra/scripts/setup.sh
 setup.sh 会自动完成：
 - 检查上游 `hermes` 和 `tmux` 是否已安装
 - 提示 `claude` 和 `codex` CLI 是否可用，但不安装或更新它们
-- setup.sh installs Dev Orchestra SOUL、4 个自定义 Skills、4 层目录根、Claude hooks 模板、默认 `rules.json` 和 `orch-*` helper
+- setup.sh installs Dev Orchestra SOUL、4 个自定义 Skills、4 层目录根、Claude hooks 模板、canonical `risk-policy.yaml`、Hermes hook assets、Hermes observability plugin assets 和 `orch-*` helper
 - 安装 canonical profile catalog 到 `~/.hermes-orchestra/profile-distribution/`
 - 创建目录结构 `/tmp/hermes-orchestra/`、`~/.local/state/hermes-orchestra/`、`~/.local/share/hermes-orchestra/`、`~/.cache/hermes-orchestra/` 和 `~/.hermes-orchestra/`
 - 将 4 个自定义 Skills 安装到上游 layout：`~/.hermes/skills/{skill-name}/`
@@ -249,9 +263,14 @@ watcher 仍负责扫描 Runtime bus、派发 `task.md`、转发 Claude/Codex 文
 
 - Canonical base profile source 在 `docs/orchestra/hermes/profile-distribution/`
 - 项目 override source 在 `{repo}/.hermes/profiles/`
+- `model` 仍然表示 Hermes 路由层模型；外部执行引擎单独走 `engine.cli/mode/flags/fallback`
+- `engine` 由 checked-in role `config.yaml` 提供默认值，项目 override 只覆盖声明过的字段，不需要重写整个对象
 - `reviewer` 是 runtime canonical slug；`tech-reviewer` 只保留为设计期旧名
 - 生成后的项目级 Hermes home 在 `{repo}/.hermes/projects/{project_slug}/`
 - `SOUL.md` 组装顺序固定为 `global -> project -> role`
+- 外部 CLI 契约固定在 `docs/orchestra/hermes/role-engine-protocol/v1/`
+- Phase 22 首批闭环角色只有 `pm`、`implementer`、`reviewer`
+- 失败归一化规则是 retry once -> fallback once if declared -> block；`parse_error` 和 `schema_mismatch` 直接 block
 
 ### Step 6: 启动 Hermes 主控
 
@@ -271,6 +290,13 @@ hermes chat -q "管理 api-gateway 项目：实现 JWT 认证中间件"
 ## 六、日常使用示例
 
 文件名保留 `.md` 兼容命名，但内容使用 canonical JSON envelopes：`task.md`、`codex-question.md`、`claude-decision.md`、`codex-result.md`、`review-result.md` 都应包含 `schema_version`、`project_id`、`task_id`、`correlation_id`、`status`、`author`、`authority`、`timestamp` 等字段。
+
+另外，State 层的 `current-task.json` 只保留四个 routing 字段：`workflow_state`、`routing_reason`、`resume_target`、`handoff_ref`。跨角色切换依赖 child/follow-up task + `handoff_ref`；同角色解阻塞默认恢复原 task。
+
+Phase 25 额外增加：
+- `active-run.json`：worker 生命周期状态、timeout 契约、snapshot 引用
+- `backpressure.json`：基础 ready-depth pause 状态
+- `observability_trace.db`：`post_tool_call` / `on_session_end` traces 与 env snapshots 的 sidecar 存储
 
 ### 示例 1：单项目开发任务
 
@@ -477,7 +503,7 @@ journalctl --user -u hermes-gateway -f
 
 1. **审计日志不可删**: `~/.local/share/hermes-orchestra/{project}/audit.jsonl` 是 durable JSONL 记录，应纳入后续备份/留存策略
 2. **git 是底线**: 任何危险操作前，Hermes 自动执行 `git stash` 或 `git branch backup-{timestamp}`
-3. **L3-L4 绝不自动**: 任何标记为 DANGER/CRITICAL 的操作，必须用户明确输入 "批准"
+3. **L3-L4 绝不自动**: L3 必须显式批准；L4 还必须输入固定短语 `APPROVE-L4 <approval_id>`
 4. **API Key 隔离**: Claude Code 用 Anthropic OAuth，Codex 用 OpenAI Key，Hermes 用 OpenRouter，互不混用
 5. **tmux 会话分离**: 不同项目的会话相互隔离，防止交叉污染
 

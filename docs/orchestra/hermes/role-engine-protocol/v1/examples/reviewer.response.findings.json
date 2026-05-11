@@ -1,0 +1,27 @@
+{
+  "protocol": "hermes-role-engine/v1",
+  "role": "reviewer",
+  "correlation_id": "reviewer-call-alpha-t77-1",
+  "turn": 1,
+  "status": "findings",
+  "next_action": "block",
+  "role_specific_payload": {
+    "summary": "登录态持久化路径缺少 token 轮换校验。",
+    "findings": [
+      {
+        "severity": "high",
+        "path": "src/routes/login.rs",
+        "line": 84,
+        "issue": "成功登录后没有立即轮换旧持久 token，存在重放窗口。",
+        "recommended_fix": "在登录成功后作废旧 token，并只保留当前设备有效 token。"
+      }
+    ],
+    "required_follow_up": "修复 token 轮换问题后重新提交 review。"
+  },
+  "conversation_context": [
+    {
+      "turn": 1,
+      "summary": "Reviewer blocked on token rotation gap."
+    }
+  ]
+}

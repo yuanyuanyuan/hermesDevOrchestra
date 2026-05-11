@@ -65,6 +65,76 @@ orch_project_memory_namespace() {
     printf 'project:%s' "$1"
 }
 
+orch_role_default_expected_duration() {
+    case "${1:-}" in
+        implementer) printf '%s\n' "60min" ;;
+        reviewer) printf '%s\n' "10min" ;;
+        qa-tester) printf '%s\n' "20min" ;;
+        researcher) printf '%s\n' "45min" ;;
+        pm) printf '%s\n' "30min" ;;
+        devops-engineer) printf '%s\n' "45min" ;;
+        sre-observer) printf '%s\n' "30min" ;;
+        orchestrator) printf '%s\n' "20min" ;;
+        *) printf '%s\n' "30min" ;;
+    esac
+}
+
+orch_parse_duration_seconds() {
+    local raw="${1:-}"
+
+    python3 - "$raw" <<'PY'
+import re
+import sys
+
+raw = (sys.argv[1] or "").strip().lower()
+if not raw:
+    print(0)
+    raise SystemExit(0)
+
+match = re.fullmatch(r"(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours)?", raw)
+if not match:
+    print(0)
+    raise SystemExit(0)
+
+value = int(match.group(1))
+unit = match.group(2) or "s"
+factors = {
+    "s": 1,
+    "sec": 1,
+    "secs": 1,
+    "second": 1,
+    "seconds": 1,
+    "m": 60,
+    "min": 60,
+    "mins": 60,
+    "minute": 60,
+    "minutes": 60,
+    "h": 3600,
+    "hr": 3600,
+    "hrs": 3600,
+    "hour": 3600,
+    "hours": 3600,
+}
+print(value * factors.get(unit, 1))
+PY
+}
+
+orch_task_expected_duration() {
+    local task_file="$1"
+    local role="${2:-}"
+    local value=""
+
+    for field in expected_duration_max instructions.expected_duration_max metadata.expected_duration_max; do
+        value="$(orch_json_field "$task_file" "$field")"
+        if [ -n "$value" ] && [ "$value" != "null" ]; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done
+
+    orch_role_default_expected_duration "$role"
+}
+
 orch_profile_catalog_dir() {
     if [ -d "$ORCHESTRA_HOME/profile-distribution" ]; then
         printf '%s/profile-distribution' "$ORCHESTRA_HOME"
@@ -74,6 +144,27 @@ orch_profile_catalog_dir() {
     local fallback
     fallback="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../hermes/profile-distribution" && pwd)"
     printf '%s' "$fallback"
+}
+
+orch_active_run_file() {
+    printf '%s\n' "$STATE_DIR/active-run.json"
+}
+
+orch_backpressure_file() {
+    printf '%s\n' "$STATE_DIR/backpressure.json"
+}
+
+orch_trace_db_file() {
+    printf '%s\n' "$AUDIT_DIR/observability_trace.db"
+}
+
+orch_managed_workspace_root() {
+    local workspace_root
+
+    workspace_root="$(orch_json_field "$STATE_DIR/paths.json" "workspace_root")"
+    if [ -n "$workspace_root" ] && [ "$workspace_root" != "null" ]; then
+        printf '%s\n' "$workspace_root"
+    fi
 }
 
 orch_atomic_write() {
@@ -182,19 +273,40 @@ orch_tmux_session_healthy() {
 orch_write_project_state() {
     local state="$1"
     local task_id="${2:-null}"
+    local workflow_state="${3-__CLEAR__}"
+    local routing_reason="${4-__CLEAR__}"
+    local resume_target="${5-__CLEAR__}"
+    local handoff_ref="${6-__CLEAR__}"
 
     mkdir -p "$STATE_DIR"
 
-    python3 - "$STATE_DIR/current-task.json" "$PROJECT_ID" "$state" "$task_id" "$(orch_now)" <<'PY'
+    python3 - "$STATE_DIR/current-task.json" "$PROJECT_ID" "$state" "$task_id" "$(orch_now)" "$workflow_state" "$routing_reason" "$resume_target" "$handoff_ref" <<'PY'
 import json, sys
-path, project_id, state, task_id, now = sys.argv[1:]
+path, project_id, state, task_id, now, workflow_state, routing_reason, resume_target, handoff_ref = sys.argv[1:]
 if task_id in ("", "null"):
     task_id = None
+try:
+    with open(path, encoding="utf-8") as handle:
+        current = json.load(handle)
+except Exception:
+    current = {}
+
+def normalize(existing_value, raw_value):
+    if raw_value == "__KEEP__":
+        return existing_value
+    if raw_value in ("", "null", "__CLEAR__"):
+        return None
+    return raw_value
+
 with open(path, "w", encoding="utf-8") as handle:
     json.dump({
         "project_id": project_id,
         "state": state,
         "task_id": task_id,
+        "workflow_state": normalize(current.get("workflow_state"), workflow_state),
+        "routing_reason": normalize(current.get("routing_reason"), routing_reason),
+        "resume_target": normalize(current.get("resume_target"), resume_target),
+        "handoff_ref": normalize(current.get("handoff_ref"), handoff_ref),
         "updated_at": now,
     }, handle, indent=2)
     handle.write("\n")
@@ -227,6 +339,574 @@ try:
         print(value)
 except Exception:
     pass
+PY
+}
+
+orch_parse_block_reason_prefix() {
+    local reason="${1:-}"
+
+    case "$reason" in
+        needs-user:*) echo "needs-user:" ;;
+        needs-review:*) echo "needs-review:" ;;
+        research-required:*) echo "research-required:" ;;
+        *) return 1 ;;
+    esac
+}
+
+orch_normalize_block_reason() {
+    local default_prefix="${1:-needs-review:}"
+    local detail="${2:-}"
+    local prefix
+
+    if prefix="$(orch_parse_block_reason_prefix "$detail" 2>/dev/null)"; then
+        printf '%s\n' "$detail"
+        return 0
+    fi
+
+    detail="${detail#"${detail%%[![:space:]]*}"}"
+    if [ -z "$detail" ]; then
+        detail="routing decision pending"
+    fi
+    printf '%s%s\n' "$default_prefix" "$detail"
+}
+
+orch_build_resume_target() {
+    local target_type="${1:-task}"
+    local target_id="${2:-}"
+
+    if [ -z "$target_id" ]; then
+        return 1
+    fi
+    printf '%s:%s\n' "$target_type" "$target_id"
+}
+
+orch_task_needs_research() {
+    local file="$1"
+
+    python3 - "$file" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+
+def get(obj, path):
+    value = obj
+    for part in path.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    return value
+
+def truthy(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "required", "needed", "research"}
+    return bool(value)
+
+if get(data, "next_action") == "create_research_task":
+    sys.exit(0)
+
+for path in (
+    "research_required",
+    "research_needed",
+    "role_specific_payload.research_required",
+    "role_specific_payload.research_needed",
+):
+    if truthy(get(data, path)):
+        sys.exit(0)
+
+allowed = {
+    "new_stack",
+    "new_capability",
+    "unverified_stack",
+    "solution_branching",
+    "tradeoff",
+    "branching",
+    "explicit_research_request",
+    "comparison",
+    "proposal",
+    "feasibility",
+}
+for path in ("research_triggers", "role_specific_payload.research_triggers"):
+    value = get(data, path)
+    if isinstance(value, list):
+        normalized = {str(item).strip().lower() for item in value}
+        if normalized & allowed:
+            sys.exit(0)
+
+research_topic = get(data, "research.topic")
+if isinstance(research_topic, str) and research_topic.strip():
+    sys.exit(0)
+
+sys.exit(1)
+PY
+}
+
+orch_task_needs_qa() {
+    local file="$1"
+
+    python3 - "$file" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+
+def get(obj, path):
+    value = obj
+    for part in path.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return None
+        value = value[part]
+    return value
+
+def truthy(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "required", "high", "material"}
+    return bool(value)
+
+for path in (
+    "qa_required",
+    "role_specific_payload.qa_required",
+    "user_visible_change",
+    "role_specific_payload.user_visible_change",
+    "qa.user_visible_change",
+    "cross_module_integration",
+    "role_specific_payload.cross_module_integration",
+    "cross_boundary_integration",
+    "role_specific_payload.cross_boundary_integration",
+    "qa.cross_boundary_integration",
+):
+    if truthy(get(data, path)):
+        sys.exit(0)
+
+for path in (
+    "acceptance_risk",
+    "role_specific_payload.acceptance_risk",
+    "regression_risk",
+    "role_specific_payload.regression_risk",
+    "qa.acceptance_risk",
+    "qa.regression_risk",
+):
+    value = get(data, path)
+    if isinstance(value, str) and value.strip().lower() in {"high", "material", "required"}:
+        sys.exit(0)
+    if value is True:
+        sys.exit(0)
+
+sys.exit(1)
+PY
+}
+
+orch_task_graph_file() {
+    echo "$STATE_DIR/task-graph.json"
+}
+
+orch_write_active_run() {
+    local task_id="$1"
+    local role="$2"
+    local runner_kind="$3"
+    local runner_id="$4"
+    local workspace="$5"
+    local expected_duration="$6"
+    local snapshot_path="${7:-}"
+    local engine_name="${8:-}"
+    local task_file="${9:-$RUNTIME_DIR/task.md}"
+    local active_run_file
+
+    active_run_file="$(orch_active_run_file)"
+    mkdir -p "$STATE_DIR"
+
+    python3 - "$active_run_file" "$PROJECT_ID" "$task_id" "$role" "$runner_kind" "$runner_id" "$workspace" "$expected_duration" "$(orch_parse_duration_seconds "$expected_duration")" "$snapshot_path" "$engine_name" "$task_file" "$(orch_now)" "$(date +%s)" <<'PY'
+import json
+import os
+import sys
+
+(
+    path,
+    project_id,
+    task_id,
+    role,
+    runner_kind,
+    runner_id,
+    workspace,
+    expected_duration,
+    expected_duration_seconds,
+    snapshot_path,
+    engine_name,
+    task_file,
+    started_at,
+    started_at_epoch,
+) = sys.argv[1:]
+
+record = {
+    "project_id": project_id,
+    "task_id": task_id,
+    "role": role,
+    "runner_kind": runner_kind,
+    "runner_id": runner_id,
+    "workspace": workspace or None,
+    "expected_duration_max": expected_duration,
+    "expected_duration_seconds": int(expected_duration_seconds or 0),
+    "snapshot_path": snapshot_path or None,
+    "engine_name": engine_name or None,
+    "task_file": task_file,
+    "started_at": started_at,
+    "started_at_epoch": int(started_at_epoch),
+}
+
+tmp = f"{path}.tmp"
+with open(tmp, "w", encoding="utf-8") as handle:
+    json.dump(record, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+os.replace(tmp, path)
+PY
+}
+
+orch_clear_active_run() {
+    rm -f "$(orch_active_run_file)"
+}
+
+orch_observability_python() {
+    python3 - "$@" <<'PY'
+import os
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+action = sys.argv[2]
+args = sys.argv[3:]
+
+os.makedirs(os.path.dirname(db_path), exist_ok=True)
+conn = sqlite3.connect(db_path)
+conn.execute(
+    """
+    create table if not exists lifecycle_events (
+      id integer primary key autoincrement,
+      project_id text not null,
+      task_id text,
+      role text,
+      status text,
+      details text,
+      event_at text not null
+    )
+    """
+)
+conn.execute(
+    """
+    create table if not exists env_snapshots (
+      id integer primary key autoincrement,
+      project_id text not null,
+      task_id text,
+      snapshot_path text,
+      git_status text,
+      disk_free text,
+      hermes_status text,
+      captured_at text not null
+    )
+    """
+)
+
+if action == "lifecycle":
+    project_id, task_id, role, status, details, event_at = args
+    conn.execute(
+        "insert into lifecycle_events(project_id, task_id, role, status, details, event_at) values (?, ?, ?, ?, ?, ?)",
+        (project_id, task_id, role, status, details, event_at),
+    )
+elif action == "snapshot":
+    project_id, task_id, snapshot_path, git_status, disk_free, hermes_status, captured_at = args
+    conn.execute(
+        "insert into env_snapshots(project_id, task_id, snapshot_path, git_status, disk_free, hermes_status, captured_at) values (?, ?, ?, ?, ?, ?, ?)",
+        (project_id, task_id, snapshot_path, git_status, disk_free, hermes_status, captured_at),
+    )
+else:
+    raise SystemExit(f"unsupported action: {action}")
+
+conn.commit()
+conn.close()
+PY
+}
+
+orch_record_lifecycle_event() {
+    local task_id="$1"
+    local role="$2"
+    local status="$3"
+    local details="${4:-}"
+
+    orch_observability_python "$(orch_trace_db_file)" lifecycle "$PROJECT_ID" "$task_id" "$role" "$status" "$details" "$(orch_now)"
+}
+
+orch_capture_env_snapshot() {
+    local task_id="$1"
+    local project_dir="$2"
+    local snapshot_dir="$AUDIT_DIR/env-snapshots"
+    local snapshot_path="$snapshot_dir/${task_id}.$(date +%s).json"
+    local git_status=""
+    local disk_free=""
+    local hermes_status=""
+
+    mkdir -p "$snapshot_dir"
+
+    if [ -d "$project_dir" ] && command -v git >/dev/null 2>&1; then
+        git_status="$(git -C "$project_dir" status --short --branch 2>&1 || true)"
+    fi
+    disk_free="$(df -h 2>&1 | head -n 5 || true)"
+    if command -v hermes >/dev/null 2>&1; then
+        hermes_status="$(hermes status 2>&1 | head -n 20 || true)"
+    else
+        hermes_status="hermes unavailable"
+    fi
+
+    python3 - "$snapshot_path" "$PROJECT_ID" "$task_id" "$project_dir" "$git_status" "$disk_free" "$hermes_status" "$(orch_now)" <<'PY'
+import json
+import sys
+
+path, project_id, task_id, project_dir, git_status, disk_free, hermes_status, captured_at = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump({
+        "project_id": project_id,
+        "task_id": task_id,
+        "project_dir": project_dir,
+        "captured_at": captured_at,
+        "git_status": git_status,
+        "disk_free": disk_free,
+        "hermes_status": hermes_status,
+    }, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+PY
+
+    orch_observability_python "$(orch_trace_db_file)" snapshot "$PROJECT_ID" "$task_id" "$snapshot_path" "$git_status" "$disk_free" "$hermes_status" "$(orch_now)"
+    printf '%s\n' "$snapshot_path"
+}
+
+orch_write_backpressure_state() {
+    local current_role="$1"
+    local downstream_role="$2"
+    local ready_count="$3"
+    local downstream_ready_count="$4"
+    local ratio="$5"
+    local task_id="${6:-}"
+    local file
+
+    file="$(orch_backpressure_file)"
+    mkdir -p "$STATE_DIR"
+    python3 - "$file" "$PROJECT_ID" "$current_role" "$downstream_role" "$ready_count" "$downstream_ready_count" "$ratio" "$task_id" "$(orch_now)" <<'PY'
+import json
+import sys
+
+path, project_id, current_role, downstream_role, ready_count, downstream_ready_count, ratio, task_id, paused_at = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump({
+        "project_id": project_id,
+        "current_role": current_role,
+        "downstream_role": downstream_role,
+        "ready_count": int(float(ready_count)),
+        "downstream_ready_count": int(float(downstream_ready_count)),
+        "ratio": float(ratio),
+        "task_id": task_id or None,
+        "paused_at": paused_at,
+    }, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+PY
+}
+
+orch_clear_backpressure_state() {
+    rm -f "$(orch_backpressure_file)"
+}
+
+orch_backpressure_reason_for_role() {
+    local current_role="${1:-}"
+    local graph_file
+
+    case "$current_role" in
+        implementer|reviewer) ;;
+        *) return 1 ;;
+    esac
+
+    graph_file="$(orch_task_graph_file)"
+    [ -f "$graph_file" ] || return 1
+
+    python3 - "$graph_file" "$current_role" <<'PY'
+import json
+import sys
+
+path, current_role = sys.argv[1:]
+with open(path, encoding="utf-8") as handle:
+    graph = json.load(handle)
+
+tasks = graph.get("tasks") if isinstance(graph, dict) else []
+if not isinstance(tasks, list):
+    raise SystemExit(1)
+
+downstream = {
+    "implementer": "reviewer",
+    "reviewer": "qa-tester",
+}.get(current_role)
+if not downstream:
+    raise SystemExit(1)
+
+def ready_count(role):
+    return sum(1 for item in tasks if item.get("role") == role and item.get("state") == "ready")
+
+current_ready = ready_count(current_role)
+downstream_ready = ready_count(downstream)
+ratio = current_ready / max(downstream_ready, 1)
+if current_ready > 0 and ratio > 2.0:
+    print(f"{current_role}|{downstream}|{current_ready}|{downstream_ready}|{ratio:.1f}")
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+orch_is_scoped_workspace() {
+    local workspace="${1:-}"
+    local managed_root=""
+
+    [ -n "$workspace" ] || return 1
+    managed_root="$(orch_managed_workspace_root)"
+
+    case "$workspace" in
+        "$RUNTIME_DIR"/workspaces/*) return 0 ;;
+    esac
+    if [ -n "$managed_root" ]; then
+        case "$workspace" in
+            "$managed_root"/*) return 0 ;;
+        esac
+    fi
+    return 1
+}
+
+orch_cleanup_workspace() {
+    local workspace="${1:-}"
+
+    if ! orch_is_scoped_workspace "$workspace"; then
+        return 1
+    fi
+    [ -d "$workspace" ] || return 0
+
+    if git -C "$workspace" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        git -C "$workspace" restore --source=HEAD --staged --worktree . >/dev/null 2>&1 || true
+        git -C "$workspace" clean -fd >/dev/null 2>&1 || true
+    else
+        rm -rf "$workspace"
+        mkdir -p "$workspace"
+    fi
+}
+
+orch_validate_handoff_payload() {
+    local source_file="$1"
+
+    python3 - "$source_file" <<'PY'
+import json
+import re
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+
+role = data.get("role")
+status = data.get("status")
+payload = data.get("role_specific_payload")
+if not isinstance(payload, dict):
+    raise SystemExit("role_specific_payload missing")
+
+needs_schema = (role, status) in {
+    ("implementer", "task_complete"),
+    ("reviewer", "approved"),
+    ("reviewer", "findings"),
+}
+if not needs_schema:
+    raise SystemExit(0)
+
+required = ("behaviors", "regression", "changed_files", "decisions", "pitfalls")
+for field in required:
+    if field not in payload:
+        raise SystemExit(f"handoff field missing: {field}")
+
+if not isinstance(payload["behaviors"], list):
+    raise SystemExit("behaviors must be a list")
+if not isinstance(payload["changed_files"], list):
+    raise SystemExit("changed_files must be a list")
+if not isinstance(payload["decisions"], list):
+    raise SystemExit("decisions must be a list")
+if not isinstance(payload["pitfalls"], list):
+    raise SystemExit("pitfalls must be a list")
+if not isinstance(payload["regression"], dict):
+    raise SystemExit("regression must be an object")
+
+unsafe = re.compile(r"(#!\/|<<['\"]?[A-Z_]+['\"]?|https?:\/\/[^ ]*(token|auth)|[`;$][^ \n]*rm\b|\$\(|\|\|)", re.IGNORECASE)
+for field in ("decisions", "pitfalls"):
+    for item in payload.get(field, []):
+        if isinstance(item, str) and unsafe.search(item):
+            raise SystemExit(f"unsafe handoff text in {field}")
+
+print("ok")
+PY
+}
+
+orch_task_graph_upsert() {
+    local task_id="$1"
+    local role="$2"
+    local task_state="$3"
+    local parents_csv="${4:-}"
+    local handoff_ref="${5:-}"
+    local title="${6:-}"
+    local graph_file
+
+    graph_file="$(orch_task_graph_file)"
+    mkdir -p "$STATE_DIR"
+    python3 - "$graph_file" "$PROJECT_ID" "$task_id" "$role" "$task_state" "$parents_csv" "$handoff_ref" "$title" "$(orch_now)" <<'PY'
+import json
+import os
+import sys
+
+path, project_id, task_id, role, task_state, parents_csv, handoff_ref, title, now = sys.argv[1:]
+parents = [item for item in parents_csv.split(",") if item]
+try:
+    with open(path, encoding="utf-8") as handle:
+        graph = json.load(handle)
+    if not isinstance(graph, dict):
+        raise ValueError("graph must be object")
+except Exception:
+    graph = {"project_id": project_id, "tasks": []}
+
+tasks = graph.get("tasks")
+if not isinstance(tasks, list):
+    tasks = []
+
+node = None
+for item in tasks:
+    if item.get("task_id") == task_id:
+        node = item
+        break
+
+if node is None:
+    node = {"task_id": task_id}
+    tasks.append(node)
+
+node["role"] = role
+node["state"] = task_state
+node["parents"] = parents
+node["handoff_ref"] = handoff_ref or None
+node["title"] = title or node.get("title") or None
+node["updated_at"] = now
+
+graph["project_id"] = project_id
+graph["updated_at"] = now
+graph["tasks"] = tasks
+
+tmp = f"{path}.tmp"
+with open(tmp, "w", encoding="utf-8") as handle:
+    json.dump(graph, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+os.replace(tmp, path)
 PY
 }
 
@@ -367,6 +1047,64 @@ PY
     fi
 }
 
+orch_policy_file() {
+    local package_dir
+
+    if [ -f "$ORCHESTRA_HOME/risk-policy.yaml" ]; then
+        printf '%s\n' "$ORCHESTRA_HOME/risk-policy.yaml"
+        return 0
+    fi
+
+    package_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    printf '%s/config/risk-policy.yaml\n' "$package_dir"
+}
+
+orch_l4_approval_phrase() {
+    local approval_id="${1:-}"
+
+    if [ -z "$approval_id" ]; then
+        return 1
+    fi
+    printf 'APPROVE-L4 %s\n' "$approval_id"
+}
+
+orch_valid_implementer_block_category() {
+    case "${1:-}" in
+        architecture-decision|external-dependency-unavailable|risk-policy-intercepted|critical-test-failure) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+orch_infer_implementer_block_category() {
+    local status="${1:-}"
+    local requested="${2:-}"
+    local detail="${3:-}"
+    local lowered
+
+    if orch_valid_implementer_block_category "$requested"; then
+        printf '%s\n' "$requested"
+        return 0
+    fi
+
+    if [ "$status" = "test_failed" ]; then
+        printf '%s\n' "critical-test-failure"
+        return 0
+    fi
+
+    lowered="$(printf '%s' "$detail" | tr '[:upper:]' '[:lower:]')"
+    case "$lowered" in
+        *risk-policy*|*approval*|*l3*|*l4*)
+            printf '%s\n' "risk-policy-intercepted"
+            ;;
+        *dependency*|*registry*|*network*|*service\ unavailable*|*package\ index*|*dns*)
+            printf '%s\n' "external-dependency-unavailable"
+            ;;
+        *)
+            printf '%s\n' "architecture-decision"
+            ;;
+    esac
+}
+
 orch_create_pending_decision() {
     local level="$1"
     local type="$2"
@@ -382,8 +1120,14 @@ orch_create_pending_decision() {
     local pending_dir
     local pending_file
     local runtime_mailbox
+    local approval_mode="explicit"
+    local required_phrase=""
 
     approval_id="$(orch_uuid)"
+    if [ "$level" = "L4" ]; then
+        approval_mode="fixed_phrase"
+        required_phrase="$(orch_l4_approval_phrase "$approval_id")"
+    fi
     created_at="$(orch_now)"
     created_at_epoch="$(date +%s)"
     expires_at_epoch="$((created_at_epoch + ttl))"
@@ -392,12 +1136,12 @@ orch_create_pending_decision() {
     runtime_mailbox="$RUNTIME_DIR/decision-request.$approval_id.json"
 
     mkdir -p "$pending_dir" "$RUNTIME_DIR"
-    python3 - "$pending_file" "$approval_id" "$PROJECT_ID" "$level" "$type" "$details" "$task_id" "$escalation_id" "$agent_source" "$ttl" "$created_at" "$created_at_epoch" "$expires_at_epoch" <<'PY'
+    python3 - "$pending_file" "$approval_id" "$PROJECT_ID" "$level" "$type" "$details" "$task_id" "$escalation_id" "$agent_source" "$ttl" "$created_at" "$created_at_epoch" "$expires_at_epoch" "$approval_mode" "$required_phrase" <<'PY'
 import json
 import os
 import sys
 
-path, approval_id, project_id, level, request_type, details, task_id, escalation_id, agent_source, ttl, created_at, created_at_epoch, expires_at_epoch = sys.argv[1:]
+path, approval_id, project_id, level, request_type, details, task_id, escalation_id, agent_source, ttl, created_at, created_at_epoch, expires_at_epoch, approval_mode, required_phrase = sys.argv[1:]
 record = {
     "approval_id": approval_id,
     "project_id": project_id,
@@ -413,6 +1157,8 @@ record = {
     "created_at": created_at,
     "created_at_epoch": int(created_at_epoch),
     "expires_at_epoch": int(expires_at_epoch),
+    "approval_mode": approval_mode,
+    "required_phrase": required_phrase,
     "status": "PENDING",
     "used_at": "",
     "decision": "",
@@ -516,6 +1262,9 @@ if not pending.get("project_id") or not pending.get("task_id"):
     sys.exit(5)
 if pending.get("binding_project_id") != pending.get("project_id") or pending.get("binding_task_id") != pending.get("task_id"):
     sys.exit(5)
+if decision == "APPROVED" and pending.get("approval_mode") == "fixed_phrase":
+    if rationale != pending.get("required_phrase"):
+        sys.exit(7)
 
 project_id = pending["project_id"]
 task_id = pending["task_id"]
@@ -567,6 +1316,7 @@ PY
         3) echo "Pending decision expired: $approval_id" >&2; exit 3 ;;
         4) echo "Pending decision already used: $approval_id" >&2; exit 4 ;;
         5) echo "Pending decision binding mismatch: $approval_id" >&2; exit 5 ;;
+        7) echo "Approval phrase mismatch: expected $(orch_json_field "$pending_file" "required_phrase")" >&2; exit 7 ;;
         *) echo "Pending decision resolution failed: $approval_id" >&2; [ -n "$lock_output" ] && echo "$lock_output" >&2; exit "$resolution_status" ;;
     esac
 

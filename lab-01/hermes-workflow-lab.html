@@ -755,7 +755,7 @@ tailwind.config = {
             <div x-show="deferTasks.length === 0" class="text-gray-600 text-[10px]">暂无 deferred 任务 — 在任务详情中点击 "Defer" 按钮创建</div>
           </div>
           <div class="text-[10px] text-gray-500 border-t border-gray-700 pt-1">
-            Path B 流程：Claude AskUserQuestion &rarr; PreToolUse hook defer &rarr; Worker 退出 &rarr; Dispatcher 读取 deferred_tool_use &rarr; --resume 恢复
+            Path B 流程：Claude AskUserQuestion &rarr; PreToolUse hook defer &rarr; Worker 退出 &rarr; Dispatcher 从 Kanban metadata 恢复上下文 &rarr; 重新 spawn worker 继续执行
           </div>
         </div>
 

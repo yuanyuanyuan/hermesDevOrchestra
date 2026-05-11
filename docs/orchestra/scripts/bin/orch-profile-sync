@@ -68,23 +68,54 @@ def parse_inline_list(text: str):
     return [item.strip() for item in body.split(",") if item.strip()]
 
 
+def parse_scalar(text: str):
+    value = text.split(":", 1)[1].strip()
+    if value == "null":
+        return None
+    return value
+
+
 def parse_config(path: str):
-    data = {"model": "", "status": "", "enabled": [], "disabled": []}
+    data = {
+        "model": "",
+        "status": "",
+        "enabled": [],
+        "disabled": [],
+        "engine": {"cli": "", "mode": "", "flags": "", "fallback": None},
+        "engine_fields": set(),
+    }
     if not os.path.isfile(path):
         return data
     with open(path, encoding="utf-8") as handle:
+        section = None
         for raw_line in handle:
-            line = raw_line.split("#", 1)[0].strip()
-            if not line:
+            line = raw_line.split("#", 1)[0].rstrip()
+            if not line.strip():
                 continue
-            if line.startswith("model:"):
-                data["model"] = line.split(":", 1)[1].strip()
-            elif line.startswith("status:"):
-                data["status"] = line.split(":", 1)[1].strip()
-            elif line.startswith("enabled:"):
-                data["enabled"] = parse_inline_list(line.split(":", 1)[1].strip())
-            elif line.startswith("disabled:"):
-                data["disabled"] = parse_inline_list(line.split(":", 1)[1].strip())
+            indent = len(line) - len(line.lstrip())
+            stripped = line.strip()
+            if indent == 0:
+                section = None
+                if stripped.startswith("model:"):
+                    data["model"] = parse_scalar(stripped) or ""
+                elif stripped.startswith("status:"):
+                    data["status"] = parse_scalar(stripped) or ""
+                elif stripped == "toolsets:":
+                    section = "toolsets"
+                elif stripped == "engine:":
+                    section = "engine"
+            elif section == "toolsets":
+                if stripped.startswith("enabled:"):
+                    data["enabled"] = parse_inline_list(stripped.split(":", 1)[1].strip())
+                elif stripped.startswith("disabled:"):
+                    data["disabled"] = parse_inline_list(stripped.split(":", 1)[1].strip())
+            elif section == "engine":
+                key, _, value = stripped.partition(":")
+                key = key.strip()
+                if key in data["engine"]:
+                    data["engine_fields"].add(key)
+                    value = value.strip()
+                    data["engine"][key] = None if value == "null" else value
     return data
 
 
@@ -114,6 +145,15 @@ def merge_toolsets(base_enabled, base_disabled, override_enabled, override_disab
     return enabled, disabled
 
 
+def merge_engine(base_engine, base_fields, override_engine, override_fields):
+    merged = dict(base_engine)
+    fields = set(base_fields)
+    for key in override_fields:
+        merged[key] = override_engine[key]
+        fields.add(key)
+    return merged, fields
+
+
 def read_text(path: str):
     if not os.path.isfile(path):
         return ""
@@ -132,11 +172,29 @@ def parse_distribution_version(path: str):
     return "unknown"
 
 
-def write_config(path: str, status: str, model: str, enabled, disabled):
+def write_config(path: str, status: str, model: str, enabled, disabled, engine, engine_fields):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(f"status: {status}\n")
         handle.write(f"model: {model}\n")
+        ordered_engine = []
+        for key in ("cli", "mode", "flags", "fallback"):
+            if key not in engine_fields:
+                continue
+            value = engine.get(key)
+            if value is None:
+                if key == "fallback":
+                    ordered_engine.append((key, None))
+                continue
+            if value:
+                ordered_engine.append((key, value))
+        if ordered_engine:
+            handle.write("engine:\n")
+            for key, value in ordered_engine:
+                if value is None:
+                    handle.write(f"  {key}: null\n")
+                else:
+                    handle.write(f"  {key}: {value}\n")
         handle.write("toolsets:\n")
         handle.write(f"  enabled: [{', '.join(enabled)}]\n")
         handle.write(f"  disabled: [{', '.join(disabled)}]\n")
@@ -188,11 +246,25 @@ for role in role_names:
         override_config["enabled"],
         override_config["disabled"],
     )
+    engine, engine_fields = merge_engine(
+        base_config["engine"],
+        base_config["engine_fields"],
+        override_config["engine"],
+        override_config["engine_fields"],
+    )
     model = override_config["model"] or base_config["model"]
     role_text = read_text(os.path.join(profiles_root, role, "SOUL.md"))
     project_text = read_text(os.path.join(override_dir, f"{role}.project.md"))
     role_out = os.path.join(profiles_out, role)
-    write_config(os.path.join(role_out, "config.yaml"), base_config["status"], model, enabled, disabled)
+    write_config(
+        os.path.join(role_out, "config.yaml"),
+        base_config["status"],
+        model,
+        enabled,
+        disabled,
+        engine,
+        engine_fields,
+    )
     write_soul(os.path.join(role_out, "SOUL.md"), role, global_text, project_text, role_text)
 
 project_json = {

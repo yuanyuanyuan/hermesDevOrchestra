@@ -343,7 +343,7 @@ Claude 遇到以下情况时**写入 `escalation.md`**，不再自行决策：
 | L1 | 注意 | 引入新依赖、修改构建脚本 |
 | L2 | 警告 | 修改数据库 schema、删除旧 API |
 | L3 | 危险 | 系统级命令、修改认证逻辑 |
-| L4 | 紧急 | 删除生产数据、修改密钥 |
+| L4 | 紧急 | 删库、删生产资源、关键分支强推、`rm -rf` 这类事故按钮 |
 
 #### 2.4.2 升级处理流程
 
@@ -809,6 +809,14 @@ orch-status api-gateway
 
 边界：fixed Runtime bus filenames represent one active task slot per project。当前固定 Runtime bus 文件是 `task.md, codex-question.md, claude-decision.md, escalation.md, codex-result.md, review-result.md`；它们 are not a per-project multi-task parallel execution protocol。排队或追加任务可以存在于 State/todo 层，但同一项目的 Runtime bus 不表达多个同时活动任务。
 
+Phase 23 的路由 contract 只新增 `current-task.json` 中的四个字段：`workflow_state`、`routing_reason`、`resume_target`、`handoff_ref`。它们是 Kanban-native routing checkpoint，不是第二套完整状态机。block reason 统一使用 `needs-user:`、`needs-review:`、`research-required:` 三个前缀；恢复依赖 metadata + handoff artifact，不依赖 CLI session resume。
+
+Phase 25 在同一条 runtime 上继续补 lifecycle/observability：
+- `active-run.json` 绑定当前 worker run、`expected_duration_max`、snapshot path 和 runner identity
+- `backpressure.json` 只表达基础 ready-queue pause，不实现 v1.4 的死锁升级
+- structured handoff 只接受 `behaviors`、`regression`、`changed_files`、`decisions`、`pitfalls` 五类最小字段，并要求下游按 untrusted input 消费
+- `post_tool_call` / `on_session_end` traces 与 spawn-time env snapshots 落到 sidecar `observability_trace.db`
+
 ---
 
 ## 六、故障排查
@@ -849,7 +857,7 @@ cat /tmp/hermes-orchestra/<project>/codex-result.md
 
 1. **审计日志不可删**：`~/.local/share/hermes-orchestra/{project}/audit.jsonl` 是 durable JSONL 记录
 2. **git 是底线**：任何危险操作前，Hermes 自动执行 `git stash` 或 `git branch backup-{timestamp}`
-3. **L3-L4 绝不自动**：任何标记为 DANGER/CRITICAL 的操作，必须用户明确输入 "批准"
+3. **L3-L4 绝不自动**：L3 需要一次显式批准；L4 必须输入固定短语 `APPROVE-L4 <approval_id>`
 4. **API Key 隔离**：Claude Code 用 Anthropic OAuth，Codex 用 OpenAI Key，Hermes 用 OpenRouter，互不混用
 5. **tmux 会话分离**：不同项目的会话相互隔离，防止交叉污染
 

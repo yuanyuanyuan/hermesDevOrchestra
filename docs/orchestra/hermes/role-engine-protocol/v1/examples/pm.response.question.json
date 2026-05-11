@@ -1,0 +1,41 @@
+{
+  "protocol": "hermes-role-engine/v1",
+  "role": "pm",
+  "correlation_id": "pm-call-alpha-t42-3",
+  "turn": 3,
+  "status": "question",
+  "next_action": "wait_for_user",
+  "role_specific_payload": {
+    "analysis": {
+      "technical_findings": [
+        "当前认证逻辑使用 server-side session。",
+        "尚未发现 JWT refresh token 流程。"
+      ],
+      "feasibility": "实现 7 天免登录可行，但需要明确刷新策略。"
+    },
+    "question": {
+      "id": "q_retention_window",
+      "text": "7 天免登录是否允许跨设备共享登录态？",
+      "options": [
+        {
+          "id": "device_bound",
+          "label": "仅当前设备",
+          "reason": "风险更低，适合先做 MVP。"
+        },
+        {
+          "id": "multi_device",
+          "label": "多设备共享",
+          "reason": "体验更完整，但需要额外风控。"
+        }
+      ],
+      "recommended_option": "device_bound",
+      "other_allowed": true
+    }
+  },
+  "conversation_context": [
+    {
+      "turn": 3,
+      "summary": "PM asked for device sharing policy before task breakdown."
+    }
+  ]
+}

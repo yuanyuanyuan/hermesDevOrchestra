@@ -29,6 +29,8 @@ git -C "$BETA_DIR" init >/dev/null
 
 cat > "$ALPHA_DIR/.hermes/profiles/reviewer.override.yaml" <<'YAML'
 model: alpha-model
+engine:
+  flags: --output-format json --allowedTools Read,Glob,Grep,LS
 YAML
 cat > "$ALPHA_DIR/.hermes/profiles/reviewer.project.md" <<'MD'
 Alpha reviewer rule.
@@ -36,6 +38,11 @@ MD
 
 cat > "$BETA_DIR/.hermes/profiles/reviewer.override.yaml" <<'YAML'
 model: beta-model
+engine:
+  cli: codex
+  mode: exec
+  flags: --json
+  fallback: claude
 YAML
 cat > "$BETA_DIR/.hermes/profiles/reviewer.project.md" <<'MD'
 Beta reviewer rule.
@@ -58,6 +65,11 @@ assert_file_exists "$BETA_CONFIG" "beta reviewer config missing"
 
 assert_contains "model: alpha-model" "$ALPHA_CONFIG" "alpha override model missing"
 assert_contains "model: beta-model" "$BETA_CONFIG" "beta override model missing"
+assert_contains "flags: --output-format json --allowedTools Read,Glob,Grep,LS" "$ALPHA_CONFIG" "alpha engine override missing"
+assert_contains "cli: codex" "$BETA_CONFIG" "beta engine cli override missing"
+assert_contains "mode: exec" "$BETA_CONFIG" "beta engine mode override missing"
+assert_contains "flags: --json" "$BETA_CONFIG" "beta engine flags override missing"
+assert_contains "fallback: claude" "$BETA_CONFIG" "beta engine fallback override missing"
 assert_contains "Alpha reviewer rule." "$ALPHA_SOUL" "alpha reviewer SOUL missing"
 assert_contains "Beta reviewer rule." "$BETA_SOUL" "beta reviewer SOUL missing"
 

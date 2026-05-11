@@ -1,0 +1,29 @@
+{
+  "protocol": "hermes-role-engine/v1",
+  "role": "implementer",
+  "correlation_id": "implementer-call-alpha-t77-1",
+  "turn": 1,
+  "status": "task_complete",
+  "next_action": "complete",
+  "role_specific_payload": {
+    "summary": "已新增持久登录 token 存储，并补齐登录态回归测试。",
+    "changed_files": [
+      "src/auth/session_store.rs",
+      "src/routes/login.rs",
+      "tests/auth/test_persistent_login.rs"
+    ],
+    "verification": {
+      "commands": [
+        "cargo test test_persistent_login",
+        "cargo test auth_login"
+      ],
+      "outcome": "passed"
+    }
+  },
+  "conversation_context": [
+    {
+      "turn": 1,
+      "summary": "Implementation completed with tests passing."
+    }
+  ]
+}

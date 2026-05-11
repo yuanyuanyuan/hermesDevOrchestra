@@ -1,5 +1,10 @@
 status: active
 model: kimi-coding
+engine:
+  cli: claude
+  mode: -p
+  flags: --output-format json
+  fallback: null
 toolsets:
   enabled: [kanban, memory, clarify, file_read]
   disabled: [terminal, file, code_execution, web, browser, delegation]

@@ -1,5 +1,13 @@
 {
-  "model_profile": "balanced",
+  "model_profile": "budget",
+  "runtime": "codex",
+  "models": {
+    "planning": "opus",
+    "discuss": "opus",
+    "execution": "sonnet",
+    "verification": "sonnet",
+    "research": "haiku"
+  },
   "commit_docs": true,
   "parallelization": true,
   "search_gitignored": false,
@@ -37,7 +45,7 @@
   "phase_naming": "sequential",
   "agent_skills": {},
   "features": {},
-  "resolve_model_ids": "omit",
+  "resolve_model_ids": true,
   "mode": "yolo",
   "granularity": "standard"
 }

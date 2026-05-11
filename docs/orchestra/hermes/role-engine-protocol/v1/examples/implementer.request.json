@@ -1,0 +1,35 @@
+{
+  "protocol": "hermes-role-engine/v1",
+  "role": "implementer",
+  "task_type": "implementation",
+  "correlation_id": "implementer-call-alpha-t77-1",
+  "turn": 1,
+  "project_workspace": "/data/projects/alpha",
+  "task_id": "t_77",
+  "task_body": "实现 7 天免登录，并补齐回归测试。",
+  "task_summary": "实现登录态持久化并保持现有 session 兼容。",
+  "current_stage": "implementation",
+  "conversation_history": {
+    "summary": "No prior implementer turns.",
+    "recent_turns": []
+  },
+  "handoff_from_parent": {
+    "summary": "PM 已确认只支持当前设备免登录。",
+    "artifact_refs": [
+      ".planning/tasks/t_77-requirements.md",
+      "docs/auth/session-notes.md"
+    ]
+  },
+  "last_engine_error": null,
+  "rollback_count": 0,
+  "instructions": {
+    "role": "Implementer",
+    "goal": "完成实现并输出结构化完成结果。",
+    "constraints": [
+      "保持变更最小化",
+      "运行相关测试",
+      "无法继续时显式 block"
+    ],
+    "output_format": "structured_json"
+  }
+}

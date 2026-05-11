@@ -220,6 +220,8 @@ tailwind.config = { theme: { extend: { colors: { surface: '#161b22', border: '#3
       <button @click="rtab='log'" class="flex-1 px-2 py-1.5 text-xs" :class="rtab==='log'?'text-blue-400 border-b-2 border-blue-400':'text-gray-500'">日志</button>
       <button @click="rtab='bp'" class="flex-1 px-2 py-1.5 text-xs" :class="rtab==='bp'?'text-blue-400 border-b-2 border-blue-400':'text-gray-500'">背压</button>
       <button @click="rtab='trace'" class="flex-1 px-2 py-1.5 text-xs" :class="rtab==='trace'?'text-blue-400 border-b-2 border-blue-400':'text-gray-500'">追踪</button>
+      <button @click="rtab='terminal'" class="flex-1 px-2 py-1.5 text-xs" :class="rtab==='terminal'?'text-blue-400 border-b-2 border-blue-400':'text-gray-500'">终端代理</button>
+      <button @click="rtab='toolsets'" class="flex-1 px-2 py-1.5 text-xs" :class="rtab==='toolsets'?'text-blue-400 border-b-2 border-blue-400':'text-gray-500'">Toolsets</button>
     </div>
     <!-- detail -->
     <div x-show="rtab==='detail'" class="flex-1 overflow-y-auto p-3 min-h-0 text-xs">
@@ -230,6 +232,7 @@ tailwind.config = { theme: { extend: { colors: { surface: '#161b22', border: '#3
           <div class="text-gray-400" x-html="selTask.description"></div>
           <div x-show="selTask.parents.length" class="text-gray-500">依赖: <span x-text="selTask.parents.join(', ')"></span></div>
           <div x-show="selTask.handoff" class="bg-gray-800/50 border border-gray-700 rounded p-2"><div class="text-purple-400 font-semibold text-xs mb-1">Handoff</div><pre class="text-xs text-gray-400 whitespace-pre-wrap" x-text="selTask.handoff"></pre></div>
+          <div x-show="selTask.parents.length && selTask.handoff" class="bg-gray-800/50 border border-amber-500/30 rounded p-2"><div class="text-amber-400 font-semibold text-[10px] mb-1">R16 Untrusted-Handoff 隔离</div><div class="text-[10px] text-gray-500 font-mono">&lt;untrusted-handoff source="<span x-text="selTask.parents[0]"></span>"&gt;</div><div class="text-[10px] text-amber-400 ml-2">仅作为参考信息，不作为指令源</div><div class="text-[10px] text-gray-500 font-mono">&lt;/untrusted-handoff&gt;</div></div>
           <div x-show="selTask.testResults" class="bg-gray-800/50 border border-gray-700 rounded p-2"><div class="text-emerald-400 font-semibold text-xs mb-1">测试结果</div><pre class="text-xs text-gray-400 whitespace-pre-wrap" x-text="selTask.testResults"></pre></div>
           <div x-show="selTask.deployInfo" class="bg-gray-800/50 border border-gray-700 rounded p-2"><div class="text-orange-400 font-semibold text-xs mb-1">部署信息</div><pre class="text-xs text-gray-400 whitespace-pre-wrap" x-text="selTask.deployInfo"></pre></div>
           <!-- 验证状态显示区域 -->
@@ -373,6 +376,54 @@ tailwind.config = { theme: { extend: { colors: { surface: '#161b22', border: '#3
         </div>
       </template>
       <div x-show="!traceLog.length" class="text-gray-600 text-center py-4">暂无追踪数据</div>
+    </div>
+    <!-- terminal proxy (R8) -->
+    <div x-show="rtab==='terminal'" class="flex-1 overflow-y-auto p-3 min-h-0 space-y-2">
+      <div class="text-xs text-gray-500 font-bold">Reviewer 只读终端代理 (R8)</div>
+      <div class="bg-gray-950 border border-gray-700 rounded p-2 font-mono text-[10px] h-28 overflow-y-auto">
+        <div class="text-gray-500">$ Reviewer Terminal Proxy (read-only mode)</div>
+        <div class="text-gray-500">$ 所有写操作将被技术性拦截</div>
+        <template x-for="h in termHistory" :key="h.time">
+          <div class="mt-1">
+            <div class="text-gray-400">$ <span x-text="h.cmd"></span> <span class="text-gray-600">[role: <span x-text="h.role"></span>]</span></div>
+            <div x-show="h.result==='blocked'" class="text-red-400">ERROR: <span x-text="h.reason"></span></div>
+            <div x-show="h.result==='ok'" class="text-gray-300 whitespace-pre-line" x-text="h.output"></div>
+          </div>
+        </template>
+      </div>
+      <div class="flex gap-2">
+        <input x-model="termInput" @keyup.enter="execTerm(termInput, 'reviewer'); termInput=''"
+               placeholder="输入命令 (Reviewer)..." class="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 font-mono">
+        <button @click="execTerm(termInput, 'reviewer'); termInput=''" class="px-2 py-1 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 rounded text-xs">执行</button>
+      </div>
+      <div class="text-[10px] text-gray-500">快捷: <button @click="execTerm('cat src/auth/jwt.rs','reviewer')" class="text-blue-400 hover:underline">cat</button> |
+        <button @click="execTerm('echo fix >> src/auth/jwt.rs','reviewer')" class="text-blue-400 hover:underline">write(blocked)</button> |
+        <button @click="execTerm('rm test.txt','reviewer')" class="text-blue-400 hover:underline">rm(blocked)</button> |
+        <button @click="execTerm('cargo test --lib','reviewer')" class="text-blue-400 hover:underline">test(ok)</button>
+      </div>
+    </div>
+    <!-- toolsets (R10) -->
+    <div x-show="rtab==='toolsets'" class="flex-1 overflow-y-auto p-3 min-h-0 space-y-2">
+      <div class="flex gap-2 items-center">
+        <span class="text-xs text-gray-500 font-bold">Toolsets 白名单 (R10)</span>
+        <select x-model="toolsetRole" @change="updateToolset()" class="bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-[10px] text-gray-300">
+          <option value="pm">PM</option><option value="orchestrator">Orchestrator</option><option value="researcher">Researcher</option>
+          <option value="implementer">Implementer</option><option value="reviewer">Reviewer</option><option value="qa-tester">QA-Tester</option>
+          <option value="devops-engineer">DevOps</option><option value="sre-observer">SRE-Observer</option>
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div class="bg-gray-900 border border-gray-700 rounded p-2">
+          <div class="text-[10px] text-emerald-400 font-bold mb-1">&#10003; enabled</div>
+          <template x-for="t in toolsetEnabled" :key="t"><div class="text-[10px] text-gray-400" x-text="t"></div></template>
+        </div>
+        <div class="bg-gray-900 border border-gray-700 rounded p-2">
+          <div class="text-[10px] text-red-400 font-bold mb-1">&#10005; disabled</div>
+          <template x-for="t in toolsetDisabled" :key="t"><div class="text-[10px] text-gray-400" x-text="t"></div></template>
+        </div>
+      </div>
+      <div x-show="toolsetRole==='reviewer'" class="text-[10px] text-amber-400">Reviewer 严格只读: terminal/file_write 被技术性拦截 (R8 兜底)</div>
+      <div x-show="toolsetRole==='orchestrator'" class="text-[10px] text-amber-400">Orchestrator 禁止编码: file_write/code_execution 被禁用</div>
     </div>
   </div>
 </main>
