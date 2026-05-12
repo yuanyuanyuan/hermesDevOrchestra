@@ -1,0 +1,26 @@
+{
+  "name": "hermes",
+  "version": "1.0.0",
+  "description": "<!-- generated-by: gsd-doc-writer -->",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "docs:check": "for f in README.md docs/ARCHITECTURE.md docs/DEVELOPMENT.md docs/GETTING-STARTED.md docs/INSTALL.md; do test -f \"$f\" || { echo \"missing: $f\"; exit 1; }; done; echo 'docs check passed'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuanyuanyuan/hermesDevOrchestra.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/yuanyuanyuan/hermesDevOrchestra/issues"
+  },
+  "homepage": "https://github.com/yuanyuanyuan/hermesDevOrchestra#readme"
+}
