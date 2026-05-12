@@ -74,7 +74,8 @@ codex login
 #### 2.0.4 安装 Dev Orchestra 适配包
 
 ```bash
-cd ~/hermes-dev-orchestra
+git clone git@github.com:yuanyuanyuan/hermesDevOrchestra.git
+cd hermesDevOrchestra
 bash scripts/setup.sh
 ```
 
@@ -794,7 +795,7 @@ orch-status api-gateway
 | 修改认证/安全逻辑 | Claude -> Hermes L3 | 立即 | SSH clarify / 远程紧急通知 |
 | 删除生产数据/系统命令 | Claude -> Hermes L4 | 立即阻塞 | SSH clarify + 远程紧急通知 |
 
-### 5.3 文件通信总线
+### 5.3 任务交换机制
 
 每个项目在 `/tmp/hermes-orchestra/{project}/` 下有：
 

@@ -29,7 +29,7 @@ Hermes Agent (Ubuntu) —— 顶层编排器
     ├─ memory 持久化项目状态
     ├─ terminal/process 启动/监控子进程
     ├─ clarify/send_message 向用户请求决策
-    └─ 共享文件总线 /tmp/hermes-orchestra/{project}/
+    └─ 共享任务目录 /tmp/hermes-orchestra/{project}/
     ├─ task.md          当前任务
     ├─ codex-question.md   Codex 的疑问
     ├─ claude-decision.md  Claude 的决策

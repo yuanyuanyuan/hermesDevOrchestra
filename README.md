@@ -79,6 +79,12 @@ orch-reject <approval_id>
 
 # 风险预检
 orch-risk-check "docker system prune"
+
+# 查看审计日志
+orch-audit api-gateway --limit 20
+
+# 验证安装
+orch-verify
 ```
 
 ### 运行测试
@@ -104,17 +110,18 @@ make test-risk
 | `skills/` | 4 个 Hermes Skills：dev-orchestra、claude-supervisor、codex-executor、escalation-handler |
 | `hermes/` | SOUL.md、角色引擎协议、profile 分发目录 |
 | `config/` | risk-policy.yaml、rules.json |
-| `specs/` | 派生规范：命令集、文件总线协议、风险决策机制 |
+| `specs/` | 派生规范：命令集、任务交换协议、风险决策机制 |
 
 ## 核心概念
 
 - **三层代理协作**：Hermes（编排者）→ Claude（监督/决策）→ Codex（执行/编码）
-- **文件通信总线**：每个项目在 `/tmp/hermes-orchestra/{project}/` 下通过结构化 Markdown 文件交换任务、问题、决策和结果
+- **文件交换机制**：每个项目在 `/tmp/hermes-orchestra/{project}/` 下通过结构化文件交换任务、问题、决策和结果
+- **审计日志**：每个项目的操作审计记录在 `~/.local/share/hermes-orchestra/{project}/audit.jsonl`
 - **三级决策流转**：技术决策（Claude 秒级自动）→ 风险升级（Hermes 评估 L1-L4）→ 危险操作（L3/L4 阻塞等待用户批准）
-- **多项目隔离**：每个项目拥有独立的 tmux 会话（`hermes-{project}-claude` / `hermes-{project}-codex`）及通信总线
+- **多项目隔离**：每个项目拥有独立的 tmux 会话（`hermes-{project}-claude` / `hermes-{project}-codex`）及独立的任务目录
 
 ## 相关文档
 
 - [`WORKFLOW.md`](docs/WORKFLOW.md) — 单人全周期工作流详细指南
-- [`specs/`](specs/) — 派生规范（命令集、文件总线、风险决策）
+- [`specs/`](specs/) — 派生规范（命令集、任务交换协议、风险决策）
 - [`docs/COVERAGE-MATRIX.md`](docs/COVERAGE-MATRIX.md) — 功能覆盖矩阵
