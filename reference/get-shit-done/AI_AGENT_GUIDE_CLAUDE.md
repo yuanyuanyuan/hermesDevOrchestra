@@ -1,7 +1,7 @@
 # GSD AI Agent 操作手册 — Claude Code 版
 
 > **用途：** AI Agent（claude -p, Claude Code 等）的 GSD 操作手册
-> **版本：** GSD v1.50.0
+> **版本：** GSD v1.41.2
 > **命令前缀：** `/gsd-<command>`
 > **配套文件：** `gsd-agent-handbook.json`（机器可解析）
 
@@ -190,6 +190,8 @@ gsd-sdk auto --model claude-opus-4-6 --max-budget 10
 
 ### 策略 3：程序化 API
 
+> **注意**: `@gsd-build/sdk` 是嵌套在 `get-shit-done-cc` 包内的子包。如需使用程序化 API，请单独安装：`npm install @gsd-build/sdk`
+
 ```typescript
 import { GSD } from '@gsd-build/sdk';
 
@@ -250,6 +252,14 @@ const result = await gsd.run('phase 1');
 | `/gsd-quick "task"` | 中等任务 | 可配置 |
 | `/gsd-quick --full "task"` | 完整管道 | 全流程 |
 
+### 探索与调研命令
+
+| 命令 | 用途 |
+|------|------|
+| `/gsd-spike "topic"` | 技术可行性探索 |
+| `/gsd-sketch "topic"` | UI 线框/布局探索 |
+| `/gsd-explore` | 苏格拉底式构思 |
+
 ### 质量与审查命令
 
 | 命令 | 用途 |
@@ -299,6 +309,7 @@ const result = await gsd.run('phase 1');
 | `/gsd-config --advanced` | 高级设置 |
 | `/gsd-config --profile quality` | 切换配置 |
 | `/gsd-config --integrations` | 集成设置 |
+| `/gsd-settings` | 交互式设置向导 |
 
 ### 会话管理命令
 

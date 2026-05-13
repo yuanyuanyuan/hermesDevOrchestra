@@ -1,6 +1,6 @@
 # GSD 快速参考卡片
 
-> 打印后放在显示器旁 | 版本: v1.50.0 | 2026-05-13
+> 打印后放在显示器旁 | 版本: v1.41.2 | 2026-05-13
 
 ---
 
@@ -132,6 +132,8 @@
 | 工作流 | `/gsd-workstreams` | 并行工作流管理 |
 | TDD | `/gsd-plan-phase --tdd` | 测试驱动开发 |
 | MVP | `/gsd-mvp-phase` | 垂直切片规划 |
+| 技术调研 | `/gsd-spike` | 技术可行性探索 |
+| UI 探索 | `/gsd-sketch` | UI 线框/布局探索 |
 
 ---
 
@@ -143,8 +145,10 @@
 ├── REQUIREMENTS.md     # 需求
 ├── ROADMAP.md          # 路线图
 ├── STATE.md            # 当前状态
+├── MILESTONES.md       # 已完成里程碑归档
 ├── config.json         # 配置
 ├── research/           # 研究成果
+├── codebase/           # 棕地映射
 ├── phases/             # 阶段工件
 │   └── 01-xxx/
 │       ├── CONTEXT.md  # 讨论结果
@@ -152,7 +156,10 @@
 │       ├── PLAN.md     # 计划
 │       ├── SUMMARY.md  # 执行摘要
 │       └── UAT.md      # 验证
+├── quick/              # 快速任务跟踪
 ├── todos/              # 捕获的待办
+├── threads/            # 持久化上下文线程
+├── seeds/              # 前瞻性想法
 └── debug/              # 调试会话
 ```
 

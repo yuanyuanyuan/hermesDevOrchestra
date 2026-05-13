@@ -1,6 +1,6 @@
 # GSD 用户指南
 
-> **版本：** GSD v1.50.0
+> **版本：** GSD v1.41.2
 > **更新日期：** 2026-05-13
 > **适用人群：** 使用 Claude Code、Codex 等 AI 编码工具的开发者
 
@@ -366,6 +366,14 @@ GSD 会：
 | `/gsd-quick "task"` | 中等任务 | 可配置 |
 | `/gsd-quick --full "task"` | 完整管道 | 全流程 |
 
+### 探索与调研命令
+
+| 命令 | 用途 |
+|------|------|
+| `/gsd-spike "topic"` | 技术可行性探索 |
+| `/gsd-sketch "topic"` | UI 线框/布局探索 |
+| `/gsd-explore` | 苏格拉底式构思 |
+
 ### 质量与审查命令
 
 | 命令 | 用途 |
@@ -414,6 +422,7 @@ GSD 会：
 | `/gsd-config --advanced` | 高级设置 |
 | `/gsd-config --profile quality` | 切换配置 |
 | `/gsd-config --integrations` | 集成设置 |
+| `/gsd-settings` | 交互式设置向导 |
 
 ### 会话管理命令
 

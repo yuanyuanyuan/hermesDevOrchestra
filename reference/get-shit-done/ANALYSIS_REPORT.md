@@ -1,6 +1,6 @@
 # Get Shit Done (GSD) 架构深度分析报告
 
-> 项目版本: v1.50.0-canary.0
+> 项目版本: v1.41.2
 > 分析日期: 2026-05-12
 > 源码: https://github.com/gsd-build/get-shit-done
 
@@ -141,7 +141,7 @@ GSD 解决了大多数 AI 编码设置的三个核心问题：
 - **Gemini CLI**: `gsd:` 命名空间 (`/gsd:command-name`)
 - **其他**: 各自适配
 
-**统计**: 64 个命令，分布在 14 个功能类别中
+**统计**: 66 个命令，分布在 14 个功能类别中
 
 #### Workflow Layer（工作流层）
 
@@ -151,7 +151,7 @@ GSD 解决了大多数 AI 编码设置的三个核心问题：
 - 收集结果并路由到下一步
 - 更新状态
 
-**统计**: 87 个工作流文件
+**统计**: 89 个工作流文件（顶层）
 
 #### Agent Layer（代理层）
 
@@ -180,7 +180,7 @@ Node.js CLI 工具（`gsd-tools.cjs`），提供：
 
 ## 4. 组件分析
 
-### 4.1 Commands/Skills（64 个）
+### 4.1 Commands/Skills（66 个）
 
 按功能分类：
 
@@ -223,7 +223,7 @@ Node.js CLI 工具（`gsd-tools.cjs`），提供：
 - WebSearch: 8（研究类）
 - AskUserQuestion: 3
 
-### 4.3 Workflows（87 个）
+### 4.3 Workflows（89 个）
 
 按功能分类：
 
@@ -246,13 +246,14 @@ Node.js CLI 工具（`gsd-tools.cjs`），提供：
 | PR 与发布 | 3 | PR 分支、发布 |
 | 用户画像 | 1 | 开发者行为分析 |
 
-### 4.4 Hooks（11 个）
+### 4.4 Hooks（12 个）
 
 | Hook | 事件 | 用途 |
 |------|------|------|
 | gsd-statusline.js | statusLine | 显示模型、任务、目录、上下文使用条 |
 | gsd-context-monitor.js | PostToolUse | 在 35%/25% 剩余时注入上下文警告 |
 | gsd-check-update.js | SessionStart | 后台更新检查 |
+| gsd-check-update-worker.js | SessionStart | 更新检查的工作进程（后台执行实际检查逻辑） |
 | gsd-prompt-guard.js | PreToolUse | 扫描 .planning/ 写入的注入模式 |
 | gsd-read-injection-scanner.js | PostToolUse | 扫描 Read 输出的注入指令 |
 | gsd-workflow-guard.js | PreToolUse | 检测工作流外的文件编辑 |
@@ -260,6 +261,7 @@ Node.js CLI 工具（`gsd-tools.cjs`），提供：
 | gsd-session-state.sh | PostToolUse | 会话状态跟踪 |
 | gsd-validate-commit.sh | PostToolUse | 提交验证 |
 | gsd-phase-boundary.sh | PostToolUse | 阶段边界检测 |
+| gsd-update-banner.js | SessionStart | 更新通知横幅显示 |
 
 ---
 
@@ -467,7 +469,7 @@ Workflow 文件从不做重活：
 
 | 劣势 | 说明 |
 |------|------|
-| **学习曲线** | 64 个命令 + 87 个工作流，新手需要时间熟悉 |
+| **学习曲线** | 66 个命令 + 89 个工作流，新手需要时间熟悉 |
 | **配置复杂** | config.json 选项众多，需要理解才能优化 |
 | **依赖 Claude** | 虽然支持多运行时，但核心设计围绕 Claude |
 | **文件系统依赖** | 大型项目可能面临 .planning/ 目录管理挑战 |
