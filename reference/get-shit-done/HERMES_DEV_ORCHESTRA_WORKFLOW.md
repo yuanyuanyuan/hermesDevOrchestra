@@ -3,7 +3,7 @@
 > 场景：一整个 Milestone 的自动化开发
 > 前提：需求已定好，有 prd.md
 > 架构：基于现有 Hermes Dev Orchestra 编排方式
-> 版本：v6.0 | 2026-05-13
+> 版本：v7.0 | 2026-05-13
 
 ---
 
@@ -22,6 +22,10 @@
 | D9 | 上下文管理 | 新增上下文预算分配策略 |
 | D10 | phase 拆分 | 新增「Phase 自动拆分」整章 |
 | D11 | phase 拆分 | 新增双 agent 咨询 + 共识决策机制 |
+| D12 | v7 验证 | 新增「前置验证项」章节，确认 --auto/yolo/$gsd- 三项 |
+| D13 | v7 差距分析 | 新增「实现差距分析」章节，明确 6 个能力的覆盖状态 |
+| D14 | v7 组件修正 | 新增 `orch-gsd-resume`（断点恢复），上下文监控合并到 dispatcher |
+| D15 | v7 路径修正 | 推荐路径从"v1.4 内 Scope 0"改为"独立于 v1.4 实现" |
 
 ---
 
@@ -1287,18 +1291,72 @@ hermes chat
 
 ---
 
+## 前置验证项
+
+> 基于 ANALYSIS_REPORT.md（v1.50.0-canary.0）和实际测试确认
+
+| # | 验证项 | 状态 | 依据 |
+|---|--------|------|------|
+| V1 | GSD v1.50.0-canary.0 支持 `--auto` 标志 | ✅ 已确认 | ANALYSIS_REPORT.md §3.2：命令层支持 Claude Code 自定义斜杠命令 + Codex Skills；AI_AGENT_GUIDE_CLAUDE.md 明确列出 `--auto` 用于 discuss-phase、plan-phase、new-project |
+| V2 | yolo 模式跳过 verify-work 交互确认 | ✅ 已确认 | ANALYSIS_REPORT.md §4.4 + playbook：`config.json` 中 `mode: "yolo"` 自动批准交互确认；playbook 明确说明 "yolo 模式下 GSD 自动验证测试场景，不等待用户确认" |
+| V3 | Codex 命令前缀 `$gsd-` 可用 | ✅ 已确认 | ANALYSIS_REPORT.md §3.2：Codex 适配方式为 Skills，命令前缀 `$gsd-command-name`；AI_AGENT_GUIDE_CODEX.md 全文使用 `$gsd-` 前缀 |
+
+---
+
+## 实现差距分析
+
+> 基于 Codex Review + 蕾姆分析的综合结论
+
+### 当前 Hermes Dev Orchestra 实现覆盖度
+
+| 工作流能力 | 实现状态 | 说明 |
+|---|---|---|
+| File Bus 通信（flock 锁） | ✅ 已实现 | `orch_atomic_write()` + `flock -x 9` |
+| tmux Session 管理 | ✅ 已实现 | `orch-start/stop/status` + 健康检查 |
+| GSD 阶段编排循环（命令序列 + 上下文检查 + session 切换） | ❌ 需开发 | hermes-gsd skill 仅设计文档，scripts/ 中无 GSD 调用 |
+| Phase 自动拆分 | ❌ 需开发 | 无复杂度评估或拆分逻辑 |
+| 跨 AI Review 调度 | ⚠️ 部分实现 | 基础 Claude-review-Codex 已有，`/gsd-review --codex` 未实现 |
+| 断点恢复 | ❌ 需开发 | 崩溃恢复流程在工作流文档中有设计，但无实现 |
+
+### GSD 编排层的关键认知
+
+GSD 采用 **Thin Orchestrators** 设计——87 个工作流文件是 Markdown 格式的提示词编排，64 个命令是 AI agent 的入口点。**缺的不是"GSD 代码"，而是 Hermes 侧的编排胶水层**：读取 `.planning/STATE.md` → 按阶段派发 GSD 命令 → 监控上下文 → 触发 session 切换。
+
+### 需要实现的组件（修正版）
+
+| 组件 | 功能 | 优先级 | 备注 |
+|---|---|---|---|
+| `orch-gsd-dispatcher` | 读 `.planning/STATE.md` → 按阶段派发 GSD 命令序列 | P0 | 直接读 GSD 原生状态，不自维护状态 |
+| `orch-context-monitor` | 调用 `/gsd-health --context` → 触发 session 切换 | P0 | 合并到 dispatcher 循环中，非独立模块 |
+| `orch-gsd-resume` | 崩溃检测 + 断点恢复 + session 重建 | P1 | 读 STATE.md → 检查文件完整性 → /gsd-resume-work |
+| `orch-phase-splitter` | 评估 PLAN.md 复杂度 → 单 agent 咨询 → 执行拆分 | P1 | 先做单 agent 版本，验证后再加双 agent 共识 |
+| `orch-review-coordinator` | 协调 `/gsd-review --codex` + 收敛循环退出条件 | P1 | 复用现有 route_result_to_review() |
+| `orch-gsd-config` | 预设 `.planning/config.json`（yolo 模式等） | P2 | 基于 V2 验证结果 |
+
+### 推荐实现路径
+
+**在 v1.4 Dispatcher Migration（Scope 4）之前，独立实现 GSD Phase Orchestrator。**
+
+理由：
+- GSD 编排层的核心逻辑（读 STATE.md → 派发命令 → 检查结果）不依赖底层调度机制是 file bus 还是 Kanban
+- 可以在现有 file bus 上先跑通，v1.4 迁移后只需改派发接口
+- 不阻塞 v1.4 其他 Scope 的推进
+
+---
+
 ## 已知限制
 
-1. **GSD 版本要求**：需要 v1.50.0+ 支持 `--auto` 标志
-2. **yolo 模式 verify-work**：需验证 yolo 模式是否确实跳过 UAT 交互确认
+1. ~~**GSD 版本要求**~~：✅ 已确认 v1.50.0-canary.0 支持 `--auto`（见 V1）
+2. ~~**yolo 模式 verify-work**~~：✅ 已确认 yolo 模式跳过交互（见 V2）
 3. **Codex 交互能力**：Codex 没有 AskUserQuestion，所有交互必须通过 File Bus 回退
 4. **flock 可移植性**：需要系统支持 `flock` 命令（Linux 标准，macOS 需要安装）
 5. **成本**：Claude Code + Codex 双重消耗 + 跨 AI Review，长 milestone 成本较高
 6. **并行 Git 冲突**：多 executor 并行修改同一文件时仍可能冲突
 7. **Phase 拆分依赖 agent 质量**：拆分建议的质量取决于 Claude/Codex 对项目的理解深度
 8. **上下文预算估算**：基于经验值，实际消耗因项目复杂度而异
+9. **并行 Git 冲突应对**：多 executor 并行修改同一文件时的冲突解决策略待设计（当前仅串行执行规避）
 
 ---
 
-*工作流设计文档 v6.0 | 基于 Hermes Dev Orchestra 现有架构 | 2026-05-13*
-*v6 变更：跨 AI Review、收敛循环、上下文健康监控、Phase 自动拆分、yolo 模式修正、review 深度控制*
+*工作流设计文档 v7.0 | 基于 Hermes Dev Orchestra 现有架构 | 2026-05-13*
+*v7 变更：前置验证项确认、实现差距分析、组件设计修正（新增断点恢复、上下文监控合并到 dispatcher、Phase 拆分简化为单 agent 优先）、路径建议修正*
