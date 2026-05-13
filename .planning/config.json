@@ -1,6 +1,6 @@
 {
   "model_profile": "budget",
-  "runtime": "codex",
+  "runtime": "claude",
   "models": {
     "planning": "opus",
     "discuss": "opus",
