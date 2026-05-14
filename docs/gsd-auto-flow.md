@@ -530,5 +530,167 @@ Review 来源: [代码审查(Claude) / 跨AI(Codex/Gemini/Claude)]
 
 ---
 
+## 附录 B：跨 Session 真实演练（上下文生命周期）
+
+> **核心认知**：一个完整 phase（含修复循环）约消耗 100-110K 可用上下文。由于主控 session 上下文窗口约 160K 可用（200K 总量 - 40K 系统开销），**一个 session 只能安全完成 1 个 phase**。`pause-work` + `resume-work` 不是异常恢复，而是正常工作流的一部分。
+
+### 主控 session 上下文累积模型
+
+| 步骤 | 估算消耗 | 累积总量 | 占比 | 说明 |
+|------|---------|---------|------|------|
+| 系统提示+工具定义 | ~40K | 40K | 25% | 固定开销，不可压缩 |
+| §0-§4 检测+初始化 | ~8K | 48K | 30% | 一次性 |
+| /gsd-discuss-phase | ~5K | 53K | 33% | CONTEXT.md |
+| /gsd-plan-phase | ~15K | 68K | 43% | PLAN + RESEARCH |
+| /gsd-review (plan) | ~8K | 76K | 48% | REVIEWS.md |
+| /gsd-execute-phase | ~20K | 96K | 60% | 多 commit 日志 |
+| /gsd-code-review + fix | ~18K | 114K | 71% | REVIEW.md + 修复日志 |
+| /gsd-review (code) | ~8K | 122K | 76% | REVIEWS.md |
+| 修复循环（如有） | ~15K | 137K | 86% | 最多 3 轮 |
+| /gsd-verify-work | ~8K | 145K | 91% | UAT.md |
+
+**结论**：Phase 完成时使用率约 87-91%，必须 pause。
+
+### 演练：3 阶段项目（方案 B）
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SESSION 1 — Phase 1: JWT 认证基础
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+👤 用户输入:
+   @docs/gsd-auto-flow.md 按照 'auth-system-prd.md' 要求,
+   完成开发,并且让 codex 帮你 review
+
+🤖 §0-§4 检测+初始化      │ 累积: ~50K │ 剩余: ~110K │ 31%
+   /gsd-new-project --auto @auth-system-prd.md
+   PHASE_COUNT=3, depends_on → 方案 B
+
+── Phase 1 开始 ──
+
+🤖 [1-1] discuss          │ 累积: ~55K │ 剩余: ~105K │ 34%
+🤖 [1-2] plan             │ 累积: ~70K │ 剩余: ~90K  │ 44%
+🤖 [1-2b] review plan     │ 累积: ~78K │ 剩余: ~82K  │ 49%
+   /gsd-review 1 --codex → HIGH: 0
+🤖 [1-3] execute          │ 累积: ~98K │ 剩余: ~62K  │ 61%
+🤖 [1-4] code-review      │ 累积: ~108K│ 剩余: ~52K  │ 68%
+   critical: 1 → 自动修复 → critical: 0
+🤖 [1-5] cross-AI review  │ 累积: ~116K│ 剩余: ~44K  │ 73%
+   /gsd-review 1 --codex → HIGH: 1
+🤖 [1-5b] 修复循环        │ 累积: ~131K│ 剩余: ~29K  │ 82%
+   📊 上下文: 82% — 修复中，暂不暂停
+⚠️ [1-7] verify-work      │ 累积: ~139K│ 剩余: ~21K  │ 87%
+   yolo 模式 → issues: 0
+
+📊 [1-8] 上下文检查       │ 使用率: 87% (>= 70%) → 🔴 CRITICAL
+
+🤖 /gsd-pause-work
+   写入 .planning/HANDOFF.json:
+   { "phase": 1, "status": "paused", "next_action": "start-phase-2" }
+   写入 .planning/phases/01-jwt-auth/.continue-here.md
+
+   输出: "Phase 1 已完成。请在新 session 中运行 /gsd-resume-work。"
+
+👤 用户操作:
+   1. 关闭当前 session
+   2. 新终端: claude --dangerously-skip-permissions
+   3. 输入: /gsd-resume-work
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SESSION 2 — Phase 2: OAuth2 集成（上下文清零！）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+👤 用户输入: /gsd-resume-work
+
+🤖 恢复流程:
+   读取 HANDOFF.json → phase: 1 完成, next: phase 2
+   删除 HANDOFF.json (一次性)
+   读取 STATE.md + ROADMAP.md → Phase 2 待执行
+   上下文从 ~42K 开始（干净重启！）
+
+🤖 [2-1] discuss          │ 累积: ~47K │ 剩余: ~113K
+🤖 [2-2] plan             │ 累积: ~62K │ 剩余: ~98K
+🤖 [2-2b] review plan     │ 累积: ~70K │ 剩余: ~90K
+🤖 [2-3] execute          │ 累积: ~90K │ 剩余: ~70K
+🤖 [2-4] code-review      │ 累积: ~100K│ 剩余: ~60K
+🤖 [2-5] cross-AI review  │ 累积: ~108K│ 剩余: ~52K
+   HIGH: 2 → 修复循环 → HIGH: 0
+⚠️ [2-7] verify-work      │ 累积: ~134K│ 剩余: ~26K
+
+📊 [2-8] 上下文检查       │ 使用率: 84% (>= 70%) → 🔴 CRITICAL
+
+🤖 /gsd-pause-work → 写入 HANDOFF.json
+
+👤 用户操作: 关闭 → 新 session → /gsd-resume-work
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SESSION 3 — Phase 3: 权限管理 + 发布
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+👤 用户输入: /gsd-resume-work
+
+🤖 恢复 → Phase 2 完成, Phase 3 待执行, 上下文: ~42K
+
+🤖 [3-1] discuss          │ 累积: ~47K
+🤖 [3-2] plan             │ 累积: ~62K
+🤖 [3-2b] review plan     │ 累积: ~70K
+🤖 [3-3] execute          │ 累积: ~90K
+🤖 [3-4] code-review      │ 累积: ~100K │ critical: 1 → 修复 → 0
+🤖 [3-5] cross-AI review  │ 累积: ~108K │ HIGH: 0
+⚠️ [3-7] verify-work      │ 累积: ~116K │ issues: 0
+
+📊 [3-8] 上下文检查       │ 使用率: 73% (>= 70%)
+   但已是最后阶段 → 继续到发布
+
+🤖 §8 /gsd-ship 3         │ 累积: ~119K
+   创建 PR → ✅ 项目完成！
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### 上下文消耗可视化
+
+```
+Session 1 (Phase 1):
+160K ┤
+     │ ████████████████████████████████████████░░░░░  87% ← pause!
+120K ┤ ████████████████████████████████
+ 80K ┤ █████████████████████
+ 40K ┤ ██████████ ← 系统开销
+  0K ┼──────────────────────────────────────────────
+     §0  §4  discuss plan execute review fix verify
+
+Session 2 (Phase 2):              ← 上下文清零!
+160K ┤
+     │ ███████████████████████████████████████░░░░░░  84% ← pause!
+120K ┤ ████████████████████████████████
+ 80K ┤ █████████████████████
+ 40K ┤ ██████████ ← 干净重启
+  0K ┼──────────────────────────────────────────────
+     resume discuss plan execute review fix verify
+
+Session 3 (Phase 3 + Ship):      ← 再次清零!
+160K ┤
+     │ ██████████████████████████████████████░░░░░░░  73% ← 最后阶段
+120K ┤ ████████████████████████████████
+ 80K ┤ █████████████████████
+ 40K ┤ ██████████ ← 干净重启
+  0K ┼──────────────────────────────────────────────
+     resume discuss plan execute review verify ship ✅
+```
+
+### 用户介入统计
+
+| 介入类型 | 次数 | 说明 |
+|---------|------|------|
+| 👤 初始指令 | 1 | `@docs/gsd-auto-flow.md 按照 '...' 要求...` |
+| 👤 resume 操作 | 2 | Phase 1,2 结束后各 1 次 |
+| ⚠️ verify-work 可能暂停 | 0-3 | yolo 模式大概率自动通过，但有小概率需确认 |
+| ⚠️ HIGH >= 3 升级 | 0 | 本次未触发（修复循环内解决） |
+| **总计** | **3-6 次** | 比理想化演练多 2-5 次 |
+
+---
+
 *基于 GSD v1.41.2 | 2026-05-14*
 *v2 修复: 方案A增加跨AI Review、HANDOFF.json检测、verify-work交互性说明、修复循环上下文检查点、reviewer遍历说明、autonomous内置review去重、CLI检测补全*
+*v3 新增: 跨Session真实演练（上下文生命周期模型、pause/resume正常工作流、单phase单session边界）*
