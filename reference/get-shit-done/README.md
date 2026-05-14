@@ -26,7 +26,7 @@
 | 文档 | 用途 |
 |------|------|
 | [ANALYSIS_REPORT.md](ANALYSIS_REPORT.md) | 架构深度分析报告 |
-| [HERMES_DEV_ORCHESTRA_WORKFLOW.md](HERMES_DEV_ORCHESTRA_WORKFLOW.md) | Hermes Dev Orchestra 自动化工作流设计 (v5) |
+| [HERMES_DEV_ORCHESTRA_WORKFLOW.md](../../docs/HERMES_DEV_ORCHESTRA_WORKFLOW.md) | Hermes Dev Orchestra 自动化工作流设计 (v5) |
 
 ### 详细参考
 
