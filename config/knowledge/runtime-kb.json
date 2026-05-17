@@ -1,0 +1,81 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "runtime_domain_knowledge_config",
+  "enabled": false,
+  "disabled_reason": "Runtime Domain Knowledge Base target config is staged before implementation cutover.",
+  "backend": {
+    "id": "gbrain",
+    "enabled": false,
+    "storage_authority": "gbrain",
+    "default_engine": "pglite",
+    "cli_command": "gbrain",
+    "mcp_command": "gbrain serve",
+    "no_separate_sqlite": true
+  },
+  "entry_contract": {
+    "format": "gbrain_markdown_page_with_yaml_frontmatter",
+    "slug_pattern": "domain/<domain>/<topic>/<short-id>",
+    "required_frontmatter": [
+      "type",
+      "domain",
+      "topic",
+      "source_type",
+      "source_refs",
+      "confidence",
+      "freshness",
+      "valid_from",
+      "last_verified_at",
+      "tags",
+      "owner"
+    ],
+    "required_sections": [
+      "Claim",
+      "Context",
+      "Applies When",
+      "Does Not Apply When",
+      "Evidence",
+      "Operational Guidance",
+      "Failure Modes",
+      "Review Checklist"
+    ]
+  },
+  "ingestion_policy": {
+    "candidate_before_verified": true,
+    "default_verified_type": "domain_knowledge",
+    "forbidden_direct_promotion_sources": [
+      "model_chat_conclusion_without_sources",
+      "unverified_blog_summary",
+      "raw_getnote_note_copy",
+      "stale_platform_rule"
+    ],
+    "required_audit_record": "knowledge_ingestion_record",
+    "gbrain_operations": ["put", "import", "sync", "link", "query", "report", "serve"]
+  },
+  "retrieval_policy": {
+    "default_allowed_types": ["domain_knowledge"],
+    "candidate_knowledge_allowed_only_in": ["research", "debate"],
+    "expired_entries_are_warning_context_only": true,
+    "write_runtime_query_artifact": true,
+    "write_runtime_result_artifact": true
+  },
+  "freshness_policy": {
+    "platform_policy_days": 30,
+    "sdk_api_days": 30,
+    "cloud_runtime_days": 30,
+    "project_observation_days": 90,
+    "conceptual_pattern_days": 180
+  },
+  "evidence_boundary": {
+    "getnote_qnN4o510_runtime_backend": false,
+    "gbrain_retrieval_final_authority": false,
+    "human_approval_bypass_allowed": false,
+    "critical_claims_require_official_source_or_test_or_observation_or_human_approval": true
+  },
+  "redaction_policy": {
+    "persist_secrets": false,
+    "persist_tokens": false,
+    "persist_personal_data": false,
+    "persist_customer_data": false,
+    "persist_sensitive_internal_paths": false
+  }
+}

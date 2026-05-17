@@ -1,0 +1,83 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "release_pipeline_config",
+  "enabled": false,
+  "project_target_type": "project_defined",
+  "disabled_reason": "Full Release Pipeline target config is staged before implementation cutover.",
+  "command_registry_ref": "config://release/commands",
+  "environments": [
+    {
+      "id": "dev_test",
+      "kind": "local_validation",
+      "target_ref": "project://local/dev-test",
+      "deploy_command_ref": "command://release/dev-test",
+      "health_check_refs": ["check://release/dev-test"],
+      "requires_approval": false
+    },
+    {
+      "id": "staging",
+      "kind": "project_defined_staging",
+      "target_ref": "project://staging",
+      "deploy_command_ref": "command://release/staging",
+      "health_check_refs": ["check://release/staging-health"],
+      "requires_approval": true
+    },
+    {
+      "id": "production",
+      "kind": "project_defined_production",
+      "target_ref": "project://production",
+      "deploy_command_ref": "command://release/production",
+      "health_check_refs": ["check://release/production-health"],
+      "requires_approval": true
+    }
+  ],
+  "gates": {
+    "pre_deploy_checks": {
+      "required": true,
+      "evidence_required": ["test_execution_report_refs"]
+    },
+    "staging_validation": {
+      "required": true,
+      "evidence_required": ["deployment_report_ref", "health_check_refs"]
+    },
+    "uat": {
+      "required": true,
+      "authority_required": "human",
+      "evidence_required": ["uat_decision_ref"]
+    },
+    "production_approval": {
+      "required": true,
+      "authority_required": "human",
+      "fixed_phrase_required": true
+    },
+    "post_deploy_validation": {
+      "required": true,
+      "evidence_required": ["deployment_report_ref", "health_check_refs"]
+    }
+  },
+  "commands": {
+    "dev_test": "command://release/dev-test",
+    "staging": "command://release/staging",
+    "production": "command://release/production",
+    "rollback": "command://release/rollback"
+  },
+  "approval_policy": {
+    "default_authority": "human",
+    "timeout_approval_allowed": false,
+    "agent_approval_allowed": false,
+    "local_cli_or_ssh_default": true,
+    "remote_channel_optional": true
+  },
+  "rollback_policy": {
+    "rollback_command_ref": "command://release/rollback",
+    "rollback_checkpoints": ["pre_staging", "pre_production"],
+    "recovery_evidence_required": true
+  },
+  "evidence_requirements": {
+    "deployment_report_ref": true,
+    "test_execution_report_refs": true,
+    "uat_decision_ref": true,
+    "approval_refs": true,
+    "rollback_or_recovery_refs": true
+  }
+}

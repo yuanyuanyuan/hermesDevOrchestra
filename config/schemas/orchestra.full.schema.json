@@ -1,0 +1,1830 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.hermes-orchestra/schemas/orchestra.full.schema.json",
+  "title": "Hermes Orchestra Full Schemas",
+  "description": "Full-system target schema package. Runs in parallel with the MVP/current-runtime schema until full implementation cutover.",
+  "type": "object",
+  "$defs": {
+    "schema_version": {
+      "const": "orchestra.full.v1"
+    },
+    "event_schema_version": {
+      "const": "orchestra.event.v1"
+    },
+    "artifact_reference": {
+      "type": "string",
+      "pattern": "^(state://runs/[^/]+/.+|audit://.+|cache://sha256:[A-Fa-f0-9]+|repo://\\.workflow/knowledge/.+|knowledge://gbrain/.+|gbrain://.+)$"
+    },
+    "source_reference": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "pattern": "^getnote://qnN4o510/raw"
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stage": {
+      "enum": [
+        "direction_debate",
+        "solution_debate",
+        "implementation",
+        "improvement",
+        "global_evaluation",
+        "continuous_improvement"
+      ]
+    },
+    "run_status": {
+      "enum": ["queued", "running", "blocked", "failed", "completed", "stopped"]
+    },
+    "authority_required": {
+      "enum": ["none", "kimi", "human"]
+    },
+    "risk_level": {
+      "enum": ["L1", "L2", "L3", "L4"]
+    },
+    "task_type_tag": {
+      "enum": ["database_migration", "api_contract", "frontend_ux", "ai_model", "release_deploy", "dependency_oss"]
+    },
+    "release_command_ref": {
+      "type": "string",
+      "pattern": "^command://release/[A-Za-z0-9._-]+$"
+    },
+    "degradation_status": {
+      "enum": ["normal", "degraded", "recovered", "blocked_due_to_degradation"]
+    },
+    "degradation_class": {
+      "enum": [
+        "none",
+        "template_debate_fallback",
+        "backend_unavailable",
+        "projection_append_failed",
+        "runtime_knowledge_warning_context",
+        "optional_debate_member_failed",
+        "required_evidence_degraded",
+        "schema_mismatch",
+        "unclassified"
+      ]
+    },
+    "degradation_record": {
+      "type": "object",
+      "required": ["degradation_status", "degradation_class", "cause", "affected_evidence_refs", "decision_required", "recovery_options", "accepted_by_ref", "completion_evidence_allowed"],
+      "properties": {
+        "degradation_status": {"$ref": "#/$defs/degradation_status"},
+        "degradation_class": {"$ref": "#/$defs/degradation_class"},
+        "cause": {"type": "string"},
+        "affected_evidence_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "decision_required": {"$ref": "#/$defs/authority_required"},
+        "recovery_options": {"type": "array"},
+        "accepted_by_ref": {"type": ["string", "null"]},
+        "completion_evidence_allowed": {"type": "boolean"},
+        "replacement_evidence_ref": {"type": ["string", "null"]},
+        "policy_ref": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "debate_team_id": {
+      "enum": [
+        "security",
+        "compliance",
+        "data_engineering",
+        "devops_sre",
+        "frontend",
+        "ai_feature",
+        "scalability_arch",
+        "chaos_engineering",
+        "platform",
+        "privacy_ethics",
+        "oss_compliance",
+        "observability",
+        "business",
+        "documentation",
+        "api_design",
+        "i18n_l10n"
+      ]
+    },
+    "debate_mode_id": {
+      "enum": [
+        "sequential_review",
+        "parallel_debate",
+        "adversarial_debate",
+        "jury_panel",
+        "dynamic_assembly",
+        "meta_review",
+        "risk_priority_matrix",
+        "cross_team_conflict_detector"
+      ]
+    },
+    "backend_family": {
+      "enum": ["api", "ai_cli", "hermes_delegation", "hermes_moa", "template"]
+    },
+    "safe_durable_artifact": {
+      "type": "object",
+      "propertyNames": {
+        "not": {
+          "enum": ["raw_prompt", "raw_stdout", "secret", "secrets", "token", "tokens", "credential", "credentials"]
+        }
+      }
+    },
+    "structured_note": {
+      "type": "object",
+      "required": ["summary"],
+      "properties": {
+        "summary": {"type": "string"},
+        "evidence_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        }
+      },
+      "additionalProperties": true
+    },
+    "run_create_request": {
+      "type": "object",
+      "required": ["idempotency_key"],
+      "anyOf": [{"required": ["intent"]}, {"required": ["ticket"]}],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "idempotency_key": {"type": "string", "minLength": 1},
+        "intent": {"type": "string"},
+        "ticket": {"$ref": "#/$defs/structured_ticket"},
+        "options": {"type": "object"},
+        "source_run_id": {"type": "string"},
+        "resume_from_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        }
+      },
+      "additionalProperties": true
+    },
+    "run_response": {
+      "type": "object",
+      "required": ["schema_version", "command_id", "idempotency_key", "run_id", "status", "run_uri", "events_url", "tasks_url", "event_projection_degraded", "degradation_status", "degradation_record"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "command_id": {"type": "string"},
+        "idempotency_key": {"type": "string"},
+        "run_id": {"type": "string"},
+        "status": {"$ref": "#/$defs/run_status"},
+        "source_run_id": {"type": ["string", "null"]},
+        "lineage_ref": {"type": ["string", "null"]},
+        "run_uri": {"$ref": "#/$defs/artifact_reference"},
+        "events_url": {"type": "string"},
+        "tasks_url": {"type": "string"},
+        "event_projection_degraded": {"type": "boolean"},
+        "degradation_status": {"$ref": "#/$defs/degradation_status"},
+        "degradation_record": {"$ref": "#/$defs/degradation_record"},
+        "projection_status": {"enum": ["consistent", "inconsistent", "rebuilt"]},
+        "projection_issue_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        }
+      },
+      "additionalProperties": true
+    },
+    "run_status": {
+      "type": "object",
+      "required": ["schema_version", "run_id", "status", "project", "current_stage", "progress", "artifact_refs"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "run_id": {"type": "string"},
+        "status": {"$ref": "#/$defs/run_status"},
+        "project": {"type": "string"},
+        "last_command_id": {"type": ["string", "null"]},
+        "current_stage": {"type": ["string", "null"]},
+        "progress": {"type": "object"},
+        "pending_decision_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        },
+        "artifact_refs": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "command_record": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "command_id", "idempotency_key", "endpoint", "resource_path", "status", "payload_hash", "planned_side_effects", "steps"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "command_record"},
+        "command_id": {"type": "string"},
+        "idempotency_key": {"type": "string"},
+        "endpoint": {"type": "string"},
+        "resource_path": {"type": "string"},
+        "status": {"enum": ["in_progress", "completed", "failed", "blocked"]},
+        "payload_hash": {"type": "string"},
+        "planned_side_effects": {"type": "array"},
+        "steps": {"type": "array"}
+      },
+      "additionalProperties": true
+    },
+    "idempotency_record": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "project", "endpoint", "resource_path", "idempotency_key", "scope_hash", "payload_hash", "status", "command_id", "command_record_ref", "result_kind", "response_summary", "retention_policy", "created_at", "last_seen_at", "expires_at"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "idempotency_record"},
+        "project": {"type": "string"},
+        "endpoint": {"type": "string"},
+        "resource_path": {"type": "string"},
+        "idempotency_key": {"type": "string"},
+        "scope_hash": {"type": "string"},
+        "payload_hash": {"type": "string"},
+        "status": {"enum": ["in_progress", "completed", "blocked", "failed", "archived"]},
+        "http_status": {"type": ["integer", "null"]},
+        "command_id": {"type": "string"},
+        "run_id": {"type": ["string", "null"]},
+        "command_record_ref": {"$ref": "#/$defs/artifact_reference"},
+        "result_kind": {"enum": ["authority_result", "projection_degraded_result", "blocked_result", "archived_record"]},
+        "response_summary": {"type": "object"},
+        "retention_policy": {"const": "retain_with_gateway_state"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "last_seen_at": {"$ref": "#/$defs/timestamp"},
+        "expires_at": {"type": "null"},
+        "archived_ref": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "command_reconciliation_report": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "artifact_type",
+        "command_id",
+        "run_id",
+        "reconciliation_status",
+        "authority_refs_checked",
+        "journal_step_status",
+        "state_observation",
+        "audit_observation",
+        "kanban_observation",
+        "artifact_observation",
+        "divergence_class",
+        "side_effect_replay_allowed",
+        "synthetic_audit_allowed",
+        "recommended_repair_options"
+      ],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "command_reconciliation_report"},
+        "command_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "reconciliation_status": {"enum": ["resolved", "blocked", "failed"]},
+        "authority_refs_checked": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        },
+        "journal_step_status": {"type": "object"},
+        "state_observation": {"type": "object"},
+        "audit_observation": {"type": "object"},
+        "kanban_observation": {"type": "object"},
+        "artifact_observation": {"type": "object"},
+        "divergence_class": {
+          "enum": [
+            "none",
+            "kanban_side_effect_without_audit",
+            "state_without_kanban",
+            "audit_without_state",
+            "artifact_ref_missing",
+            "authority_refs_contradict",
+            "event_projection_only",
+            "unclassified"
+          ]
+        },
+        "side_effect_replay_allowed": {"const": false},
+        "synthetic_audit_allowed": {"const": false},
+        "recommended_repair_options": {"type": "array"}
+      },
+      "additionalProperties": true
+    },
+    "event": {
+      "type": "object",
+      "required": ["schema_version", "seq", "timestamp", "run_id", "type", "severity", "status", "message", "artifact_refs"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/event_schema_version"},
+        "seq": {"type": "integer", "minimum": 1},
+        "timestamp": {"$ref": "#/$defs/timestamp"},
+        "command_id": {"type": ["string", "null"]},
+        "idempotency_key": {"type": ["string", "null"]},
+        "run_id": {"type": "string"},
+        "task_id": {"type": ["string", "null"]},
+        "stage": {"type": ["string", "null"]},
+        "type": {"type": "string"},
+        "severity": {"enum": ["debug", "info", "warning", "error"]},
+        "status": {"type": "string"},
+        "message": {"type": "string"},
+        "artifact_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        },
+        "decision_id": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "event_query_response": {
+      "type": "object",
+      "required": ["schema_version", "run_id", "since_seq", "limit", "events", "next_seq", "has_more", "projection_status", "event_store_ref", "degradation_status", "degradation_record"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "run_id": {"type": "string"},
+        "since_seq": {"type": "integer", "minimum": 0},
+        "limit": {"type": "integer", "minimum": 1},
+        "events": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/event"}
+        },
+        "next_seq": {"type": "integer", "minimum": 1},
+        "has_more": {"type": "boolean"},
+        "projection_status": {"enum": ["current", "rebuilt", "inconsistent"]},
+        "degradation_status": {"$ref": "#/$defs/degradation_status"},
+        "degradation_record": {"$ref": "#/$defs/degradation_record"},
+        "event_store_ref": {"$ref": "#/$defs/artifact_reference"},
+        "authority_refs_checked": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        }
+      },
+      "additionalProperties": true
+    },
+    "task_projection": {
+      "type": "object",
+      "required": ["schema_version", "run_id", "projection_status", "tasks", "degradation_status", "degradation_record"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "run_id": {"type": "string"},
+        "projection_status": {"enum": ["current", "rebuilt", "inconsistent"]},
+        "degradation_status": {"$ref": "#/$defs/degradation_status"},
+        "degradation_record": {"$ref": "#/$defs/degradation_record"},
+        "tasks": {"type": "array"}
+      },
+      "additionalProperties": true
+    },
+    "run_lineage": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "lineage_id", "run_id", "source_run_id", "source_status", "resume_from_refs"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "run_lineage"},
+        "lineage_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "source_run_id": {"type": "string"},
+        "source_status": {"enum": ["failed", "stopped"]},
+        "resume_from_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        }
+      },
+      "additionalProperties": true
+    },
+    "run_failure_report": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "terminal_failure_reason", "authority_chain_assessment", "preserved_state_refs", "lineage_hint_refs"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "run_failure_report"},
+        "run_id": {"type": "string"},
+        "terminal_failure_reason": {"enum": ["authority_chain_corrupt", "critical_artifact_unrecoverable", "unauthorized_write_untrusted", "invariant_unrecoverable"]},
+        "failed_stage": {"type": ["string", "null"]},
+        "authority_chain_assessment": {"type": "object"},
+        "preserved_state_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        },
+        "lineage_hint_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        }
+      },
+      "additionalProperties": true
+    },
+    "structured_ticket": {
+      "type": "object",
+      "required": ["background", "goal", "deliverables", "acceptance_criteria", "hard_constraints", "failure_strategy"],
+      "properties": {
+        "background": {"type": "string"},
+        "goal": {"type": "string"},
+        "deliverables": {"type": "array", "items": {"type": "string"}},
+        "acceptance_criteria": {"type": "array", "items": {"type": "string"}},
+        "hard_constraints": {"type": "array"},
+        "soft_constraints": {"type": "array"},
+        "related_tasks": {"type": "array"},
+        "failure_strategy": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "structured_prd": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "requirement_summary", "acceptance_criteria", "constraints", "risks", "failure_strategy"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "structured_prd"},
+        "run_id": {"type": "string"},
+        "requirement_summary": {"type": "string"},
+        "acceptance_criteria": {"type": "array"},
+        "constraints": {"type": "object"},
+        "risks": {"type": "array"},
+        "failure_strategy": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "stage_report": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "stage", "status", "input_artifact_refs", "output_artifact_refs", "summary", "created_at"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"type": "string"},
+        "run_id": {"type": "string"},
+        "stage": {"$ref": "#/$defs/stage"},
+        "status": {"type": "string"},
+        "input_artifact_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        },
+        "output_artifact_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        },
+        "summary": {"type": "string"},
+        "created_at": {"$ref": "#/$defs/timestamp"}
+      },
+      "additionalProperties": true
+    },
+    "development_plan": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "child_task_dag", "worker_assignment", "workspace_strategy", "parallelism_policy", "test_strategy", "acceptance_criteria"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "development_plan"},
+        "run_id": {"type": "string"},
+        "child_task_dag": {"type": "array"},
+        "worker_assignment": {"type": "object"},
+        "workspace_strategy": {"enum": ["task_workspace", "direct_project_fallback", "none"]},
+        "parallelism_policy": {"type": "object"},
+        "test_strategy": {"type": "object"},
+        "acceptance_criteria": {"type": "array"}
+      },
+      "additionalProperties": true
+    },
+    "test_plan": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "development_plan_ref", "acceptance_criteria_refs", "cases", "execution_requirements", "review_status"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "test_plan"},
+        "run_id": {"type": "string"},
+        "development_plan_ref": {"$ref": "#/$defs/artifact_reference"},
+        "acceptance_criteria_refs": {"type": "array"},
+        "cases": {"type": "array"},
+        "execution_requirements": {"type": "object"},
+        "review_status": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "test_execution_report": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "test_plan_ref", "commands", "exit_code", "passed", "failed", "blocked_on_failure", "artifact_refs"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "test_execution_report"},
+        "run_id": {"type": "string"},
+        "test_plan_ref": {"$ref": "#/$defs/artifact_reference"},
+        "commands": {"type": "array"},
+        "exit_code": {"type": "integer"},
+        "passed": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0},
+        "blocked_on_failure": {"type": "boolean"},
+        "artifact_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/artifact_reference"}
+        }
+      },
+      "additionalProperties": true
+    },
+    "review_or_qa_verdict": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "task_id", "stage", "review_kind", "verdict", "findings", "authority_required"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"enum": ["review_report", "qa_report", "re_review_report", "re_qa_report"]},
+        "run_id": {"type": "string"},
+        "task_id": {"type": "string"},
+        "stage": {"$ref": "#/$defs/stage"},
+        "review_kind": {"type": "string"},
+        "verdict": {"enum": ["approve", "request_changes", "reject", "block"]},
+        "findings": {"type": "array"},
+        "authority_required": {"$ref": "#/$defs/authority_required"}
+      },
+      "additionalProperties": true
+    },
+    "global_evaluation_report": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "stage", "input_artifact_refs", "structured_prd_ref", "development_plan_ref", "debate_report_refs", "test_execution_refs", "verdict", "warnings", "residual_risks", "blocking_issues", "authority_required", "final_acceptance_ref", "next_actions", "created_at"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "global_evaluation_report"},
+        "run_id": {"type": "string"},
+        "stage": {"const": "global_evaluation"},
+        "input_artifact_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "structured_prd_ref": {"$ref": "#/$defs/artifact_reference"},
+        "development_plan_ref": {"$ref": "#/$defs/artifact_reference"},
+        "debate_report_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "test_execution_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "verdict": {"enum": ["pass", "pass_with_warnings", "fail", "block"]},
+        "warnings": {"type": "array"},
+        "residual_risks": {"type": "array"},
+        "blocking_issues": {"type": "array"},
+        "authority_required": {"$ref": "#/$defs/authority_required"},
+        "final_acceptance_ref": {"type": ["string", "null"]},
+        "next_actions": {"type": "array"},
+        "created_at": {"$ref": "#/$defs/timestamp"}
+      },
+      "additionalProperties": true
+    },
+    "iteration_closeout_report": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "closeout_kind", "completion_gate"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "iteration_closeout_report"},
+        "run_id": {"type": "string"},
+        "closeout_kind": {"enum": ["completed", "stopped_before_completion"]},
+        "completion_gate": {
+          "type": "object",
+          "required": ["state_consistent", "audit_consistent", "kanban_consistent", "required_artifacts_schema_valid"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "system_improvement_proposals": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "trigger_type", "source_scope", "source_run_ids", "generated_at", "candidate_only", "review_queue_required", "review_queue_policy_ref", "queued_item_refs", "trigger_matches", "source_refs", "proposals", "auto_applied_refs", "approval_required"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "system_improvement_proposals"},
+        "run_id": {"type": "string"},
+        "trigger_type": {"enum": ["stage_6_candidate_sweep", "manual_cross_run_review"]},
+        "source_scope": {"enum": ["single_run", "cross_run"]},
+        "source_run_ids": {"type": "array", "items": {"type": "string"}},
+        "generated_at": {"$ref": "#/$defs/timestamp"},
+        "candidate_only": {"const": true},
+        "review_queue_required": {"const": true},
+        "review_queue_policy_ref": {"type": "string"},
+        "queued_item_refs": {"type": "array"},
+        "trigger_matches": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "authority_chain_divergence",
+              "worker_session_cleanup_failure",
+              "schema_mismatch",
+              "full_contract_validation_failure",
+              "debate_required_coverage_failure",
+              "debate_degraded_required_evidence",
+              "same_failure_class_repeated",
+              "review_or_qa_same_class_repeated",
+              "decision_exposed_rule_or_doc_gap"
+            ]
+          }
+        },
+        "source_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "proposals": {"type": "array"},
+        "auto_applied_refs": {"type": "array", "maxItems": 0},
+        "approval_required": {"type": "array"}
+      },
+      "additionalProperties": true
+    },
+    "self_evolution_review_queue_policy": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_status", "policy_authority", "queue_required", "immediate_interrupt_default", "stage_6_enqueue_required", "auto_apply_allowed", "rejected_proposals_retained", "queue_item_required_fields", "status_machine", "priority_policy", "batching_policy", "protected_target_policy", "backlog_policy", "evidence_policy", "retention_policy"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "self_evolution_review_queue_policy"},
+        "package_status": {"type": "string"},
+        "policy_authority": {"const": "project"},
+        "queue_required": {"const": true},
+        "immediate_interrupt_default": {"const": false},
+        "stage_6_enqueue_required": {"const": true},
+        "auto_apply_allowed": {"const": false},
+        "rejected_proposals_retained": {"const": true},
+        "queue_item_required_fields": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "status_machine": {
+          "type": "object",
+          "required": ["states", "terminal_states", "transitions", "rejection_reason_required", "decision_ref_required_for_terminal"],
+          "properties": {
+            "states": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "terminal_states": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "transitions": {"type": "array"},
+            "rejection_reason_required": {"const": true},
+            "decision_ref_required_for_terminal": {"const": true}
+          },
+          "additionalProperties": true
+        },
+        "priority_policy": {"type": "object"},
+        "batching_policy": {
+          "type": "object",
+          "required": ["batch_low_and_medium_allowed", "batch_high_allowed", "batch_critical_allowed", "batch_protected_targets_allowed", "default_batch_size_target", "batch_key_fields"],
+          "properties": {
+            "batch_low_and_medium_allowed": {"const": true},
+            "batch_high_allowed": {"const": false},
+            "batch_critical_allowed": {"const": false},
+            "batch_protected_targets_allowed": {"const": false},
+            "default_batch_size_target": {"type": "integer", "minimum": 1},
+            "batch_key_fields": {"type": "array", "items": {"type": "string"}}
+          },
+          "additionalProperties": true
+        },
+        "protected_target_policy": {
+          "type": "object",
+          "required": ["protected_target_classes", "human_approval_required", "kimi_review_required_before_human", "auto_apply_allowed", "batching_allowed"],
+          "properties": {
+            "protected_target_classes": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "human_approval_required": {"const": true},
+            "kimi_review_required_before_human": {"const": true},
+            "auto_apply_allowed": {"const": false},
+            "batching_allowed": {"const": false}
+          },
+          "additionalProperties": true
+        },
+        "backlog_policy": {"type": "object"},
+        "evidence_policy": {
+          "type": "object",
+          "required": ["review_view_required", "review_view_sources", "minimum_evidence_quality_for_acceptance", "low_evidence_action", "raw_prompt_or_stdout_in_review_view_allowed"],
+          "properties": {
+            "review_view_required": {"const": true},
+            "review_view_sources": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "minimum_evidence_quality_for_acceptance": {"enum": ["medium", "high"]},
+            "low_evidence_action": {"const": "needs_more_evidence"},
+            "raw_prompt_or_stdout_in_review_view_allowed": {"const": false}
+          },
+          "additionalProperties": true
+        },
+        "retention_policy": {
+          "type": "object",
+          "required": ["accepted_retained", "rejected_retained", "deferred_retained", "superseded_retained", "delete_rejected_allowed", "audit_refs_required"],
+          "properties": {
+            "accepted_retained": {"const": true},
+            "rejected_retained": {"const": true},
+            "deferred_retained": {"const": true},
+            "superseded_retained": {"const": true},
+            "delete_rejected_allowed": {"const": false},
+            "audit_refs_required": {"const": true}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "debate_team_registry": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_kind", "registry_authority", "teams"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "debate_team_registry"},
+        "package_kind": {"const": "full_debate_package"},
+        "registry_authority": {"const": "qnN4o510"},
+        "teams": {
+          "type": "array",
+          "minItems": 16,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "focus", "dimensions", "members"],
+            "properties": {
+              "id": {"$ref": "#/$defs/debate_team_id"},
+              "name": {"type": "string"},
+              "focus": {"type": "string"},
+              "dimensions": {"type": "array"},
+              "members": {
+                "type": "array",
+                "minItems": 3,
+                "items": {
+                  "type": "object",
+                  "required": ["id", "focus", "dimension_refs", "checklist_refs", "output_requirements"],
+                  "properties": {
+                    "id": {"type": "string"},
+                    "focus": {"type": "string"},
+                    "dimension_refs": {"type": "array"},
+                    "checklist_refs": {"type": "array"},
+                    "output_requirements": {"type": "array"}
+                  },
+                  "additionalProperties": true
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "debate_mode_registry": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_kind", "registry_authority", "modes"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "debate_mode_registry"},
+        "package_kind": {"const": "full_debate_package"},
+        "registry_authority": {"const": "qnN4o510"},
+        "modes": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "purpose", "mechanism", "selection_rules", "required_inputs", "output_contract"],
+            "properties": {
+              "id": {"$ref": "#/$defs/debate_mode_id"},
+              "name": {"type": "string"},
+              "purpose": {"type": "string"},
+              "mechanism": {"type": "string"},
+              "selection_rules": {"type": "array"},
+              "required_inputs": {"type": "array"},
+              "output_contract": {"type": "object"}
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "debate_coverage_policy": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_kind", "policy_authority", "stage_requirements"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "debate_coverage_policy"},
+        "package_kind": {"const": "full_debate_package"},
+        "policy_authority": {"const": "project"},
+        "stage_requirements": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "debate_assembly_policy": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_kind", "policy_authority", "package_status", "deterministic_selector", "selection_order", "inputs", "stage_floor_source", "task_type_overlays", "risk_overlays", "project_override_policy", "member_selection_policy", "audit_requirements"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "debate_assembly_policy"},
+        "package_kind": {"const": "full_debate_package"},
+        "policy_authority": {"const": "project"},
+        "package_status": {"type": "string"},
+        "deterministic_selector": {"const": true},
+        "selection_order": {
+          "type": "array",
+          "items": {"enum": ["stage_floor", "task_type_overlays", "risk_overlay", "project_overrides", "member_selection"]}
+        },
+        "inputs": {"type": "object"},
+        "stage_floor_source": {"type": "string"},
+        "task_type_overlays": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["tag_aliases", "add_team_ids"],
+            "properties": {
+              "tag_aliases": {"type": "array", "items": {"type": "string"}},
+              "add_team_ids": {"type": "array", "items": {"$ref": "#/$defs/debate_team_id"}}
+            },
+            "additionalProperties": true
+          }
+        },
+        "risk_overlays": {
+          "type": "object",
+          "required": ["L1", "L2", "L3", "L4"],
+          "additionalProperties": {
+            "type": "object",
+            "required": ["add_team_ids", "required_modes", "authority_required_for_stage_decision"],
+            "properties": {
+              "add_team_ids": {"type": "array", "items": {"$ref": "#/$defs/debate_team_id"}},
+              "required_modes": {"type": "array", "items": {"$ref": "#/$defs/debate_mode_id"}},
+              "authority_required_for_stage_decision": {"$ref": "#/$defs/authority_required"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "project_override_policy": {"type": "object"},
+        "member_selection_policy": {"type": "object"},
+        "audit_requirements": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "debate_backend_policy": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_kind", "policy_authority", "backends", "template_backend"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "debate_backend_policy"},
+        "package_kind": {"const": "full_debate_package"},
+        "policy_authority": {"const": "project"},
+        "backends": {"type": "array"},
+        "template_backend": {
+          "type": "object",
+          "required": ["allowed", "degraded_fixture_only"],
+          "properties": {
+            "allowed": {"type": "boolean"},
+            "degraded_fixture_only": {"const": true}
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "debate_member_invocation": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "invocation_id", "debate_id", "run_id", "stage", "created_at", "package_ref", "team_id", "member_id", "mode", "backend_id", "backend_family", "question", "context_refs", "artifact_refs", "redaction_required", "secret_scan_required", "raw_prompt_persistence_allowed", "raw_stdout_persistence_allowed", "expected_artifact_type", "opinion_schema_ref"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "debate_member_invocation"},
+        "invocation_id": {"type": "string"},
+        "debate_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "stage": {"$ref": "#/$defs/stage"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "package_ref": {"$ref": "#/$defs/artifact_reference"},
+        "team_id": {"$ref": "#/$defs/debate_team_id"},
+        "member_id": {"type": "string"},
+        "mode": {"$ref": "#/$defs/debate_mode_id"},
+        "backend_id": {"type": "string"},
+        "backend_family": {"$ref": "#/$defs/backend_family"},
+        "question": {"type": "string"},
+        "context_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "artifact_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "redaction_required": {"const": true},
+        "secret_scan_required": {"const": true},
+        "raw_prompt_persistence_allowed": {"const": false},
+        "raw_stdout_persistence_allowed": {"const": false},
+        "expected_artifact_type": {"const": "debate_member_opinion"},
+        "opinion_schema_ref": {"$ref": "#/$defs/artifact_reference"}
+      },
+      "additionalProperties": true
+    },
+    "debate_member_opinion": {
+      "allOf": [{"$ref": "#/$defs/safe_durable_artifact"}],
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "opinion_id", "debate_id", "run_id", "stage", "invocation_id", "created_at", "package_ref", "team_id", "member_id", "mode", "backend_id", "question", "input_refs", "position", "findings", "evidence_refs", "risks", "recommendations", "confidence", "open_questions", "verdict", "blocking", "requires_kimi_decision", "degraded", "degradation_status", "degradation_record", "warnings"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "debate_member_opinion"},
+        "opinion_id": {"type": "string"},
+        "debate_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "stage": {"$ref": "#/$defs/stage"},
+        "invocation_id": {"type": "string"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "package_ref": {"$ref": "#/$defs/artifact_reference"},
+        "team_id": {"$ref": "#/$defs/debate_team_id"},
+        "member_id": {"type": "string"},
+        "mode": {"$ref": "#/$defs/debate_mode_id"},
+        "backend_id": {"type": "string"},
+        "question": {"type": "string"},
+        "input_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "position": {"type": "string"},
+        "findings": {"type": "array"},
+        "evidence_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "risks": {"type": "array"},
+        "recommendations": {"type": "array"},
+        "confidence": {"enum": ["low", "medium", "high"]},
+        "open_questions": {"type": "array"},
+        "verdict": {"enum": ["approve", "approve_with_warnings", "request_changes", "block"]},
+        "blocking": {"type": "boolean"},
+        "requires_kimi_decision": {"type": "boolean"},
+        "degraded": {"type": "boolean"},
+        "degradation_status": {"$ref": "#/$defs/degradation_status"},
+        "degradation_record": {"$ref": "#/$defs/degradation_record"},
+        "warnings": {"type": "array"}
+      },
+      "additionalProperties": true
+    },
+    "debate_report": {
+      "allOf": [{"$ref": "#/$defs/safe_durable_artifact"}],
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "debate_id", "run_id", "stage", "created_at", "package_ref", "mode", "coverage_policy_ref", "assembly_policy_ref", "backend_policy_ref", "question", "input_refs", "selected_team_ids", "selected_member_ids", "opinion_refs", "coverage_satisfied", "required_coverage", "missing_coverage", "partial", "degraded", "degradation_status", "degradation_record", "findings", "risks", "recommendations", "conflicts", "synthesis", "confidence", "verdict", "requires_kimi_decision", "authority_required", "kimi_decision_inputs", "recommended_next_actions", "audit_trail_ref", "artifact_refs"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "debate_report"},
+        "debate_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "stage": {"$ref": "#/$defs/stage"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "package_ref": {"$ref": "#/$defs/artifact_reference"},
+        "mode": {"$ref": "#/$defs/debate_mode_id"},
+        "coverage_policy_ref": {"$ref": "#/$defs/artifact_reference"},
+        "assembly_policy_ref": {"$ref": "#/$defs/artifact_reference"},
+        "backend_policy_ref": {"$ref": "#/$defs/artifact_reference"},
+        "question": {"type": "string"},
+        "input_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "selected_team_ids": {"type": "array", "items": {"$ref": "#/$defs/debate_team_id"}},
+        "selected_member_ids": {"type": "array", "items": {"type": "string"}},
+        "opinion_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "coverage_satisfied": {"type": "boolean"},
+        "required_coverage": {"type": "object"},
+        "missing_coverage": {"type": "array"},
+        "partial": {"type": "boolean"},
+        "degraded": {"type": "boolean"},
+        "degradation_status": {"$ref": "#/$defs/degradation_status"},
+        "degradation_record": {"$ref": "#/$defs/degradation_record"},
+        "findings": {"type": "array"},
+        "risks": {"type": "array"},
+        "recommendations": {"type": "array"},
+        "conflicts": {"type": "array"},
+        "synthesis": {"type": "object"},
+        "confidence": {"enum": ["low", "medium", "high"]},
+        "verdict": {"type": "string"},
+        "requires_kimi_decision": {"type": "boolean"},
+        "authority_required": {"$ref": "#/$defs/authority_required"},
+        "kimi_decision_inputs": {"type": "object"},
+        "recommended_next_actions": {"type": "array"},
+        "audit_trail_ref": {"$ref": "#/$defs/artifact_reference"},
+        "artifact_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}}
+      },
+      "additionalProperties": true
+    },
+    "debate_audit_trail": {
+      "allOf": [{"$ref": "#/$defs/safe_durable_artifact"}],
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "audit_id", "debate_id", "run_id", "stage", "created_at", "package_ref", "package_hash", "teams_config_ref", "modes_config_ref", "coverage_policy_ref", "assembly_policy_ref", "backend_policy_ref", "assembly_reason", "assembly_input", "matched_assembly_rules", "risk_overlay_applied", "task_type_overlays_applied", "project_overrides_applied", "selected_team_ids", "skipped_team_ids", "selected_member_ids", "member_selection_scores", "coverage_requirements", "degradation_status", "degradation_record", "invocations", "report_ref", "redaction_applied", "secret_scan_status", "raw_prompt_persisted", "raw_stdout_persisted"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "debate_audit_trail"},
+        "audit_id": {"type": "string"},
+        "debate_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "stage": {"$ref": "#/$defs/stage"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "package_ref": {"$ref": "#/$defs/artifact_reference"},
+        "package_hash": {"type": "string"},
+        "teams_config_ref": {"$ref": "#/$defs/artifact_reference"},
+        "modes_config_ref": {"$ref": "#/$defs/artifact_reference"},
+        "coverage_policy_ref": {"$ref": "#/$defs/artifact_reference"},
+        "assembly_policy_ref": {"$ref": "#/$defs/artifact_reference"},
+        "backend_policy_ref": {"$ref": "#/$defs/artifact_reference"},
+        "assembly_reason": {"type": "string"},
+        "assembly_input": {
+          "type": "object",
+          "required": ["stage", "risk_level", "task_type_tags", "affected_scopes"],
+          "properties": {
+            "stage": {"$ref": "#/$defs/stage"},
+            "risk_level": {"$ref": "#/$defs/risk_level"},
+            "task_type_tags": {"type": "array", "items": {"$ref": "#/$defs/task_type_tag"}},
+            "affected_scopes": {"type": "array"}
+          },
+          "additionalProperties": true
+        },
+        "matched_assembly_rules": {"type": "array"},
+        "risk_overlay_applied": {"type": "object"},
+        "task_type_overlays_applied": {"type": "array"},
+        "project_overrides_applied": {"type": "array"},
+        "selected_team_ids": {"type": "array", "items": {"$ref": "#/$defs/debate_team_id"}},
+        "skipped_team_ids": {"type": "array", "items": {"$ref": "#/$defs/debate_team_id"}},
+        "selected_member_ids": {"type": "array", "items": {"type": "string"}},
+        "member_selection_scores": {"type": "array"},
+        "coverage_requirements": {"type": "object"},
+        "degradation_status": {"$ref": "#/$defs/degradation_status"},
+        "degradation_record": {"$ref": "#/$defs/degradation_record"},
+        "invocations": {"type": "array"},
+        "report_ref": {"$ref": "#/$defs/artifact_reference"},
+        "redaction_applied": {"type": "boolean"},
+        "secret_scan_status": {"type": "string"},
+        "raw_prompt_persisted": {"const": false},
+        "raw_stdout_persisted": {"const": false}
+      },
+      "additionalProperties": true
+    },
+    "worker_backend_registry_entry": {
+      "type": "object",
+      "required": ["id", "enabled", "adapter_type", "install_check", "health_check", "compatible_roles", "protocols", "capabilities", "workspace_support", "session_support", "risk_ceiling", "risk_policy", "fallback_allowed"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "enabled": {"type": "boolean"},
+        "adapter_type": {"enum": ["cli", "api", "hermes_delegation", "mock"]},
+        "transport": {"type": "string"},
+        "install_check": {"type": "object"},
+        "health_check": {"type": "object"},
+        "compatible_roles": {"type": "array"},
+        "protocols": {"type": "array", "items": {"type": "string"}},
+        "capabilities": {"type": "array"},
+        "workspace_support": {"type": "object"},
+        "session_support": {"type": "object"},
+        "risk_ceiling": {"$ref": "#/$defs/risk_level"},
+        "risk_policy": {"type": "object"},
+        "fallback_allowed": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "worker_backend_registry": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_status", "registry_authority", "implicit_backend_fallback_allowed", "backends"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "worker_backend_registry"},
+        "package_status": {"type": "string"},
+        "registry_authority": {"const": "project"},
+        "implicit_backend_fallback_allowed": {"const": false},
+        "backends": {"type": "array", "items": {"$ref": "#/$defs/worker_backend_registry_entry"}}
+      },
+      "additionalProperties": true
+    },
+    "worker_role_registry": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_status", "registry_authority", "implicit_backend_fallback_allowed", "roles"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "worker_role_registry"},
+        "package_status": {"type": "string"},
+        "registry_authority": {"const": "project"},
+        "implicit_backend_fallback_allowed": {"const": false},
+        "roles": {"type": "array", "items": {"$ref": "#/$defs/worker_role_registry_entry"}}
+      },
+      "additionalProperties": true
+    },
+    "capability_negotiation_report": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "task_id", "role", "requested_backend", "negotiation_status", "checked_backends", "missing_capabilities", "unavailable_reasons", "fallback_considered", "fallback_selected", "fallback_blocked_reasons", "decision_required", "created_at"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "capability_negotiation_report"},
+        "run_id": {"type": "string"},
+        "task_id": {"type": "string"},
+        "role": {"type": "string"},
+        "requested_backend": {"type": ["string", "null"]},
+        "negotiation_status": {"enum": ["selected", "blocked", "fallback_selected"]},
+        "checked_backends": {"type": "array"},
+        "missing_capabilities": {"type": "array"},
+        "unavailable_reasons": {"type": "array"},
+        "fallback_considered": {"type": "array"},
+        "fallback_selected": {"type": ["string", "null"]},
+        "fallback_blocked_reasons": {"type": "array"},
+        "decision_required": {"$ref": "#/$defs/authority_required"},
+        "created_at": {"$ref": "#/$defs/timestamp"}
+      },
+      "additionalProperties": true
+    },
+    "worker_role_registry_entry": {
+      "type": "object",
+      "required": ["role", "preferred_backend", "required_capabilities", "explicit_fallback_backends", "fallback_allowed_failure_classes", "fallback_forbidden_when", "protocol", "selection_record_required", "capability_negotiation_report_required_on_block"],
+      "properties": {
+        "role": {"type": "string"},
+        "preferred_backend": {"type": "string"},
+        "required_capabilities": {"type": "array"},
+        "explicit_fallback_backends": {"type": "array", "items": {"type": "string"}},
+        "fallback_allowed_failure_classes": {"type": "array"},
+        "fallback_forbidden_when": {"type": "array"},
+        "protocol": {"const": "hermes-role-engine/v1"},
+        "selection_record_required": {"const": true},
+        "capability_negotiation_report_required_on_block": {"const": true}
+      },
+      "additionalProperties": true
+    },
+    "worker_selection_record": {
+      "type": "object",
+      "required": ["role", "requested_backend", "selected_backend", "matched_capabilities", "adapter_type", "fallback_used", "attempt", "negotiation_status", "blocked_reason"],
+      "properties": {
+        "role": {"type": "string"},
+        "requested_backend": {"type": ["string", "null"]},
+        "selected_backend": {"type": ["string", "null"]},
+        "matched_capabilities": {"type": "array"},
+        "adapter_type": {"type": ["string", "null"]},
+        "fallback_used": {"type": "boolean"},
+        "attempt": {"type": "integer", "minimum": 1},
+        "negotiation_status": {"enum": ["selected", "blocked", "fallback_selected"]},
+        "blocked_reason": {"type": ["string", "null"]},
+        "capability_negotiation_report_ref": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "worker_context_envelope": {
+      "type": "object",
+      "required": ["protocol", "run_id", "task_id", "correlation_id", "stage", "role", "selected_backend", "task", "allowed_write_scope", "workspace_strategy", "artifact_refs", "context_bundle_refs", "test_requirements", "output_schema_ref"],
+      "properties": {
+        "protocol": {"const": "hermes-role-engine/v1"},
+        "run_id": {"type": "string"},
+        "task_id": {"type": "string"},
+        "correlation_id": {"type": "string"},
+        "stage": {"$ref": "#/$defs/stage"},
+        "role": {"type": "string"},
+        "selected_backend": {"type": "string"},
+        "task": {"type": "object"},
+        "allowed_write_scope": {"type": "object"},
+        "workspace_strategy": {"enum": ["task_workspace", "direct_project_fallback", "none"]},
+        "artifact_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "context_bundle_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "test_requirements": {"type": "object"},
+        "output_schema_ref": {"$ref": "#/$defs/artifact_reference"}
+      },
+      "additionalProperties": true
+    },
+    "worker_context_bundle": {
+      "type": "object",
+      "required": ["schema_version", "bundle_id", "run_id", "task_id", "scope", "source_refs", "summaries", "created_at", "redaction_applied"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "bundle_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "task_id": {"type": "string"},
+        "scope": {"type": "string"},
+        "source_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "summaries": {"type": "array"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "redaction_applied": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "worker_output_envelope": {
+      "type": "object",
+      "required": ["protocol", "role", "correlation_id", "status", "requested_transition", "artifact_refs", "changed_files", "write_scope_result", "test_evidence_refs", "approval_refs"],
+      "properties": {
+        "protocol": {"const": "hermes-role-engine/v1"},
+        "role": {"type": "string"},
+        "correlation_id": {"type": "string"},
+        "status": {"type": "string"},
+        "requested_transition": {"enum": ["none", "task_complete", "task_blocked", "create_child_tasks", "defer_to_human"]},
+        "artifact_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "changed_files": {"type": "array"},
+        "write_scope_result": {"type": "object"},
+        "test_evidence_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "approval_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}}
+      },
+      "additionalProperties": true
+    },
+    "worker_session_record": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "session_id", "run_id", "task_id", "role", "backend_id", "workspace_ref", "write_scope_ref", "context_bundle_ref", "started_at", "ended_at", "status", "exit_signal", "transcript_ref", "output_envelope_ref", "cleanup_owner", "cleanup_status", "timeout_seconds", "last_heartbeat_at", "termination_reason"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "worker_session_record"},
+        "session_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "task_id": {"type": "string"},
+        "role": {"type": "string"},
+        "backend_id": {"type": "string"},
+        "workspace_ref": {"$ref": "#/$defs/artifact_reference"},
+        "write_scope_ref": {"$ref": "#/$defs/artifact_reference"},
+        "context_bundle_ref": {"$ref": "#/$defs/artifact_reference"},
+        "started_at": {"$ref": "#/$defs/timestamp"},
+        "ended_at": {"type": ["string", "null"]},
+        "status": {"enum": ["planned", "starting", "running", "stopping", "completed", "failed", "timed_out", "abandoned"]},
+        "exit_signal": {"type": ["string", "null"]},
+        "transcript_ref": {"type": ["string", "null"]},
+        "output_envelope_ref": {"type": ["string", "null"]},
+        "cleanup_owner": {"const": "gateway_worker_session_sweeper"},
+        "cleanup_status": {"enum": ["not_started", "graceful_stop_requested", "cleaned", "not_found", "failed", "blocked"]},
+        "timeout_seconds": {"type": "integer", "minimum": 1},
+        "last_heartbeat_at": {"type": ["string", "null"]},
+        "termination_reason": {"type": ["string", "null"]},
+        "cleanup_attempted_at": {"type": ["string", "null"]},
+        "cleanup_error": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "parallel_group_plan": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "parallel_group_id", "task_ids", "workspace_refs", "write_scope_refs", "declared_conflict_locks", "merge_order", "review_gate"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "parallel_group_plan"},
+        "parallel_group_id": {"type": "string"},
+        "task_ids": {"type": "array"},
+        "workspace_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "write_scope_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "declared_conflict_locks": {"type": "array"},
+        "merge_order": {"type": "array"},
+        "review_gate": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "conflict_scan": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "parallel_group_id", "scan_status", "actual_changed_files", "out_of_scope_writes", "overlapping_writes", "declared_lock_conflicts", "authority_file_writes", "merge_allowed", "semantic_conflict_detection"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "conflict_scan"},
+        "parallel_group_id": {"type": "string"},
+        "scan_status": {"enum": ["passed", "failed"]},
+        "actual_changed_files": {"type": "array"},
+        "out_of_scope_writes": {"type": "array"},
+        "overlapping_writes": {"type": "array"},
+        "declared_lock_conflicts": {"type": "array"},
+        "authority_file_writes": {"type": "array"},
+        "merge_allowed": {"type": "boolean"},
+        "semantic_conflict_detection": {"const": "not_claimed"}
+      },
+      "additionalProperties": true
+    },
+    "merge_conflict_report": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "parallel_group_id", "conflicts", "affected_task_ids", "semantic_conflict_detection", "kimi_decision_required", "recommended_next_actions"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "merge_conflict_report"},
+        "parallel_group_id": {"type": "string"},
+        "conflicts": {"type": "array"},
+        "affected_task_ids": {"type": "array"},
+        "semantic_conflict_detection": {"const": "not_claimed"},
+        "kimi_decision_required": {"type": "boolean"},
+        "recommended_next_actions": {"type": "array"}
+      },
+      "additionalProperties": true
+    },
+    "runtime_knowledge_entry": {
+      "type": "object",
+      "required": ["type", "domain", "topic", "source_type", "source_refs", "confidence", "freshness", "valid_from", "last_verified_at", "tags", "owner", "body_sections"],
+      "properties": {
+        "type": {"enum": ["candidate_knowledge", "domain_knowledge"]},
+        "domain": {"type": "string"},
+        "topic": {"type": "string"},
+        "source_type": {"enum": ["official_documentation", "code_or_sdk_example", "platform_rule", "project_observation", "human_expert_entry", "reviewed_external_note_summary"]},
+        "source_refs": {"type": "array", "items": {"$ref": "#/$defs/source_reference"}},
+        "confidence": {"enum": ["low", "medium", "high"]},
+        "freshness": {"enum": ["current", "stale", "expired"]},
+        "valid_from": {"type": "string"},
+        "last_verified_at": {"type": ["string", "null"]},
+        "tags": {"type": "array"},
+        "owner": {"type": "string"},
+        "body_sections": {
+          "type": "object",
+          "required": ["Claim", "Context", "Applies When", "Does Not Apply When", "Evidence", "Operational Guidance", "Failure Modes", "Review Checklist"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "knowledge_ingestion_record": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "record_id", "backend", "operation", "affected_slugs", "source_refs", "verification_method", "operator", "created_at", "resulting_status"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "knowledge_ingestion_record"},
+        "record_id": {"type": "string"},
+        "backend": {"const": "gbrain"},
+        "operation": {"enum": ["promotion", "overwrite", "supersession", "deprecation", "failed_reverification", "import"]},
+        "affected_slugs": {"type": "array"},
+        "source_refs": {"type": "array", "items": {"$ref": "#/$defs/source_reference"}},
+        "verification_method": {"type": "string"},
+        "operator": {"type": "string"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "resulting_status": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "runtime_knowledge_query": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "query_id", "run_id", "task_id", "domain", "question", "allowed_types", "required_freshness", "max_results", "evidence_scope"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "runtime_knowledge_query"},
+        "query_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "task_id": {"type": "string"},
+        "domain": {"type": "string"},
+        "question": {"type": "string"},
+        "allowed_types": {"type": "array", "items": {"enum": ["domain_knowledge", "candidate_knowledge"]}},
+        "required_freshness": {"type": "string"},
+        "max_results": {"type": "integer", "minimum": 1},
+        "evidence_scope": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "runtime_knowledge_result": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "query_id", "backend", "result_refs", "slugs", "titles", "snippets", "confidence", "freshness_status", "degradation_status", "degradation_record", "source_refs", "warnings", "created_at"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "runtime_knowledge_result"},
+        "query_id": {"type": "string"},
+        "backend": {"const": "gbrain"},
+        "result_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "slugs": {"type": "array"},
+        "titles": {"type": "array"},
+        "snippets": {"type": "array"},
+        "confidence": {"enum": ["low", "medium", "high"]},
+        "freshness_status": {"enum": ["current", "warning_context", "expired"]},
+        "degradation_status": {"$ref": "#/$defs/degradation_status"},
+        "degradation_record": {"$ref": "#/$defs/degradation_record"},
+        "source_refs": {"type": "array", "items": {"$ref": "#/$defs/source_reference"}},
+        "warnings": {"type": "array"},
+        "created_at": {"$ref": "#/$defs/timestamp"}
+      },
+      "additionalProperties": true
+    },
+    "runtime_domain_knowledge_config": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "enabled", "backend", "entry_contract", "ingestion_policy", "retrieval_policy", "freshness_policy", "evidence_boundary", "redaction_policy"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "runtime_domain_knowledge_config"},
+        "enabled": {"type": "boolean"},
+        "disabled_reason": {"type": "string"},
+        "backend": {
+          "type": "object",
+          "required": ["id", "enabled", "storage_authority", "default_engine", "no_separate_sqlite"],
+          "properties": {
+            "id": {"const": "gbrain"},
+            "enabled": {"type": "boolean"},
+            "storage_authority": {"const": "gbrain"},
+            "default_engine": {"const": "pglite"},
+            "cli_command": {"type": "string"},
+            "mcp_command": {"type": "string"},
+            "no_separate_sqlite": {"const": true}
+          },
+          "additionalProperties": true
+        },
+        "entry_contract": {"type": "object"},
+        "ingestion_policy": {"type": "object"},
+        "retrieval_policy": {"type": "object"},
+        "freshness_policy": {"type": "object"},
+        "evidence_boundary": {
+          "type": "object",
+          "required": ["getnote_qnN4o510_runtime_backend", "gbrain_retrieval_final_authority", "human_approval_bypass_allowed"],
+          "properties": {
+            "getnote_qnN4o510_runtime_backend": {"const": false},
+            "gbrain_retrieval_final_authority": {"const": false},
+            "human_approval_bypass_allowed": {"const": false}
+          },
+          "additionalProperties": true
+        },
+        "redaction_policy": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "full_contract_readiness_gate_policy": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_status", "policy_authority", "global_cutover_allowed", "artifact_family_cutover_required", "mvp_schema_remains_default", "historical_run_rewrite_allowed", "active_runtime_default_schema_ref", "full_target_schema_ref", "required_gate_evidence", "default_historical_artifact_policy", "default_new_run_policy_after_activation", "artifact_families"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "full_contract_readiness_gate_policy"},
+        "package_status": {"type": "string"},
+        "policy_authority": {"const": "project"},
+        "global_cutover_allowed": {"const": false},
+        "artifact_family_cutover_required": {"const": true},
+        "mvp_schema_remains_default": {"const": true},
+        "historical_run_rewrite_allowed": {"const": false},
+        "active_runtime_default_schema_ref": {"type": "string"},
+        "full_target_schema_ref": {"type": "string"},
+        "required_gate_evidence": {
+          "type": "array",
+          "items": {"type": "string"},
+          "minItems": 1
+        },
+        "default_historical_artifact_policy": {
+          "type": "object",
+          "required": ["preserve_original_schema_version", "read_legacy_artifacts", "rewrite_in_place_allowed", "migration_writes_lineage_ref"],
+          "properties": {
+            "preserve_original_schema_version": {"const": true},
+            "read_legacy_artifacts": {"const": true},
+            "rewrite_in_place_allowed": {"const": false},
+            "migration_writes_lineage_ref": {"const": true}
+          },
+          "additionalProperties": true
+        },
+        "default_new_run_policy_after_activation": {
+          "type": "object",
+          "required": ["write_full_artifacts_for_activated_family", "legacy_refs_remain_resolvable", "mixed_family_runs_allowed_during_staged_cutover", "completion_requires_active_family_contracts_only"],
+          "properties": {
+            "write_full_artifacts_for_activated_family": {"const": true},
+            "legacy_refs_remain_resolvable": {"const": true},
+            "mixed_family_runs_allowed_during_staged_cutover": {"const": true},
+            "completion_requires_active_family_contracts_only": {"const": true}
+          },
+          "additionalProperties": true
+        },
+        "artifact_families": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["family_id", "mvp_sources", "full_targets", "activation_scope", "required_checks", "rollback_policy"],
+            "properties": {
+              "family_id": {"type": "string"},
+              "mvp_sources": {"type": "array", "items": {"type": "string"}},
+              "full_targets": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+              "activation_scope": {"type": "string"},
+              "required_checks": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+              "rollback_policy": {"type": "object"}
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "performance_slo_policy": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_status", "policy_authority", "fixed_run_duration_sla_allowed", "human_wait_excluded_from_slo", "external_backend_wait_reported_separately", "budget_policy", "run_size_classes", "component_budgets", "degradation_actions", "measurement_policy"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "performance_slo_policy"},
+        "package_status": {"type": "string"},
+        "policy_authority": {"const": "project"},
+        "fixed_run_duration_sla_allowed": {"const": false},
+        "human_wait_excluded_from_slo": {"const": true},
+        "external_backend_wait_reported_separately": {"const": true},
+        "budget_policy": {
+          "type": "object",
+          "required": ["budget_kind", "hard_completion_sla_for_six_stage_run", "record_actuals_for_every_run"],
+          "properties": {
+            "budget_kind": {"const": "target_budget_with_degradation"},
+            "hard_completion_sla_for_six_stage_run": {"const": false},
+            "record_actuals_for_every_run": {"const": true},
+            "report_percentiles": {"type": "array", "items": {"type": "string"}},
+            "minimum_sample_size_for_slo_claim": {"type": "integer", "minimum": 1}
+          },
+          "additionalProperties": true
+        },
+        "run_size_classes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["class_id", "planning_target_minutes", "slo_claim_allowed"],
+            "properties": {
+              "class_id": {"type": "string"},
+              "description": {"type": "string"},
+              "planning_target_minutes": {"type": ["integer", "null"], "minimum": 1},
+              "slo_claim_allowed": {"const": false}
+            },
+            "additionalProperties": true
+          }
+        },
+        "component_budgets": {
+          "type": "object",
+          "required": ["gateway_api", "event_projection", "full_contract_validation", "debate_engine", "worker_execution", "runtime_knowledge", "release_pipeline", "remote_decisions"]
+        },
+        "degradation_actions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["condition", "degradation_status", "action", "completion_evidence_allowed"],
+            "properties": {
+              "condition": {"type": "string"},
+              "degradation_status": {"$ref": "#/$defs/degradation_status"},
+              "action": {"type": "string"},
+              "completion_evidence_allowed": {"const": false}
+            },
+            "additionalProperties": true
+          }
+        },
+        "measurement_policy": {
+          "type": "object",
+          "required": ["write_per_run_timing_summary", "write_component_timing_refs", "store_raw_traces_in_audit", "audit_records_store_refs_and_summaries", "compare_budget_by_component", "six_stage_elapsed_time_reported_not_enforced"],
+          "properties": {
+            "write_per_run_timing_summary": {"const": true},
+            "write_component_timing_refs": {"const": true},
+            "store_raw_traces_in_audit": {"const": false},
+            "audit_records_store_refs_and_summaries": {"const": true},
+            "compare_budget_by_component": {"const": true},
+            "six_stage_elapsed_time_reported_not_enforced": {"const": true}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "full_fixture_policy": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_status", "policy_authority", "fixture_layers", "required_markers", "fixture_families", "audit_policy"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "full_fixture_policy"},
+        "package_status": {"type": "string"},
+        "policy_authority": {"const": "project"},
+        "fixture_layers": {
+          "type": "object",
+          "required": ["contract_fixtures", "runtime_fake_adapters"],
+          "properties": {
+            "contract_fixtures": {
+              "type": "object",
+              "required": ["runtime_execution_allowed", "state_mutation_allowed", "completion_evidence_allowed", "release_evidence_allowed", "must_be_schema_valid", "must_be_marked_fixture"],
+              "properties": {
+                "runtime_execution_allowed": {"const": false},
+                "state_mutation_allowed": {"const": false},
+                "completion_evidence_allowed": {"const": false},
+                "release_evidence_allowed": {"const": false},
+                "must_be_schema_valid": {"const": true},
+                "must_be_marked_fixture": {"const": true}
+              },
+              "additionalProperties": true
+            },
+            "runtime_fake_adapters": {
+              "type": "object",
+              "required": ["runtime_execution_allowed", "production_allowed", "completion_evidence_allowed", "release_evidence_allowed", "degraded_fixture_only", "must_be_marked_fixture_backend", "must_emit_degradation_record"],
+              "properties": {
+                "runtime_execution_allowed": {"const": true},
+                "state_mutation_allowed": {"enum": ["test_sandbox_only"]},
+                "production_allowed": {"const": false},
+                "completion_evidence_allowed": {"const": false},
+                "release_evidence_allowed": {"const": false},
+                "degraded_fixture_only": {"const": true},
+                "must_be_marked_fixture_backend": {"const": true},
+                "must_emit_degradation_record": {"const": true}
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "required_markers": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "fixture_families": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["family_id", "contract_fixture_examples", "runtime_fake_adapters", "completion_evidence_allowed", "required_degradation_class"],
+            "properties": {
+              "family_id": {"type": "string"},
+              "contract_fixture_examples": {"type": "array", "items": {"type": "string"}},
+              "runtime_fake_adapters": {"type": "array", "items": {"type": "string"}},
+              "completion_evidence_allowed": {"const": false},
+              "release_evidence_allowed": {"const": false},
+              "strong_evidence_allowed": {"const": false},
+              "state_advancement_allowed": {"const": false},
+              "approval_authority_allowed": {"const": false},
+              "deploy_side_effect_allowed": {"const": false},
+              "authority_repair_allowed": {"const": false},
+              "required_degradation_class": {"$ref": "#/$defs/degradation_class"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "audit_policy": {
+          "type": "object",
+          "required": ["fixture_use_must_be_audited", "audit_records_store_fixture_refs", "raw_fixture_payload_in_audit_allowed", "test_scope_required"],
+          "properties": {
+            "fixture_use_must_be_audited": {"const": true},
+            "audit_records_store_fixture_refs": {"const": true},
+            "raw_fixture_payload_in_audit_allowed": {"const": false},
+            "test_scope_required": {"const": true}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "release_command_entry": {
+      "type": "object",
+      "required": ["command_ref", "enabled", "argv", "cwd_ref", "env_allowlist", "timeout_seconds", "kill_policy", "output_capture_policy", "redaction_policy", "approval_policy"],
+      "properties": {
+        "command_ref": {"$ref": "#/$defs/release_command_ref"},
+        "enabled": {"type": "boolean"},
+        "description": {"type": "string"},
+        "argv": {
+          "type": "array",
+          "items": {"type": "string"},
+          "minItems": 1
+        },
+        "cwd_ref": {
+          "type": "string",
+          "pattern": "^project://"
+        },
+        "env_allowlist": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kill_policy": {
+          "type": "object",
+          "required": ["graceful_signal", "graceful_timeout_seconds", "force_signal", "force_timeout_seconds"],
+          "properties": {
+            "graceful_signal": {"enum": ["TERM", "INT"]},
+            "graceful_timeout_seconds": {"type": "integer", "minimum": 0},
+            "force_signal": {"const": "KILL"},
+            "force_timeout_seconds": {"type": "integer", "minimum": 0}
+          },
+          "additionalProperties": true
+        },
+        "output_capture_policy": {
+          "type": "object",
+          "required": ["store", "stdout_ref_required", "stderr_ref_required", "max_inline_bytes", "raw_output_in_audit_allowed"],
+          "properties": {
+            "store": {"enum": ["cache_artifact", "state_artifact"]},
+            "stdout_ref_required": {"type": "boolean"},
+            "stderr_ref_required": {"type": "boolean"},
+            "max_inline_bytes": {"const": 0},
+            "raw_output_in_audit_allowed": {"const": false}
+          },
+          "additionalProperties": true
+        },
+        "redaction_policy": {
+          "type": "object",
+          "required": ["enabled", "redact_secrets"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "redact_env_not_in_allowlist": {"type": "boolean"},
+            "redact_secrets": {"type": "boolean"},
+            "redact_absolute_paths": {"type": "boolean"}
+          },
+          "additionalProperties": true
+        },
+        "approval_policy": {
+          "type": "object",
+          "required": ["approval_refs_required_before_execution", "authority_required", "fixed_phrase_required"],
+          "properties": {
+            "approval_refs_required_before_execution": {"type": "boolean"},
+            "authority_required": {"$ref": "#/$defs/authority_required"},
+            "fixed_phrase_required": {"type": "boolean"}
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "release_command_registry": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "enabled", "package_status", "registry_authority", "executor", "arbitrary_shell_allowed", "commands"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "release_command_registry"},
+        "enabled": {"type": "boolean"},
+        "package_status": {"type": "string"},
+        "registry_authority": {"const": "project"},
+        "executor": {"const": "gateway_release_executor"},
+        "arbitrary_shell_allowed": {"const": false},
+        "disabled_reason": {"type": "string"},
+        "commands": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/release_command_entry"},
+          "minItems": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "release_pipeline_config": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "enabled", "project_target_type", "command_registry_ref", "environments", "gates", "commands", "approval_policy", "rollback_policy", "evidence_requirements"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "release_pipeline_config"},
+        "enabled": {"type": "boolean"},
+        "project_target_type": {"type": "string"},
+        "command_registry_ref": {"type": "string"},
+        "environments": {"type": "array"},
+        "gates": {"type": "object"},
+        "commands": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/release_command_ref"}
+        },
+        "approval_policy": {"type": "object"},
+        "rollback_policy": {"type": "object"},
+        "evidence_requirements": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "deployment_report": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "environment", "deployment_status", "command_ref", "command_registry_ref", "executor", "argv_hash", "stdout_ref", "stderr_ref", "exit_code", "started_at", "finished_at", "duration_ms", "timeout_seconds", "timed_out", "kill_policy", "health_check_refs", "gate_results", "test_execution_report_refs", "approval_refs", "rollback_or_recovery_refs", "created_at"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "deployment_report"},
+        "run_id": {"type": "string"},
+        "environment": {"type": "string"},
+        "deployment_status": {"enum": ["skipped", "succeeded", "failed", "timed_out", "rolled_back", "blocked"]},
+        "command_ref": {"$ref": "#/$defs/release_command_ref"},
+        "command_registry_ref": {"type": "string"},
+        "executor": {"const": "gateway_release_executor"},
+        "approval_checked_before_execution": {"type": "boolean"},
+        "argv_hash": {
+          "type": "string",
+          "pattern": "^sha256:[A-Fa-f0-9]+$"
+        },
+        "stdout_ref": {
+          "type": ["string", "null"],
+          "pattern": "^(cache://sha256:[A-Fa-f0-9]+|state://runs/[^/]+/.+)$"
+        },
+        "stderr_ref": {
+          "type": ["string", "null"],
+          "pattern": "^(cache://sha256:[A-Fa-f0-9]+|state://runs/[^/]+/.+)$"
+        },
+        "exit_code": {"type": ["integer", "null"]},
+        "started_at": {"type": ["string", "null"]},
+        "finished_at": {"type": ["string", "null"]},
+        "duration_ms": {"type": ["integer", "null"], "minimum": 0},
+        "timeout_seconds": {"type": "integer", "minimum": 1},
+        "timed_out": {"type": "boolean"},
+        "kill_policy": {"type": "object"},
+        "gate_results": {"type": "object"},
+        "health_check_refs": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "test_execution_report_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "approval_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "rollback_or_recovery_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "created_at": {"$ref": "#/$defs/timestamp"}
+      },
+      "additionalProperties": true
+    },
+    "decision_request": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "decision_id", "run_id", "authority_required", "risk_level", "question", "options", "expires_at", "artifact_refs"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "decision_request"},
+        "decision_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "task_id": {"type": ["string", "null"]},
+        "authority_required": {"$ref": "#/$defs/authority_required"},
+        "risk_level": {"$ref": "#/$defs/risk_level"},
+        "question": {"type": "string"},
+        "options": {"type": "array"},
+        "required_phrase": {"type": ["string", "null"]},
+        "expires_at": {"type": "string"},
+        "artifact_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}}
+      },
+      "additionalProperties": true
+    },
+    "decision_response": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "decision_id", "response_id", "responder_id", "decision", "rationale", "received_at", "signature_or_proof_ref"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "decision_response"},
+        "decision_id": {"type": "string"},
+        "response_id": {"type": "string"},
+        "responder_id": {"type": "string"},
+        "decision": {"enum": ["approve", "reject", "revise"]},
+        "rationale": {"type": "string"},
+        "received_at": {"$ref": "#/$defs/timestamp"},
+        "channel_message_ref": {"type": ["string", "null"]},
+        "signature_or_proof_ref": {"type": ["string", "null"]},
+        "validated_by_gateway": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "remote_decision_channel_config": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "enabled", "channel_type", "adapter_id", "delivery_policy", "response_policy", "security_policy", "audit_policy"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "remote_decision_channel_config"},
+        "enabled": {"type": "boolean"},
+        "channel_type": {"type": "string"},
+        "adapter_id": {"type": "string"},
+        "delivery_policy": {"type": "object"},
+        "response_policy": {"type": "object"},
+        "security_policy": {"type": "object"},
+        "audit_policy": {"type": "object"},
+        "transport_only": {"const": true}
+      },
+      "additionalProperties": true
+    },
+    "degradation_policy": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_status", "policy_authority", "degraded_is_run_status", "default_completion_evidence_allowed", "required_record_fields", "state_machine", "artifact_family_policy"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "degradation_policy"},
+        "package_status": {"type": "string"},
+        "policy_authority": {"const": "project"},
+        "degraded_is_run_status": {"const": false},
+        "default_completion_evidence_allowed": {"const": false},
+        "required_record_fields": {"type": "array", "items": {"type": "string"}},
+        "state_machine": {"type": "object"},
+        "artifact_family_policy": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "stop_run_request": {
+      "type": "object",
+      "required": ["idempotency_key"],
+      "properties": {
+        "idempotency_key": {"type": "string"},
+        "reason": {"type": "string"},
+        "force": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "stop_run_response": {
+      "type": "object",
+      "required": ["schema_version", "command_id", "idempotency_key", "run_id", "status", "partial_closeout_ref"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "command_id": {"type": "string"},
+        "idempotency_key": {"type": "string"},
+        "run_id": {"type": "string"},
+        "status": {"const": "stopped"},
+        "partial_closeout_ref": {"$ref": "#/$defs/artifact_reference"}
+      },
+      "additionalProperties": true
+    },
+    "capabilities_response": {
+      "type": "object",
+      "required": ["schema_version", "gateway", "upstream_api", "kanban", "workers", "roles", "cache", "debaters", "runtime_knowledge", "release", "remote_decisions"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "gateway": {"type": "object"},
+        "upstream_api": {"type": "object"},
+        "kanban": {"type": "object"},
+        "workers": {"type": "object"},
+        "roles": {"type": "object"},
+        "cache": {"type": "object"},
+        "debaters": {"type": "object"},
+        "runtime_knowledge": {"type": "object"},
+        "release": {"type": "object"},
+        "remote_decisions": {"type": "object"}
+      },
+      "additionalProperties": true
+    }
+  }
+}
