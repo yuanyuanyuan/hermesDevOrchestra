@@ -1,1 +1,3 @@
 .mycodemap/
+__pycache__/
+*.pyc
