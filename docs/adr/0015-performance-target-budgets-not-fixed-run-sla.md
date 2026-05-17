@@ -1,0 +1,5 @@
+# Performance Uses Target Budgets, Not Fixed Run SLA
+
+The full system will not promise a fixed wall-clock SLA for completing a Six-Stage Run. Run duration depends on task size, debate fan-out, worker execution, tests, release commands, external backends, and Human Approval wait time. Instead, the full target defines component-level performance budgets and degradation actions in `config/performance/slo-policy.json`.
+
+Gateway records actual timings for every run and component. Human wait time is excluded from SLO measurement, and external backend waits are reported separately. Component budget misses trigger explicit behavior: projection misses return projection-degraded command results, required debate coverage timeouts block the stage, optional debate member timeouts create degraded partial reports, worker heartbeat timeouts route through the sweeper and block the worker task, runtime knowledge timeouts continue only as warning context, and release command timeouts write `timed_out` deployment reports and block. Six-Stage elapsed time is reported for planning and trend analysis, but it is not enforced as a completion SLA.
