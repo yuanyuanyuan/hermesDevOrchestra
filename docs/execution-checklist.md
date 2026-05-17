@@ -134,35 +134,35 @@ Blocked stop conditions:
 
 Dependencies on previous sprints:
 
-- [ ] Sprint 0 must be complete and verified.
-- [ ] Sprint 2 must be complete and verified.
+- [x] Sprint 0 must be complete and verified.
+- [x] Sprint 2 must be complete and verified.
 
 Exact files to create:
 
-- [ ] `scripts/lib/debate_member_invocation.py`
-- [ ] `scripts/lib/debate_backend_adapter.py`
-- [ ] `scripts/lib/debate_report.py`
-- [ ] `scripts/tests/test-debate-member-invocation.sh`
+- [x] `scripts/lib/debate_member_invocation.py`
+- [x] `scripts/lib/debate_backend_adapter.py`
+- [x] `scripts/lib/debate_report.py`
+- [x] `scripts/tests/test-debate-member-invocation.sh`
 
 Verify-only files:
 
-- [ ] `config/debate/full/backend-policy.json`
+- [x] `config/debate/full/backend-policy.json`
 
 Verification commands:
 
-- [ ] `scripts/tests/test-debate-member-invocation.sh`
+- [x] `scripts/tests/test-debate-member-invocation.sh`
 
 Blocked stop conditions:
 
-- [ ] Stop if invocation envelopes omit required fields.
-- [ ] Stop if the backend adapter protocol cannot accept an invocation envelope and return an opinion.
-- [ ] Stop if the template fallback adapter is not marked as degraded.
-- [ ] Stop if member opinions do not match the expected schema.
-- [ ] Stop if debate reports omit member opinions.
-- [ ] Stop if audit tracking does not record all invocations.
-- [ ] Stop if debate report schema validation fails.
-- [ ] Stop if `raw_prompt_persistence_allowed: false` is not enforced.
-- [ ] Stop if `scripts/tests/test-debate-member-invocation.sh` fails.
+- [x] Stop if invocation envelopes omit required fields.
+- [x] Stop if the backend adapter protocol cannot accept an invocation envelope and return an opinion.
+- [x] Stop if the template fallback adapter is not marked as degraded.
+- [x] Stop if member opinions do not match the expected schema.
+- [x] Stop if debate reports omit member opinions.
+- [x] Stop if audit tracking does not record all invocations.
+- [x] Stop if debate report schema validation fails.
+- [x] Stop if `raw_prompt_persistence_allowed: false` is not enforced.
+- [x] Stop if `scripts/tests/test-debate-member-invocation.sh` fails.
 
 ## Sprint 4: Worker Registry and Capability Negotiation
 
