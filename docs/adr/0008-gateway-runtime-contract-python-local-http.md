@@ -1,0 +1,3 @@
+# Gateway Runtime Contract Uses Python Local HTTP
+
+The full-system Gateway will extend the current project-local Python HTTP service instead of requiring a Node, Go, shared-database, Redis, or remote-service rewrite before cutover. Kimi communicates with the Gateway through JSON Run Projection API operations; `/v1/*` traffic may be reverse-proxied to the upstream Official Hermes API Server; Hermes Kanban integration stays behind Gateway adapters; and local filesystem Gateway State, Audit, Events, command journals, and idempotency records remain the default authority stores. This keeps the full implementation aligned with the proven MVP surface while leaving other deployment profiles as future optional adapters behind explicit readiness gates.
