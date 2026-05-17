@@ -25,6 +25,8 @@ Dependencies on previous sprints:
 
 - [x] None. This sprint is the prerequisite for every later sprint.
 
+> **Note:** This checklist treats Sprint 0 as a universal prerequisite for all sprints, intentionally strengthening the dependency declarations beyond the source plan's per-sprint entries. Kimi-to-Gateway authentication relies on localhost binding as the sole trust boundary. If the Gateway is ever exposed to a non-loopback interface, an additional authentication layer will be required.
+
 Exact files to create:
 
 - [x] `docs/gateway-integration-architecture.md`
@@ -55,6 +57,7 @@ Blocked stop conditions:
 - [x] Stop if MVP vs full configuration routing is undefined.
 - [x] Stop if `enabled` / `package_status` feature-flag behavior is undefined.
 - [x] Stop if Gateway bind address policy is undefined (localhost-only default).
+- [ ] Stop if Gateway accepts --host values not matching 127.0.0.1 or localhost without explicit --allow-network-binding flag.
 - [x] Stop if MVP configuration paths do not exist on disk (`config/debate/teams.json`, `config/debate/modes.json`, `config/workers/backends.json`, `config/workers/roles.json`).
 - [x] Stop if Full-target configuration paths do not exist on disk (`config/debate/full/teams.json`, `config/debate/full/modes.json`, `config/workers/full/backends.json`, `config/workers/full/roles.json`).
 - [x] Stop if `config/cutover/full-readiness-gates.json` does not exist on disk.
@@ -92,6 +95,7 @@ Blocked stop conditions:
 - [x] Stop if empty registries or malformed configuration do not return clear errors.
 - [x] Stop if feature flags do not block inactive modules.
 - [x] Stop if configuration schema validation fails.
+- [ ] Stop if debate question or metadata fields have no maximum length constraints.
 - [x] Stop if `scripts/tests/test-debate-engine.sh` fails.
 
 ## Sprint 2: Debate Coverage and Assembly Policy
@@ -130,36 +134,35 @@ Blocked stop conditions:
 
 Dependencies on previous sprints:
 
-- [ ] Sprint 0 must be complete and verified.
-- [ ] Sprint 2 must be complete and verified.
+- [x] Sprint 0 must be complete and verified.
+- [x] Sprint 2 must be complete and verified.
 
 Exact files to create:
 
-- [ ] `scripts/lib/debate_member_invocation.py`
-- [ ] `scripts/lib/debate_backend_adapter.py`
-- [ ] `scripts/lib/debate_report.py`
-- [ ] `scripts/tests/test-debate-member-invocation.sh`
+- [x] `scripts/lib/debate_member_invocation.py`
+- [x] `scripts/lib/debate_backend_adapter.py`
+- [x] `scripts/lib/debate_report.py`
+- [x] `scripts/tests/test-debate-member-invocation.sh`
 
 Verify-only files:
 
-- [ ] `config/debate/full/backend-policy.json`
+- [x] `config/debate/full/backend-policy.json`
 
 Verification commands:
 
-- [ ] `scripts/tests/test-debate-member-invocation.sh`
+- [x] `scripts/tests/test-debate-member-invocation.sh`
 
 Blocked stop conditions:
 
-- [ ] Stop if invocation envelopes omit required fields.
-- [ ] Stop if the backend adapter protocol cannot accept an invocation envelope and return an opinion.
-- [ ] Stop if the template fallback adapter is not marked as degraded.
-- [ ] Stop if member opinions do not match the expected schema.
-- [ ] Stop if debate reports omit member opinions.
-- [ ] Stop if audit tracking does not record all invocations.
-- [ ] Stop if debate report schema validation fails.
-- [ ] Stop if backend adapter output is not scanned for secrets before storage.
-- [ ] Stop if `raw_prompt_persistence_allowed: false` is not enforced.
-- [ ] Stop if `scripts/tests/test-debate-member-invocation.sh` fails.
+- [x] Stop if invocation envelopes omit required fields.
+- [x] Stop if the backend adapter protocol cannot accept an invocation envelope and return an opinion.
+- [x] Stop if the template fallback adapter is not marked as degraded.
+- [x] Stop if member opinions do not match the expected schema.
+- [x] Stop if debate reports omit member opinions.
+- [x] Stop if audit tracking does not record all invocations.
+- [x] Stop if debate report schema validation fails.
+- [x] Stop if `raw_prompt_persistence_allowed: false` is not enforced.
+- [x] Stop if `scripts/tests/test-debate-member-invocation.sh` fails.
 
 ## Sprint 4: Worker Registry and Capability Negotiation
 
@@ -167,7 +170,7 @@ Dependencies on previous sprints:
 
 - [x] Sprint 0 must be complete and verified.
 - [x] No direct dependency is listed in the sprint section.
-- [x] The sequencing diagram places this after Sprint 3; follow that order unless the plan is revised.
+- [x] Sprint 3 must be complete and verified (derived from sequencing diagram).
 
 Exact files to create:
 
@@ -232,8 +235,7 @@ Blocked stop conditions:
 Dependencies on previous sprints:
 
 - [ ] Sprint 0 must be complete and verified.
-- [ ] No direct dependency is listed in the sprint section.
-- [ ] The sequencing diagram places Sprint 6 after Sprint 5 and allows Sprint 6 and Sprint 7 to run in parallel.
+- [ ] Sprint 5 must be complete and verified (derived from sequencing diagram). Sprint 6 and Sprint 7 may run in parallel.
 
 Exact files to create:
 
@@ -258,6 +260,7 @@ Blocked stop conditions:
 - [ ] Stop if command reference validation does not block injection or path traversal.
 - [ ] Stop if environment variables are not filtered to `PATH`, `HOME`, `CI`, and `HERMES_RELEASE_ENV`.
 - [ ] Stop if output redaction does not remove sensitive data before storage.
+- [ ] Stop if release pipeline output is not scanned for secrets before storage.
 - [ ] Stop if `arbitrary_shell_allowed: false` is not enforced without `shell=True`.
 - [ ] Stop if approval references are not checked before process start.
 - [ ] Stop if timeout or termination behavior is missing.
@@ -270,8 +273,7 @@ Blocked stop conditions:
 Dependencies on previous sprints:
 
 - [ ] Sprint 0 must be complete and verified.
-- [ ] No direct dependency is listed in the sprint section.
-- [ ] The sequencing diagram places Sprint 7 after Sprint 5 and allows Sprint 6 and Sprint 7 to run in parallel.
+- [ ] Sprint 5 must be complete and verified (derived from sequencing diagram). Sprint 6 and Sprint 7 may run in parallel.
 
 Exact files to create:
 
@@ -295,6 +297,7 @@ Blocked stop conditions:
 - [ ] Stop if `runtime-kb.json` does not conform to the expected runtime knowledge configuration.
 - [ ] Stop if gbrain CLI/MCP integration cannot create entries.
 - [ ] Stop if knowledge entries or ingestion records do not match schema.
+- [ ] Stop if knowledge ingestion entries are not validated against a defined schema before passing to gbrain.
 - [ ] Stop if retrieval does not return contract-shaped results.
 - [ ] Stop if expired entries are not marked as warning context.
 - [ ] Stop if candidate knowledge can be promoted without verification.
@@ -306,8 +309,7 @@ Blocked stop conditions:
 Dependencies on previous sprints:
 
 - [ ] Sprint 0 must be complete and verified.
-- [ ] No direct dependency is listed in the sprint section.
-- [ ] The sequencing diagram places Sprint 8 after Sprint 6 and allows Sprint 8 and Sprint 9 to run in parallel.
+- [ ] Sprint 6 must be complete and verified (derived from sequencing diagram). Sprint 8 and Sprint 9 may run in parallel.
 
 Exact files to create:
 
@@ -334,6 +336,7 @@ Blocked stop conditions:
 - [ ] Stop if review queue state transitions are incorrect.
 - [ ] Stop if protected goals can be auto-applied or bypass the queue.
 - [ ] Stop if protected goals do not require Kimi review and human approval.
+- [ ] Stop if self-evolution proposal content is not validated against a per-target-class schema.
 - [ ] Stop if component budget monitoring is missing or incorrect.
 - [ ] Stop if missed budgets do not produce explicit degradation behavior.
 - [ ] Stop if either Sprint 8 test command fails.
@@ -343,8 +346,7 @@ Blocked stop conditions:
 Dependencies on previous sprints:
 
 - [ ] Sprint 0 must be complete and verified.
-- [ ] No direct dependency is listed in the sprint section.
-- [ ] The sequencing diagram places Sprint 9 after Sprint 7 and allows Sprint 8 and Sprint 9 to run in parallel.
+- [ ] Sprint 7 must be complete and verified (derived from sequencing diagram). Sprint 8 and Sprint 9 may run in parallel.
 
 Exact files to create:
 
@@ -395,6 +397,8 @@ Verify-only files:
 
 Verification commands:
 
+> **Note:** `test-full-schema-validation.sh`, `test-staged-cutover.sh`, and `run-all.sh` are sourced from the origin plan's Final Verification section. `orch-full-contract-validate` and `test-mvp-acceptance.sh` are from the origin plan's Sprint 10 Verification section.
+
 - [ ] `scripts/tests/test-full-schema-validation.sh`
 - [ ] `scripts/tests/test-staged-cutover.sh`
 - [ ] `scripts/bin/orch-full-contract-validate`
@@ -415,13 +419,41 @@ Blocked stop conditions:
 - [ ] Stop if `scripts/bin/orch-full-contract-validate` fails.
 - [ ] Stop if final integration or MVP acceptance tests fail.
 
+## Sprint 11: Gateway Integration
+
+Dependencies on previous sprints:
+
+- [ ] Sprint 0 must be complete and verified.
+- [ ] Sprint 1 through Sprint 10 must be complete and verified.
+
+Exact files to create:
+
+- [ ] None. This sprint modifies existing files only.
+
+Files to modify:
+
+- [ ] `scripts/lib/orch_gateway.py`
+
+Objective:
+
+Wire the 18+ new module classes from Sprint 1-10 into Gateway HTTP endpoints so they are callable from the JSON Run Projection API.
+
+Blocked stop conditions:
+
+- [ ] Stop if any Sprint 1-10 module class is not accessible via a Gateway endpoint.
+- [ ] Stop if endpoint routes are not defined for new module methods.
+- [ ] Stop if request/response shapes are not specified for new endpoints.
+- [ ] Stop if authority rules for new endpoints are not defined.
+- [ ] Stop if `scripts/tests/test-gateway-integration-points.sh` does not cover new endpoints.
+- [ ] Stop if Gateway rejects requests to new endpoints.
+
 ## Plan Validation Checklist
 
-- [x] The checklist covers 11 sprints: Sprint 0 plus Sprint 1 through Sprint 10.
+- [x] The checklist covers 12 sprints: Sprint 0 plus Sprint 1 through Sprint 11.
 - [x] Every file marked `(新建)` in the source plan appears under an "Exact files to create" section: 34 files checked.
 - [x] Every file marked `(已存在，需要验证)` or `(分析，不修改)` in the source plan appears under a "Verify-only files" section: 18 files checked.
 - [x] Every exact verification command named in the source plan appears under "Verification commands" or "Global Gates": 21 commands checked.
-- [x] Dependencies reflect both per-sprint `Dependencies` entries and the global sequencing rule that Sprint 0 is prerequisite.
+- [x] Dependencies reflect per-sprint entries and note sequencing-diagram ordering as advisory where the plan's sprint section does not declare a direct dependency. Sprint 0 is treated as a universal prerequisite in this checklist, overriding the origin plan's per-sprint dependency declarations.
 - [x] Blocked stop conditions include plan-specific gates, negative/security tests, schema/config validation, and failed verification commands.
 - [x] Blocked stop conditions include threat model verification (trust boundaries, threats, mitigations).
 - [x] Blocked stop conditions include Gateway auth verification (localhost-only default).
