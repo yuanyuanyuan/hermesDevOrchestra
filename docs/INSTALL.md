@@ -88,9 +88,15 @@ codex --version  # 应输出 >= 0.122.0
   codex login
   ```
 
-### 2.3 API Key 配置（最小必需项）
+### 2.3 API Key 配置（按运行模式选择）
 
-Orchestra 运行**至少需要**以下 3 个 Key。如果你已通过 Hermes Agent 安装获得了完整的 `.env` 模板（内含多模型、工具、Gateway 等配置），**不要覆盖它**——只需确保这 3 个变量已设置即可。
+如果你使用的是 **Hermes / Kimi Code / Codex / Claude Code CLI 各自已登录**的本机模式，Orchestra 不强制要求在 `~/.hermes/.env` 里重复配置 API Key。`orch-mvp-wizard` 会把缺失 Key 记录为 warning，并继续本地配置和验收。
+
+如果你使用的是 Hermes Agent provider-backed 模式，或希望安装验收强制检查 `.env`，再配置以下变量，并运行 `orch-mvp-wizard --require-api-keys`。
+
+默认完整验收会运行 `make test`、`npm test`、`upstream-status`，并通过 Gateway 创建一个 MVP demo run。demo run 的完整链路日志写到 `~/.local/state/hermes-orchestra/{project}/mvp-demo-log.jsonl`，结构化总览写到 `~/.local/state/hermes-orchestra/{project}/mvp-demo-flow.json`。只配置/启动时可以加 `--skip-tests`；只跳过 demo run 时可以加 `--skip-demo`。
+
+如果要验收真实 CLI worker，运行 `orch-mvp-wizard --real-worker-demo ...`。该模式会实际调用 `codex exec` 修改 `.workflow/knowledge/orchestra-real-worker-demo.md`，调用 `claude -p` 审查该低风险改动，并把链路写到 `mvp-real-worker-flow.json` 和 `mvp-real-worker-log.jsonl`。超时时间可用 `ORCH_REAL_WORKER_TIMEOUT=秒数` 调整。
 
 ```bash
 mkdir -p ~/.hermes
@@ -111,7 +117,7 @@ EOF
 - `OPENAI_API_KEY` — Codex CLI
 - `ANTHROPIC_API_KEY` — Claude Code CLI（OAuth Token 格式）
 
-> **关于完整 `.env` 配置**：Hermes Agent 的 `.env` 支持多模型 Provider（Gemini、Kimi、GLM、Ollama、Qwen 等）、工具 API（Exa、Firecrawl、Browserbase）、Messaging Gateway（Slack、Telegram、Email）等大量配置。如果你使用的是 Hermes Agent 自带的 `.env` 模板，请保留其中的注释和配置，只补充 Orchestra 需要的这 3 个 Key。
+> **关于完整 `.env` 配置**：Hermes Agent 的 `.env` 支持多模型 Provider（Gemini、Kimi、GLM、Ollama、Qwen 等）、工具 API（Exa、Firecrawl、Browserbase）、Messaging Gateway（Slack、Telegram、Email）等大量配置。如果你使用的是 Hermes Agent 自带的 `.env` 模板，请保留其中的注释和配置，只补充你实际 provider 需要的 Key。
 
 ---
 

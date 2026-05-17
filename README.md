@@ -31,6 +31,22 @@ bash scripts/setup.sh
 ## 快速开始
 
 1. **安装**（见上）
+   ```bash
+   # 引导式安装/配置/启动/MVP 验收
+   orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway
+   ```
+   验收完成后会生成：
+   - `~/.local/state/hermes-orchestra/{project}/mvp-acceptance-report.json`
+   - `~/.local/state/hermes-orchestra/{project}/mvp-demo-flow.json`
+   - `~/.local/state/hermes-orchestra/{project}/mvp-demo-log.jsonl`
+
+   `mvp-demo-log.jsonl` 逐步记录 demo case 的参与方、输入、输出、API endpoint、artifact refs 和本地证据文件，可直接用于复盘完整 MVP 流程。
+
+   如果要把真实 Codex/Claude CLI 也纳入验收，运行：
+   ```bash
+   orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway --real-worker-demo
+   ```
+   这会实际调用 `codex exec` 修改 `.workflow/knowledge/orchestra-real-worker-demo.md`，调用 `claude -p` 审查该低风险改动，并生成 `mvp-real-worker-flow.json` / `mvp-real-worker-log.jsonl`。
 2. **初始化项目**（项目目录必须是 git 仓库）：
    ```bash
    orch-init api-gateway ~/projects/api-gateway
@@ -85,6 +101,15 @@ orch-audit api-gateway --limit 20
 
 # 验证安装
 orch-verify
+
+# 引导式配置、启动和 MVP 验收
+orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway
+
+# 只做配置/启动，不跑测试和 demo run
+orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway --skip-tests
+
+# 额外验收真实 Codex/Claude CLI worker
+orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway --real-worker-demo
 ```
 
 ### 运行测试

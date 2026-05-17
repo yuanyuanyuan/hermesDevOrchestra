@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Orchestra MVP — 防归纳坍缩层级剖面</title>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        surface: '#161b22',
+        border: '#30363d',
+      }
+    }
+  }
+}
+</script>
+<style>
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  [x-cloak] { display: none !important; }
+  .ascii-pre { font-family: "SF Mono", "Cascadia Code", "Fira Code", monospace; font-size: 12px; line-height: 1.45; }
+  .layer-l1 { border-left-color: #f472b6; }
+  .layer-l2 { border-left-color: #a78bfa; }
+  .layer-l3 { border-left-color: #60a5fa; }
+  .layer-l4 { border-left-color: #34d399; }
+  .layer-l5 { border-left-color: #fbbf24; }
+  .layer-l6 { border-left-color: #fb923c; }
+  .layer-l7 { border-left-color: #f87171; }
+  .layer-l8 { border-left-color: #22d3ee; }
+  .layer-l9 { border-left-color: #a3e635; }
+  .layer-l10 { border-left-color: #94a3b8; }
+  .layer-l11 { border-left-color: #e879f9; }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-200 font-mono h-screen flex flex-col overflow-hidden">
+
+<!-- ==================== CONFIG ==================== -->
+<script>
+const CONFIG = {
+  title: 'Hermes Orchestra MVP — 防归纳坍缩层级剖面',
+  subtitle: 'Run: run_20260517_001 | Project: hermes | Status: completed | Verdict: pass_with_warnings',
+  tabs: ['层级浏览器', '完整剖面', '差异矩阵', '原子清单', '自检'],
+  layers: [
+    {
+      id: 'l1', num: 1, color: 'text-pink-400', border: 'border-pink-400',
+      name: '外部监督层', entity: 'Kimi',
+      role: '上层编排者与最终决策者。低/中风险下可 approve blocked 流转；高风险 Human Approval 边界不可覆盖。',
+      normal: 'POST /orchestra/runs 提交 structured ticket；GET /events 监督进度；POST /decisions/{id} 做 approve/reject/revise；最终确认 closeout。',
+      boundary: 'Event Projection 出现 gap / duplicate / inconsistent 时，必须 resync (status + tasks + events) 后才能做 mutating 决策。',
+      deps_up: '无（最外层）',
+      deps_down: '调用 L2 /orchestra/* API Surface',
+      ascii: '👤 Kimi\n   ├─ 提交: structured ticket (idempotency_key: ik_001)\n   ├─ 监督: Event Stream (since_seq=0..847)\n   ├─ 决策: approve pass_with_warnings (decision_042)\n   └─ 终验: closeout_kind = completed'
+    },
+    {
+      id: 'l2', num: 2, color: 'text-purple-400', border: 'border-purple-400',
+      name: '接口契约层', entity: '/orchestra/* API + /v1/* Proxy',
+      role: 'Gateway 的对外交互面。/orchestra/* 是六阶段工作流契约；/v1/* 是官方 Hermes API 代理。',
+      normal: '接收 Kimi 的 mutating / query 请求；幂等去重检查在 L3 完成；返回 Run Status / Events / Task Projection。',
+      boundary: '/v1/* 上游 502 时，/orchestra/* 继续服务；Gateway 崩溃则整个 API 面不可用，但 L5/L6/L7 数据仍留在磁盘。',
+      deps_up: '被 L1 Kimi 调用',
+      deps_down: '路由到 L3 Gateway Adapter',
+      ascii: '🌐 /orchestra/* API (127.0.0.1:8642)\n   ├─ POST /orchestra/runs          → cmd_001\n   ├─ GET  /orchestra/runs/{id}     → Run Projection\n   ├─ GET  /orchestra/runs/{id}/events → Event Query\n   ├─ POST /orchestra/decisions/{id}   → cmd_042\n   └─ /v1/* Proxy → 127.0.0.1:8643 [degraded]'
+    },
+    {
+      id: 'l3', num: 3, color: 'text-blue-400', border: 'border-blue-400',
+      name: '网关编排层', entity: 'Gateway Adapter + Advancement Gate + Idempotency Engine',
+      role: '编排核心。拥有六阶段 DAG 状态机、Worker Capability 协商、输出校验门、幂等去重引擎。',
+      normal: 'Schema 校验 → 幂等检查 → 写 Command Journal → 调度 L11 Workers/Debate → Advancement Gate 校验 → 更新 L5/L6/L7/L8。',
+      boundary: 'Worker 返回 schema_mismatch → 硬阻断，无 fallback；无法证明 side-effect 是否发生时 → blocked + decision_required，禁止盲重放。',
+      deps_up: '被 L2 API 路由调用',
+      deps_down: '先写 L4 Journal；调度 L11 Workers；更新 L5 State + L6 Kanban + L7 Audit + L8 Artifacts',
+      ascii: '⚙️ Gateway Adapter (orch_gateway.py)\n   ├─ Idempotency Engine\n   │   scope = project+endpoint+path+ik\n   ├─ 六阶段状态机\n   │   direction→solution→impl→improve→eval→closeout\n   └─ Advancement Gate\n       ├─ protocol/schema + correlation_id\n       ├─ artifact_refs + write_scope\n       ├─ forbidden_paths + risk_level\n       └─ required test/review evidence'
+    },
+    {
+      id: 'l4', num: 4, color: 'text-emerald-400', border: 'border-emerald-400',
+      name: '写前日志层', entity: 'Command Journal',
+      role: '崩溃恢复基础。任何 mutating side-effect 必须先在此留下 planned steps 记录。',
+      normal: 'Gateway 在 State 中写入 command_record(status=in_progress) → 记录 planned_steps → 执行 side-effects → 标记 completed。',
+      boundary: 'Gateway 重启后扫描 in_progress commands → reconciliation：\n  · 证明已完成 → backfill response，不重复执行\n  · 证明未执行 → continue from next step\n  · 无法证明(ambiguous) → blocked + decision_required',
+      deps_up: '被 L3 Gateway 写入',
+      deps_down: '是 L5 State 的一部分（存储于 STATE_ROOT）',
+      ascii: '📓 Command Journal\n   ├─ cmd_001: status=completed, 5 steps durable\n   ├─ cmd_042: status=completed, action=approve\n   ├─ 原则: 无 planned_step 不执行 side-effect\n   └─ Crash Recovery\n       in_progress → reconciliation → completed / blocked'
+    },
+    {
+      id: 'l5', num: 5, color: 'text-amber-400', border: 'border-amber-400',
+      name: '运行时状态层', entity: 'Gateway State + Event Store',
+      role: '运行时可变权威。存储 run 元数据、当前 stage、artifact refs、pending decisions、resume checkpoints、events.jsonl。',
+      normal: '维护 run_001 的 status / current_stage / seq / artifact_refs / projection_status: current。Event Store 物理存储于此（seq 1..847）。',
+      boundary: 'State 损坏 → 无法运行，需从 Kanban + Audit + Artifacts 恢复；\nEvent append 失败 → projection_degraded=true，但 State/Audit/Kanban 不 rollback。',
+      deps_up: '被 L3 Gateway 读写；被 L4 Journal 记录',
+      deps_down: '为 L9 Event Projection 提供物理存储和重建基础',
+      ascii: '💾 Gateway State (STATE_ROOT/.../runs/run_001/)\n   ├─ run_metadata.json: status=completed, stage=6\n   ├─ command_records.jsonl\n   ├─ events.jsonl (seq 1..847, 物理存储)\n   ├─ pending_decisions: []\n   ├─ resume_checkpoints: [chk_12, chk_38]\n   ├─ artifact_refs: [state://.../structured_prd.json]\n   └─ projection_status: current'
+    },
+    {
+      id: 'l6', num: 6, color: 'text-orange-400', border: 'border-orange-400',
+      name: '任务生命周期层', entity: 'Hermes Kanban',
+      role: '官方任务生命周期权威。task existence、native status、parent/child dependencies、blocking、completion 的唯一直接来源。',
+      normal: 'Gateway 通过 hermes kanban create/link/complete/block 驱动六阶段任务；Kanban 的 done 状态是 Gateway 推进的必要条件。',
+      boundary: 'Kanban CLI 不可用时 Gateway 无法推进 lifecycle；\n恢复时 Kanban 状态是 recovery authority 之一，必须与 State 交叉验证。',
+      deps_up: '被 L3 Gateway 调用（create/complete/block）',
+      deps_down: '为 L9 Event Projection 提供任务状态数据',
+      ascii: '📋 Hermes Kanban (官方 CLI)\n   ├─ Parent: workflow_run_001 [done]\n   ├─ Stage 1: direction_debate      [done]\n   ├─ Stage 2: solution_debate       [done]\n   ├─ Stage 3: implementation        [done]\n   ├─ Stage 4: improvement           [done] cycle=1\n   ├─ Stage 5: global_evaluation     [done]\n   ├─ Stage 6: continuous_improvement [done]\n   └─ 依赖链: 1→2→3→4→5→6 (DAG)'
+    },
+    {
+      id: 'l7', num: 7, color: 'text-red-400', border: 'border-red-400',
+      name: '不可变证据层', entity: 'Audit',
+      role: 'append-only 历史证据权威。stage outputs、decisions、retries、fallbacks、failures、downgrades、closeout 的永久记录。',
+      normal: '每个 workflow transition 写入独立 audit json；记录 worker fallback、decision resolve、improvement cycle、closeout。',
+      boundary: 'Audit 不可从 Event 重建；丢失则 lineage / forensic 失去证据；但运行时 workflow 可不依赖 Audit 继续推进。',
+      deps_up: '被 L3 Gateway 写入（post-side-effect）',
+      deps_down: '为 L9 Event Projection 重建提供辅助数据',
+      ascii: '🔒 Audit (AUDIT_ROOT/.../runs/run_001/)\n   ├─ audit_001: run_created\n   ├─ audit_012: stage_completed (stage=1)\n   ├─ audit_038: worker_fallback (codex→claude)\n   ├─ audit_042: decision_resolved (approve, kimi)\n   ├─ audit_055: improvement_report (cycle=1)\n   ├─ audit_079: global_evaluation (pass_warn)\n   ├─ audit_099: closeout (completed)\n   └─ 原则: append-only, 不可从 Event 重建'
+    },
+    {
+      id: 'l8', num: 8, color: 'text-cyan-400', border: 'border-cyan-400',
+      name: '结构化产物层', entity: 'Artifacts (PRD / Plan / Reports / Proposals)',
+      role: 'Schema-valid 结构化产物。被 State/Audit 引用，revision 写新版本不覆盖旧版。',
+      normal: 'Six fixed reports + test_plan + test_execution + improvement + closeout + proposals 全部 schema-valid，URI-addressed。',
+      boundary: 'Artifact 丢失时 Audit 仍保留 ref 和 hash，可检测丢失；\nauto-apply 仅限 .workflow/knowledge/* 低风险文件，root AGENTS.md/CLAUDE.md/SOUL.md 仅 proposal。',
+      deps_up: '被 L11 Workers 生成；被 L3 Gate 校验；被 L5 State / L7 Audit 引用',
+      deps_down: '为 L9 Event Projection 提供 artifact ref 数据',
+      ascii: '📄 Artifacts (Schema-Valid URIs)\n   ├─ state://.../structured_prd.json\n   ├─ state://.../development_plan.json\n   ├─ state://.../best_choice_report.json\n   ├─ state://.../implementation_plan.json\n   ├─ state://.../improvement_report.json (cycle=1)\n   ├─ state://.../global_evaluation_report.json\n   ├─ state://.../iteration_closeout_report.json\n   ├─ state://.../system_improvement_proposals.json\n   ├─ audit://.../test_execution_report.json (exit=0)\n   └─ repo://.workflow/knowledge/... (auto_applied)'
+    },
+    {
+      id: 'l9', num: 9, color: 'text-lime-400', border: 'border-lime-400',
+      name: '观察投影层', entity: 'Event Projection',
+      role: '非权威观察流。从 L5/L6/L7/L8 重建，用于 Kimi 监督、SSE、JSON 轮询、UI replay。',
+      normal: 'per-run monotonic seq (1..847)；post-commit emit；包含 summary + artifact_refs；不含 raw prompts / secrets / stdout。',
+      boundary: 'projection_status=inconsistent → Kimi 必须 resync；\nEvent append 失败 → 不 rollback State/Audit/Kanban；\nEvent 可 rebuild，但 rebuild 不可发明 Audit evidence。',
+      deps_up: '依赖 L5 State (物理存储) + L6 Kanban + L7 Audit + L8 Artifacts 做重建',
+      deps_down: '被 L1 Kimi 消费（GET /events?since_seq）',
+      ascii: '📡 Event Projection (非权威)\n   ├─ seq=001: run_created\n   ├─ seq=012: stage_started (stage=1)\n   ├─ seq=089: task_completed (code_review)\n   ├─ seq=256: decision_required (kimi)\n   ├─ seq=512: cache_degraded (redis↓)\n   ├─ seq=700: debate_degraded (template fb)\n   ├─ seq=847: run_completed\n   ├─ projection_status: current\n   └─ 规则: 不 pre-announce; authority durable 后 emit'
+    },
+    {
+      id: 'l10', num: 10, color: 'text-slate-400', border: 'border-slate-400',
+      name: '优化缓存层', entity: 'Cache (local_filesystem)',
+      role: '仅重建优化数据。debate_result、knowledge_summary、capabilities、gateway_projection 的临时加速。',
+      normal: 'backend=local_filesystem；keys: hermes:mvp:{project}:{type}:{sha256}；Redis 配置但不可用时 fallback。',
+      boundary: 'Cache 丢失/损坏 → 重建或标记 degraded；\nCache miss 不阻塞 workflow；Cache ref 不能作为 resume / completion authority。',
+      deps_up: '被 L3 Gateway 读写',
+      deps_down: '无（最底层辅助设施）',
+      ascii: '⚡ Cache (CACHE_ROOT/{project}/)\n   ├─ debate_result:<sha256>      TTL=24h\n   ├─ knowledge_summary:<sha256>  TTL=6h\n   ├─ test_plan:<sha256>          TTL=24h\n   ├─ capabilities:<sha256>       TTL=5m\n   ├─ gateway_projection:<sha256> TTL=30s\n   ├─ backend: local_filesystem\n   └─ 边界: 丢失 → degraded, 不阻塞 truth'
+    },
+    {
+      id: 'l11', num: 11, color: 'text-fuchsia-400', border: 'border-fuchsia-400',
+      name: '执行后端层', entity: 'Worker Backends + Debate Backends',
+      role: '被 Gateway 调度的 CLI/API 执行器。Worker 做代码实现/评审/QA；Debate 做方向/方案/评估辩论。',
+      normal: 'Worker: codex(implementer) / claude(reviewer) / worktree workspace；\nDebate: dynamic_assembly / jury_panel / sequential_review / risk_priority_matrix / parallel_debate。',
+      boundary: 'crash/timeout → retry 1 次 → fallback → 仍失败则 blocked/audited；\nWorker 不可直接 mutate Kanban/State；必须通过 L3 Gate；\ntemplate debate fallback 标记 degraded。',
+      deps_up: '被 L3 Gateway 调度（capability negotiation 后 dispatch）',
+      deps_down: '生成产物写入 L8 Artifacts；返回 structured JSON 给 L3 Gate',
+      ascii: '🤖 Worker Backends        🎭 Debate Backends\n   ├─ codex (implementer)     ├─ dynamic_assembly (direction)\n   ├─ claude (reviewer)       ├─ jury_panel (direction)\n   ├─ fallback: codex→claude  ├─ sequential_review (solution)\n   │   (audit_038)            ├─ risk_priority_matrix (solution)\n   ├─ workspace: worktree     ├─ parallel_debate (global_eval)\n   └─ 输出: structured JSON    └─ template fallback (degraded)'
+    }
+  ],
+  matrix: [
+    { pair: 'Kimi ↔ Gateway Adapter', dep: 'Kimi 依赖 Gateway API；Gateway 不依赖 Kimi', cover: 'Kimi Decision 可覆盖 Gateway blocked 流转', grain: '外部监督者 vs 编排进程', boundary: 'Event inconsistent → Kimi resync，Gateway 保持 State' },
+    { pair: 'API ↔ Gateway Adapter', dep: 'API 是 Gateway 暴露面，无 Gateway 则无 API', cover: 'Gateway 实现并可变更 API 行为', grain: '接口契约 vs 实现进程', boundary: 'Gateway 崩溃 → API 无响应，数据仍在磁盘' },
+    { pair: 'Gateway ↔ Command Journal', dep: 'Gateway 依赖 Journal 恢复；Journal 不独立运转', cover: 'Gateway 创建并写入 Journal', grain: '整体进程 vs 内部持久化机制', boundary: '崩溃后 Journal 权威高于内存状态' },
+    { pair: 'Journal ↔ Gateway State', dep: 'Journal 写入 State；State 依赖 Journal 恢复', cover: 'State 可变，Journal append-only', grain: '变更日志 vs 运行时快照', boundary: '重启后 Journal 与 State 交叉验证' },
+    { pair: 'State ↔ Hermes Kanban', dep: 'Gateway 依赖 Kanban；Kanban 不依赖 Gateway', cover: 'Gateway 驱动 Kanban；Kanban 约束 Gateway', grain: '工作流元数据 vs 任务生命周期', boundary: 'Kanban 是 recovery authority 之一' },
+    { pair: 'State ↔ Audit', dep: '互相独立，分别持久化', cover: 'State 可变；Audit append-only 不可覆盖', grain: '运行时状态 vs 不可变证据', boundary: 'Recovery 时共同构成权威链' },
+    { pair: 'State ↔ Event Projection', dep: 'Event 依赖 State；State 不依赖 Event', cover: 'Event 可重建覆盖；State 损坏则 Event 失基础', grain: '权威真相 vs 观察投影', boundary: 'Event append 失败 → degraded，State 不变' },
+    { pair: 'Audit ↔ Artifacts', dep: 'Audit 引用 Artifacts；Artifacts 不依赖 Audit', cover: 'Audit 记录变更；Artifact 不覆盖 Audit', grain: '证据日志 vs 结构化产物', boundary: 'Artifact 丢失时 Audit 仍保留 ref' },
+    { pair: 'Event ↔ Cache', dep: '互相独立', cover: '两者都可重建，Event 有 seq 约束', grain: '时序投影流 vs KV 优化存储', boundary: '两者丢失都不影响 workflow truth' },
+    { pair: 'Gateway ↔ Workers', dep: 'Gateway 调度 Worker；Worker 独立存在', cover: 'Gateway 选择/回退 Worker；Worker 须过 Gate', grain: '编排器 vs 执行器', boundary: 'Worker crash → fallback → blocked' },
+    { pair: 'Kanban ↔ Workers', dep: 'Worker 执行任务；Kanban 记录任务生命周期', cover: 'Worker 输出触发 Kanban complete；Kanban block 阻止 Worker 调度', grain: '任务板 vs 执行进程', boundary: 'Kanban 状态是 Worker 调度前提' }
+  ],
+  checklist: [
+    { q: 'Kimi', a: '是。Kimi Decision 可覆盖 L3 Gateway blocked 流转；L3 Gate 可否决 L11 Worker 输出。层间方向明确，不存在层内互相覆盖。' },
+    { q: 'L3 Gateway 是 L4 Journal / L5 State 的整体；L9 Event 是 L5/L6/L7/L8 的投影视图。分层时已将粒度差异识别并分层（Journal 单独一层，Event 单独一层）。' },
+    { q: '去掉 L1 Kimi → 自动低风险任务可运行，blocked 时停滞；去掉 L4 Journal → 运行时可，崩溃后无法恢复；去掉 L7 Audit → 运行时可， lineage 失证据；去掉 L9/L10 → 完全可运行。符合「权威层缺失则停摆，非权威层缺失则降级」的设计。' }
+  ]
+};
+</script>
+
+
+<!-- ==================== VIEW ==================== -->
+<div x-data="layersLab(CONFIG)" class="h-screen flex flex-col overflow-hidden">
+
+  <!-- Header -->
+  <header class="shrink-0 px-6 pt-4 pb-0 border-b border-gray-700">
+    <div class="flex items-baseline justify-between">
+      <h1 class="text-xl text-blue-400 font-bold" x-text="title"></h1>
+      <span class="text-xs text-gray-600" x-text="subtitle"></span>
+    </div>
+    <!-- Tabs -->
+    <div class="flex gap-0.5 border-b-2 border-gray-700 mt-3">
+      <template x-for="(tab, i) in tabs" :key="i">
+        <button @click="activeTab = i"
+          class="px-4 py-2 border border-gray-700 border-b-0 rounded-t text-sm transition-colors"
+          :class="activeTab === i
+            ? 'text-blue-400 bg-gray-950 -mb-[2px] z-10 relative'
+            : 'text-gray-500 hover:text-gray-200 bg-surface'"
+          x-text="tab"></button>
+      </template>
+    </div>
+  </header>
+
+  <!-- Tab Panels -->
+  <main class="flex-1 overflow-hidden min-h-0 relative">
+
+    <!-- TAB 0: 层级浏览器 -->
+    <div x-show="activeTab === 0" x-cloak
+         x-transition:enter="transition-opacity duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="h-full flex flex-col absolute inset-0">
+      <div class="flex-1 grid grid-cols-[280px_1fr] gap-0 overflow-hidden min-h-0">
+        <!-- 左侧层列表 -->
+        <div class="bg-gray-900 border-r border-gray-700 overflow-y-auto min-h-0">
+          <div class="px-4 py-3 border-b border-gray-700 text-sm text-gray-500 bg-white/5">选择层级</div>
+          <template x-for="(layer, i) in layers" :key="i">
+            <button @click="selectedLayer = i"
+              class="w-full text-left px-4 py-3 border-b border-gray-800 transition-colors text-sm"
+              :class="selectedLayer === i
+                ? 'bg-gray-800 ' + layer.color + ' border-l-4 ' + layer.border
+                : 'text-gray-400 hover:bg-gray-800/50 border-l-4 border-transparent'">
+              <div class="font-semibold" x-text="layer.name"></div>
+              <div class="text-xs text-gray-500 mt-0.5 truncate" x-text="layer.entity"></div>
+            </button>
+          </template>
+        </div>
+        <!-- 右侧详情 -->
+        <div class="flex flex-col gap-4 p-4 overflow-hidden min-h-0">
+          <!-- 详情面板 -->
+          <div class="flex-1 bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col min-h-0">
+            <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm bg-white/5 flex justify-between items-center"
+                 :class="currentLayer.color">
+              <span class="font-semibold" x-text="currentLayer.name + ' — ' + currentLayer.entity"></span>
+              <span class="text-xs text-gray-500" x-text="'Layer ' + currentLayer.num + ' / 11'"></span>
+            </div>
+            <div class="flex-1 p-4 overflow-y-auto min-h-0 space-y-4 text-sm">
+              <!-- Role -->
+              <div>
+                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">职责</div>
+                <div class="text-gray-200 leading-relaxed" x-text="currentLayer.role"></div>
+              </div>
+              <!-- Normal -->
+              <div class="border-l-4 border-emerald-500 bg-emerald-500/5 rounded-r px-3 py-2">
+                <div class="text-xs text-emerald-400 font-semibold mb-1">常态行为</div>
+                <div class="text-gray-300 leading-relaxed whitespace-pre-line" x-text="currentLayer.normal"></div>
+              </div>
+              <!-- Boundary -->
+              <div class="border-l-4 border-amber-500 bg-amber-500/5 rounded-r px-3 py-2">
+                <div class="text-xs text-amber-400 font-semibold mb-1">边界态行为</div>
+                <div class="text-gray-300 leading-relaxed whitespace-pre-line" x-text="currentLayer.boundary"></div>
+              </div>
+              <!-- Deps -->
+              <div class="grid grid-cols-2 gap-3">
+                <div class="bg-gray-800/50 rounded p-3">
+                  <div class="text-xs text-gray-500 mb-1">上层依赖</div>
+                  <div class="text-gray-300" x-text="currentLayer.deps_up"></div>
+                </div>
+                <div class="bg-gray-800/50 rounded p-3">
+                  <div class="text-xs text-gray-500 mb-1">下层依赖</div>
+                  <div class="text-gray-300" x-text="currentLayer.deps_down"></div>
+                </div>
+              </div>
+              <!-- ASCII -->
+              <div>
+                <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">层内剖面</div>
+                <pre class="ascii-pre bg-gray-800/50 rounded p-3 text-gray-300 overflow-x-auto" x-text="currentLayer.ascii"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 1: 完整剖面 -->
+    <div x-show="activeTab === 1" x-cloak
+         x-transition:enter="transition-opacity duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="h-full flex flex-col absolute inset-0">
+      <div class="flex-1 px-6 py-4 overflow-hidden min-h-0">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col h-full">
+          <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5 flex justify-between">
+            <span>Hermes Orchestra MVP — 完成态场景剖面（Run: run_20260517_001 | completed）</span>
+            <span class="text-xs text-gray-600">ASCII 编码可视化</span>
+          </div>
+          <div class="flex-1 p-4 overflow-y-auto min-h-0">
+            <pre class="ascii-pre text-gray-300" id="full-ascii"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: 差异矩阵 -->
+    <div x-show="activeTab === 2" x-cloak
+         x-transition:enter="transition-opacity duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="h-full flex flex-col absolute inset-0">
+      <div class="flex-1 px-6 py-4 overflow-hidden min-h-0">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col h-full">
+          <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5">
+            STEP 2 — 差异矩阵（四维度）
+          </div>
+          <div class="flex-1 overflow-y-auto min-h-0">
+            <table class="w-full text-sm">
+              <thead class="sticky top-0 bg-gray-900 z-10">
+                <tr class="border-b border-gray-700">
+                  <th class="text-left px-4 py-2 text-gray-400 font-semibold w-48">实体对</th>
+                  <th class="text-left px-4 py-2 text-gray-400 font-semibold">a. 依赖方向</th>
+                  <th class="text-left px-4 py-2 text-gray-400 font-semibold">b. 非对称影响</th>
+                  <th class="text-left px-4 py-2 text-gray-400 font-semibold">c. 粒度一致性</th>
+                  <th class="text-left px-4 py-2 text-gray-400 font-semibold">d. 边界暴露</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(row, i) in matrix" :key="i">
+                  <tr class="border-b border-gray-800 hover:bg-gray-800/30">
+                    <td class="px-4 py-3 text-purple-400 font-semibold align-top" x-text="row.pair"></td>
+                    <td class="px-4 py-3 text-gray-300 align-top" x-text="row.dep"></td>
+                    <td class="px-4 py-3 text-gray-300 align-top" x-text="row.cover"></td>
+                    <td class="px-4 py-3 text-gray-300 align-top" x-text="row.grain"></td>
+                    <td class="px-4 py-3 text-gray-300 align-top" x-text="row.boundary"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: 原子清单 -->
+    <div x-show="activeTab === 3" x-cloak
+         x-transition:enter="transition-opacity duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="h-full flex flex-col absolute inset-0">
+      <div class="flex-1 px-6 py-4 overflow-hidden min-h-0">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col h-full">
+          <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5">
+            STEP 1 — 原子化清单（禁止归类/分组/抽象）
+          </div>
+          <div class="flex-1 overflow-y-auto min-h-0 p-4">
+            <div class="grid grid-cols-3 gap-3 text-sm">
+              <template x-for="(item, i) in atoms" :key="i">
+                <div class="bg-gray-800/50 border border-gray-700 rounded px-3 py-2">
+                  <span class="text-gray-500 text-xs mr-2" x-text="'#' + (i+1)"></span>
+                  <span class="text-gray-200" x-text="item"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: 自检 -->
+    <div x-show="activeTab === 4" x-cloak
+         x-transition:enter="transition-opacity duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="h-full flex flex-col absolute inset-0">
+      <div class="flex-1 px-6 py-4 overflow-hidden min-h-0">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col h-full">
+          <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5">
+            STEP 5 — 输出后自检
+          </div>
+          <div class="flex-1 overflow-y-auto min-h-0 p-4 space-y-4">
+            <template x-for="(item, i) in checklist" :key="i">
+              <div class="border-l-4 border-blue-400 bg-blue-400/5 rounded-r px-4 py-3">
+                <div class="text-sm text-blue-400 font-semibold mb-2" x-text="'Q' + (i+1) + ': ' + item.q"></div>
+                <div class="text-sm text-gray-300 leading-relaxed" x-text="item.a"></div>
+              </div>
+            </template>
+            <!-- 自检结论 -->
+            <div class="border-l-4 border-emerald-500 bg-emerald-500/5 rounded-r px-4 py-3">
+              <div class="text-sm text-emerald-400 font-semibold mb-1">自检结论</div>
+              <div class="text-sm text-gray-300 leading-relaxed">
+                层级划分正确。权威链（L5~L8）任何一层缺失都会导致 workflow 无法完成或无法证明完成；
+                非权威层（L9~L10）缺失不影响核心运转；L1/L4/L7 缺失影响监督/恢复/审计但不立即停止运行时。
+                这与文档中「State/Audit/Kanban/Artifacts 是 authority chain；Events 和 Cache 不是 workflow truth」的核心设计完全一致。
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer: 层间关系图 -->
+  <footer class="shrink-0 px-6 py-2 border-t border-gray-700 bg-gray-900/50">
+    <div class="flex items-center gap-2 text-xs text-gray-500 overflow-x-auto">
+      <span class="text-gray-400 font-semibold shrink-0">层间流向:</span>
+      <span class="shrink-0">L1 → L2 → L3 → L4</span>
+      <span class="text-gray-600 shrink-0">├→</span>
+      <span class="text-amber-400 shrink-0">L5(State)</span>
+      <span class="text-gray-600 shrink-0">├→ L9(Event)</span>
+      <span class="text-gray-600 shrink-0">├→</span>
+      <span class="text-orange-400 shrink-0">L6(Kanban)</span>
+      <span class="text-gray-600 shrink-0">├→</span>
+      <span class="text-red-400 shrink-0">L7(Audit)</span>
+      <span class="text-gray-600 shrink-0">├→</span>
+      <span class="text-cyan-400 shrink-0">L8(Artifacts)</span>
+      <span class="text-gray-600 shrink-0">L3 ↓ L11(Workers) → L8</span>
+      <span class="text-gray-600 shrink-0">L3 ↔ L10(Cache)</span>
+    </div>
+  </footer>
+</div>
+
+<!-- ==================== ENGINE ==================== -->
+<script>
+function layersLab(config) {
+  return {
+    title: config.title,
+    subtitle: config.subtitle,
+    tabs: config.tabs,
+    layers: config.layers,
+    matrix: config.matrix,
+    checklist: config.checklist,
+    activeTab: 0,
+    selectedLayer: 0,
+
+    get currentLayer() {
+      return this.layers[this.selectedLayer];
+    },
+
+    get atoms() {
+      return [
+        'Kimi（外部监督者/上层编排者）',
+        '/orchestra/* API Surface',
+        '/v1/* Proxy（上游代理面）',
+        'Gateway Adapter（Python http.server + router）',
+        'Gateway Advancement Gate（Worker 输出校验门）',
+        'Command Journal（写前命令日志）',
+        'Idempotency Engine（幂等去重机制）',
+        'Gateway State（运行时状态存储）',
+        'Event Store（事件物理存储，位于 State 目录内）',
+        'Hermes Kanban（官方任务生命周期源）',
+        'Audit（不可变证据存储）',
+        'Artifact（结构化产物：PRD/Plan/Report/Proposal 等）',
+        'Artifact Reference（带 authority 的 URI 机制）',
+        'Event Projection（事件查询投影，逻辑层）',
+        'Cache（本地文件系统缓存，可重建）',
+        'Worker Backend Registry（工作者后端注册表）',
+        'Worker Role Registry（角色路由注册表）',
+        'Debate Team Registry（16 队辩论注册表）',
+        'Debate Mode Registry（8 种辩论模式注册表）',
+        'Worker Context Envelope（工作者输入信封）',
+        'Worker Context Bundle（只读上下文包）',
+        'State-Advancing Worker Output（状态推进输出）',
+        'Decision Authority（决策权：kimi / human）',
+        'Six-Stage DAG（六阶段工作流定义）',
+        'Improvement Cycle（自动改进循环，上限 1 次）',
+        'Lineage Run（血缘续跑，新 run_id）',
+        'Run Failure Report（终端失败报告）',
+        'Structured PRD（结构化需求）',
+        'Development Plan（开发计划）',
+        'Test Plan / Test Execution Report',
+        'Review/QA Verdict（评审裁决）',
+        'Global Evaluation Report（全局评估）',
+        'Iteration Closeout Report（迭代收尾）',
+        'System Improvement Proposals（系统改进提案）'
+      ];
+    }
+  };
+}
+
+// 插入完整 ASCII 剖面
+document.addEventListener('DOMContentLoaded', () => {
+  const ascii = `╔══════════════════════════════════════════════════════════════════════════════════════╗
+║           HERMES ORCHESTRA MVP — 实施完成态场景剖面                                   ║
+║    Run: run_20260517_001 │ Project: hermes │ Status: completed │ Verdict: pass       ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+┌─ LAYER 1: 外部监督层 ───────────────────────────────────────────────────────────────┐
+│  👤 Kimi                                                                          │
+│     ├─ 提交: POST /orchestra/runs (structured ticket, idempotency_key: ik_001)    │
+│     ├─ 监督: GET /events?since_seq=0..847 (SSE/JSON 轮询)                         │
+│     ├─ 决策: POST /decisions/dec_042 → action=approve (pass_with_warnings)        │
+│     └─ 终验: 确认 iteration_closeout_report.closeout_kind=completed               │
+│  【边界态】Event 出现 gap/duplicate → Kimi 必须 resync (status+tasks+events)       │
+└────────────────────────────────────────────────────────────────────────────────────┘
+           │ 调用/查询
+           ▼
+┌─ LAYER 2: 接口契约层 ───────────────────────────────────────────────────────────────┐
+│  🌐 /orchestra/* API Surface        (127.0.0.1:8642)                              │
+│     ├─ POST /orchestra/runs         → cmd_001 (幂等去重后进入 Gateway)             │
+│     ├─ GET  /orchestra/runs/{id}    → 聚合 L5+L6+Artifact 的投影状态               │
+│     ├─ GET  /orchestra/runs/{id}/events → Event Query (since_seq, limit)          │
+│     ├─ POST /orchestra/decisions/{id} → cmd_042                                   │
+│     └─ POST /orchestra/runs/{id}/stop   (本次未触发)                              │
+│  🌐 /v1/* Proxy → 127.0.0.1:8643 [upstream_api: degraded]                         │
+│  【边界态】/v1/* 502 时 /orchestra/* 继续服务，Gateway 不中断                        │
+└────────────────────────────────────────────────────────────────────────────────────┘
+           │ 路由 + Schema 校验
+           ▼
+┌─ LAYER 3: 网关编排层 ───────────────────────────────────────────────────────────────┐
+│  ⚙️ Gateway Adapter (scripts/lib/orch_gateway.py)                                 │
+│     ├─ Idempotency Engine: scope=project+endpoint+path+ik → 去重/冲突检测          │
+│     ├─ 六阶段状态机: direction → solution → impl → improve → eval → closeout      │
+│     └─ Gateway Advancement Gate (Worker 输出校验)                                  │
+│         ├─ 校验 protocol/schema + correlation_id                                  │
+│         ├─ 校验 artifact_refs 可解析 + schema_valid                               │
+│         ├─ 校验 write_scope (within allowed_write_scope.paths)                    │
+│         ├─ 校验 forbidden_paths (无 .git/ .env/ root AGENTS.md 触碰)               │
+│         ├─ 校验 risk_level + approval_boundary (L3/L4 → Human Approval)           │
+│         └─ 校验 required test/review evidence 存在                                 │
+│  【边界态】Worker 返回 schema_mismatch → Gate 硬阻断，无 fallback                   │
+└────────────────────────────────────────────────────────────────────────────────────┘
+           │ 任何 mutating 命令：先写 Journal
+           ▼
+┌─ LAYER 4: 写前日志层 ───────────────────────────────────────────────────────────────┐
+│  📓 Command Journal (存储于 L5 State 内 command_records.jsonl)                     │
+│     ├─ cmd_001: status=completed, 5 steps 全部 durable                            │
+│     ├─ cmd_042: status=completed, action=approve, decision_resolved               │
+│     ├─ 原则: Gateway 不执行未在 Journal 中 planned 的 side-effect                   │
+│     └─ Crash Recovery: 启动时扫描 status=in_progress → reconciliation             │
+│  【边界态】reconciliation 无法证明 side-effect 是否发生 →                          │
+│           标记 run blocked + emit decision_required + 禁止盲重放                   │
+└────────────────────────────────────────────────────────────────────────────────────┘
+           │ 并行写入权威基础层 (L5 / L6 / L7 / L8)
+           ├────────────────────────┬────────────────────────┬────────────────────────┐
+           ▼                        ▼                        ▼                        ▼
+┌─ L5: 运行时状态层 ──────┐ ┌─ L6: 任务生命周期层 ──────┐ ┌─ L7: 不可变证据层 ──────┐ ┌─ L8: 结构化产物层 ──────┐
+│  💾 Gateway State       │ │  📋 Hermes Kanban         │ │  🔒 Audit                 │ │  📄 Artifacts            │
+│  (STATE_ROOT/...)       │ │  (官方 CLI kanban)        │ │  (AUDIT_ROOT/...)         │ │  (Schema-Valid URIs)     │
+│                         │ │                           │ │                           │ │                          │
+│  ├─ run_id: run_001     │ │  ├─ Parent: workflow_001  │ │  ├─ audit_001: run_created│ │  ├─ structured_prd.json  │
+│  ├─ status: completed   │ │  │   status: done         │ │  ├─ audit_012: stage_1    │ │  ├─ development_plan.json│
+│  ├─ current_stage: 6    │ │  ├─ Stage1: direction     │ │  │   done                  │ │  ├─ best_choice_report   │
+│  ├─ events.jsonl        │ │  ├─ Stage2: solution      │ │  ├─ audit_038: worker_fb  │ │  ├─ implementation_plan  │
+│  │  (seq 1..847)        │ │  ├─ Stage3: impl          │ │  │   (codex→claude)        │ │  ├─ improvement_report   │
+│  ├─ pending_decisions:[]│ │  ├─ Stage4: improve       │ │  ├─ audit_042: decision   │ │  ├─ global_eval_report   │
+│  ├─ artifact_refs:[...] │ │  │   (cycle=1)            │ │  │   approve (kimi)        │ │  │  verdict=pass_warn     │
+│  └─ projection: current │ │  ├─ Stage5: eval          │ │  ├─ audit_055: improve    │ │  ├─ iteration_closeout   │
+│                         │ │  └─ Stage6: closeout      │ │  │   cycle=1, in_scope     │ │  │  closeout=completed    │
+│  【边界态】State 损坏   │ │     依赖链: 1→2→3→4→5→6   │ │  └─ audit_099: closeout   │ │  ├─ system_improvements  │
+│  → 无法运行，需从 Kanban│ │                           │ │                           │ │  ├─ test_plan.json       │
+│  + Audit + Artifact 恢复│ │  【边界态】Kanban CLI     │ │  【边界态】Audit 不可重建 │ │  ├─ test_exec_report     │
+│                         │ │  不可用时 Gateway 阻塞    │ │  自 Event，独立保留       │ │  └─ repo://.workflow/    │
+└─────────────────────────┘ └───────────────────────────┘ └───────────────────────────┘ └──────────────────────────┘
+           ▲                        ▲                        ▲                        ▲
+           │                        │                        │                        │
+           └────────────────────────┴────────────────────────┴────────────────────────┘
+                                      │
+                                      │ 权威写入完成后，才允许投影
+                                      ▼
+┌─ LAYER 9: 观察投影层 ───────────────────────────────────────────────────────────────┐
+│  📡 Event Projection (从 L5/L6/L7/L8 重建，非权威)                                │
+│     ├─ seq=001: run_created                                                        │
+│     ├─ seq=012: stage_started (stage=1, direction_debate)                         │
+│     ├─ seq=089: task_completed (stage=3, code_review)                             │
+│     ├─ seq=256: decision_required (authority_required=kimi)                       │
+│     ├─ seq=257: decision_resolved                                                 │
+│     ├─ seq=512: cache_degraded (redis unavailable, fallback=local_filesystem)     │
+│     ├─ seq=700: debate_degraded (template fallback, real backend ∅)               │
+│     ├─ seq=847: run_completed                                                     │
+│     ├─ projection_status: current                                                 │
+│     └─ 规则: Event 不 pre-announce 任何 completion；authority durable 后才 emit      │
+│  【边界态】projection_status=inconsistent → Kimi 必须 resync，不能基于 stale Event   │
+│           做 mutating 决策。Event 丢失可 rebuild，但不可重建 Audit                   │
+└────────────────────────────────────────────────────────────────────────────────────┘
+           │
+           │ (独立，非权威)
+           ▼
+┌─ LAYER 10: 优化缓存层 ──────────────────────────────────────────────────────────────┐
+│  ⚡ Cache (CACHE_ROOT/{project}/)                                                  │
+│     ├─ debate_result:<sha256>      TTL=24h                                        │
+│     ├─ knowledge_summary:<sha256>  TTL=6h                                         │
+│     ├─ capabilities:<sha256>       TTL=5m                                         │
+│     ├─ gateway_projection:<sha256> TTL=30s                                        │
+│     └─ backend: local_filesystem (redis configured but unavailable)               │
+│  【边界态】Cache 丢失/损坏 → 重建或标记 degraded，绝不阻塞 workflow truth           │
+└────────────────────────────────────────────────────────────────────────────────────┘
+           ▲
+           │ Gateway dispatch
+           └─────────────────────────────────────────────────────────────────────────┐
+                                                                                     │
+┌─ LAYER 11: 执行后端层 ──────────────────────────────────────────────────────────────┤
+│  🤖 Worker Backends                    🎭 Debate Backends                          │
+│     ├─ codex (implementer)             ├─ dynamic_assembly (direction_debate)      │
+│     ├─ claude (reviewer)               ├─ jury_panel (direction_debate)            │
+│     ├─ fallback 记录:                  ├─ sequential_review (solution_debate)      │
+│     │   codex→claude (audit_038)       ├─ risk_priority_matrix (solution_debate)   │
+│     │   reason: rate_limit             ├─ parallel_debate (global_evaluation)      │
+│     ├─ workspace: kanban_worktree      └─ template fallback (degraded, audit记录)  │
+│     │   (fallback=direct_project 时                                                │
+│     │    记录于 closeout)              │
+│     ├─ 输入: Worker Context Envelope   │
+│     │   (无 raw chat/full dump/secret) │
+│     └─ 输出: structured JSON +         │
+│         requested_transition           │
+│                                        │
+│  【边界态】Worker crash/timeout → 重试 1 次 → fallback → 仍失败则 blocked/audited  │
+│           Worker 不可直接 mutate Kanban/State；必须通过 L3 Gate                    │
+└────────────────────────────────────────────────────────────────────────────────────┘`;
+  const el = document.getElementById('full-ascii');
+  if (el) el.textContent = ascii;
+});
+</script>
+
+</body>
+</html>

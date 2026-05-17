@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Orchestra MVP — 引导式架构漫游</title>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        surface: '#161b22',
+        border: '#30363d',
+      }
+    }
+  }
+}
+</script>
+<style>
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  [x-cloak] { display: none !important; }
+
+  .tour-card {
+    border-radius: 12px;
+    border: 1.5px solid #374151;
+    background: rgba(31,41,55,0.5);
+    padding: 16px 20px;
+    transition: all 0.2s ease;
+  }
+  .tour-card:hover {
+    border-color: #4b5563;
+    transform: translateY(-2px);
+  }
+  .actor-card {
+    border-radius: 10px;
+    border: 1.5px solid;
+    padding: 14px 16px;
+    text-align: center;
+    transition: all 0.2s ease;
+  }
+  .actor-card:hover {
+    transform: scale(1.03);
+    filter: brightness(1.1);
+  }
+  .stage-pill {
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1.5px solid;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+  }
+  .stage-pill:hover {
+    transform: scale(1.05);
+  }
+  .stage-arrow {
+    color: #4b5563;
+    font-size: 14px;
+    padding: 0 4px;
+  }
+  .principle-box {
+    border-radius: 10px;
+    border-left: 4px solid;
+    padding: 14px 18px;
+    background: rgba(31,41,55,0.6);
+  }
+  .flow-box {
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    text-align: center;
+    border: 1.5px solid;
+    line-height: 1.5;
+  }
+  .analogy-box {
+    border-radius: 10px;
+    border: 1.5px dashed #4b5563;
+    padding: 12px 16px;
+    background: rgba(75,85,99,0.1);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .step-active {
+    background: #2563eb;
+    border-color: #3b82f6;
+  }
+  .step-done {
+    background: #059669;
+    border-color: #10b981;
+  }
+  .step-pending {
+    background: transparent;
+    border-color: #374151;
+  }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-200 font-mono h-screen flex flex-col overflow-hidden">
+
+<div x-data="tourApp()" class="h-screen flex flex-col overflow-hidden">
+
+  <!-- Header -->
+  <header class="shrink-0 px-6 pt-4 pb-3 border-b border-gray-700">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-xl text-blue-400 font-bold">Hermes Orchestra MVP</h1>
+        <p class="text-xs text-gray-500 mt-1">引导式架构漫游 — 从零开始理解 11 层设计</p>
+      </div>
+      <div class="text-right">
+        <div class="text-sm text-gray-300">Step <span class="text-blue-400 font-bold" x-text="current + 1"></span> / <span x-text="steps.length"></span></div>
+        <div class="text-xs text-gray-600" x-text="steps[current].subtitle"></div>
+      </div>
+    </div>
+    <!-- Progress Bar -->
+    <div class="flex gap-1.5 mt-3">
+      <template x-for="(s, i) in steps" :key="i">
+        <button @click="goTo(i)"
+          class="h-2 flex-1 rounded-full transition-all duration-300"
+          :class="i < current ? 'bg-emerald-500' : i === current ? 'bg-blue-500' : 'bg-gray-700'"></button>
+      </template>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 overflow-hidden min-h-0 relative bg-gray-950">
+    <div class="h-full overflow-y-auto min-h-0 p-6">
+      <div class="max-w-4xl mx-auto">
+
+        <!-- Step Title -->
+        <div class="mb-6">
+          <h2 class="text-2xl text-gray-100 font-bold" x-text="steps[current].title"></h2>
+          <p class="text-sm text-gray-400 mt-2 leading-relaxed" x-text="steps[current].desc"></p>
+        </div>
+
+        <!-- Analogy (if present) -->
+        <div x-show="steps[current].analogy" x-cloak class="mb-6">
+          <div class="analogy-box text-gray-300">
+            <span class="text-amber-400 font-semibold">💡 类比理解：</span>
+            <span x-text="steps[current].analogy"></span>
+          </div>
+        </div>
+
+        <!-- Dynamic Content -->
+        <div x-html="steps[current].html"></div>
+
+        <!-- Detail Toggle -->
+        <div x-show="steps[current].detail" x-cloak class="mt-6">
+          <button @click="showDetail = !showDetail" class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+            <span x-text="showDetail ? '▾ 收起技术细节' : '▸ 展开技术细节'"></span>
+          </button>
+          <div x-show="showDetail" x-transition class="mt-3 p-4 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 leading-relaxed" x-html="steps[current].detail"></div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer Controls -->
+  <footer class="shrink-0 px-6 py-3 border-t border-gray-700 bg-gray-900/50">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+      <button @click="prev()" :disabled="current === 0" :class="current === 0 ? 'opacity-30' : ''"
+        class="px-4 py-2 bg-gray-800 border border-gray-700 rounded text-sm hover:bg-gray-700 transition-colors">◀ 上一步</button>
+
+      <div class="text-xs text-gray-500" x-text="steps[current].tip"></div>
+
+      <button @click="next()" :disabled="current === steps.length - 1" :class="current === steps.length - 1 ? 'opacity-30' : ''"
+        class="px-5 py-2 bg-blue-600 text-white rounded text-sm font-semibold hover:bg-blue-500 transition-colors">下一步 ▶</button>
+    </div>
+  </footer>
+</div>
+
+<script>
+function tourApp() {
+  return {
+    current: 0,
+    showDetail: false,
+    steps: [
+      {
+        title: '这个系统要解决什么问题？',
+        subtitle: '引言',
+        desc: '想象你让 AI 帮你改代码。改完后，你发现：AI 重复执行了同一个任务、崩溃后不知道做到哪一步、甚至擅自修改了不该碰的文件。Hermes Orchestra 就是为了防止这些问题而生。',
+        analogy: '就像一家建筑公司，不能 let 工人随便拆墙、不能 let 图纸丢失、更不能 let 同一个工程被重复施工。',
+        html: `
+          <div class="grid grid-cols-3 gap-4">
+            <div class="tour-card text-center">
+              <div class="text-2xl mb-2">🔁</div>
+              <div class="text-sm font-semibold text-gray-200">防重复执行</div>
+              <div class="text-xs text-gray-500 mt-1">同一个命令发两次，系统知道这是重试，不会创建两个任务</div>
+            </div>
+            <div class="tour-card text-center">
+              <div class="text-2xl mb-2">🛡️</div>
+              <div class="text-sm font-semibold text-gray-200">防越权修改</div>
+              <div class="text-xs text-gray-500 mt-1">AI 不能碰 .git/ .env/ 根目录规则文件，必须等人批准</div>
+            </div>
+            <div class="tour-card text-center">
+              <div class="text-2xl mb-2">💾</div>
+              <div class="text-sm font-semibold text-gray-200">防崩溃丢失</div>
+              <div class="text-xs text-gray-500 mt-1">Gateway 重启后，能根据日志恢复到崩溃前的精确状态</div>
+            </div>
+          </div>
+          <div class="mt-6 p-4 bg-blue-500/5 border border-blue-500/20 rounded-lg">
+            <div class="text-sm text-blue-300"><strong>一句话总结：</strong>Hermes Orchestra 是一个让 AI 工程任务<strong>可追踪、可恢复、可审计</strong>的指挥系统。</div>
+          </div>
+        `,
+        detail: '技术背景：当前 AI 工程工作流的问题是 execution state、audit evidence、progress events、worker output、cache hits 容易被混淆。这导致 retries unsafe、completion ambiguous、recovery unreliable。MVP 的目标是用严格的权威链（State/Audit/Kanban/Artifacts）和投影分离（Events/Cache）来解决这些混淆。',
+        tip: '点击「下一步」认识四个角色'
+      },
+      {
+        title: '四个角色（极简架构）',
+        subtitle: '角色认知',
+        desc: '把复杂的 11 层忘掉，先认识四个核心角色。他们就像一家正规公司的四个部门。',
+        analogy: '项目经理（Kimi）→ 指挥中心（Gateway）→ 施工队（Workers + Kanban）→ 档案室（State + Audit + Artifacts）。',
+        html: `
+          <div class="grid grid-cols-4 gap-3">
+            <div class="actor-card border-pink-500/40 bg-pink-500/10">
+              <div class="text-2xl mb-2">👤</div>
+              <div class="text-sm font-bold text-pink-300">项目经理</div>
+              <div class="text-xs text-gray-400 mt-1">Kimi</div>
+              <div class="text-[11px] text-gray-500 mt-2">提需求、看进度、拍板决策</div>
+            </div>
+            <div class="actor-card border-blue-500/40 bg-blue-500/10">
+              <div class="text-2xl mb-2">⚙️</div>
+              <div class="text-sm font-bold text-blue-300">指挥中心</div>
+              <div class="text-xs text-gray-400 mt-1">Gateway</div>
+              <div class="text-[11px] text-gray-500 mt-2">接收需求、分配任务、检查质量、写日志</div>
+            </div>
+            <div class="actor-card border-fuchsia-500/40 bg-fuchsia-500/10">
+              <div class="text-2xl mb-2">🔨</div>
+              <div class="text-sm font-bold text-fuchsia-300">施工队</div>
+              <div class="text-xs text-gray-400 mt-1">Workers + Kanban</div>
+              <div class="text-[11px] text-gray-500 mt-2">实际写代码、做评审、跑测试</div>
+            </div>
+            <div class="actor-card border-amber-500/40 bg-amber-500/10">
+              <div class="text-2xl mb-2">📁</div>
+              <div class="text-sm font-bold text-amber-300">档案室</div>
+              <div class="text-xs text-gray-400 mt-1">State + Audit + Artifacts</div>
+              <div class="text-[11px] text-gray-500 mt-2">记录一切，永不丢失，支持恢复</div>
+            </div>
+          </div>
+          <div class="mt-5 flex items-center justify-center gap-2 text-xs text-gray-500">
+            <span class="px-2 py-1 rounded bg-pink-500/10 text-pink-400">提需求</span>
+            <span>→</span>
+            <span class="px-2 py-1 rounded bg-blue-500/10 text-blue-400">指挥调度</span>
+            <span>→</span>
+            <span class="px-2 py-1 rounded bg-fuchsia-500/10 text-fuchsia-400">执行</span>
+            <span>→</span>
+            <span class="px-2 py-1 rounded bg-amber-500/10 text-amber-400">存档</span>
+          </div>
+        `,
+        detail: '这四人对应 11 层中的：项目经理=Kimi(L1)，指挥中心=Gateway(L3)+API(L2)+Journal(L4)，施工队=Workers(L11)+Kanban(L6)，档案室=State(L5)+Audit(L7)+Artifacts(L8)。Event(L9)和Cache(L10)是辅助观察层，不存真相。',
+        tip: '下一步看一次任务的完整旅程'
+      },
+      {
+        title: '一次任务的六阶段旅程',
+        subtitle: '工作流概览',
+        desc: '当 Kimi 提交一个需求后，系统不会立刻让 AI 写代码。而是先辩论方向、再辩论方案、再实施、再改进、再评估、最后收尾。',
+        analogy: '就像建一栋楼：先论证「要不要建」（方向辩论）→ 论证「怎么建」（方案辩论）→ 施工（实施）→ 发现问题返工（改进）→ 质检（全局评估）→ 交付归档（收尾）。',
+        html: `
+          <div class="flex items-center justify-center flex-wrap gap-2 py-4">
+            <div class="stage-pill bg-blue-500/10 border-blue-400 text-blue-300">1 方向辩论</div>
+            <span class="stage-arrow">→</span>
+            <div class="stage-pill bg-purple-500/10 border-purple-400 text-purple-300">2 方案辩论</div>
+            <span class="stage-arrow">→</span>
+            <div class="stage-pill bg-fuchsia-500/10 border-fuchsia-400 text-fuchsia-300">3 实施</div>
+            <span class="stage-arrow">→</span>
+            <div class="stage-pill bg-amber-500/10 border-amber-400 text-amber-300">4 改进</div>
+            <span class="stage-arrow">→</span>
+            <div class="stage-pill bg-emerald-500/10 border-emerald-400 text-emerald-300">5 全局评估</div>
+            <span class="stage-arrow">→</span>
+            <div class="stage-pill bg-cyan-500/10 border-cyan-400 text-cyan-300">6 收尾</div>
+          </div>
+          <div class="grid grid-cols-3 gap-3 text-xs mt-2">
+            <div class="tour-card">
+              <div class="text-blue-400 font-semibold mb-1">方向辩论</div>
+              <div class="text-gray-400">多个 AI 专家辩论「这个需求值不值得做」「有没有更好的目标」</div>
+            </div>
+            <div class="tour-card">
+              <div class="text-purple-400 font-semibold mb-1">方案辩论</div>
+              <div class="text-gray-400">辩论「具体怎么实现」「用哪种技术方案」「风险在哪」</div>
+            </div>
+            <div class="tour-card">
+              <div class="text-fuchsia-400 font-semibold mb-1">实施</div>
+              <div class="text-gray-400">AI 写代码（Worker: codex）→ AI 评审（Worker: claude）→ 测试</div>
+            </div>
+            <div class="tour-card">
+              <div class="text-amber-400 font-semibold mb-1">改进</div>
+              <div class="text-gray-400">评审发现问题 → 自动修复一次（仅限范围内）→ 再评审</div>
+            </div>
+            <div class="tour-card">
+              <div class="text-emerald-400 font-semibold mb-1">全局评估</div>
+              <div class="text-gray-400">独立审计：检查所有证据、测试、评审是否达标</div>
+            </div>
+            <div class="tour-card">
+              <div class="text-cyan-400 font-semibold mb-1">收尾</div>
+              <div class="text-gray-400">写总结报告、提出系统改进建议、低风险知识自动更新</div>
+            </div>
+          </div>
+        `,
+        detail: '六阶段是串行的（一个完了才下一个），但 Stage 3 实施内部可以有并行子任务（只要不互相覆盖文件）。Stage 4 改进默认只自动循环 1 次，超过就 blocked 等 Kimi 决定。Stage 5 全局评估 verdict 为 pass 或 pass_with_warnings(Kimi 接受) 才能进入 Stage 6。',
+        tip: '下一步理解「为什么不会重复执行」'
+      },
+      {
+        title: '核心原则 1：命令先写日志',
+        subtitle: '防重复与崩溃恢复',
+        desc: '想象你让银行转账，银行的第一步绝不是直接扣款，而是先在本子上记下「我要转一笔钱」。如果转账中途停电了，银行只要看本子就知道钱转没转。',
+        analogy: '银行转账：先写账本 → 再动钱 → 最后发短信通知。Hermes 也是：先写 Command Journal → 再改 State/Kanban/Audit → 最后发 Event。',
+        html: `
+          <div class="flex flex-col items-center gap-1 py-2">
+            <div class="w-full max-w-lg">
+              <div class="flow-box bg-emerald-500/10 border-emerald-500/50 text-emerald-300 text-left">
+                <strong>Step 1: Command Journal</strong><br>
+                记录「我要执行这些操作」<br>
+                <span class="text-gray-500">status = in_progress</span>
+              </div>
+            </div>
+            <div class="flow-arrow text-emerald-400 font-semibold">↓ 完成后才能执行</div>
+            <div class="w-full max-w-lg grid grid-cols-4 gap-2">
+              <div class="flow-box bg-amber-500/10 border-amber-500/50 text-amber-300 text-xs py-3">
+                <strong>Step 2a</strong><br>更新<br>Gateway State
+              </div>
+              <div class="flow-box bg-orange-500/10 border-orange-500/50 text-orange-300 text-xs py-3">
+                <strong>Step 2b</strong><br>更新<br>Kanban 任务
+              </div>
+              <div class="flow-box bg-red-500/10 border-red-500/50 text-red-300 text-xs py-3">
+                <strong>Step 2c</strong><br>写入<br>Audit 记录
+              </div>
+              <div class="flow-box bg-cyan-500/10 border-cyan-500/50 text-cyan-300 text-xs py-3">
+                <strong>Step 2d</strong><br>写入<br>Artifacts
+              </div>
+            </div>
+            <div class="flow-arrow text-blue-400 font-semibold mt-1">↓ 权威写入完成后</div>
+            <div class="w-full max-w-lg">
+              <div class="flow-box bg-lime-500/10 border-lime-500/50 text-lime-300 text-left">
+                <strong>Step 3: Event Projection</strong><br>
+                广播通知：「任务已完成」<br>
+                <span class="text-gray-500">seq 递增，post-commit emit</span>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <div class="principle-box border-emerald-500">
+              <div class="text-emerald-400 font-semibold text-sm mb-1">✅ 幂等性</div>
+              <div class="text-xs text-gray-400">同一个命令（同一个 idempotency_key）发两次，系统看 Journal 知道「这个已经做过了」，直接返回原结果。</div>
+            </div>
+            <div class="principle-box border-blue-500">
+              <div class="text-blue-400 font-semibold text-sm mb-1">✅ 崩溃恢复</div>
+              <div class="text-xs text-gray-400">Gateway 重启后扫描 Journal，发现「这个命令还没标记完成」，就继续执行；如果已完成，就跳过。</div>
+            </div>
+          </div>
+        `,
+        detail: 'Command Journal 是 Gateway State 的一部分（存储于 STATE_ROOT）。每个 mutating 命令（创建 Run、提交 Decision、Stop Run）都必须先写 Journal。Journal 记录 planned_steps，每个 step 对应一个 side-effect target（State/Audit/Kanban/Artifact/Worker）。只有 represented in planned steps 的 side-effect 才能执行。',
+        tip: '下一步看「为什么有四个保险柜」'
+      },
+      {
+        title: '核心原则 2：四个保险柜（权威链）',
+        subtitle: 'Authority Chain',
+        desc: '一份重要的合同，不应该只存一个地方。Hermes 把任务的真相同时存到四个独立的「保险柜」，它们互相验证，任何一个坏了都能恢复。',
+        analogy: '一份房产合同：你保留一份（State）、房管局存一份（Kanban）、公证处存一份（Audit）、文件柜存原件（Artifacts）。四个地方都确认过户完成，交易才算完成。',
+        html: `
+          <div class="grid grid-cols-4 gap-3">
+            <div class="tour-card text-center border-t-4 border-amber-500">
+              <div class="text-xl mb-1">📋</div>
+              <div class="text-sm font-bold text-amber-300">保险柜 1</div>
+              <div class="text-xs text-gray-400 mt-1">Gateway State</div>
+              <div class="text-[11px] text-gray-500 mt-2">记当前做到哪一步、有哪些文件、有没有待决策</div>
+              <div class="text-[10px] text-amber-400 mt-2">运行时状态</div>
+            </div>
+            <div class="tour-card text-center border-t-4 border-orange-500">
+              <div class="text-xl mb-1">📊</div>
+              <div class="text-sm font-bold text-orange-300">保险柜 2</div>
+              <div class="text-xs text-gray-400 mt-1">Hermes Kanban</div>
+              <div class="text-[11px] text-gray-500 mt-2">记任务是否存在、是否完成、谁依赖谁</div>
+              <div class="text-[10px] text-orange-400 mt-2">任务生命周期</div>
+            </div>
+            <div class="tour-card text-center border-t-4 border-red-500">
+              <div class="text-xl mb-1">🔒</div>
+              <div class="text-sm font-bold text-red-300">保险柜 3</div>
+              <div class="text-xs text-gray-400 mt-1">Audit</div>
+              <div class="text-[11px] text-gray-500 mt-2">记所有决策、重试、失败、降级、收尾<br><strong>只能追加，不能修改</strong></div>
+              <div class="text-[10px] text-red-400 mt-2">不可变证据</div>
+            </div>
+            <div class="tour-card text-center border-t-4 border-cyan-500">
+              <div class="text-xl mb-1">📄</div>
+              <div class="text-sm font-bold text-cyan-300">保险柜 4</div>
+              <div class="text-xs text-gray-400 mt-1">Artifacts</div>
+              <div class="text-[11px] text-gray-500 mt-2">所有报告、计划、测试结果的原件<br>修改时写<strong>新版本</strong>，不覆盖旧版</div>
+              <div class="text-[10px] text-cyan-400 mt-2">结构化产物</div>
+            </div>
+          </div>
+          <div class="mt-5 p-4 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+            <div class="text-sm text-amber-300"><strong>为什么 Event 和 Cache 不是保险柜？</strong></div>
+            <div class="text-xs text-gray-400 mt-2">Event 是从四个保险柜<strong>广播出来的通知</strong>，通知丢了可以重新广播。Cache 是<strong>便利贴</strong>，丢了可以重新写。它们都不存真相。</div>
+          </div>
+        `,
+        detail: 'Recovery authority comes from Hermes Kanban lifecycle + Gateway State + State Artifacts + Audit Artifacts。这四个是并行的权威来源，recovery 时需要交叉验证。Event Projection 和 Cache 只是辅助，missing 或 corrupt 时不影响 workflow truth。Run completion 必须满足：closeout artifacts schema-valid + Audit closeout evidence + Kanban stage tasks done + Gateway State consistent。',
+        tip: '下一步看「工人怎么交活」'
+      },
+      {
+        title: '核心原则 3：工人不直接改档案',
+        subtitle: 'Advancement Gate',
+        desc: '施工队（Workers）干完活后，不能自己把成品塞进档案室。必须先交给质检员（Gateway Advancement Gate）检查，合格才能入库。',
+        analogy: '工厂流水线：工人组装完零件 → 质检员检查尺寸/安全 → 合格才入库 → 不合格返工或报废。Gateway Gate 就是这个质检员。',
+        html: `
+          <div class="flex items-center justify-center gap-3 py-4">
+            <div class="tour-card text-center w-40">
+              <div class="text-2xl mb-1">🔨</div>
+              <div class="text-sm font-bold text-fuchsia-300">工人</div>
+              <div class="text-xs text-gray-500">写代码 / 做评审<br>产出 structured JSON</div>
+            </div>
+            <div class="text-2xl text-gray-600">→</div>
+            <div class="tour-card text-center w-48 border-blue-500/40 bg-blue-500/5">
+              <div class="text-2xl mb-1">🔍</div>
+              <div class="text-sm font-bold text-blue-300">质检员 (Gate)</div>
+              <div class="text-xs text-gray-500 mt-1">检查协议格式</div>
+              <div class="text-xs text-gray-500">检查文件是否在允许范围内</div>
+              <div class="text-xs text-gray-500">检查是否碰了禁止目录</div>
+              <div class="text-xs text-gray-500">检查风险等级</div>
+              <div class="text-xs text-gray-500">检查测试/评审证据</div>
+            </div>
+            <div class="text-2xl text-gray-600">→</div>
+            <div class="tour-card text-center w-40 border-amber-500/40 bg-amber-500/5">
+              <div class="text-2xl mb-1">📁</div>
+              <div class="text-sm font-bold text-amber-300">档案室</div>
+              <div class="text-xs text-gray-500">更新 State<br>更新 Kanban<br>写入 Audit<br>保存 Artifacts</div>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3 mt-2">
+            <div class="principle-box border-emerald-500">
+              <div class="text-emerald-400 font-semibold text-sm mb-1">✅ 检查通过</div>
+              <div class="text-xs text-gray-400">Gateway 更新四个保险柜 → emit Event → 任务推进到下一阶段</div>
+            </div>
+            <div class="principle-box border-red-500">
+              <div class="text-red-400 font-semibold text-sm mb-1">❌ 检查不通过</div>
+              <div class="text-xs text-gray-400">schema 错误 → 硬阻断；写错文件 → blocked 等决策；测试失败 → 进改进循环（最多 1 次）</div>
+            </div>
+          </div>
+        `,
+        detail: 'Worker 返回的 next_action（complete/block/create_tasks/defer_to_human）只是「请求」，不是 authority。Gateway 必须验证：protocol/schema valid、run_id/task_id/correlation_id/role match、critical artifact_refs resolve、changed files within allowed_write_scope、no forbidden path violation、risk/approval boundaries respected、required test/review evidence present。任何 failure class 为 schema_mismatch 时 hard block without fallback。',
+        tip: '下一步看「广播是什么」'
+      },
+      {
+        title: '核心原则 4：广播不是档案',
+        subtitle: 'Event Projection',
+        desc: '施工完成后，系统会「广播」通知所有人。但广播稿丢了没关系，因为真相还在四个保险柜里，随时可以再写一份广播稿。',
+        analogy: '学校发通知：班主任在微信群发消息（Event），但真正的学籍记录在学生档案室（State+Audit）。微信群消息被删了，去档案室一查就知道真相。',
+        html: `
+          <div class="flex flex-col items-center gap-2 py-3">
+            <div class="w-full max-w-2xl grid grid-cols-4 gap-2">
+              <div class="flow-box bg-amber-500/10 border-amber-500/50 text-amber-300 text-xs">State</div>
+              <div class="flow-box bg-orange-500/10 border-orange-500/50 text-orange-300 text-xs">Kanban</div>
+              <div class="flow-box bg-red-500/10 border-red-500/50 text-red-300 text-xs">Audit</div>
+              <div class="flow-box bg-cyan-500/10 border-cyan-500/50 text-cyan-300 text-xs">Artifacts</div>
+            </div>
+            <div class="text-2xl text-gray-600">↓</div>
+            <div class="text-xs text-blue-400">Gateway 读取四个保险柜 → 生成广播稿</div>
+            <div class="text-2xl text-gray-600">↓</div>
+            <div class="flow-box bg-lime-500/10 border-lime-500/50 text-lime-300 w-full max-w-lg text-left">
+              <strong>Event Projection（广播）</strong><br>
+              seq=1: run_created<br>
+              seq=12: stage_started<br>
+              seq=89: task_completed<br>
+              seq=847: run_completed<br>
+              <span class="text-gray-500">注意：广播里只有摘要和文件编号，没有原始代码、没有密码、没有完整日志</span>
+            </div>
+            <div class="text-2xl text-gray-600">↓</div>
+            <div class="text-xs text-pink-400">Kimi 看广播了解进度</div>
+          </div>
+          <div class="mt-3 p-3 bg-lime-500/5 border border-lime-500/20 rounded-lg">
+            <div class="text-xs text-lime-300"><strong>关键区别：</strong>Event 是「观察」，不是「证据」。Event 丢了可以 rebuild，但 rebuild 时<strong>不能发明新的 Audit 记录</strong>。Kimi 发现 Event 有 gap 时，必须 resync（重新查 status + tasks + events）。</div>
+          </div>
+        `,
+        detail: 'Event Store 物理上存在 Gateway State 目录下（STATE_ROOT/.../events.jsonl），但逻辑上是投影层。MVP 不允许对 Event Store 做 TTL、truncation、rotation、lossy compaction。Event append failure 后，Gateway 返回 projection_degraded=true，但绝不 rollback State/Audit/Kanban/artifact changes。',
+        tip: '下一步看出错了怎么办'
+      },
+      {
+        title: '出错了怎么办？blocked vs failed',
+        subtitle: '错误处理',
+        desc: '系统把错误分成两类：「暂停等决定」（blocked）和「彻底完蛋」（failed）。大部分问题都是 blocked，只有档案室着火才是 failed。',
+        analogy: 'blocked = 施工发现图纸有问题，暂停等项目经理拍板。failed = 档案室被水淹了，合同原件全毁，必须重新立项。',
+        html: `
+          <div class="grid grid-cols-2 gap-4">
+            <div class="tour-card border-l-4 border-amber-500">
+              <div class="text-lg mb-2">⏸️</div>
+              <div class="text-lg font-bold text-amber-300">blocked</div>
+              <div class="text-xs text-gray-400 mt-1">暂停，可恢复</div>
+              <div class="text-xs text-gray-500 mt-3 space-y-1">
+                <div>• 测试失败</div>
+                <div>• 评审要求修改</div>
+                <div>• schema 校验不过</div>
+                <div>• 需要 Kimi 决策</div>
+                <div>• 需要 Human Approval</div>
+                <div>• Worker 崩溃/超时</div>
+              </div>
+              <div class="mt-3 text-[11px] text-amber-400">保留所有证据，active slot 不释放</div>
+            </div>
+            <div class="tour-card border-l-4 border-red-500">
+              <div class="text-lg mb-2">💥</div>
+              <div class="text-lg font-bold text-red-300">failed</div>
+              <div class="text-xs text-gray-400 mt-1">终端，不可原地恢复</div>
+              <div class="text-xs text-gray-500 mt-3 space-y-1">
+                <div>• 权威链损坏（State/Audit/Kanban 互相矛盾且无法修复）</div>
+                <div>• 关键 Artifact 永久丢失且无法重建</div>
+                <div>• 未授权写入导致证据不可信</div>
+                <div>• 内部不变量违反导致无法安全恢复</div>
+              </div>
+              <div class="mt-3 text-[11px] text-red-400">需 lineage（新 run_id）续跑</div>
+            </div>
+          </div>
+          <div class="mt-4 p-3 bg-gray-800/50 rounded-lg text-center">
+            <div class="text-sm text-gray-300">默认策略：<span class="text-amber-400 font-semibold">能 blocked 就 blocked</span>，只有证明「这个 run 再也无法安全继续」时才 failed。</div>
+          </div>
+        `,
+        detail: 'blocked 是 active 状态（queued/running/blocked 三态之一），持有 one-active-run slot。failed/stopped 是 terminal 状态，不能原地 resume，必须通过 lineage 创建新 run。lineage run 需 source_run_id + resume_from_refs，且 source run 必须 terminal（failed/stopped）。blocked source run 不能创建 lineage（仍 active）。',
+        tip: '下一步看「停电了怎么恢复」'
+      },
+      {
+        title: '崩溃恢复：看本子就知道做到哪了',
+        subtitle: 'Crash Recovery',
+        desc: 'Gateway 突然重启（比如服务器断电），它怎么知道哪些任务做了、哪些没做？答案是：看 Command Journal（那个「先写的本子」）。',
+        analogy: '餐厅服务员记菜本：客人点了菜先写本上 → 传给厨房 → 上菜后划掉。如果服务员换班，新服务员看本子就知道哪桌菜上了、哪桌没上、哪桌不确定。',
+        html: `
+          <div class="flex flex-col items-center gap-2 py-2">
+            <div class="flow-box bg-gray-700 border-gray-600 text-gray-300 w-64">Gateway 重启</div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-box bg-blue-500/10 border-blue-400 text-blue-300 w-72">扫描所有 status=in_progress 的 Command Records</div>
+            <div class="flow-arrow">↓</div>
+            <div class="flow-box bg-amber-500/10 border-amber-400 text-amber-300 w-64 font-semibold">Reconciliation（对账）</div>
+            <div class="flow-arrow mt-1">├─────────────┼─────────────┤</div>
+            <div class="flex gap-4">
+              <div class="flex flex-col items-center gap-1 w-48">
+                <div class="text-[11px] text-emerald-400">证明已完成</div>
+                <div class="flow-box bg-emerald-500/10 border-emerald-400 text-emerald-300 text-xs py-3">标记 completed<br>backfill response<br>不重复执行</div>
+              </div>
+              <div class="flex flex-col items-center gap-1 w-48">
+                <div class="text-[11px] text-blue-400">证明未执行</div>
+                <div class="flow-box bg-blue-500/10 border-blue-400 text-blue-300 text-xs py-3">从下一个<br>unexecuted step<br>继续执行</div>
+              </div>
+              <div class="flex flex-col items-center gap-1 w-48">
+                <div class="text-[11px] text-amber-400">无法证明</div>
+                <div class="flow-box bg-amber-500/10 border-amber-400 text-amber-300 text-xs py-3">标记 blocked<br>decision_required<br>禁止盲重放</div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 principle-box border-red-500">
+            <div class="text-red-400 font-semibold text-sm mb-1">🚫 绝对禁止：盲重放</div>
+            <div class="text-xs text-gray-400">如果不知道「转账到底转没转」，绝不能「再转一次试试」。必须 blocked，等人工决策。</div>
+          </div>
+        `,
+        detail: 'Reconciliation 检查 State refs、Audit refs、Kanban task IDs、artifact refs。Cache、worker summaries、stdout 不是 reconciliation authority。如果权威来源互相矛盾且无法确定哪个正确，必须走 blocked + decision_required。这是「Evidence over progress」原则的核心。',
+        tip: '下一步看「谁能做什么决定」'
+      },
+      {
+        title: '谁能拍板？决策权限红绿灯',
+        subtitle: 'Decision Authority',
+        desc: '不是所有决定都能让 AI 做。有些低风险的事 Kimi 可以批，但涉及「拆承重墙」的事必须等人批准。',
+        analogy: '公司审批：几百块的办公用品经理批（Low）、几千块的设备总监批（Medium）、几百万的合同董事长批（High）。',
+        html: `
+          <div class="space-y-3">
+            <div class="flex items-center gap-3">
+              <div class="w-20 text-center">
+                <div class="stage-pill bg-emerald-500/15 border-emerald-400 text-emerald-300 inline-block">🟢 Low</div>
+              </div>
+              <div class="flex-1 tour-card py-3">
+                <div class="text-sm text-emerald-300 font-semibold">Kimi 可直接批准 或 系统自动推进</div>
+                <div class="text-xs text-gray-400 mt-1">confidence ≥ 0.75、无冲突、在批准范围内、低风险的常规任务推进</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="w-20 text-center">
+                <div class="stage-pill bg-blue-500/15 border-blue-400 text-blue-300 inline-block">🟡 Medium</div>
+              </div>
+              <div class="flex-1 tour-card py-3">
+                <div class="text-sm text-blue-300 font-semibold">需要 Kimi 主动决策（POST /decisions）</div>
+                <div class="text-xs text-gray-400 mt-1">unresolved debate、modify verdict、repairable schema issue、repeated worker failure、pass_with_warnings 需 Kimi 最终接受</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <div class="w-20 text-center">
+                <div class="stage-pill bg-red-500/15 border-red-400 text-red-300 inline-block">🔴 High</div>
+              </div>
+              <div class="flex-1 tour-card py-3">
+                <div class="text-sm text-red-300 font-semibold">必须 Human Approval，Kimi 不可覆盖</div>
+                <div class="text-xs text-gray-400 mt-1">L3/L4 policy、forbidden targets、destructive operations、external publish/push、root AGENTS.md/CLAUDE.md/SOUL.md、CI/CD、permission/secret/JWT、worker backend config、Gateway port changes</div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 grid grid-cols-3 gap-2">
+            <div class="flow-box bg-emerald-500/10 border-emerald-500/30 text-emerald-300 text-xs">approve → 恢复 original task</div>
+            <div class="flow-box bg-blue-500/10 border-blue-500/30 text-blue-300 text-xs">revise → 创建 child task（不覆盖旧版）</div>
+            <div class="flow-box bg-red-500/10 border-red-500/30 text-red-300 text-xs">reject → blocked / failed</div>
+          </div>
+        `,
+        detail: 'Decision 效果是 append-only：approve 恢复 original task from validated artifact refs；revise 创建 revised child task 并记录 revision_of + source artifact refs；reject 保留拒绝证据 immutable 并路由到 blocked/failed。任何决策都写入 Audit，不覆盖先前证据。Kimi 不能覆盖 L3/L4、schema failure、test failure、write-scope violation、security boundary、forbidden target、Human Approval boundary。',
+        tip: '最后一步：把四个角色映射回 11 层'
+      },
+      {
+        title: '完整 11 层映射表',
+        subtitle: '从四角色到 11 层',
+        desc: '现在你理解了四个角色和核心原则。这里是完整的 11 层映射——你已经有概念框架了，不会再晕。',
+        html: `
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <div class="tour-card border-l-4 border-pink-500">
+              <div class="text-pink-400 font-bold mb-2">👤 项目经理</div>
+              <div class="space-y-1 text-gray-400">
+                <div><span class="text-pink-300 font-semibold">L1 Kimi</span> — 外部监督者，最终决策者</div>
+              </div>
+            </div>
+            <div class="tour-card border-l-4 border-purple-500">
+              <div class="text-purple-400 font-bold mb-2">🌐 前台</div>
+              <div class="space-y-1 text-gray-400">
+                <div><span class="text-purple-300 font-semibold">L2 /orchestra/* API</span> — 产品级工作流接口</div>
+                <div><span class="text-purple-300 font-semibold">L2 /v1/* Proxy</span> — 官方 API 代理</div>
+              </div>
+            </div>
+            <div class="tour-card border-l-4 border-blue-500">
+              <div class="text-blue-400 font-bold mb-2">⚙️ 指挥中心</div>
+              <div class="space-y-1 text-gray-400">
+                <div><span class="text-blue-300 font-semibold">L3 Gateway Adapter</span> — 编排核心 + Gate + Idempotency</div>
+                <div><span class="text-emerald-300 font-semibold">L4 Command Journal</span> — 写前日志，崩溃恢复基础</div>
+              </div>
+            </div>
+            <div class="tour-card border-l-4 border-amber-500">
+              <div class="text-amber-400 font-bold mb-2">📁 档案室（权威链）</div>
+              <div class="space-y-1 text-gray-400">
+                <div><span class="text-amber-300 font-semibold">L5 Gateway State</span> — 运行时状态权威</div>
+                <div><span class="text-orange-300 font-semibold">L6 Hermes Kanban</span> — 任务生命周期权威</div>
+                <div><span class="text-red-300 font-semibold">L7 Audit</span> — 不可变证据权威</div>
+                <div><span class="text-cyan-300 font-semibold">L8 Artifacts</span> — 结构化产物权威</div>
+              </div>
+            </div>
+            <div class="tour-card border-l-4 border-lime-500">
+              <div class="text-lime-400 font-bold mb-2">📡 广播 & 便利贴</div>
+              <div class="space-y-1 text-gray-400">
+                <div><span class="text-lime-300 font-semibold">L9 Event Projection</span> — 观察投影，非权威，可重建</div>
+                <div><span class="text-slate-300 font-semibold">L10 Cache</span> — 优化缓存，可丢弃</div>
+              </div>
+            </div>
+            <div class="tour-card border-l-4 border-fuchsia-500">
+              <div class="text-fuchsia-400 font-bold mb-2">🔨 施工队</div>
+              <div class="space-y-1 text-gray-400">
+                <div><span class="text-fuchsia-300 font-semibold">L11 Worker Backends</span> — codex / claude 执行器</div>
+                <div><span class="text-fuchsia-300 font-semibold">L11 Debate Backends</span> — 辩论团队</div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg text-center">
+            <div class="text-sm text-blue-300">理解顺序：<strong class="text-gray-200">四角色 → 六阶段 → 四原则 → 11 层</strong></div>
+          </div>
+        `,
+        detail: '这就是完整的 Hermes Orchestra MVP 架构。三份原始文档（SCHEMAS / SPEC / PRD）的所有设计决策都可以追溯到这个框架：为什么 State 和 Audit 分开（不可变 vs 可变）、为什么 Event 不是权威（可重建）、为什么 Worker 不能直接改 Kanban（Gate 校验）、为什么改进只循环 1 次（防止无限循环）、为什么需要 Human Approval（高风险边界）。',
+        tip: '漫游完成！可以打开其他三个 HTML 制品深入了解细节。'
+      }
+    ],
+    next() {
+      if (this.current < this.steps.length - 1) {
+        this.current++;
+        this.showDetail = false;
+      }
+    },
+    prev() {
+      if (this.current > 0) {
+        this.current--;
+        this.showDetail = false;
+      }
+    },
+    goTo(i) {
+      this.current = i;
+      this.showDetail = false;
+    }
+  };
+}
+</script>
+
+</body>
+</html>

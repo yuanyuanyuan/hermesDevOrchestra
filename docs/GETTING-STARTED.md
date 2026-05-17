@@ -10,6 +10,36 @@
 
 Orchestra 只管理**已经是 git 仓库**的项目。
 
+如果你希望脚本逐步引导安装、配置、启动 Gateway/编排会话，并运行 MVP 验收测试，可以直接使用：
+
+```bash
+orch-mvp-wizard --project-id my-app --project-dir ~/projects/my-app
+```
+
+完整验收会额外创建一个 Gateway MVP demo run，并写入两份可复盘产物：
+
+- `~/.local/state/hermes-orchestra/my-app/mvp-demo-flow.json`：demo run 的结构化总览、参与方、最终状态和关键本地证据路径。
+- `~/.local/state/hermes-orchestra/my-app/mvp-demo-log.jsonl`：逐步日志，每行记录参与方、动作、输入、输出、API endpoint、artifact refs 和对应本地文件。
+
+如果只想安装/配置/启动，不跑测试和 demo run，使用 `--skip-tests`；如果只跳过 demo run，使用 `--skip-demo`。
+
+如果你还要验收真实 Codex/Claude CLI worker，使用：
+
+```bash
+orch-mvp-wizard --project-id my-app --project-dir ~/projects/my-app --real-worker-demo
+```
+
+这个模式会实际调用 `codex exec` 接收任务并修改 `.workflow/knowledge/orchestra-real-worker-demo.md`，再调用 `claude -p` 审查该低风险文件改动。额外产物：
+
+- `~/.local/state/hermes-orchestra/my-app/mvp-real-worker-flow.json`
+- `~/.local/state/hermes-orchestra/my-app/mvp-real-worker-log.jsonl`
+
+无人值守环境可以显式传入选项：
+
+```bash
+orch-mvp-wizard --yes --project-id my-app --project-dir ~/projects/my-app
+```
+
 ### 使用现有项目
 
 ```bash

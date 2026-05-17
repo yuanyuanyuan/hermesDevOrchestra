@@ -4,16 +4,16 @@
 
 Primary: `.planning/SPEC.md` §§BUS-01..BUS-06.
 
-`README.md` and `WORKFLOW.md` are projections only. If either projection conflicts with `.planning/SPEC.md`, update the projection or this derived spec to match `.planning/SPEC.md`.
+`README.md` and `docs/WORKFLOW.md` are projections only. If either projection conflicts with `.planning/SPEC.md`, update the projection or this derived spec to match `.planning/SPEC.md`.
 
-Downstream read order: `.planning/SPEC.md`, then this derived spec, then the root-package implementation projections (`README.md`, `WORKFLOW.md`, `scripts/`, `config/`, `hermes/`, `skills/`, `claude-config/`).
+Downstream read order: `.planning/SPEC.md`, then this derived spec, then the root-package implementation projections (`README.md`, `docs/WORKFLOW.md`, `scripts/`, `config/`, `hermes/`, `skills/`, `claude-config/`).
 
 ## Consumers
 
 - `scripts/bin/orch-bus-loop` - routes and validates active Runtime bus messages.
 - `scripts/tests/test-file-bus.sh` - smoke-tests file-bus routing behavior.
 - `README.md` - human-facing package projection.
-- `WORKFLOW.md` - workflow projection.
+- `docs/WORKFLOW.md` - workflow projection.
 
 ## Contract
 
