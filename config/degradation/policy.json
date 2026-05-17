@@ -1,0 +1,53 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "degradation_policy",
+  "package_status": "staged_target",
+  "policy_authority": "project",
+  "degraded_is_run_status": false,
+  "default_completion_evidence_allowed": false,
+  "required_record_fields": [
+    "degradation_class",
+    "cause",
+    "affected_evidence_refs",
+    "decision_required",
+    "recovery_options",
+    "accepted_by_ref"
+  ],
+  "state_machine": {
+    "states": ["normal", "degraded", "recovered", "blocked_due_to_degradation"],
+    "transitions": [
+      {"from": "normal", "to": "degraded"},
+      {"from": "degraded", "to": "recovered"},
+      {"from": "degraded", "to": "blocked_due_to_degradation"},
+      {"from": "blocked_due_to_degradation", "to": "recovered"}
+    ],
+    "replacement_evidence_required_for_recovered": true,
+    "overwrite_degraded_artifact_allowed": false
+  },
+  "artifact_family_policy": {
+    "template_debate_fallback": {
+      "completion_evidence_allowed": false,
+      "counts_as_required_debate_coverage": false,
+      "decision_required": "kimi"
+    },
+    "partial_debate_optional_member_failure": {
+      "completion_evidence_allowed": true,
+      "allowed_only_when_required_coverage_satisfied": true,
+      "decision_required": "kimi"
+    },
+    "projection_degraded_command_result": {
+      "completion_evidence_allowed": false,
+      "idempotency_result_allowed": true,
+      "decision_required": "none"
+    },
+    "runtime_knowledge_warning_context": {
+      "completion_evidence_allowed": false,
+      "strong_evidence_allowed": false,
+      "decision_required": "none"
+    },
+    "backend_degraded": {
+      "completion_evidence_allowed": false,
+      "decision_required": "kimi"
+    }
+  }
+}

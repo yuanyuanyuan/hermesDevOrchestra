@@ -1,0 +1,57 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "debate_backend_policy",
+  "package_kind": "full_debate_package",
+  "policy_authority": "project",
+  "package_status": "staged_target",
+  "real_backend_required_for_full_acceptance": true,
+  "backend_selection_order": ["project_configured_real_backend", "package_fallback_backend", "template_fixture"],
+  "backends": [
+    {
+      "id": "template_fixture",
+      "family": "template",
+      "enabled": true,
+      "degraded_fixture_only": true,
+      "counts_as_strong_evidence": false,
+      "allowed_stages": ["direction_debate", "solution_debate", "global_evaluation"],
+      "notes": "For schema development and fixtures only. Must not be represented as real debate evidence."
+    },
+    {
+      "id": "project_real_debate_backend",
+      "family": "api",
+      "enabled": false,
+      "degraded_fixture_only": false,
+      "counts_as_strong_evidence": true,
+      "allowed_stages": ["direction_debate", "solution_debate", "global_evaluation"],
+      "notes": "Placeholder for MiniMax, OpenRouter, or another configured real debate backend."
+    },
+    {
+      "id": "project_cli_debate_backend",
+      "family": "ai_cli",
+      "enabled": false,
+      "degraded_fixture_only": false,
+      "counts_as_strong_evidence": true,
+      "allowed_stages": ["direction_debate", "solution_debate", "global_evaluation"],
+      "notes": "Placeholder for Kimi, Claude, Codex, or another configured CLI backend."
+    }
+  ],
+  "template_backend": {
+    "allowed": true,
+    "degraded_fixture_only": true,
+    "requires_warning": true
+  },
+  "kimi_self_review_policy": {
+    "record_kimi_self_review_risk": true,
+    "requires_non_kimi_opinion_before_kimi_decision": true
+  },
+  "invocation_audit_requirements": [
+    "backend_id",
+    "backend_family",
+    "backend_capabilities",
+    "timing",
+    "retry_state",
+    "degraded",
+    "error_class",
+    "opinion_ref"
+  ]
+}

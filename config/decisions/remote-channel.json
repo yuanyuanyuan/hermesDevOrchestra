@@ -1,0 +1,36 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "remote_decision_channel_config",
+  "enabled": false,
+  "channel_type": "none",
+  "adapter_id": "disabled",
+  "disabled_reason": "Remote Decision Channel is optional and disabled until an adapter is explicitly configured.",
+  "transport_only": true,
+  "delivery_policy": {
+    "send_decision_request": false,
+    "local_cli_or_ssh_remains_default": true,
+    "delivery_receipt_required_when_enabled": true
+  },
+  "response_policy": {
+    "gateway_validates_before_advancement": true,
+    "replay_protection_required": true,
+    "expiry_required": true,
+    "responder_binding_required": true,
+    "fixed_phrase_required_for_l4": true,
+    "timeout_approval_allowed": false,
+    "default_approval_allowed": false,
+    "agent_approval_allowed": false
+  },
+  "security_policy": {
+    "signature_or_proof_required_when_enabled": true,
+    "channel_message_ref_required_when_enabled": true,
+    "secrets_in_messages_allowed": false
+  },
+  "audit_policy": {
+    "record_delivery_status": true,
+    "record_response_binding": true,
+    "record_replay_check": true,
+    "record_expiry_check": true,
+    "record_used_at": true
+  }
+}

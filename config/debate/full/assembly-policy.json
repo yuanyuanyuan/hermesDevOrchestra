@@ -1,0 +1,109 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "debate_assembly_policy",
+  "package_kind": "full_debate_package",
+  "policy_authority": "project",
+  "package_status": "staged_target",
+  "deterministic_selector": true,
+  "selection_order": [
+    "stage_floor",
+    "task_type_overlays",
+    "risk_overlay",
+    "project_overrides",
+    "member_selection"
+  ],
+  "inputs": {
+    "required": [
+      "stage",
+      "risk_level",
+      "task_type_tags",
+      "affected_scopes",
+      "coverage_policy_ref"
+    ],
+    "optional": [
+      "project_override_ref"
+    ]
+  },
+  "stage_floor_source": "config://debate/full/coverage-policy.json",
+  "task_type_overlays": {
+    "database_migration": {
+      "tag_aliases": ["database", "migration", "schema_change", "data_pipeline"],
+      "add_team_ids": ["data_engineering", "devops_sre", "security", "observability"]
+    },
+    "api_contract": {
+      "tag_aliases": ["api", "contract", "sdk", "integration"],
+      "add_team_ids": ["api_design", "security", "platform", "documentation"]
+    },
+    "frontend_ux": {
+      "tag_aliases": ["frontend", "ux", "accessibility", "browser"],
+      "add_team_ids": ["frontend", "api_design", "i18n_l10n"]
+    },
+    "ai_model": {
+      "tag_aliases": ["ai", "prompt", "model", "agent"],
+      "add_team_ids": ["ai_feature", "privacy_ethics", "security", "observability"]
+    },
+    "release_deploy": {
+      "tag_aliases": ["release", "deploy", "infra", "ci_cd"],
+      "add_team_ids": ["devops_sre", "observability", "platform", "security"]
+    },
+    "dependency_oss": {
+      "tag_aliases": ["dependency", "oss", "license", "sbom"],
+      "add_team_ids": ["oss_compliance", "security"]
+    }
+  },
+  "risk_overlays": {
+    "L1": {
+      "add_team_ids": [],
+      "required_modes": [],
+      "authority_required_for_stage_decision": "kimi"
+    },
+    "L2": {
+      "add_team_ids": [],
+      "required_modes": [],
+      "authority_required_for_stage_decision": "kimi"
+    },
+    "L3": {
+      "add_team_ids": ["security", "compliance", "observability"],
+      "required_modes": ["risk_priority_matrix"],
+      "authority_required_for_stage_decision": "human"
+    },
+    "L4": {
+      "add_team_ids": ["security", "compliance", "privacy_ethics", "devops_sre", "observability", "platform"],
+      "required_modes": ["adversarial_debate", "risk_priority_matrix", "cross_team_conflict_detector"],
+      "authority_required_for_stage_decision": "human"
+    }
+  },
+  "project_override_policy": {
+    "may_add_team_ids": true,
+    "may_add_member_count": true,
+    "may_add_required_modes": true,
+    "may_remove_stage_floor": false,
+    "may_remove_task_type_overlay": false,
+    "may_remove_risk_overlay": false,
+    "coverage_lowering_requires_human_approval": true
+  },
+  "member_selection_policy": {
+    "minimum_members_per_selected_team": 1,
+    "fill_until_stage_minimum_member_count": true,
+    "score_weights": {
+      "dimension_ref_task_tag_match": 4,
+      "checklist_ref_task_tag_match": 3,
+      "focus_keyword_match": 2,
+      "default_registry_order": 1
+    },
+    "tie_breaker": "registry_order",
+    "member_score_record_required": true
+  },
+  "audit_requirements": [
+    "assembly_policy_ref",
+    "assembly_input",
+    "matched_assembly_rules",
+    "risk_overlay_applied",
+    "task_type_overlays_applied",
+    "project_overrides_applied",
+    "selected_team_ids",
+    "skipped_team_ids",
+    "selected_member_ids",
+    "member_selection_scores"
+  ]
+}

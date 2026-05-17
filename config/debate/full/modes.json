@@ -1,0 +1,81 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "debate_mode_registry",
+  "package_kind": "full_debate_package",
+  "registry_authority": "qnN4o510",
+  "package_status": "staged_target",
+  "modes": [
+    {
+      "id": "sequential_review",
+      "name": "Sequential Review",
+      "purpose": "Collect ordered expert opinions when later reviewers should see earlier concerns.",
+      "mechanism": "Invoke selected members in configured order and pass prior opinion refs as input refs.",
+      "selection_rules": ["Use when dependency order matters.", "Use when a stage needs traceable reviewer handoff."],
+      "required_inputs": ["question", "input_refs", "selected_member_ids"],
+      "output_contract": {"artifact_type": "debate_report", "preserve_opinion_refs": true}
+    },
+    {
+      "id": "parallel_debate",
+      "name": "Parallel Debate",
+      "purpose": "Collect independent opinions quickly without cross-contaminating first-pass analysis.",
+      "mechanism": "Invoke selected members independently, then synthesize after all required opinions return.",
+      "selection_rules": ["Use when perspectives are independent.", "Require coverage policy before synthesis."],
+      "required_inputs": ["question", "input_refs", "selected_member_ids", "coverage_policy_ref"],
+      "output_contract": {"artifact_type": "debate_report", "preserve_opinion_refs": true, "requires_coverage_status": true}
+    },
+    {
+      "id": "adversarial_debate",
+      "name": "Adversarial Debate",
+      "purpose": "Force explicit challenge of assumptions, risk boundaries, and weak evidence.",
+      "mechanism": "Assign pro, con, and challenge positions before synthesis.",
+      "selection_rules": ["Use for high-risk direction or solution choices.", "Use when assumptions are contested."],
+      "required_inputs": ["question", "options", "input_refs", "risk_level"],
+      "output_contract": {"artifact_type": "debate_report", "requires_conflicts": true}
+    },
+    {
+      "id": "jury_panel",
+      "name": "Jury Panel",
+      "purpose": "Produce a multi-perspective recommendation after reviewing member evidence.",
+      "mechanism": "Assemble a jury subset that reviews opinions and writes decision handoff fields.",
+      "selection_rules": ["Use when Kimi needs concise decision input.", "Use after enough opinions exist."],
+      "required_inputs": ["opinion_refs", "question", "authority_required"],
+      "output_contract": {"artifact_type": "debate_report", "requires_kimi_decision_inputs": true}
+    },
+    {
+      "id": "dynamic_assembly",
+      "name": "Dynamic Assembly",
+      "purpose": "Select relevant teams and members based on stage, risk, task type, and project overrides.",
+      "mechanism": "Evaluate coverage policy and project metadata before choosing teams, members, and modes.",
+      "selection_rules": ["Default mode selector for full-system debate.", "Must not go below full-package coverage minimum."],
+      "required_inputs": ["stage", "risk_level", "task_type", "coverage_policy_ref"],
+      "output_contract": {"artifact_type": "debate_audit_trail", "records_selected_and_skipped_members": true}
+    },
+    {
+      "id": "meta_review",
+      "name": "Meta Review",
+      "purpose": "Review the quality, coverage, conflicts, and degradation of prior debate evidence.",
+      "mechanism": "Invoke meta reviewers against debate reports, audit trails, and missing coverage records.",
+      "selection_rules": ["Use when debate evidence itself is questionable.", "Use before global evaluation when degraded evidence exists."],
+      "required_inputs": ["debate_report_refs", "debate_audit_trail_refs"],
+      "output_contract": {"artifact_type": "debate_report", "requires_degradation_assessment": true}
+    },
+    {
+      "id": "risk_priority_matrix",
+      "name": "Risk Priority Matrix",
+      "purpose": "Rank risks by severity, probability, reversibility, and required authority.",
+      "mechanism": "Normalize member risks into a priority matrix and hand off blocking items to Kimi.",
+      "selection_rules": ["Use for release, policy, security, platform, and architecture choices."],
+      "required_inputs": ["risks", "evidence_refs", "authority_policy_ref"],
+      "output_contract": {"artifact_type": "debate_report", "requires_authority_required": true}
+    },
+    {
+      "id": "cross_team_conflict_detector",
+      "name": "Cross-Team Conflict Detector",
+      "purpose": "Detect and preserve material disagreements across teams before synthesis hides them.",
+      "mechanism": "Compare member positions and evidence refs, then emit structured conflict entries.",
+      "selection_rules": ["Use when multiple teams disagree.", "Use before Kimi makes direction, solution, or global evaluation decisions."],
+      "required_inputs": ["opinion_refs", "team_ids", "question"],
+      "output_contract": {"artifact_type": "debate_report", "requires_conflicts": true, "requires_kimi_decision_inputs": true}
+    }
+  ]
+}
