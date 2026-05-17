@@ -1,0 +1,144 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "release_command_registry",
+  "enabled": false,
+  "package_status": "staged_target",
+  "registry_authority": "project",
+  "executor": "gateway_release_executor",
+  "arbitrary_shell_allowed": false,
+  "disabled_reason": "Full Release Pipeline command registry is staged before implementation cutover.",
+  "commands": [
+    {
+      "command_ref": "command://release/dev-test",
+      "enabled": false,
+      "description": "Project-defined dev/test release validation command.",
+      "argv": ["project-release", "dev-test"],
+      "cwd_ref": "project://root",
+      "env_allowlist": ["PATH", "HOME", "CI", "HERMES_RELEASE_ENV"],
+      "timeout_seconds": 900,
+      "kill_policy": {
+        "graceful_signal": "TERM",
+        "graceful_timeout_seconds": 30,
+        "force_signal": "KILL",
+        "force_timeout_seconds": 10
+      },
+      "output_capture_policy": {
+        "store": "cache_artifact",
+        "stdout_ref_required": true,
+        "stderr_ref_required": true,
+        "max_inline_bytes": 0,
+        "raw_output_in_audit_allowed": false
+      },
+      "redaction_policy": {
+        "enabled": true,
+        "redact_env_not_in_allowlist": true,
+        "redact_secrets": true,
+        "redact_absolute_paths": true
+      },
+      "approval_policy": {
+        "approval_refs_required_before_execution": false,
+        "authority_required": "none",
+        "fixed_phrase_required": false
+      }
+    },
+    {
+      "command_ref": "command://release/staging",
+      "enabled": false,
+      "description": "Project-defined staging deployment command.",
+      "argv": ["project-release", "staging"],
+      "cwd_ref": "project://root",
+      "env_allowlist": ["PATH", "HOME", "CI", "HERMES_RELEASE_ENV"],
+      "timeout_seconds": 1800,
+      "kill_policy": {
+        "graceful_signal": "TERM",
+        "graceful_timeout_seconds": 60,
+        "force_signal": "KILL",
+        "force_timeout_seconds": 10
+      },
+      "output_capture_policy": {
+        "store": "cache_artifact",
+        "stdout_ref_required": true,
+        "stderr_ref_required": true,
+        "max_inline_bytes": 0,
+        "raw_output_in_audit_allowed": false
+      },
+      "redaction_policy": {
+        "enabled": true,
+        "redact_env_not_in_allowlist": true,
+        "redact_secrets": true,
+        "redact_absolute_paths": true
+      },
+      "approval_policy": {
+        "approval_refs_required_before_execution": true,
+        "authority_required": "human",
+        "fixed_phrase_required": false
+      }
+    },
+    {
+      "command_ref": "command://release/production",
+      "enabled": false,
+      "description": "Project-defined production deployment command.",
+      "argv": ["project-release", "production"],
+      "cwd_ref": "project://root",
+      "env_allowlist": ["PATH", "HOME", "CI", "HERMES_RELEASE_ENV"],
+      "timeout_seconds": 1800,
+      "kill_policy": {
+        "graceful_signal": "TERM",
+        "graceful_timeout_seconds": 60,
+        "force_signal": "KILL",
+        "force_timeout_seconds": 10
+      },
+      "output_capture_policy": {
+        "store": "cache_artifact",
+        "stdout_ref_required": true,
+        "stderr_ref_required": true,
+        "max_inline_bytes": 0,
+        "raw_output_in_audit_allowed": false
+      },
+      "redaction_policy": {
+        "enabled": true,
+        "redact_env_not_in_allowlist": true,
+        "redact_secrets": true,
+        "redact_absolute_paths": true
+      },
+      "approval_policy": {
+        "approval_refs_required_before_execution": true,
+        "authority_required": "human",
+        "fixed_phrase_required": true
+      }
+    },
+    {
+      "command_ref": "command://release/rollback",
+      "enabled": false,
+      "description": "Project-defined rollback or recovery command.",
+      "argv": ["project-release", "rollback"],
+      "cwd_ref": "project://root",
+      "env_allowlist": ["PATH", "HOME", "CI", "HERMES_RELEASE_ENV"],
+      "timeout_seconds": 1800,
+      "kill_policy": {
+        "graceful_signal": "TERM",
+        "graceful_timeout_seconds": 60,
+        "force_signal": "KILL",
+        "force_timeout_seconds": 10
+      },
+      "output_capture_policy": {
+        "store": "cache_artifact",
+        "stdout_ref_required": true,
+        "stderr_ref_required": true,
+        "max_inline_bytes": 0,
+        "raw_output_in_audit_allowed": false
+      },
+      "redaction_policy": {
+        "enabled": true,
+        "redact_env_not_in_allowlist": true,
+        "redact_secrets": true,
+        "redact_absolute_paths": true
+      },
+      "approval_policy": {
+        "approval_refs_required_before_execution": true,
+        "authority_required": "human",
+        "fixed_phrase_required": true
+      }
+    }
+  ]
+}

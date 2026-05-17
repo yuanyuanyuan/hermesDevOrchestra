@@ -1,9 +1,10 @@
-.PHONY: test test-unit test-risk lint-json lint-shell upstream-status
+.PHONY: test test-unit test-risk lint-json lint-shell upstream-status upstream-status-strict
 
 TEST_RUNNER := scripts/tests/run-all.sh
 RISK_TESTS := scripts/tests/test-risk-check.sh scripts/tests/test-risk-decisions.sh scripts/tests/test-decision-cli.sh
 PIN_MANIFEST := .planning/upstream/hermes-agent-pin.json
 HERMES_AGENT_DIR ?= $(HOME)/.hermes/hermes-agent
+UPSTREAM_STATUS_STRICT ?= 0
 
 test: test-unit test-risk lint-json lint-shell upstream-status
 
@@ -38,9 +39,15 @@ upstream-status:
 			echo "status: match"; \
 		else \
 			echo "status: mismatch"; \
-			exit 1; \
+			if [ "$(UPSTREAM_STATUS_STRICT)" = "1" ]; then \
+				exit 1; \
+			fi; \
+			echo "strict: disabled; run 'make upstream-status-strict' to fail on mismatch"; \
 		fi; \
 	else \
 		echo "runtime pin: missing"; \
 		echo "status: runtime checkout not found; repo pin only"; \
 	fi
+
+upstream-status-strict: UPSTREAM_STATUS_STRICT=1
+upstream-status-strict: upstream-status

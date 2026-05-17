@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Hermes 原生工作流 MVP 实现
 status: Awaiting next milestone
-stopped_at: Phase 25 execution complete
-last_updated: "2026-05-11T07:10:48.266Z"
-last_activity: 2026-05-11 — Milestone v1.3 completed and archived
+stopped_at: Phase 25.1 execution complete
+last_updated: "2026-05-12T00:00:00.000Z"
+last_activity: 2026-05-12 — Phase 25.1 (docs & DX overhaul) inserted and completed in v1.3
 progress:
-  total_phases: 6
-  completed_phases: 6
+  total_phases: 7
+  completed_phases: 7
   total_plans: 6
   completed_plans: 6
   percent: 100
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-11)
 
 ## Current Position
 
-Phase: Milestone v1.3 complete
+Phase: Milestone v1.3 complete (Phase 25.1 docs/DX overhaul appended)
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-05-11 — Milestone v1.3 completed and archived
+Last activity: 2026-05-12 — Phase 25.1 (docs & DX overhaul) inserted and completed
 
 ## Requirements Alignment
 
@@ -62,6 +62,7 @@ All v1.1 decisions remain valid.
 - [Phase 24]: Execute one canonical risk-policy and role-guardrail layer. — `risk-policy.yaml` is now the runtime source of truth, `APPROVE-L4 <approval_id>` is enforced for L4, hook assets block reviewer/orchestrator bypass paths, and Implementer block categories are preserved through the existing Phase 23 routing flow.
 - [Phase 25 Plan]: Close v1.3 with lifecycle control, structured handoff hardening, hook-based observability, and one MVP acceptance chain. — `25-CONTEXT.md` and `25-01-PLAN.md` lock task-level timeout/reclaim, untrusted handoff consumption, sidecar trace storage, spawn-time environment snapshots, conservative backpressure, and an end-to-end acceptance proof while deferring v1.4 deadlock/SRE/deploy scope.
 - [Phase 25]: Execute one lifecycle/observability closeout layer on top of the Phase 22-24 runtime. — `active-run.json`, `backpressure.json`, structured handoff validation, the observability plugin, env snapshots, and the MVP acceptance path are now landed and verified without modifying Hermes core.
+- [Phase 25.1]: Documentation & DX Overhaul inserted after Phase 25 in v1.3. — New `INSTALL.md` (comprehensive install guide with prerequisite checker), rewritten `GETTING-STARTED.md` (Chinese, step-by-step), moved `WORKFLOW.md` to `docs/`, new `scripts/check-prerequisites.sh`, `scripts/install-orchestra.sh`, `scripts/orch-doctor.sh` tooling scripts, terminology normalization (file bus → task exchange).
 
 ### Pending Todos
 
@@ -73,9 +74,9 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-11T07:00:07Z
-Stopped at: Phase 25 execution complete
-Resume: Start `v1.4` with `$gsd-new-milestone` or resolve the inherited `upstream-status` pin mismatch before treating the repo as globally green
+Last session: 2026-05-12T00:00:00Z
+Stopped at: Phase 25.1 (docs & DX overhaul) complete
+Resume: Start `v1.4` with `/gsd-new-milestone` or resolve the inherited `upstream-status` pin mismatch before treating the repo as globally green
 
 ## Operator Next Steps
 

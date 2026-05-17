@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Orchestra MVP — 任务状态流转引导</title>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        surface: '#161b22',
+        border: '#30363d',
+      }
+    }
+  }
+}
+</script>
+<style>
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  [x-cloak] { display: none !important; }
+
+  .snap-panel {
+    border-radius: 8px;
+    border: 1px solid #374151;
+    background: rgba(31,41,55,0.5);
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .snap-panel .snap-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .artifact-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    border: 1px solid;
+    margin: 1px;
+  }
+  .event-tag {
+    display: block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    background: rgba(163,230,53,0.08);
+    border: 1px solid rgba(163,230,53,0.25);
+    color: #a3e635;
+    margin: 2px 0;
+  }
+  .stage-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: #374151;
+    overflow: hidden;
+  }
+  .stage-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #10b981);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+  .analogy-box {
+    border-radius: 8px;
+    border: 1.5px dashed #4b5563;
+    padding: 10px 14px;
+    background: rgba(75,85,99,0.08);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .actor-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(55,65,81,0.5);
+  }
+  .actor-row:last-child { border-bottom: none; }
+  .actor-icon { font-size: 14px; width: 20px; text-align: center; }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-200 font-mono h-screen flex flex-col overflow-hidden">
+
+<script>
+const FLOW_CONFIG = {
+  title: 'Hermes Orchestra MVP — 任务状态流转引导',
+  subtitle: '跟随一个真实任务，理解 Run 从创建到完成的完整旅程',
+  steps: [
+    {
+      title: '从一个真实任务开始',
+      subtitle: '引言',
+      runStatus: '—', stage: '—', stageNum: 0,
+      progress: 0,
+      events: [],
+      snapshot: {
+        kimisAction: '准备提交一个工程需求',
+        gatewayStatus: '空闲，等待请求',
+        kanbanStatus: '无任务',
+        workers: '空闲',
+        artifacts: [],
+        audit: '—'
+      },
+      explain: '我们要跟踪的任务是：「为 Gateway 添加 /orchestra/capabilities 健康检查和 curl smoke test」。这是一个真实的 MVP Demo 任务。',
+      analogy: '就像你交给装修公司一个单子：「给我加个烟雾报警器」。我们要看这家公司怎么处理这个单子，从接单到完工的每一步。',
+      whatHappened: 'Kimi 准备提交一个结构化工程需求。系统空闲，没有任何 active run。'
+    },
+    {
+      title: 'Step 1: Kimi 提交需求',
+      subtitle: 'Run 创建',
+      runStatus: 'queued', stage: 'intake', stageNum: 0,
+      progress: 0,
+      events: [{seq:1, text:'run_created'}],
+      snapshot: {
+        kimisAction: 'POST /orchestra/runs\n提交 structured ticket\nidempotency_key: ik_capa_001',
+        gatewayStatus: '收到请求 → Schema 校验 → 幂等检查通过\n写入 Command Journal: cmd_001 in_progress',
+        kanbanStatus: 'Parent: workflow_run_capa001 [created]\n6 Stage tasks [created]',
+        workers: '未调度',
+        artifacts: ['structured_prd.json (生成中)'],
+        audit: 'audit_001: run_created\naudit_002: command_record in_progress'
+      },
+      explain: 'Kimi 发送 POST /orchestra/runs，Gateway 先做两件事：Schema 校验（请求格式对不对）和幂等检查（这个 key 之前有没有用过）。通过后，Gateway 先写 Command Journal（「账本」），然后创建 Kanban 任务。',
+      analogy: '你向装修公司下单。前台先检查单子填没填对（Schema），再查你是不是重复提交了（幂等），然后把单子抄到总账本（Journal），最后给施工队开了工单（Kanban）。',
+      whatHappened: 'Run 创建成功，状态为 queued。Command Journal 记录了 cmd_001（in_progress）。Kanban 创建了父任务和 6 个阶段任务。'
+    },
+    {
+      title: 'Step 2: Gateway 启动执行',
+      subtitle: 'Journal → 权威链',
+      runStatus: 'running', stage: 'direction_debate', stageNum: 1,
+      progress: 16,
+      events: [{seq:2, text:'ticket_normalized'},{seq:3, text:'stage_started (1/6)'}],
+      snapshot: {
+        kimisAction: '等待 Event Stream 更新',
+        gatewayStatus: 'cmd_001 completed\n开始 Stage 1: direction_debate\n从 Journal 读取 planned_steps',
+        kanbanStatus: 'Stage 1: direction_debate [running]\n其余 5 stages [pending]',
+        workers: '能力协商中：\ncodex ✓ claude ✓\ndebate backend ✓',
+        artifacts: ['structured_prd.json ✓'],
+        audit: 'audit_003: stage_started\naudit_004: command_completed'
+      },
+      explain: 'Gateway 把 cmd_001 标记为 completed，同时并行更新四个「保险柜」：State（run 状态改为 running）、Kanban（Stage 1 开始）、Audit（记录 stage_started）、Artifacts（structured_prd.json 已生成）。Event 是最后广播的。',
+      analogy: '装修公司正式开工。项目经理把状态更新为「进行中」，同时通知四个部门：财务部（State）、施工部（Kanban）、档案室（Audit）、文件柜（Artifacts）。最后在大群里发条消息（Event）。',
+      whatHappened: 'Run 状态从 queued 变为 running。Stage 1 direction_debate 开始。所有权威层并行更新完成。'
+    },
+    {
+      title: 'Step 3: Stage 1 方向辩论',
+      subtitle: 'direction_debate',
+      runStatus: 'running', stage: 'direction_debate', stageNum: 1,
+      progress: 16,
+      events: [{seq:4, text:'task_created (debate_dynamic_assembly)'},{seq:5, text:'task_created (debate_jury_panel)'}],
+      snapshot: {
+        kimisAction: '通过 Event Stream 监督进度\nsince_seq=0 → 看到 seq=5',
+        gatewayStatus: '调度 Debate Backends:\ndynamic_assembly + jury_panel\nconfidence threshold: 0.75',
+        kanbanStatus: 'Stage 1: direction_debate [running]\n  ├─ task: dynamic_assembly [running]\n  └─ task: jury_panel [running]',
+        workers: '🎭 dynamic_assembly (方向辩论)\n🎭 jury_panel (方向评审)',
+        artifacts: ['best_choice_report.json (生成中)'],
+        audit: 'audit_005: worker_selected\naudit_006: debate_task_created'
+      },
+      explain: 'Stage 1 不直接写代码，而是让两个 AI 辩论团队讨论「这个需求值不值得做」「有没有更好的方向」。Gateway 做 capability negotiation（确认 debate backend 可用）。',
+      analogy: '施工前，装修公司召集两组专家开会：「我们真的需要装烟雾报警器吗？装哪里最合适？」先论证方向，再动手。',
+      whatHappened: '两个 debate task 被创建并执行。Gateway 记录 worker 选择和 debate 任务创建到 Audit。'
+    },
+    {
+      title: 'Step 4: Stage 1 完成',
+      subtitle: 'best_choice_report 生成',
+      runStatus: 'running', stage: 'solution_debate', stageNum: 2,
+      progress: 33,
+      events: [{seq:6, text:'task_completed (dynamic_assembly)'},{seq:7, text:'task_completed (jury_panel)'},{seq:8, text:'stage_completed (1/6)'},{seq:9, text:'stage_started (2/6)'}],
+      snapshot: {
+        kimisAction: '看到 Event: stage_completed',
+        gatewayStatus: 'Gate 校验通过\nconfidence: 0.82 ≥ 0.75\nrisk_level: low\n推进到 Stage 2',
+        kanbanStatus: 'Stage 1: [done] ✓\nStage 2: solution_debate [running]',
+        workers: '辩论任务完成\nverdict: 方向可行',
+        artifacts: ['best_choice_report.json ✓'],
+        audit: 'audit_012: stage_completed (direction)\naudit_013: stage_started (solution)'
+      },
+      explain: '辩论团队达成共识（confidence 0.82，low risk），Gateway Advancement Gate 校验通过后，标记 Stage 1 完成，启动 Stage 2。注意：Event 是 post-commit 的，只有 State/Audit/Kanban/Artifact 都 durable 后才 emit。',
+      analogy: '专家会得出结论：「应该装，装在走廊天花板」。质检员（Gate）确认结论有效，然后归档会议记录，进入下一阶段：设计安装方案。',
+      whatHappened: 'Stage 1 完成。best_choice_report.json 生成。Stage 2 solution_debate 自动开始（DAG 顺序：1→2→3→4→5→6）。'
+    },
+    {
+      title: 'Step 5: Stage 2 方案辩论',
+      subtitle: 'solution_debate',
+      runStatus: 'running', stage: 'solution_debate', stageNum: 2,
+      progress: 33,
+      events: [{seq:10, text:'task_created (sequential_review)'},{seq:11, text:'task_created (risk_priority_matrix)'}],
+      snapshot: {
+        kimisAction: '继续监督',
+        gatewayStatus: '调度 sequential_review + risk_priority_matrix',
+        kanbanStatus: 'Stage 2: solution_debate [running]',
+        workers: '🎭 sequential_review (方案评审)\n🎭 risk_priority_matrix (风险评估)',
+        artifacts: ['implementation_plan_report.json (生成中)'],
+        audit: 'audit_015: debate_task_created'
+      },
+      explain: 'Stage 2 讨论具体实现方案：用什么技术、改哪些文件、怎么测试。sequential_review 逐条评审方案，risk_priority_matrix 评估风险。',
+      analogy: '设计师出安装方案：「走明线还是暗线？用什么型号的报警器？」另一组专家评审方案可行性和安全风险。',
+      whatHappened: '两个 debate task 执行中，生成 implementation_plan_report.json。'
+    },
+    {
+      title: 'Step 6: Stage 2 完成 → Stage 3 开始',
+      subtitle: 'implementation',
+      runStatus: 'running', stage: 'implementation', stageNum: 3,
+      progress: 50,
+      events: [{seq:12, text:'stage_completed (2/6)'},{seq:13, text:'stage_started (3/6)'},{seq:14, text:'task_created (codex_code)'}],
+      snapshot: {
+        kimisAction: '看到「进入实施阶段」',
+        gatewayStatus: 'Gate 通过\n调度 implementer: codex\nworkspace: kanban_worktree',
+        kanbanStatus: 'Stage 2: [done] ✓\nStage 3: implementation [running]\n  └─ code_task: [running]',
+        workers: '🔨 codex (implementer)\nworkspace: /tmp/worktree_capa001',
+        artifacts: ['implementation_plan_report.json ✓'],
+        audit: 'audit_018: stage_completed (solution)\naudit_019: worker_selected (codex)'
+      },
+      explain: '方案通过后，进入真正的编码阶段。Gateway 选择 codex 作为 implementer，分配 kanban_worktree 工作区（隔离的 git worktree，不直接污染主项目）。',
+      analogy: '方案定了：「走暗线，装 XX 型号」。施工队长（codex）带着工具箱进入隔离施工区（worktree），开始干活。',
+      whatHappened: 'codex 被调度，开始在隔离 worktree 中写代码。'
+    },
+    {
+      title: 'Step 7: 编码完成 → 评审',
+      subtitle: 'review_task',
+      runStatus: 'running', stage: 'implementation', stageNum: 3,
+      progress: 50,
+      events: [{seq:15, text:'task_completed (codex_code)'},{seq:16, text:'task_created (claude_review)'}],
+      snapshot: {
+        kimisAction: '监督中',
+        gatewayStatus: 'codex 返回 next_action: complete\nchanged_files: [orch_gateway.py, test_smoke.sh]\n通过 Gate 校验（write_scope OK, no forbidden paths）',
+        kanbanStatus: 'code_task: [done] ✓\nreview_task: [running]',
+        workers: '🔨 codex → 完成\n🔍 claude (reviewer) 开始评审',
+        artifacts: ['orch_gateway.py (modified)', 'test_smoke.sh (new)'],
+        audit: 'audit_025: task_completed (code)\naudit_026: task_created (review)'
+      },
+      explain: 'codex 完成编码，返回 structured JSON： changed files、diff summary、test evidence。Gateway Gate 检查：文件在允许范围内？没碰禁止目录？有测试证据？通过后，创建 review task 给 claude。',
+      analogy: '工人干完活：「线铺好了，报警器装好了，测试了一下能响」。质检员检查：「施工区域没错？没碰承重墙？有测试记录？」然后叫第二组质检（claude）来复核。',
+      whatHappened: 'codex 编码完成，文件修改通过 write_scope 检查。claude reviewer 开始评审。'
+    },
+    {
+      title: 'Step 8: 评审发现问题！',
+      subtitle: 'request_changes → improvement',
+      runStatus: 'running', stage: 'improvement', stageNum: 4,
+      progress: 66,
+      events: [{seq:17, text:'task_blocked (review)'},{seq:18, text:'stage_started (4/6)'},{seq:19, text:'task_created (improvement_cycle_1)'}],
+      snapshot: {
+        kimisAction: '看到 review blocked，关注改进进展',
+        gatewayStatus: 'claude verdict: request_changes\nseverity: medium\naffected: test_smoke.sh\n→ 进入 Stage 4 improvement (cycle=1)',
+        kanbanStatus: 'review_task: [blocked]\nStage 4: improvement [running]\n  └─ improvement_task: [running]',
+        workers: '🔍 claude → request_changes\n🔨 codex → 修复中（bounded, cycle=1）',
+        artifacts: ['review_report.json (request_changes)', 'improvement_report.json (cycle=1, generating)'],
+        audit: 'audit_030: review_changes_requested\naudit_031: improvement_started (cycle=1)'
+      },
+      explain: 'claude 评审发现测试脚本覆盖率不够，给出 request_changes。注意：这不是失败！Run 还是 running，只是进入改进阶段。改进有上限：MVP 最多 1 次自动改进循环。改进范围必须在 approved development_plan 内。',
+      analogy: '第二组质检说：「烟雾报警器装了，但测试只测了正常情况，没测断电情况」。不是推倒重来，而是让工人返工（improvement），并且只能返工一次（bounded）。',
+      whatHappened: '评审不通过，进入 Stage 4 improvement。codex 被再次调度修复问题。'
+    },
+    {
+      title: 'Step 9: 改进完成 → 重新评审',
+      subtitle: 're_review',
+      runStatus: 'running', stage: 'improvement', stageNum: 4,
+      progress: 66,
+      events: [{seq:20, text:'task_completed (improvement)'},{seq:21, text:'task_created (re_review)'}],
+      snapshot: {
+        kimisAction: '等待重新评审结果',
+        gatewayStatus: 'codex 修复完成\ndiff: test_smoke.sh 新增断电测试\nscope_assessment: within_approved_scope ✓\n创建 re_review task',
+        kanbanStatus: 'improvement_task: [done] ✓\nre_review_task: [running]',
+        workers: '🔨 codex → 修复完成\n🔍 claude → 重新评审中',
+        artifacts: ['improvement_report.json ✓ (cycle=1)', 'test_smoke.sh (updated)'],
+        audit: 'audit_035: improvement_report\naudit_036: task_created (re_review)'
+      },
+      explain: 'codex 修复了测试脚本（新增断电场景测试）。Gateway 检查：修复范围在批准的 plan 内？没碰禁止文件？有测试证据？通过后创建 re_review task，claude 必须重新检查改进 diff，不能直接复用之前的 approve。',
+      analogy: '工人返工完成：「加了断电测试」。质检员检查：「返工内容在合同范围内？没偷偷改别的？」然后叫第二组质检重新验收。',
+      whatHappened: '改进完成，范围合规。claude 重新评审改进后的代码。'
+    },
+    {
+      title: 'Step 10: 重新评审通过！',
+      subtitle: 'approve → 继续推进',
+      runStatus: 'running', stage: 'global_evaluation', stageNum: 5,
+      progress: 83,
+      events: [{seq:22, text:'task_completed (re_review)'},{seq:23, text:'stage_completed (3/6)'},{seq:24, text:'stage_started (5/6)'}],
+      snapshot: {
+        kimisAction: '看到「评审通过，进入评估」',
+        gatewayStatus: 'claude re_review verdict: approve\nGate 通过 → 推进 Stage 5',
+        kanbanStatus: 'Stage 3: [done] ✓\nStage 4: [done] ✓\nStage 5: global_evaluation [running]',
+        workers: '🔍 claude → approve\n🎭 parallel_debate (全局评估)',
+        artifacts: ['re_review_report.json ✓ (approve)', 'global_evaluation_report.json (generating)'],
+        audit: 'audit_038: re_review_verdict (approve, supersedes audit_030)\naudit_039: stage_completed (improvement)'
+      },
+      explain: 're_review 通过！注意：re_review 写新报告（supersedes_ref 指向之前的 review_report），不覆盖旧报告。Gateway 推进到 Stage 5 global_evaluation，这是一个独立审计阶段，重新检查所有证据。',
+      analogy: '重新验收通过！但公司还有最后一道关卡：独立审计部（global_evaluation）不直接参与施工和评审，单独检查所有文件和记录是否合规。',
+      whatHappened: 'Stage 3-4 全部完成。Stage 5 global_evaluation 开始。parallel_debate 团队独立审计。'
+    },
+    {
+      title: 'Step 11: 全局评估通过（带警告）',
+      subtitle: 'pass_with_warnings',
+      runStatus: 'blocked', stage: 'global_evaluation', stageNum: 5,
+      progress: 83,
+      events: [{seq:25, text:'stage_completed (5/6)'},{seq:26, text:'decision_required (authority=kimi)'}],
+      snapshot: {
+        kimisAction: '收到决策请求：\n「评估通过，但有警告，需要你确认」',
+        gatewayStatus: 'global_eval verdict: pass_with_warnings\nresidual_risk: test coverage 85% (目标 90%)\nblocking_issues: 0\n→ authority_required: kimi',
+        kanbanStatus: 'Stage 5: [done] ✓\nRun: [blocked] ← 等 Kimi',
+        workers: '🎭 parallel_debate → 完成',
+        artifacts: ['global_evaluation_report.json ✓\n  verdict: pass_with_warnings'],
+        audit: 'audit_040: global_evaluation\naudit_041: decision_required (kimi)'
+      },
+      explain: '全局评估认为整体合格，但有一个残余风险：测试覆盖率 85%，略低于目标 90%。因为 risk_level ≤ medium 且没有 blocking issues，Gateway 路由给 Kimi 做最终决策（而不是 Human Approval）。Run 状态变为 blocked（active，等决策）。',
+      analogy: '审计部结论：「工程合格，但消防验收有个小项扣了分。不影响使用，但需要项目经理签字确认接受」。工程暂停，等项目经理拍板。',
+      whatHappened: 'verdict = pass_with_warnings。Gateway emit decision_required，authority = kimi。Run blocked 等待 Kimi 决策。'
+    },
+    {
+      title: 'Step 12: Kimi 拍板放行',
+      subtitle: 'Decision Resolved',
+      runStatus: 'running', stage: 'continuous_improvement', stageNum: 6,
+      progress: 100,
+      events: [{seq:27, text:'decision_resolved'},{seq:28, text:'stage_started (6/6)'}],
+      snapshot: {
+        kimisAction: 'POST /decisions/dec_042\naction: approve\n「接受警告，继续收尾」',
+        gatewayStatus: 'Decision resolved\n记录警告接受理由\n解除 blocked → running\n启动 Stage 6',
+        kanbanStatus: 'Run: [running]\nStage 6: continuous_improvement [running]',
+        workers: '未调度新 worker',
+        artifacts: ['accepted_warning_refs: [warn_001]'],
+        audit: 'audit_042: decision_resolved\n  actor: kimi\n  action: approve\n  rationale: 接受 85% 覆盖率，残余风险可控'
+      },
+      explain: 'Kimi 通过 POST /decisions 提交 approve。Gateway 记录决策到 Audit（append-only），恢复 Run 状态为 running，启动 Stage 6 closeout。注意：Kimi 在这里可以 approve，因为风险是 medium 级别。如果是 L3/L4 或 forbidden target，就必须 Human Approval，Kimi 无法覆盖。',
+      analogy: '项目经理签字：「接受小瑕疵，继续交付」。签字文件永久存档（Audit），工程恢复进行，进入最后收尾阶段。',
+      whatHappened: 'Kimi approve 成功。blocked → running。Stage 6 开始。'
+    },
+    {
+      title: 'Step 13: 收尾 & 归档',
+      subtitle: 'closeout',
+      runStatus: 'running', stage: 'continuous_improvement', stageNum: 6,
+      progress: 100,
+      events: [{seq:29, text:'artifact_written (closeout)'},{seq:30, text:'artifact_written (proposals)'},{seq:31, text:'knowledge_updated'}],
+      snapshot: {
+        kimisAction: '监督最后阶段',
+        gatewayStatus: '生成 closeout artifacts\n自动应用低风险知识更新\n高风险的写入 proposal 待审批',
+        kanbanStatus: 'Stage 6: [running]\ncloseout task: [running]',
+        workers: '未调度',
+        artifacts: ['iteration_closeout_report.json ✓','system_improvement_proposals.json ✓','project-summary.json (auto_applied)'],
+        audit: 'audit_045: closeout artifacts generated\naudit_046: knowledge_update (auto_applied_low_risk)'
+      },
+      explain: 'Stage 6 写两个必需要件：iteration_closeout_report（总结这次 Run 的所有结果、警告、决策、降级记录）和 system_improvement_proposals（给未来 Run 的建议）。低风险知识文件（.workflow/knowledge/*）可以自动更新，但 root AGENTS.md / CLAUDE.md / SOUL.md 只能写 proposal，不能自动改。',
+      analogy: '工程收尾：写竣工验收报告、列出下次装修的建议、更新公司施工经验手册。但公司规章制度（root rule files）只能提建议，不能擅自修改。',
+      whatHappened: 'closeout artifacts 生成。低风险知识自动更新。高风险变更写入 proposal。'
+    },
+    {
+      title: 'Step 14: Run Completed! 🎉',
+      subtitle: '完工',
+      runStatus: 'completed', stage: 'all_done', stageNum: 6,
+      progress: 100,
+      events: [{seq:32, text:'run_completed'}],
+      snapshot: {
+        kimisAction: 'GET /orchestra/runs/capa001\n看到 status: completed',
+        gatewayStatus: 'Completion Gate 通过:\n✓ closeout artifacts schema-valid\n✓ Audit closeout evidence\n✓ Kanban 6 stages done\n✓ Gateway State consistent\ncmd_001: completed',
+        kanbanStatus: 'Parent: [done] ✓\nStage 1-6: [done] ✓',
+        workers: '全部完成',
+        artifacts: ['✓ structured_prd','✓ development_plan','✓ best_choice_report','✓ implementation_plan','✓ improvement_report','✓ global_eval_report','✓ iteration_closeout','✓ system_improvements','✓ test_plan','✓ test_execution'],
+        audit: 'audit_099: closeout (closeout_kind=completed)\n共 15+ 条 audit 记录'
+      },
+      explain: 'Run 成为 completed 必须满足四个条件：closeout artifacts 格式正确、Audit 有收尾证据、Kanban 六个阶段都 done、Gateway State 和所有 artifact refs 一致。不是 Worker 说「我干完了」就算完，而是四个保险柜都确认才算完。',
+      analogy: '正式交房：竣工验收报告齐全（closeout）、档案室有完整记录（Audit）、施工部确认所有工序完成（Kanban）、财务部账目平衡（State）。四个部门都盖章，才算真正完工。',
+      whatHappened: 'Run completed！从 queued 到 completed 共经历了 14 个步骤、32 个 Events、15+ 条 Audit 记录、1 次改进循环、1 次 Kimi 决策。'
+    },
+    {
+      title: 'Step 15: 如果 Gateway 崩溃了？',
+      subtitle: 'Crash Recovery 演示',
+      runStatus: 'running → recovery', stage: 'implementation', stageNum: 3,
+      progress: 50,
+      events: [{seq:15, text:'task_completed (codex)'},{seq:16, text:'[Gateway 崩溃!] → 重启'}],
+      snapshot: {
+        kimisAction: 'Event Stream 中断，等待 Gateway 恢复',
+        gatewayStatus: '【重启后】\n扫描 Journal: cmd_001 in_progress\nReconciliation:\n  - Step 1-3: proven completed\n  - Step 4: unexecuted → continue\n  - Event append: 重建 from authorities',
+        kanbanStatus: 'Stage 3: [running] (Kanban 独立存活)',
+        workers: 'codex 进程可能已终止，需重新 dispatch',
+        artifacts: 'State refs + Audit refs 完整，可验证',
+        audit: 'Journal + Audit 共同证明:\n「codex 已完成，但 review task 未创建」'
+      },
+      explain: '假设在 Step 8 时 Gateway 崩溃。重启后，Gateway 扫描所有 in_progress 的 Command Records。通过 reconciliation 发现：State/Audit/Kanban 证明 codex 已完成（Step 1-3 done），但 review task 还没创建（Step 4 unexecuted）。于是 Gateway 从 Step 4 继续，不重复创建 codex task。',
+      analogy: '装修公司突然停电。来电后，经理看账本（Journal）和各部门记录（State/Kanban/Audit）发现：「水电已完工，瓦工还没进场」。于是跳过水电，直接派瓦工。绝不会让水电工再干一遍。',
+      whatHappened: 'Gateway 从 Journal + 权威链恢复状态，继续未执行的步骤，不盲重放已完成的步骤。'
+    },
+    {
+      title: '总结：一次 Run 的数字',
+      subtitle: '回顾',
+      runStatus: 'completed', stage: 'all_done', stageNum: 6,
+      progress: 100,
+      events: [],
+      snapshot: {
+        kimisAction: '回顾整个旅程',
+        gatewayStatus: '6 个 Stage 全部完成',
+        kanbanStatus: '1 Parent + 6 Stage tasks + 若干子任务',
+        workers: '🔨 codex ×3 (code + improve ×2)\n🔍 claude ×3 (review + re_review + qa)',
+        artifacts: '11 个结构化产物',
+        audit: '15+ 条不可变记录'
+      },
+      explain: '这个任务走了完整的六阶段 DAG：方向辩论 → 方案辩论 → 实施 → 改进 → 全局评估 → 收尾。经历了 1 次评审失败和 1 次改进循环，1 次 Kimi 决策（pass_with_warnings）。所有变更都有 Audit 记录，所有产物都有 schema 校验。',
+      analogy: '装修完工后盘点：6 个施工阶段、改了 2 个文件、1 次返工、1 次项目经理签字、15+ 条施工日志、完整的验收报告。',
+      whatHappened: '漫游完成。理解了 Run 从创建到完成的完整状态流转。'
+    }
+  ]
+};
+</script>
+
+<div x-data="stateFlowApp()" class="h-screen flex flex-col overflow-hidden">
+
+  <!-- Header -->
+  <header class="shrink-0 px-6 pt-4 pb-3 border-b border-gray-700">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-xl text-blue-400 font-bold" x-text="title"></h1>
+        <p class="text-xs text-gray-500 mt-1">跟随「添加 /orchestra/capabilities 健康检查」任务的完整生命周期</p>
+      </div>
+      <div class="text-right">
+        <div class="text-sm text-gray-300">Step <span class="text-blue-400 font-bold" x-text="current + 1"></span> / <span x-text="steps.length"></span></div>
+        <div class="text-xs text-gray-600" x-text="step.subtitle"></div>
+      </div>
+    </div>
+    <!-- Progress -->
+    <div class="flex gap-1 mt-3">
+      <template x-for="(s, i) in steps" :key="i">
+        <button @click="goTo(i)"
+          class="h-2 flex-1 rounded-full transition-all duration-300"
+          :class="i < current ? 'bg-emerald-500' : i === current ? 'bg-blue-500' : 'bg-gray-700'"></button>
+      </template>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="flex-1 overflow-hidden min-h-0 relative">
+    <div class="h-full overflow-y-auto min-h-0 p-5">
+      <div class="max-w-5xl mx-auto">
+
+        <!-- Title -->
+        <div class="mb-4">
+          <h2 class="text-xl text-gray-100 font-bold" x-text="step.title"></h2>
+          <p class="text-sm text-gray-400 mt-1" x-text="step.whatHappened"></p>
+        </div>
+
+        <!-- Analogy -->
+        <div x-show="step.analogy" class="analogy-box text-gray-300 mb-4">
+          <span class="text-amber-400 font-semibold">💡 类比：</span>
+          <span x-text="step.analogy"></span>
+        </div>
+
+        <!-- Top: Run Status Card + Stage Progress -->
+        <div class="grid grid-cols-[1fr_280px] gap-4 mb-4">
+          <!-- Run Status -->
+          <div class="snap-panel">
+            <div class="flex items-center justify-between mb-2">
+              <div class="snap-title text-blue-400">Run 状态</div>
+              <span class="status-badge"
+                :class="{
+                  'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30': step.runStatus === 'completed',
+                  'bg-blue-500/15 text-blue-400 border border-blue-500/30': step.runStatus === 'running',
+                  'bg-amber-500/15 text-amber-400 border border-amber-500/30': step.runStatus === 'blocked' || step.runStatus === 'queued',
+                  'bg-red-500/15 text-red-400 border border-red-500/30': step.runStatus.includes('failed') || step.runStatus.includes('recovery'),
+                  'bg-gray-700 text-gray-400 border border-gray-600': step.runStatus === '—'
+                }"
+                x-text="step.runStatus"></span>
+            </div>
+            <div class="flex items-center gap-3 text-xs text-gray-400 mb-2">
+              <span>Run ID: <span class="text-gray-300">run_capa001</span></span>
+              <span>Stage: <span class="text-gray-300" x-text="step.stage"></span></span>
+              <span x-show="step.stageNum > 0" x-text="'( ' + step.stageNum + ' / 6 )'"></span>
+            </div>
+            <div class="stage-bar">
+              <div class="stage-fill" :style="'width: ' + step.progress + '%'"></div>
+            </div>
+          </div>
+
+          <!-- Events -->
+          <div class="snap-panel">
+            <div class="snap-title text-lime-400">最新 Events</div>
+            <div x-show="step.events.length === 0" class="text-xs text-gray-600">暂无 Events</div>
+            <template x-for="ev in step.events" :key="ev.seq">
+              <div class="event-tag" x-text="'seq=' + ev.seq + ': ' + ev.text"></div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Middle: System Snapshot -->
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <!-- Left: Actors -->
+          <div class="snap-panel">
+            <div class="snap-title text-gray-400">系统各层快照</div>
+            <div class="actor-row">
+              <span class="actor-icon">👤</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-[10px] text-pink-400 font-semibold">Kimi (L1)</div>
+                <div class="text-xs text-gray-400 truncate" x-text="step.snapshot.kimisAction"></div>
+              </div>
+            </div>
+            <div class="actor-row">
+              <span class="actor-icon">⚙️</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-[10px] text-blue-400 font-semibold">Gateway (L3-L4)</div>
+                <div class="text-xs text-gray-400 whitespace-pre-line" x-text="step.snapshot.gatewayStatus"></div>
+              </div>
+            </div>
+            <div class="actor-row">
+              <span class="actor-icon">📋</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-[10px] text-orange-400 font-semibold">Kanban (L6)</div>
+                <div class="text-xs text-gray-400 whitespace-pre-line" x-text="step.snapshot.kanbanStatus"></div>
+              </div>
+            </div>
+            <div class="actor-row">
+              <span class="actor-icon">🔨</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-[10px] text-fuchsia-400 font-semibold">Workers (L11)</div>
+                <div class="text-xs text-gray-400 whitespace-pre-line" x-text="step.snapshot.workers"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Artifacts + Audit -->
+          <div class="snap-panel">
+            <div class="snap-title text-cyan-400">Artifacts (L8)</div>
+            <div x-show="typeof step.snapshot.artifacts === 'string'" class="text-xs text-gray-400" x-text="step.snapshot.artifacts"></div>
+            <div x-show="Array.isArray(step.snapshot.artifacts)" class="flex flex-wrap gap-1">
+              <template x-for="art in step.snapshot.artifacts" :key="art">
+                <span class="artifact-tag"
+                  :class="art.includes('✓') ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30' : 'bg-gray-700 text-gray-400 border-gray-600'"
+                  x-text="art"></span>
+              </template>
+            </div>
+
+            <div class="snap-title text-red-400 mt-4">Audit (L7)</div>
+            <div class="text-xs text-gray-400 whitespace-pre-line" x-text="step.snapshot.audit"></div>
+          </div>
+        </div>
+
+        <!-- Bottom: Technical Explain -->
+        <div class="snap-panel border-l-4 border-blue-500">
+          <div class="snap-title text-blue-400">技术原理</div>
+          <div class="text-sm text-gray-300 leading-relaxed" x-text="step.explain"></div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="shrink-0 px-6 py-3 border-t border-gray-700 bg-gray-900/50">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+      <button @click="prev()" :disabled="current === 0" :class="current === 0 ? 'opacity-30' : ''"
+        class="px-4 py-2 bg-gray-800 border border-gray-700 rounded text-sm hover:bg-gray-700 transition-colors">◀ 上一步</button>
+      <div class="text-xs text-gray-500" x-text="current === steps.length - 1 ? '漫游完成！' : '点击下一步继续跟随任务流转'"></div>
+      <button @click="next()" :disabled="current === steps.length - 1" :class="current === steps.length - 1 ? 'opacity-30' : ''"
+        class="px-5 py-2 bg-blue-600 text-white rounded text-sm font-semibold hover:bg-blue-500 transition-colors">下一步 ▶</button>
+    </div>
+  </footer>
+</div>
+
+<script>
+function stateFlowApp() {
+  return {
+    title: FLOW_CONFIG.title,
+    subtitle: FLOW_CONFIG.subtitle,
+    steps: FLOW_CONFIG.steps,
+    current: 0,
+    get step() { return this.steps[this.current]; },
+    next() { if (this.current < this.steps.length - 1) this.current++; },
+    prev() { if (this.current > 0) this.current--; },
+    goTo(i) { this.current = i; }
+  };
+}
+</script>
+
+</body>
+</html>

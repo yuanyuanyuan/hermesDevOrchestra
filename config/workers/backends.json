@@ -1,0 +1,26 @@
+{
+  "schema_version": "orchestra.v1",
+  "artifact_type": "worker_backend_registry",
+  "backends": [
+    {
+      "name": "codex",
+      "enabled": true,
+      "available": true,
+      "adapter_type": "cli",
+      "compatible_roles": ["implementer"],
+      "modes": ["mvp_full"],
+      "capabilities": ["structured_envelope", "state_advancing_output"],
+      "fallback_allowed": false
+    },
+    {
+      "name": "claude",
+      "enabled": true,
+      "available": true,
+      "adapter_type": "cli",
+      "compatible_roles": ["reviewer"],
+      "modes": ["mvp_full"],
+      "capabilities": ["structured_verdict", "artifact_review"],
+      "fallback_allowed": false
+    }
+  ]
+}

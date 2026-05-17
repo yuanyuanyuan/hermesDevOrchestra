@@ -1,0 +1,63 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "worker_role_registry",
+  "package_status": "staged_target",
+  "registry_authority": "project",
+  "implicit_backend_fallback_allowed": false,
+  "roles": [
+    {
+      "role": "implementer",
+      "protocol": "hermes-role-engine/v1",
+      "required_capabilities": [
+        "structured_envelope",
+        "state_advancing_output",
+        "workspace_execution",
+        "write_scope_reporting"
+      ],
+      "preferred_backend": "codex",
+      "explicit_fallback_backends": [],
+      "fallback_allowed_failure_classes": ["timeout", "crash", "rate_limit"],
+      "fallback_forbidden_when": [
+        "risk_level:L3",
+        "risk_level:L4",
+        "parallel_worker_task",
+        "release_or_deploy_task",
+        "security_task",
+        "rule_change",
+        "authority_impacting_config_change",
+        "schema_mismatch",
+        "parse_error",
+        "write_scope_violation",
+        "human_approval_boundary"
+      ],
+      "selection_record_required": true,
+      "capability_negotiation_report_required_on_block": true
+    },
+    {
+      "role": "reviewer",
+      "protocol": "hermes-role-engine/v1",
+      "required_capabilities": [
+        "structured_verdict",
+        "artifact_review",
+        "workspace_read",
+        "verdict_reporting"
+      ],
+      "preferred_backend": "claude",
+      "explicit_fallback_backends": [],
+      "fallback_allowed_failure_classes": ["timeout", "crash", "rate_limit"],
+      "fallback_forbidden_when": [
+        "risk_level:L3",
+        "risk_level:L4",
+        "release_or_deploy_task",
+        "security_task",
+        "rule_change",
+        "authority_impacting_config_change",
+        "schema_mismatch",
+        "parse_error",
+        "human_approval_boundary"
+      ],
+      "selection_record_required": true,
+      "capability_negotiation_report_required_on_block": true
+    }
+  ]
+}

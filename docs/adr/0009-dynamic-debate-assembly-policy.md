@@ -1,0 +1,3 @@
+# Dynamic Debate Assembly Uses Deterministic Policy
+
+Dynamic Debate Assembly will use `config/debate/full/assembly-policy.json` instead of allowing a model or backend adapter to freely choose debate teams. The selector starts from stage floor coverage, adds task-type overlays, adds L1-L4 risk overlays, applies only coverage-increasing project overrides, and then selects members through stable scoring and registry-order tie breaking. This makes debate coverage reproducible, testable, and auditable: Debate Audit Trails must record the assembly input, matched rules, overlays, selected and skipped teams, selected members, and member scoring summaries.

@@ -44,6 +44,7 @@ BOARD_SLUG="$(orch_project_board_slug "$PROJECT_ID")"
 MEMORY_NAMESPACE="$(orch_project_memory_namespace "$PROJECT_ID")"
 
 mkdir -p "$RUNTIME_DIR" "$STATE_DIR" "$AUDIT_DIR/archive" "$AUDIT_DIR/pending" "$CACHE_DIR" "$WORKSPACE_ROOT" "$OVERRIDE_DIR"
+mkdir -p "$PROJECT_DIR/.workflow/knowledge"
 
 SETTINGS_SRC="$ORCHESTRA_HOME/claude-config-template/.claude/settings.json"
 if [ ! -f "$SETTINGS_SRC" ]; then
@@ -137,6 +138,138 @@ path, project_id = sys.argv[1:]
 with open(path, "w", encoding="utf-8") as handle:
     json.dump({"project_id": project_id, "state": "idle", "task_id": None}, handle, indent=2)
     handle.write("\n")
+PY
+
+python3 - "$PROJECT_DIR" "$PROJECT_ID" "$PACKAGE_DIR" "$(orch_now)" <<'PY'
+import hashlib
+import json
+import os
+import sys
+from pathlib import Path
+
+project_dir, project_id, package_dir, generated_at = sys.argv[1:]
+project = Path(project_dir)
+package = Path(package_dir)
+knowledge = project / ".workflow" / "knowledge"
+knowledge.mkdir(parents=True, exist_ok=True)
+
+def read_json(path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+def file_digest(path):
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    return hashlib.sha256(data).hexdigest()
+
+package_json = read_json(project / "package.json") or read_json(package / "package.json") or {}
+codemap = read_json(package / ".mycodemap" / "codemap.json") or {}
+
+docs = {}
+for relative in ("README.md", "Makefile", "AGENTS.md", "hermes/SOUL.md"):
+    digest = file_digest(project / relative) or file_digest(package / relative)
+    if digest:
+        docs[relative] = {"sha256": digest}
+
+payloads = {
+    "project-summary.json": {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "workflow_knowledge",
+        "knowledge_type": "project_summary",
+        "project_id": project_id,
+        "summary": package_json.get("description") or "Hermes Orchestra project",
+        "source_refs": sorted(docs),
+        "generated_at": generated_at,
+    },
+    "tech-stack.json": {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "workflow_knowledge",
+        "knowledge_type": "tech_stack",
+        "project_id": project_id,
+        "runtime": "python-standard-library-http-server",
+        "package_type": package_json.get("type"),
+        "test_entrypoint": "make test",
+        "generated_at": generated_at,
+    },
+    "api-surface.json": {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "workflow_knowledge",
+        "knowledge_type": "api_surface",
+        "project_id": project_id,
+        "routes": [
+            "GET /health",
+            "GET /orchestra/capabilities",
+            "POST /orchestra/runs",
+            "GET /orchestra/runs/{run_id}",
+            "GET /orchestra/runs/{run_id}/events",
+            "GET /orchestra/runs/{run_id}/tasks",
+            "POST /orchestra/runs/{run_id}/stop",
+            "POST /orchestra/decisions/{decision_id}",
+        ],
+        "generated_at": generated_at,
+    },
+    "module-map.json": {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "workflow_knowledge",
+        "knowledge_type": "module_map",
+        "project_id": project_id,
+        "modules": codemap.get("modules", []),
+        "key_paths": ["scripts/", "hermes/", "specs/", "docs/", "config/"],
+        "generated_at": generated_at,
+    },
+    "coding-rules.json": {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "workflow_knowledge",
+        "knowledge_type": "coding_rules",
+        "project_id": project_id,
+        "rules": ["Use scoped artifact refs", "Do not auto-edit root rule files", "Keep Gateway local-only by default"],
+        "source_digests": docs,
+        "generated_at": generated_at,
+    },
+    "test-strategy.json": {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "workflow_knowledge",
+        "knowledge_type": "test_strategy",
+        "project_id": project_id,
+        "commands": ["make test", "bash scripts/tests/run-all.sh"],
+        "generated_at": generated_at,
+    },
+    "risk-notes.json": {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "workflow_knowledge",
+        "knowledge_type": "risk_notes",
+        "project_id": project_id,
+        "notes": ["Human approval required for root rules, CI/CD, secrets, permissions, and publish/deploy actions"],
+        "generated_at": generated_at,
+    },
+}
+
+manifest_inputs = {}
+for name, payload in payloads.items():
+    target = knowledge / name
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    manifest_inputs[name] = {"sha256": file_digest(target), "generated_at": generated_at}
+
+(knowledge / "update-manifest.json").write_text(
+    json.dumps(
+        {
+            "schema_version": "orchestra.v1",
+            "artifact_type": "workflow_knowledge_update_manifest",
+            "project_id": project_id,
+            "files": manifest_inputs,
+            "source_digests": docs,
+            "generated_at": generated_at,
+        },
+        indent=2,
+        ensure_ascii=False,
+    )
+    + "\n",
+    encoding="utf-8",
+)
 PY
 
 SYNC_HELPER="$ORCHESTRA_HOME/bin/orch-profile-sync"

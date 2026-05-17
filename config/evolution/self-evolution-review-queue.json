@@ -1,0 +1,144 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "self_evolution_review_queue_policy",
+  "package_status": "staged_target",
+  "policy_authority": "project",
+  "queue_required": true,
+  "immediate_interrupt_default": false,
+  "stage_6_enqueue_required": true,
+  "auto_apply_allowed": false,
+  "rejected_proposals_retained": true,
+  "queue_item_required_fields": [
+    "queue_item_id",
+    "proposal_id",
+    "proposal_ref",
+    "source_run_ids",
+    "trigger_matches",
+    "severity",
+    "protected_target_class",
+    "evidence_quality",
+    "priority_score",
+    "status",
+    "decision_required",
+    "human_approval_required",
+    "batch_key",
+    "created_at",
+    "reviewed_at",
+    "decision_ref",
+    "rejection_reason",
+    "audit_refs"
+  ],
+  "status_machine": {
+    "states": [
+      "queued",
+      "batched",
+      "under_review",
+      "accepted",
+      "rejected",
+      "needs_more_evidence",
+      "deferred",
+      "superseded",
+      "applied"
+    ],
+    "terminal_states": ["rejected", "superseded", "applied"],
+    "transitions": [
+      {"from": "queued", "to": "batched"},
+      {"from": "queued", "to": "under_review"},
+      {"from": "batched", "to": "under_review"},
+      {"from": "under_review", "to": "accepted"},
+      {"from": "under_review", "to": "rejected"},
+      {"from": "under_review", "to": "needs_more_evidence"},
+      {"from": "under_review", "to": "deferred"},
+      {"from": "needs_more_evidence", "to": "queued"},
+      {"from": "deferred", "to": "queued"},
+      {"from": "accepted", "to": "applied"},
+      {"from": "accepted", "to": "superseded"},
+      {"from": "queued", "to": "superseded"},
+      {"from": "batched", "to": "superseded"}
+    ],
+    "rejection_reason_required": true,
+    "decision_ref_required_for_terminal": true
+  },
+  "priority_policy": {
+    "sort_order": [
+      "protected_target_class",
+      "severity",
+      "repeated_failure_count",
+      "evidence_quality",
+      "source_run_count",
+      "created_at"
+    ],
+    "severity_levels": ["critical", "high", "medium", "low"],
+    "protected_targets_first": true,
+    "same_class_failure_weight": 4,
+    "decision_exposed_gap_weight": 3,
+    "schema_or_contract_failure_weight": 3,
+    "review_or_qa_repeat_weight": 2,
+    "low_evidence_penalty": 3,
+    "aging_weight": 1
+  },
+  "batching_policy": {
+    "batch_low_and_medium_allowed": true,
+    "batch_high_allowed": false,
+    "batch_critical_allowed": false,
+    "batch_protected_targets_allowed": false,
+    "default_batch_size_target": 10,
+    "batch_key_fields": [
+      "trigger_matches",
+      "target_area",
+      "protected_target_class"
+    ],
+    "batch_requires_shared_review_context": true
+  },
+  "protected_target_policy": {
+    "protected_target_classes": [
+      "root_rules",
+      "ci_cd",
+      "install_scripts",
+      "risk_policy",
+      "worker_config",
+      "debate_config",
+      "gateway_config",
+      "runtime_config",
+      "release_config",
+      "remote_decision_config",
+      "full_contract_cutover"
+    ],
+    "human_approval_required": true,
+    "kimi_review_required_before_human": true,
+    "auto_apply_allowed": false,
+    "batching_allowed": false
+  },
+  "backlog_policy": {
+    "backlog_count_warning_threshold": 50,
+    "critical_item_interrupt_allowed": true,
+    "high_item_interrupt_allowed": false,
+    "low_value_batch_or_defer_allowed": true,
+    "needs_more_evidence_before_requeue": true,
+    "supersede_duplicate_proposals": true,
+    "retain_superseded_reason": true
+  },
+  "evidence_policy": {
+    "review_view_required": true,
+    "review_view_sources": [
+      "system_improvement_proposals",
+      "audit_refs",
+      "gateway_state_refs",
+      "kanban_refs",
+      "test_execution_report_refs",
+      "review_or_qa_verdict_refs",
+      "full_contract_validation_refs"
+    ],
+    "minimum_evidence_quality_for_acceptance": "medium",
+    "low_evidence_action": "needs_more_evidence",
+    "raw_prompt_or_stdout_in_review_view_allowed": false
+  },
+  "retention_policy": {
+    "accepted_retained": true,
+    "rejected_retained": true,
+    "deferred_retained": true,
+    "superseded_retained": true,
+    "delete_rejected_allowed": false,
+    "audit_refs_required": true
+  }
+}

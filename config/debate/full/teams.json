@@ -1,0 +1,185 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "debate_team_registry",
+  "package_kind": "full_debate_package",
+  "registry_authority": "qnN4o510",
+  "package_status": "staged_target",
+  "teams": [
+    {
+      "id": "security",
+      "name": "Security",
+      "focus": "Attack paths, authority boundaries, secrets, and forbidden automation.",
+      "dimensions": ["threat_modeling", "secrets", "policy_boundary"],
+      "members": [
+        {"id": "threat_modeler", "focus": "Finds attack paths, privilege escalation, and abuse cases.", "dimension_refs": ["threat_modeling"], "checklist_refs": ["security/threat-model"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "secrets_auditor", "focus": "Checks credentials, tokens, logs, and configuration for leakage risk.", "dimension_refs": ["secrets"], "checklist_refs": ["security/secrets"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "policy_guardian", "focus": "Checks L3/L4, Human Approval, forbidden automation, and risk policy triggers.", "dimension_refs": ["policy_boundary"], "checklist_refs": ["security/policy-boundary"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "compliance",
+      "name": "Compliance",
+      "focus": "Legal, internal policy, ethics, and approval compliance.",
+      "dimensions": ["legal", "internal_policy", "ethics"],
+      "members": [
+        {"id": "legal_reviewer", "focus": "Reviews laws, contracts, platform terms, and compliance boundaries.", "dimension_refs": ["legal"], "checklist_refs": ["compliance/legal"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "internal_policy_reviewer", "focus": "Checks consistency with project rules, Harness, and approval policy.", "dimension_refs": ["internal_policy"], "checklist_refs": ["compliance/internal-policy"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "ethics_reviewer", "focus": "Reviews fairness, misleading automation, user harm, and ethical risk.", "dimension_refs": ["ethics"], "checklist_refs": ["compliance/ethics"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "data_engineering",
+      "name": "Data Engineering",
+      "focus": "Data flow reliability, quality, architecture, and recovery.",
+      "dimensions": ["pipeline_reliability", "data_quality", "data_architecture"],
+      "members": [
+        {"id": "pipeline_reliability_reviewer", "focus": "Reviews data flows, sync paths, retries, idempotency, and recovery.", "dimension_refs": ["pipeline_reliability"], "checklist_refs": ["data/pipeline-reliability"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "data_quality_reviewer", "focus": "Reviews correctness, completeness, consistency, dirty data, and validation.", "dimension_refs": ["data_quality"], "checklist_refs": ["data/quality"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "data_architecture_reviewer", "focus": "Reviews data models, storage boundaries, query patterns, and indexes.", "dimension_refs": ["data_architecture"], "checklist_refs": ["data/architecture"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "devops_sre",
+      "name": "DevOps SRE",
+      "focus": "Deployment pipeline, reliability, automation, and runtime health.",
+      "dimensions": ["deployment_pipeline", "slo_reliability", "automation_iac"],
+      "members": [
+        {"id": "deployment_pipeline_reviewer", "focus": "Reviews deployment pipelines, environment tiers, release gates, and rollback.", "dimension_refs": ["deployment_pipeline"], "checklist_refs": ["devops/deployment-pipeline"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "slo_reliability_reviewer", "focus": "Reviews availability, SLOs, failure recovery, and runtime health.", "dimension_refs": ["slo_reliability"], "checklist_refs": ["devops/slo-reliability"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "automation_iac_reviewer", "focus": "Reviews automation scripts, IaC, permission boundaries, and repeatability.", "dimension_refs": ["automation_iac"], "checklist_refs": ["devops/automation-iac"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "frontend",
+      "name": "Frontend",
+      "focus": "UX flow, frontend performance, compatibility, and accessibility.",
+      "dimensions": ["ux_flow", "frontend_performance", "compatibility_accessibility"],
+      "members": [
+        {"id": "ux_flow_reviewer", "focus": "Reviews user flows, interaction paths, information architecture, and clarity.", "dimension_refs": ["ux_flow"], "checklist_refs": ["frontend/ux-flow"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "frontend_performance_reviewer", "focus": "Reviews rendering performance, asset weight, first paint, and responsiveness.", "dimension_refs": ["frontend_performance"], "checklist_refs": ["frontend/performance"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "compatibility_accessibility_reviewer", "focus": "Reviews device compatibility, accessibility, and responsive adaptation.", "dimension_refs": ["compatibility_accessibility"], "checklist_refs": ["frontend/compatibility-accessibility"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "ai_feature",
+      "name": "AI Feature",
+      "focus": "Model fit, prompt contract, and human-AI interaction.",
+      "dimensions": ["model_fit", "prompt_contract", "human_ai_interaction"],
+      "members": [
+        {"id": "model_fit_reviewer", "focus": "Reviews model suitability, capability boundaries, cost-quality fit, and fallback.", "dimension_refs": ["model_fit"], "checklist_refs": ["ai/model-fit"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "prompt_contract_reviewer", "focus": "Reviews prompt structure, input constraints, output format, and schema alignment.", "dimension_refs": ["prompt_contract"], "checklist_refs": ["ai/prompt-contract"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "human_ai_interaction_reviewer", "focus": "Reviews collaboration paths, explainability, confirmation points, and misuse risk.", "dimension_refs": ["human_ai_interaction"], "checklist_refs": ["ai/human-interaction"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "scalability_arch",
+      "name": "Scalability Architecture",
+      "focus": "Capacity, horizontal scaling, resource efficiency, and bottlenecks.",
+      "dimensions": ["capacity_planning", "horizontal_scaling", "resource_efficiency"],
+      "members": [
+        {"id": "capacity_planning_reviewer", "focus": "Reviews load growth, throughput, latency budgets, and capacity plans.", "dimension_refs": ["capacity_planning"], "checklist_refs": ["scalability/capacity"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "horizontal_scaling_reviewer", "focus": "Reviews horizontal scaling, partitioning, concurrency, and statelessness.", "dimension_refs": ["horizontal_scaling"], "checklist_refs": ["scalability/horizontal"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "resource_efficiency_reviewer", "focus": "Reviews CPU, memory, storage, API, token cost, waste, and bottlenecks.", "dimension_refs": ["resource_efficiency"], "checklist_refs": ["scalability/resource-efficiency"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "chaos_engineering",
+      "name": "Chaos Engineering",
+      "focus": "Fault injection, resilience, blast radius, and recovery behavior.",
+      "dimensions": ["fault_injection", "resilience", "blast_radius"],
+      "members": [
+        {"id": "fault_injection_reviewer", "focus": "Reviews fault scenarios, dependency exceptions, timeouts, and disconnects.", "dimension_refs": ["fault_injection"], "checklist_refs": ["chaos/fault-injection"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "resilience_reviewer", "focus": "Reviews recovery, degradation, retries, circuit breakers, and state consistency.", "dimension_refs": ["resilience"], "checklist_refs": ["chaos/resilience"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "blast_radius_reviewer", "focus": "Reviews failure impact scope, isolation, rollback, and stop mechanisms.", "dimension_refs": ["blast_radius"], "checklist_refs": ["chaos/blast-radius"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "platform",
+      "name": "Platform",
+      "focus": "Platform architecture, maintainability, infrastructure fit, and upstream boundaries.",
+      "dimensions": ["platform_architecture", "maintainability", "infrastructure_fit"],
+      "members": [
+        {"id": "platform_architecture_reviewer", "focus": "Reviews platform architecture, system boundaries, and composition.", "dimension_refs": ["platform_architecture"], "checklist_refs": ["platform/architecture"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "maintainability_reviewer", "focus": "Reviews module complexity, maintainability, and long-term evolution cost.", "dimension_refs": ["maintainability"], "checklist_refs": ["platform/maintainability"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "infrastructure_fit_reviewer", "focus": "Reviews runtime constraints and Hermes, Gateway, and Kanban boundaries.", "dimension_refs": ["infrastructure_fit"], "checklist_refs": ["platform/infrastructure-fit"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "privacy_ethics",
+      "name": "Privacy Ethics",
+      "focus": "Data privacy, AI ethics, content safety, and user harm.",
+      "dimensions": ["data_privacy", "ai_ethics", "content_safety"],
+      "members": [
+        {"id": "data_privacy_reviewer", "focus": "Reviews personal data, minimization, retention, and deletion boundaries.", "dimension_refs": ["data_privacy"], "checklist_refs": ["privacy/data-privacy"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "ai_ethics_reviewer", "focus": "Reviews bias, transparency, explainability, and misleading output risk.", "dimension_refs": ["ai_ethics"], "checklist_refs": ["privacy/ai-ethics"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "content_safety_reviewer", "focus": "Reviews moderation, abuse scenarios, user harm, and content risk.", "dimension_refs": ["content_safety"], "checklist_refs": ["privacy/content-safety"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "oss_compliance",
+      "name": "OSS Compliance",
+      "focus": "Open-source licensing, dependency security, SBOM, and provenance.",
+      "dimensions": ["license_compliance", "dependency_security", "sbom_provenance"],
+      "members": [
+        {"id": "license_compliance_reviewer", "focus": "Reviews open-source licenses, copyright, and redistribution constraints.", "dimension_refs": ["license_compliance"], "checklist_refs": ["oss/license"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "dependency_security_reviewer", "focus": "Reviews vulnerabilities, supply-chain risk, versioning, and source trust.", "dimension_refs": ["dependency_security"], "checklist_refs": ["oss/dependency-security"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "sbom_provenance_reviewer", "focus": "Reviews SBOM, component provenance, dependency inventory, and audit evidence.", "dimension_refs": ["sbom_provenance"], "checklist_refs": ["oss/sbom-provenance"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "observability",
+      "name": "Observability",
+      "focus": "Monitoring, tracing, logging, metrics, and diagnostic actionability.",
+      "dimensions": ["monitoring_alerting", "tracing", "logging_metrics"],
+      "members": [
+        {"id": "monitoring_alerting_reviewer", "focus": "Reviews monitoring coverage, alert thresholds, and on-call actionability.", "dimension_refs": ["monitoring_alerting"], "checklist_refs": ["observability/monitoring-alerting"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "tracing_reviewer", "focus": "Reviews tracing, request correlation, and cross-component causal diagnosis.", "dimension_refs": ["tracing"], "checklist_refs": ["observability/tracing"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "logging_metrics_reviewer", "focus": "Reviews log structure, metric standards, retention, audit, and debugging value.", "dimension_refs": ["logging_metrics"], "checklist_refs": ["observability/logging-metrics"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "business",
+      "name": "Business",
+      "focus": "Outcome value, cost, acceptance, and product tradeoffs.",
+      "dimensions": ["value", "cost", "acceptance"],
+      "members": [
+        {"id": "value_reviewer", "focus": "Checks whether work serves the intended outcome instead of novelty.", "dimension_refs": ["value"], "checklist_refs": ["business/value"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "cost_reviewer", "focus": "Reviews token, API, runtime, time, and maintenance cost.", "dimension_refs": ["cost"], "checklist_refs": ["business/cost"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "acceptance_reviewer", "focus": "Checks whether acceptance criteria are judgeable, executable, and deliverable.", "dimension_refs": ["acceptance"], "checklist_refs": ["business/acceptance"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "documentation",
+      "name": "Documentation",
+      "focus": "Documentation coverage, accuracy, maintainability, and stale-content risk.",
+      "dimensions": ["coverage", "accuracy", "maintainability_docs"],
+      "members": [
+        {"id": "coverage_reviewer", "focus": "Reviews documentation coverage, missing topics, and operator paths.", "dimension_refs": ["coverage"], "checklist_refs": ["documentation/coverage"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "accuracy_reviewer", "focus": "Reviews factual accuracy and alignment with code, config, and ADRs.", "dimension_refs": ["accuracy"], "checklist_refs": ["documentation/accuracy"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "maintainability_docs_reviewer", "focus": "Reviews documentation structure, update cost, and stale-content risk.", "dimension_refs": ["maintainability_docs"], "checklist_refs": ["documentation/maintainability"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "api_design",
+      "name": "API Design",
+      "focus": "API contracts, versioning, security, rate limits, and developer experience.",
+      "dimensions": ["contract_versioning", "api_security_rate_limit", "developer_experience"],
+      "members": [
+        {"id": "contract_versioning_reviewer", "focus": "Reviews API contracts, versioning, compatibility, and breaking-change boundaries.", "dimension_refs": ["contract_versioning"], "checklist_refs": ["api/contract-versioning"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "api_security_rate_limit_reviewer", "focus": "Reviews auth, authorization, security boundaries, rate limits, and abuse protection.", "dimension_refs": ["api_security_rate_limit"], "checklist_refs": ["api/security-rate-limit"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "developer_experience_reviewer", "focus": "Reviews API usability, error semantics, examples, SDKs, and debugging.", "dimension_refs": ["developer_experience"], "checklist_refs": ["api/developer-experience"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    },
+    {
+      "id": "i18n_l10n",
+      "name": "I18N L10N",
+      "focus": "Translation, locale formatting, RTL, and multilingual behavior.",
+      "dimensions": ["translation_completeness", "locale_format", "rtl_multilingual"],
+      "members": [
+        {"id": "translation_completeness_reviewer", "focus": "Reviews translation coverage, missing strings, and consistency.", "dimension_refs": ["translation_completeness"], "checklist_refs": ["i18n/translation-completeness"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "locale_format_reviewer", "focus": "Reviews dates, numbers, currency, units, time zones, and locale formats.", "dimension_refs": ["locale_format"], "checklist_refs": ["i18n/locale-format"], "output_requirements": ["debate_member_opinion"]},
+        {"id": "rtl_multilingual_reviewer", "focus": "Reviews RTL support, text expansion, multilingual layouts, and input boundaries.", "dimension_refs": ["rtl_multilingual"], "checklist_refs": ["i18n/rtl-multilingual"], "output_requirements": ["debate_member_opinion"]}
+      ]
+    }
+  ]
+}

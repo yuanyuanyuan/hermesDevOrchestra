@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Orchestra MVP — 系统架构分层图</title>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        surface: '#161b22',
+        border: '#30363d',
+      }
+    }
+  }
+}
+</script>
+<style>
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  [x-cloak] { display: none !important; }
+  .layer-card {
+    transition: all 0.2s ease;
+    position: relative;
+  }
+  .layer-card:hover {
+    transform: translateX(4px);
+    filter: brightness(1.15);
+  }
+  .layer-card.active {
+    transform: translateX(8px);
+    filter: brightness(1.2);
+    box-shadow: 0 0 20px rgba(96, 165, 250, 0.15);
+  }
+  .arrow-down {
+    width: 2px;
+    background: linear-gradient(to bottom, #4b5563, #6b7280);
+    margin: 2px auto;
+  }
+  .flow-arrow {
+    position: absolute;
+    right: -28px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    color: #6b7280;
+    white-space: nowrap;
+  }
+  .authority-chain {
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(251, 191, 36, 0.03),
+      rgba(251, 191, 36, 0.03) 10px,
+      rgba(251, 146, 60, 0.03) 10px,
+      rgba(251, 146, 60, 0.03) 20px
+    );
+  }
+  .projection-layer {
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(163, 230, 53, 0.03),
+      rgba(163, 230, 53, 0.03) 10px,
+      rgba(148, 163, 184, 0.03) 10px,
+      rgba(148, 163, 184, 0.03) 20px
+    );
+  }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-200 font-mono h-screen flex flex-col overflow-hidden">
+
+<script>
+const ARCH_CONFIG = {
+  title: 'Hermes Orchestra MVP — 系统架构分层图',
+  subtitle: '防归纳坍缩视角下的 11 层垂直架构剖面',
+  tabs: ['建筑剖面', '权威链详解', '层间依赖图'],
+  layers: [
+    { num: 1, name: '外部监督层', entity: 'Kimi', color: 'border-pink-500', bg: 'bg-pink-500/10', text: 'text-pink-400', width: 'w-64', desc: '上层编排者与最终决策者', authority: false },
+    { num: 2, name: '接口契约层', entity: '/orchestra/* API + /v1/* Proxy', color: 'border-purple-500', bg: 'bg-purple-500/10', text: 'text-purple-400', width: 'w-72', desc: 'Gateway 对外交互面', authority: false },
+    { num: 3, name: '网关编排层', entity: 'Gateway Adapter + Gate + Idempotency', color: 'border-blue-500', bg: 'bg-blue-500/10', text: 'text-blue-400', width: 'w-96', desc: '六阶段 DAG 编排核心', authority: false },
+    { num: 4, name: '写前日志层', entity: 'Command Journal', color: 'border-emerald-500', bg: 'bg-emerald-500/10', text: 'text-emerald-400', width: 'w-80', desc: '崩溃恢复基础', authority: false },
+    { num: 5, name: '运行时状态层', entity: 'Gateway State + Event Store', color: 'border-amber-500', bg: 'bg-amber-500/10', text: 'text-amber-400', width: 'w-[28rem]', desc: '运行时可变权威', authority: true },
+    { num: 6, name: '任务生命周期层', entity: 'Hermes Kanban', color: 'border-orange-500', bg: 'bg-orange-500/10', text: 'text-orange-400', width: 'w-[28rem]', desc: '官方任务生命周期权威', authority: true },
+    { num: 7, name: '不可变证据层', entity: 'Audit', color: 'border-red-500', bg: 'bg-red-500/10', text: 'text-red-400', width: 'w-[28rem]', desc: 'append-only 历史证据', authority: true },
+    { num: 8, name: '结构化产物层', entity: 'Artifacts (PRD/Plan/Reports)', color: 'border-cyan-500', bg: 'bg-cyan-500/10', text: 'text-cyan-400', width: 'w-[28rem]', desc: 'Schema-valid 结构化产物', authority: true },
+    { num: 9, name: '观察投影层', entity: 'Event Projection', color: 'border-lime-500', bg: 'bg-lime-500/10', text: 'text-lime-400', width: 'w-80', desc: '非权威观察流，可重建', authority: false },
+    { num: 10, name: '优化缓存层', entity: 'Cache (local_filesystem)', color: 'border-slate-500', bg: 'bg-slate-500/10', text: 'text-slate-400', width: 'w-64', desc: '仅重建优化数据', authority: false },
+    { num: 11, name: '执行后端层', entity: 'Worker + Debate Backends', color: 'border-fuchsia-500', bg: 'bg-fuchsia-500/10', text: 'text-fuchsia-400', width: 'w-96', desc: 'CLI/API 执行器', authority: false },
+  ],
+  flows: [
+    { from: 1, to: 2, label: '调用 API', dir: 'down' },
+    { from: 2, to: 3, label: '路由', dir: 'down' },
+    { from: 3, to: 4, label: '先写日志', dir: 'down' },
+    { from: 4, to: 5, label: '并行写入', dir: 'down' },
+    { from: 4, to: 6, label: '并行写入', dir: 'down' },
+    { from: 4, to: 7, label: '并行写入', dir: 'down' },
+    { from: 4, to: 8, label: '并行写入', dir: 'down' },
+    { from: 5, to: 9, label: '重建基础', dir: 'down' },
+    { from: 6, to: 9, label: '重建基础', dir: 'down' },
+    { from: 7, to: 9, label: '重建基础', dir: 'down' },
+    { from: 8, to: 9, label: '重建基础', dir: 'down' },
+    { from: 3, to: 10, label: '读写缓存', dir: 'right' },
+    { from: 3, to: 11, label: '调度', dir: 'down' },
+    { from: 11, to: 8, label: '生成产物', dir: 'up' },
+    { from: 11, to: 3, label: '返回 JSON', dir: 'up' },
+    { from: 9, to: 1, label: 'Kimi 观察', dir: 'up' },
+  ]
+};
+</script>
+
+<div x-data="archLab(ARCH_CONFIG)" class="h-screen flex flex-col overflow-hidden">
+
+  <!-- Header -->
+  <header class="shrink-0 px-6 pt-4 pb-0 border-b border-gray-700">
+    <div class="flex items-baseline justify-between">
+      <h1 class="text-xl text-blue-400 font-bold" x-text="title"></h1>
+      <span class="text-xs text-gray-600" x-text="subtitle"></span>
+    </div>
+    <div class="flex gap-0.5 border-b-2 border-gray-700 mt-3">
+      <template x-for="(tab, i) in tabs" :key="i">
+        <button @click="activeTab = i"
+          class="px-4 py-2 border border-gray-700 border-b-0 rounded-t text-sm transition-colors"
+          :class="activeTab === i ? 'text-blue-400 bg-gray-950 -mb-[2px] z-10 relative' : 'text-gray-500 hover:text-gray-200 bg-surface'"
+          x-text="tab"></button>
+      </template>
+    </div>
+  </header>
+
+  <main class="flex-1 overflow-hidden min-h-0 relative">
+
+    <!-- TAB 0: 建筑剖面 -->
+    <div x-show="activeTab === 0" x-cloak
+         x-transition:enter="transition-opacity duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="h-full flex flex-col absolute inset-0">
+      <div class="flex-1 grid grid-cols-[1fr_380px] gap-0 overflow-hidden min-h-0">
+        <!-- 左侧：建筑剖面 -->
+        <div class="overflow-y-auto min-h-0 p-6 flex flex-col items-center">
+          <div class="text-xs text-gray-500 mb-3 uppercase tracking-wider">← 点击层查看详情 →</div>
+
+          <!-- L1 -->
+          <button @click="selected = 0" class="layer-card w-64 border-l-4 border-pink-500 bg-pink-500/10 rounded-r-lg px-4 py-3 text-left"
+                  :class="selected === 0 ? 'active' : ''">
+            <div class="text-xs text-pink-400 font-bold">L1</div>
+            <div class="text-sm text-gray-100 font-semibold">外部监督层</div>
+            <div class="text-xs text-gray-400">Kimi</div>
+          </button>
+          <div class="h-6 flex items-center justify-center"><span class="text-xs text-gray-600">↓ 调用 API</span></div>
+
+          <!-- L2 -->
+          <button @click="selected = 1" class="layer-card w-72 border-l-4 border-purple-500 bg-purple-500/10 rounded-r-lg px-4 py-3 text-left"
+                  :class="selected === 1 ? 'active' : ''">
+            <div class="text-xs text-purple-400 font-bold">L2</div>
+            <div class="text-sm text-gray-100 font-semibold">接口契约层</div>
+            <div class="text-xs text-gray-400">/orchestra/* API + /v1/* Proxy</div>
+          </button>
+          <div class="h-6 flex items-center justify-center"><span class="text-xs text-gray-600">↓ 路由</span></div>
+
+          <!-- L3 -->
+          <button @click="selected = 2" class="layer-card w-96 border-l-4 border-blue-500 bg-blue-500/10 rounded-r-lg px-4 py-3 text-left"
+                  :class="selected === 2 ? 'active' : ''">
+            <div class="text-xs text-blue-400 font-bold">L3</div>
+            <div class="text-sm text-gray-100 font-semibold">网关编排层</div>
+            <div class="text-xs text-gray-400">Gateway Adapter + Advancement Gate + Idempotency</div>
+          </button>
+          <div class="h-6 flex items-center justify-center"><span class="text-xs text-gray-600">↓ 先写 Journal | → 调度 Workers</span></div>
+
+          <!-- L4 -->
+          <button @click="selected = 3" class="layer-card w-80 border-l-4 border-emerald-500 bg-emerald-500/10 rounded-r-lg px-4 py-3 text-left"
+                  :class="selected === 3 ? 'active' : ''">
+            <div class="text-xs text-emerald-400 font-bold">L4</div>
+            <div class="text-sm text-gray-100 font-semibold">写前日志层</div>
+            <div class="text-xs text-gray-400">Command Journal</div>
+          </button>
+          <div class="h-6 flex items-center justify-center"><span class="text-xs text-gray-600">↓ 并行写入权威链</span></div>
+
+          <!-- L5-L8: 权威链并排 -->
+          <div class="flex gap-2 w-[28rem]">
+            <button @click="selected = 4" class="layer-card flex-1 border-l-4 border-amber-500 bg-amber-500/10 rounded-r-lg px-3 py-3 text-left authority-chain"
+                    :class="selected === 4 ? 'active' : ''">
+              <div class="text-xs text-amber-400 font-bold">L5</div>
+              <div class="text-xs text-gray-100 font-semibold">运行时状态</div>
+              <div class="text-[10px] text-gray-400">Gateway State</div>
+            </button>
+            <button @click="selected = 5" class="layer-card flex-1 border-l-4 border-orange-500 bg-orange-500/10 rounded-r-lg px-3 py-3 text-left authority-chain"
+                    :class="selected === 5 ? 'active' : ''">
+              <div class="text-xs text-orange-400 font-bold">L6</div>
+              <div class="text-xs text-gray-100 font-semibold">任务生命周期</div>
+              <div class="text-[10px] text-gray-400">Hermes Kanban</div>
+            </button>
+            <button @click="selected = 6" class="layer-card flex-1 border-l-4 border-red-500 bg-red-500/10 rounded-r-lg px-3 py-3 text-left authority-chain"
+                    :class="selected === 6 ? 'active' : ''">
+              <div class="text-xs text-red-400 font-bold">L7</div>
+              <div class="text-xs text-gray-100 font-semibold">不可变证据</div>
+              <div class="text-[10px] text-gray-400">Audit</div>
+            </button>
+            <button @click="selected = 7" class="layer-card flex-1 border-l-4 border-cyan-500 bg-cyan-500/10 rounded-r-lg px-3 py-3 text-left authority-chain"
+                    :class="selected === 7 ? 'active' : ''">
+              <div class="text-xs text-cyan-400 font-bold">L8</div>
+              <div class="text-xs text-gray-100 font-semibold">结构化产物</div>
+              <div class="text-[10px] text-gray-400">Artifacts</div>
+            </button>
+          </div>
+          <div class="h-6 flex items-center justify-center"><span class="text-xs text-amber-400">★ 权威链 (Authority Chain) ★</span></div>
+          <div class="h-6 flex items-center justify-center"><span class="text-xs text-gray-600">↓ 重建基础 | ← 产物写入</span></div>
+
+          <!-- L9-L10: 投影与缓存并排 -->
+          <div class="flex gap-2 w-80">
+            <button @click="selected = 8" class="layer-card flex-1 border-l-4 border-lime-500 bg-lime-500/10 rounded-r-lg px-3 py-3 text-left projection-layer"
+                    :class="selected === 8 ? 'active' : ''">
+              <div class="text-xs text-lime-400 font-bold">L9</div>
+              <div class="text-xs text-gray-100 font-semibold">观察投影</div>
+              <div class="text-[10px] text-gray-400">Event Projection</div>
+            </button>
+            <button @click="selected = 9" class="layer-card flex-1 border-l-4 border-slate-500 bg-slate-500/10 rounded-r-lg px-3 py-3 text-left projection-layer"
+                    :class="selected === 9 ? 'active' : ''">
+              <div class="text-xs text-slate-400 font-bold">L10</div>
+              <div class="text-xs text-gray-100 font-semibold">优化缓存</div>
+              <div class="text-[10px] text-gray-400">Cache</div>
+            </button>
+          </div>
+          <div class="h-6 flex items-center justify-center"><span class="text-xs text-gray-500">非权威层 (Projection & Cache)</span></div>
+          <div class="h-6 flex items-center justify-center"><span class="text-xs text-gray-600">↑ 返回产物 | ↑ 返回 JSON</span></div>
+
+          <!-- L11 -->
+          <button @click="selected = 10" class="layer-card w-96 border-l-4 border-fuchsia-500 bg-fuchsia-500/10 rounded-r-lg px-4 py-3 text-left"
+                  :class="selected === 10 ? 'active' : ''">
+            <div class="text-xs text-fuchsia-400 font-bold">L11</div>
+            <div class="text-sm text-gray-100 font-semibold">执行后端层</div>
+            <div class="text-xs text-gray-400">Worker Backends + Debate Backends</div>
+          </button>
+
+          <!-- Legend -->
+          <div class="mt-6 flex gap-4 text-xs text-gray-500">
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-amber-500/20 border border-amber-500"></span> 权威链</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-lime-500/20 border border-lime-500"></span> 投影层</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-fuchsia-500/20 border border-fuchsia-500"></span> 执行层</span>
+          </div>
+        </div>
+
+        <!-- 右侧：详情面板 -->
+        <div class="bg-gray-900 border-l border-gray-700 overflow-y-auto min-h-0 p-4">
+          <div class="mb-3">
+            <div class="text-3xl font-bold" :class="currentLayer.text" x-text="'L' + currentLayer.num"></div>
+            <div class="text-lg text-gray-100 font-semibold" x-text="currentLayer.name"></div>
+            <div class="text-sm text-gray-400" x-text="currentLayer.entity"></div>
+          </div>
+
+          <div class="space-y-3 text-sm">
+            <div class="bg-gray-800/50 rounded p-3">
+              <div class="text-xs text-gray-500 mb-1">职责</div>
+              <div class="text-gray-200" x-text="currentLayer.desc"></div>
+            </div>
+
+            <div class="border-l-4 border-emerald-500 bg-emerald-500/5 rounded-r px-3 py-2">
+              <div class="text-xs text-emerald-400 font-semibold mb-1">常态行为</div>
+              <div class="text-gray-300" x-text="currentLayer.normal"></div>
+            </div>
+
+            <div class="border-l-4 border-amber-500 bg-amber-500/5 rounded-r px-3 py-2">
+              <div class="text-xs text-amber-400 font-semibold mb-1">边界态行为</div>
+              <div class="text-gray-300" x-text="currentLayer.boundary"></div>
+            </div>
+
+            <div class="bg-gray-800/50 rounded p-3">
+              <div class="text-xs text-gray-500 mb-1">权威属性</div>
+              <div class="text-gray-200" x-text="currentLayer.authority ? '✅ 属于 Authority Chain（恢复/完成必需）' : '❌ 非权威层（可重建/可降级）'"></div>
+            </div>
+
+            <div class="bg-gray-800/50 rounded p-3">
+              <div class="text-xs text-gray-500 mb-1">上下游</div>
+              <div class="text-gray-300 text-xs" x-text="'上: ' + currentLayer.deps_up"></div>
+              <div class="text-gray-300 text-xs mt-1" x-text="'下: ' + currentLayer.deps_down"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 1: 权威链详解 -->
+    <div x-show="activeTab === 1" x-cloak
+         x-transition:enter="transition-opacity duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="h-full flex flex-col absolute inset-0">
+      <div class="flex-1 px-6 py-4 overflow-hidden min-h-0">
+        <div class="grid grid-cols-2 gap-4 h-full">
+          <!-- Authority Chain 详解 -->
+          <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col">
+            <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-amber-400 font-semibold bg-white/5">权威链 (Authority Chain)</div>
+            <div class="flex-1 p-4 overflow-y-auto min-h-0 space-y-3 text-sm">
+              <div class="border-l-4 border-amber-500 bg-amber-500/5 rounded-r px-3 py-2">
+                <div class="font-semibold text-amber-400">L5 Gateway State</div>
+                <div class="text-gray-300 text-xs mt-1">运行时状态权威。run metadata、current stage、artifact refs、pending decisions、resume checkpoints、events.jsonl 物理存储。可变，覆盖旧值。</div>
+              </div>
+              <div class="border-l-4 border-orange-500 bg-orange-500/5 rounded-r px-3 py-2">
+                <div class="font-semibold text-orange-400">L6 Hermes Kanban</div>
+                <div class="text-gray-300 text-xs mt-1">任务生命周期权威。task existence、native status、parent/child dependencies、blocking、completion 的唯一直接来源。Gateway 通过 CLI 驱动但不替代。</div>
+              </div>
+              <div class="border-l-4 border-red-500 bg-red-500/5 rounded-r px-3 py-2">
+                <div class="font-semibold text-red-400">L7 Audit</div>
+                <div class="text-gray-300 text-xs mt-1">不可变证据权威。append-only 记录所有 decisions、retries、fallbacks、failures、downgrades、closeout。不可从 Event 重建。</div>
+              </div>
+              <div class="border-l-4 border-cyan-500 bg-cyan-500/5 rounded-r px-3 py-2">
+                <div class="font-semibold text-cyan-400">L8 Artifacts</div>
+                <div class="text-gray-300 text-xs mt-1">结构化产物权威。schema-valid、URI-addressed、revision 写新版本不覆盖。被 State 和 Audit 引用。</div>
+              </div>
+              <div class="border-l-4 border-emerald-500 bg-emerald-500/5 rounded-r px-3 py-2">
+                <div class="font-semibold text-emerald-400">Recovery 原则</div>
+                <div class="text-gray-300 text-xs mt-1">Recovery authority comes from <strong>Hermes Kanban lifecycle + Gateway State + State Artifacts + Audit Artifacts</strong>. Cache objects, worker summaries, and model self-report must not be used as resume authority.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 非权威层详解 -->
+          <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col">
+            <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-400 font-semibold bg-white/5">非权威层 (Projection & Cache)</div>
+            <div class="flex-1 p-4 overflow-y-auto min-h-0 space-y-3 text-sm">
+              <div class="border-l-4 border-lime-500 bg-lime-500/5 rounded-r px-3 py-2">
+                <div class="font-semibold text-lime-400">L9 Event Projection</div>
+                <div class="text-gray-300 text-xs mt-1">观察投影，非 workflow truth。从 State/Audit/Kanban/Artifacts 重建。per-run monotonic seq。post-commit emit。inconsistent 时 Kimi resync。</div>
+              </div>
+              <div class="border-l-4 border-slate-500 bg-slate-500/5 rounded-r px-3 py-2">
+                <div class="font-semibold text-slate-400">L10 Cache</div>
+                <div class="text-gray-300 text-xs mt-1">仅重建优化数据。debate_result、knowledge_summary、capabilities、gateway_projection。backend=local_filesystem。丢失 → degraded，不阻塞。</div>
+              </div>
+              <div class="border-l-4 border-blue-500 bg-blue-500/5 rounded-r px-3 py-2">
+                <div class="font-semibold text-blue-400">L3 Gateway Advancement Gate</div>
+                <div class="text-gray-300 text-xs mt-1">Gate 不是权威存储，但是权威的<strong>校验门</strong>。Worker 输出必须通过 schema/write_scope/risk/evidence 校验才能转化为 State/Kanban/Audit 更新。</div>
+              </div>
+              <div class="border-l-4 border-purple-500 bg-purple-500/5 rounded-r px-3 py-2">
+                <div class="font-semibold text-purple-400">L1 Kimi</div>
+                <div class="text-gray-300 text-xs mt-1">外部监督者。低/中风险下可 approve；高风险 Human Approval 不可覆盖。不是系统的一部分，但 decision authority 可覆盖 Gateway 默认流转。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: 层间依赖图 -->
+    <div x-show="activeTab === 2" x-cloak
+         x-transition:enter="transition-opacity duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         class="h-full flex flex-col absolute inset-0">
+      <div class="flex-1 px-6 py-4 overflow-hidden min-h-0">
+        <div class="bg-gray-900 border border-gray-700 rounded-lg overflow-hidden flex flex-col h-full">
+          <div class="shrink-0 px-4 py-2 border-b border-gray-700 text-sm text-gray-500 bg-white/5">层间依赖与数据流向</div>
+          <div class="flex-1 p-4 overflow-y-auto min-h-0">
+            <div class="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+              <template x-for="(flow, i) in flows" :key="i">
+                <div class="flex items-center gap-3 bg-gray-800/30 rounded px-3 py-2">
+                  <span class="px-2 py-0.5 rounded text-xs font-bold shrink-0"
+                        :class="layers[flow.from-1].bg + ' ' + layers[flow.from-1].text"
+                        x-text="'L' + flow.from"></span>
+                  <span class="text-gray-500 text-xs" x-text="flow.label"></span>
+                  <span class="text-lg text-gray-600" x-text="flow.dir === 'down' ? '↓' : flow.dir === 'up' ? '↑' : '→'"></span>
+                  <span class="px-2 py-0.5 rounded text-xs font-bold shrink-0"
+                        :class="layers[flow.to-1].bg + ' ' + layers[flow.to-1].text"
+                        x-text="'L' + flow.to"></span>
+                </div>
+              </template>
+            </div>
+
+            <div class="mt-6 border-t border-gray-700 pt-4">
+              <div class="text-xs text-gray-500 uppercase tracking-wider mb-3">核心数据流（以 Create Run 为例）</div>
+              <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span class="px-2 py-1 rounded bg-pink-500/10 text-pink-400 border border-pink-500/30">L1 Kimi</span>
+                <span class="text-gray-600">→</span>
+                <span class="px-2 py-1 rounded bg-purple-500/10 text-purple-400 border border-purple-500/30">L2 API</span>
+                <span class="text-gray-600">→</span>
+                <span class="px-2 py-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30">L3 Gateway</span>
+                <span class="text-gray-600">→ 先写</span>
+                <span class="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">L4 Journal</span>
+                <span class="text-gray-600">→ 并行</span>
+                <span class="px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">L5 State</span>
+                <span class="px-2 py-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/30">L6 Kanban</span>
+                <span class="px-2 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/30">L7 Audit</span>
+                <span class="px-2 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">L8 Artifacts</span>
+                <span class="text-gray-600">→ 后写</span>
+                <span class="px-2 py-1 rounded bg-lime-500/10 text-lime-400 border border-lime-500/30">L9 Event</span>
+              </div>
+              <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                <span class="px-2 py-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30">L3 Gateway</span>
+                <span class="text-gray-600">↔</span>
+                <span class="px-2 py-1 rounded bg-slate-500/10 text-slate-400 border border-slate-500/30">L10 Cache</span>
+                <span class="text-gray-600 ml-4">↓ 调度</span>
+                <span class="px-2 py-1 rounded bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/30">L11 Workers</span>
+                <span class="text-gray-600">→ 生成产物 →</span>
+                <span class="px-2 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">L8 Artifacts</span>
+                <span class="text-gray-600">→ 过 Gate → 更新 L5/L6/L7</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+function archLab(config) {
+  return {
+    title: config.title,
+    subtitle: config.subtitle,
+    tabs: config.tabs,
+    layers: config.layers.map((l, i) => ({
+      ...l,
+      normal: [
+        '通过 /orchestra/* API 创建 Run、监督 Event、提交 Decision、确认 closeout',
+        '接收 Kimi 请求；幂等去重检查；返回 Run Status / Events / Task Projection',
+        'Schema 校验 → 幂等检查 → 写 Journal → 调度 Workers → Gate 校验 → 更新权威链',
+        'Gateway 写入 command_record(in_progress) → 记录 planned_steps → 执行 side-effects → completed',
+        '维护 run metadata、status、current_stage、seq、artifact_refs、projection_status',
+        'Gateway 通过 hermes kanban create/link/complete/block 驱动六阶段任务',
+        '每个 workflow transition 写入独立 audit json；记录 fallback、decision、improvement、closeout',
+        'Six fixed reports + test_plan + test_execution + improvement + closeout + proposals',
+        'per-run monotonic seq；post-commit emit；summary + artifact_refs；不含 secrets',
+        'backend=local_filesystem；debate_result/knowledge_summary/capabilities/gateway_projection',
+        'Worker: codex(implementer)/claude(reviewer)/worktree；Debate: dynamic_assembly/jury_panel/parallel_debate'
+      ][i],
+      boundary: [
+        'Event inconsistent → 必须 resync 后再做 mutating 决策',
+        '/v1/* 502 时 /orchestra/* 继续；Gateway 崩溃则 API 无响应',
+        'schema_mismatch → 硬阻断；ambiguous side-effect → blocked + decision_required',
+        '重启后 reconciliation：completed→backfill / unexecuted→continue / ambiguous→blocked',
+        '损坏→从 Kanban+Audit+Artifacts 恢复；Event append 失败→degraded，State 不 rollback',
+        'CLI 不可用时 Gateway 无法推进 lifecycle；恢复时与 State 交叉验证',
+        '不可从 Event 重建；丢失则 lineage/forensic 失证据',
+        '丢失时 Audit 仍保留 ref/hash；auto-apply 仅限 .workflow/knowledge/* 低风险',
+        'inconsistent → Kimi resync；可 rebuild 但不反写 Audit',
+        '丢失→degraded；不阻塞 workflow truth；非 resume/completion authority',
+        'crash/timeout→retry 1 次→fallback→blocked；不可直接 mutate Kanban/State'
+      ][i],
+      deps_up: [
+        '无（最外层）',
+        '被 L1 Kimi 调用',
+        '被 L2 API 路由调用',
+        '被 L3 Gateway 写入',
+        '被 L3 Gateway 读写；被 L4 Journal 记录',
+        '被 L3 Gateway 调用（create/complete/block）',
+        '被 L3 Gateway 写入（post-side-effect）',
+        '被 L11 Workers 生成；被 L3 Gate 校验；被 L5/L7 引用',
+        '依赖 L5/L6/L7/L8 做重建',
+        '被 L3 Gateway 读写',
+        '被 L3 Gateway 调度（capability negotiation 后）'
+      ][i],
+      deps_down: [
+        '调用 L2 /orchestra/* API',
+        '路由到 L3 Gateway Adapter',
+        '先写 L4 Journal；调度 L11 Workers；更新 L5+L6+L7+L8',
+        '是 L5 State 的一部分（存储于 STATE_ROOT）',
+        '为 L9 Event Projection 提供物理存储和重建基础',
+        '为 L9 Event Projection 提供任务状态数据',
+        '为 L9 Event Projection 重建提供辅助数据',
+        '为 L9 Event Projection 提供 artifact ref 数据',
+        '被 L1 Kimi 消费（GET /events?since_seq）',
+        '无（最底层辅助设施）',
+        '生成产物写入 L8 Artifacts；返回 structured JSON 给 L3 Gate'
+      ][i]
+    })),
+    flows: config.flows,
+    activeTab: 0,
+    selected: 0,
+    get currentLayer() {
+      return this.layers[this.selected];
+    }
+  };
+}
+</script>
+
+</body>
+</html>

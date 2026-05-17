@@ -1,0 +1,149 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "full_fixture_policy",
+  "package_status": "staged_target",
+  "policy_authority": "project",
+  "fixture_layers": {
+    "contract_fixtures": {
+      "purpose": "Validate schemas, configs, edge cases, and readiness gates without runtime side effects.",
+      "runtime_execution_allowed": false,
+      "state_mutation_allowed": false,
+      "completion_evidence_allowed": false,
+      "release_evidence_allowed": false,
+      "must_be_schema_valid": true,
+      "must_be_marked_fixture": true
+    },
+    "runtime_fake_adapters": {
+      "purpose": "Exercise Gateway adapter and recovery paths in isolated integration tests.",
+      "runtime_execution_allowed": true,
+      "state_mutation_allowed": "test_sandbox_only",
+      "production_allowed": false,
+      "completion_evidence_allowed": false,
+      "release_evidence_allowed": false,
+      "degraded_fixture_only": true,
+      "must_be_marked_fixture_backend": true,
+      "must_emit_degradation_record": true
+    }
+  },
+  "required_markers": [
+    "fixture_kind",
+    "fixture_backend",
+    "degraded_fixture_only",
+    "completion_evidence_allowed",
+    "release_evidence_allowed",
+    "test_scope"
+  ],
+  "fixture_families": [
+    {
+      "family_id": "debate",
+      "contract_fixture_examples": [
+        "valid_debate_member_opinion",
+        "invalid_debate_member_opinion",
+        "partial_debate_report",
+        "missing_required_coverage"
+      ],
+      "runtime_fake_adapters": [
+        "fake_api_debate_backend",
+        "fake_cli_debate_backend",
+        "fake_hermes_delegation_backend",
+        "fake_moa_backend",
+        "template_fixture_backend"
+      ],
+      "strong_evidence_allowed": false,
+      "completion_evidence_allowed": false,
+      "required_degradation_class": "template_debate_fallback"
+    },
+    {
+      "family_id": "worker_execution",
+      "contract_fixture_examples": [
+        "valid_worker_output_envelope",
+        "schema_mismatch_worker_output",
+        "write_scope_violation",
+        "timeout_session_record"
+      ],
+      "runtime_fake_adapters": [
+        "fake_cli_worker_success",
+        "fake_cli_worker_timeout",
+        "fake_cli_worker_schema_mismatch",
+        "fake_tmux_session_adapter"
+      ],
+      "state_advancement_allowed": false,
+      "completion_evidence_allowed": false,
+      "required_degradation_class": "backend_unavailable"
+    },
+    {
+      "family_id": "release_pipeline",
+      "contract_fixture_examples": [
+        "valid_deployment_report",
+        "timed_out_deployment_report",
+        "missing_approval_ref",
+        "redacted_output_ref"
+      ],
+      "runtime_fake_adapters": [
+        "fake_release_executor_success",
+        "fake_release_executor_timeout",
+        "fake_release_executor_redaction_failure"
+      ],
+      "deploy_side_effect_allowed": false,
+      "release_evidence_allowed": false,
+      "completion_evidence_allowed": false,
+      "required_degradation_class": "required_evidence_degraded"
+    },
+    {
+      "family_id": "recovery",
+      "contract_fixture_examples": [
+        "command_reconciliation_completed",
+        "authority_chain_divergence",
+        "event_projection_gap",
+        "projection_rebuild"
+      ],
+      "runtime_fake_adapters": [
+        "fake_state_store",
+        "fake_audit_store",
+        "fake_kanban_adapter",
+        "fake_event_projection"
+      ],
+      "authority_repair_allowed": false,
+      "completion_evidence_allowed": false,
+      "required_degradation_class": "projection_append_failed"
+    },
+    {
+      "family_id": "runtime_knowledge",
+      "contract_fixture_examples": [
+        "valid_runtime_knowledge_result",
+        "expired_runtime_knowledge_result",
+        "candidate_runtime_knowledge_result"
+      ],
+      "runtime_fake_adapters": [
+        "fake_gbrain_cli",
+        "fake_gbrain_mcp"
+      ],
+      "strong_evidence_allowed": false,
+      "completion_evidence_allowed": false,
+      "required_degradation_class": "runtime_knowledge_warning_context"
+    },
+    {
+      "family_id": "remote_decisions",
+      "contract_fixture_examples": [
+        "valid_decision_response",
+        "expired_decision_response",
+        "replayed_decision_response",
+        "missing_fixed_phrase"
+      ],
+      "runtime_fake_adapters": [
+        "fake_remote_delivery_adapter",
+        "fake_local_decision_fallback"
+      ],
+      "approval_authority_allowed": false,
+      "state_advancement_allowed": false,
+      "completion_evidence_allowed": false,
+      "required_degradation_class": "required_evidence_degraded"
+    }
+  ],
+  "audit_policy": {
+    "fixture_use_must_be_audited": true,
+    "audit_records_store_fixture_refs": true,
+    "raw_fixture_payload_in_audit_allowed": false,
+    "test_scope_required": true
+  }
+}

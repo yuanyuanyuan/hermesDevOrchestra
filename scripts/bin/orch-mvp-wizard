@@ -1,0 +1,1617 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
+
+if [ -f "$ORCHESTRA_HOME/lib/orch-common.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$ORCHESTRA_HOME/lib/orch-common.sh"
+else
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/../lib/orch-common.sh"
+fi
+
+PACKAGE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if [ ! -f "$PACKAGE_DIR/scripts/setup.sh" ]; then
+    search_dir="$PWD"
+    while [ "$search_dir" != "/" ]; do
+        if [ -f "$search_dir/scripts/setup.sh" ] && [ -d "$search_dir/scripts/bin" ]; then
+            PACKAGE_DIR="$search_dir"
+            break
+        fi
+        search_dir="$(dirname "$search_dir")"
+    done
+fi
+
+YES=0
+SKIP_SETUP=0
+SKIP_START=0
+SKIP_GATEWAY=0
+SKIP_TESTS=0
+SKIP_DEMO=0
+REAL_WORKER_DEMO=0
+STRICT_UPSTREAM=0
+INIT_GIT=0
+REQUIRE_API_KEYS=0
+PROJECT_ID=""
+PROJECT_DIR=""
+HOST="127.0.0.1"
+PORT="8642"
+REPORT_PATH=""
+GATEWAY_READY=0
+REAL_WORKER_TIMEOUT="${ORCH_REAL_WORKER_TIMEOUT:-300}"
+
+usage() {
+    cat <<'EOF'
+Usage: orch-mvp-wizard [options]
+
+Guided installer/config/startup/acceptance flow for Hermes Orchestra MVP.
+
+Options:
+  --project-id ID        Project id, 3-32 lowercase letters/numbers/hyphens
+  --project-dir DIR      Existing project directory
+  --host HOST            Gateway host, default 127.0.0.1
+  --port PORT            Gateway port, default 8642
+  --report PATH          Acceptance report path
+  --yes                  Non-interactive yes to safe prompts
+  --init-git             Run git init if project dir is not a git repo
+  --skip-setup           Do not run scripts/setup.sh
+  --skip-start           Do not run orch-start
+  --skip-gateway         Do not start orch-gateway
+  --skip-tests           Do not run make/npm acceptance checks
+  --skip-demo            Do not create the Gateway MVP demo run
+  --real-worker-demo     Also run a real Codex/Claude CLI demo that changes a low-risk file
+  --strict-upstream      Fail acceptance when Hermes Agent runtime pin mismatches
+  --require-api-keys     Fail if ~/.hermes/.env lacks OPENROUTER/OPENAI/ANTHROPIC keys
+  -h, --help             Show this help
+
+Typical:
+  orch-mvp-wizard --project-id my-app --project-dir ~/projects/my-app
+  orch-mvp-wizard --yes --project-id my-app --project-dir ~/projects/my-app
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --project-id) PROJECT_ID="${2:-}"; shift 2 ;;
+        --project-dir) PROJECT_DIR="${2:-}"; shift 2 ;;
+        --host) HOST="${2:-}"; shift 2 ;;
+        --port) PORT="${2:-}"; shift 2 ;;
+        --report) REPORT_PATH="${2:-}"; shift 2 ;;
+        --yes) YES=1; shift ;;
+        --init-git) INIT_GIT=1; shift ;;
+        --skip-setup) SKIP_SETUP=1; shift ;;
+        --skip-start) SKIP_START=1; shift ;;
+        --skip-gateway) SKIP_GATEWAY=1; shift ;;
+        --skip-tests) SKIP_TESTS=1; shift ;;
+        --skip-demo) SKIP_DEMO=1; shift ;;
+        --real-worker-demo) REAL_WORKER_DEMO=1; shift ;;
+        --strict-upstream) STRICT_UPSTREAM=1; shift ;;
+        --require-api-keys) REQUIRE_API_KEYS=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
+    esac
+done
+
+STEP_FILE="$(mktemp)"
+trap 'rm -f "$STEP_FILE"' EXIT
+
+info() { printf '[INFO] %s\n' "$*"; }
+ok() { printf '[OK] %s\n' "$*"; }
+warn() { printf '[WARN] %s\n' "$*" >&2; }
+die() { printf '[ERR] %s\n' "$*" >&2; write_report "failed"; exit 1; }
+
+record_step() {
+    local name="$1"
+    local status="$2"
+    local detail="${3:-}"
+
+    printf '%s\t%s\t%s\n' "$name" "$status" "$detail" >> "$STEP_FILE"
+}
+
+write_report() {
+    local status="$1"
+    [ -n "$REPORT_PATH" ] || return 0
+    mkdir -p "$(dirname "$REPORT_PATH")"
+    python3 - "$REPORT_PATH" "$PROJECT_ID" "$PROJECT_DIR" "$status" "$STEP_FILE" "$(orch_now)" <<'PY'
+import json
+import sys
+
+path, project_id, project_dir, status, step_file, generated_at = sys.argv[1:]
+steps = []
+with open(step_file, encoding="utf-8") as handle:
+    for line in handle:
+        name, step_status, detail = line.rstrip("\n").split("\t", 2)
+        steps.append({"name": name, "status": step_status, "detail": detail})
+
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(
+        {
+            "schema_version": "orchestra.v1",
+            "artifact_type": "mvp_guided_acceptance_report",
+            "project_id": project_id,
+            "project_dir": project_dir,
+            "status": status,
+            "steps": steps,
+            "generated_at": generated_at,
+        },
+        handle,
+        indent=2,
+        ensure_ascii=False,
+    )
+    handle.write("\n")
+PY
+}
+
+ask_yes() {
+    local prompt="$1"
+    if [ "$YES" -eq 1 ]; then
+        return 0
+    fi
+    if [ ! -t 0 ]; then
+        return 1
+    fi
+    local answer=""
+    read -r -p "$prompt [y/N] " answer
+    case "$answer" in
+        y|Y|yes|YES) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+prompt_value() {
+    local label="$1"
+    local current="$2"
+    if [ -n "$current" ]; then
+        printf '%s\n' "$current"
+        return 0
+    fi
+    if [ ! -t 0 ]; then
+        return 1
+    fi
+    local value=""
+    read -r -p "$label: " value
+    [ -n "$value" ] || return 1
+    printf '%s\n' "$value"
+}
+
+resolve_helper() {
+    local helper="$1"
+    if [ -x "$SCRIPT_DIR/$helper" ]; then
+        printf '%s\n' "$SCRIPT_DIR/$helper"
+        return 0
+    fi
+    if [ -x "$PACKAGE_DIR/scripts/bin/$helper" ]; then
+        printf '%s\n' "$PACKAGE_DIR/scripts/bin/$helper"
+        return 0
+    fi
+    if command -v "$helper" >/dev/null 2>&1; then
+        command -v "$helper"
+        return 0
+    fi
+    return 1
+}
+
+run_step() {
+    local name="$1"
+    shift
+    info "运行: $name"
+    if "$@"; then
+        ok "$name"
+        record_step "$name" "passed" "$*"
+    else
+        record_step "$name" "failed" "$*"
+        die "$name failed"
+    fi
+}
+
+check_command() {
+    local command_name="$1"
+    local required="$2"
+    if command -v "$command_name" >/dev/null 2>&1; then
+        record_step "command:$command_name" "passed" "$(command -v "$command_name")"
+        return 0
+    fi
+    if [ "$required" = "required" ]; then
+        record_step "command:$command_name" "failed" "missing"
+        die "Required command not found: $command_name"
+    fi
+    record_step "command:$command_name" "warning" "missing"
+    warn "Optional command not found: $command_name"
+}
+
+check_env_file() {
+    local env_file="${HERMES_ENV_FILE:-$HOME/.hermes/.env}"
+    local missing=()
+    local key
+    for key in OPENROUTER_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY; do
+        if ! grep -Eq "^${key}=.+" "$env_file" 2>/dev/null; then
+            missing+=("$key")
+        fi
+    done
+    if [ "${#missing[@]}" -eq 0 ]; then
+        ok "API key 配置存在: $env_file"
+        record_step "api-key-check" "passed" "$env_file"
+        return 0
+    fi
+    warn "API key 缺失: ${missing[*]}"
+    record_step "api-key-check" "warning" "missing:${missing[*]}"
+    warn "默认按 CLI 已登录模式继续；如需强制 .env Key 校验，请加 --require-api-keys"
+    if [ "$REQUIRE_API_KEYS" -eq 1 ]; then
+        die "API key configuration incomplete"
+    fi
+}
+
+wait_gateway_health() {
+    local url="http://$HOST:$PORT/health"
+    local log_file="$1"
+    python3 - "$url" "$log_file" <<'PY'
+import sys
+import time
+import urllib.request
+
+url, log_path = sys.argv[1:]
+deadline = time.time() + 10
+last_error = None
+while time.time() < deadline:
+    try:
+        with urllib.request.urlopen(url, timeout=0.5) as response:
+            if response.status == 200:
+                raise SystemExit(0)
+    except Exception as exc:
+        last_error = exc
+        time.sleep(0.2)
+
+try:
+    print(open(log_path, encoding="utf-8", errors="replace").read(), file=sys.stderr)
+except OSError:
+    pass
+raise SystemExit(f"gateway did not become healthy: {last_error}")
+PY
+}
+
+gateway_health_once() {
+    local url="http://$HOST:$PORT/health"
+    python3 - "$url" <<'PY'
+import sys
+import urllib.request
+
+try:
+    with urllib.request.urlopen(sys.argv[1], timeout=0.5) as response:
+        raise SystemExit(0 if response.status == 200 else 1)
+except Exception:
+    raise SystemExit(1)
+PY
+}
+
+run_mvp_demo() {
+    local base_url="http://$HOST:$PORT"
+    local flow_path="$1"
+    local log_path="$2"
+    python3 - "$base_url" "$flow_path" "$log_path" "$STATE_DIR" "$AUDIT_DIR" "$PROJECT_ID" "$PROJECT_DIR" <<'PY'
+import json
+import pathlib
+import sys
+import time
+import urllib.error
+import urllib.request
+import uuid
+
+base_url, flow_path, log_path, state_dir, audit_dir, project_id, project_dir = sys.argv[1:]
+demo_id = uuid.uuid4().hex[:12]
+log_file = pathlib.Path(log_path)
+log_file.parent.mkdir(parents=True, exist_ok=True)
+log_file.write_text("", encoding="utf-8")
+operations = []
+seq = 0
+
+
+def now():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def log_step(participant, stage, action, what_happened, *, method=None, endpoint=None, input_data=None, output_data=None, artifact_refs=None, local_files=None):
+    global seq
+    seq += 1
+    record = {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "mvp_demo_log_record",
+        "seq": seq,
+        "timestamp": now(),
+        "participant": participant,
+        "stage": stage,
+        "action": action,
+        "what_happened": what_happened,
+        "method": method,
+        "endpoint": endpoint,
+        "input": input_data,
+        "output": output_data,
+        "artifact_refs": artifact_refs or [],
+        "local_files": local_files or [],
+    }
+    operations.append(record)
+    with log_file.open("a", encoding="utf-8") as handle:
+        json.dump(record, handle, ensure_ascii=False, sort_keys=True)
+        handle.write("\n")
+
+
+def read_error(exc):
+    try:
+        return exc.read().decode("utf-8", errors="replace")
+    except Exception:
+        return str(exc)
+
+
+def post(path, payload, expected=200, *, participant, stage, action, what_happened, artifact_refs=None):
+    request = urllib.request.Request(
+        f"{base_url}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            if response.status != expected:
+                raise SystemExit(f"POST {path} returned {response.status}: {body}")
+            log_step(
+                participant,
+                stage,
+                action,
+                what_happened,
+                method="POST",
+                endpoint=path,
+                input_data=payload,
+                output_data={"http_status": response.status, "body": body},
+                artifact_refs=artifact_refs,
+            )
+            return body
+    except urllib.error.HTTPError as exc:
+        error_body = read_error(exc)
+        log_step(
+            participant,
+            stage,
+            action,
+            f"{what_happened}; request failed",
+            method="POST",
+            endpoint=path,
+            input_data=payload,
+            output_data={"http_status": exc.code, "error": error_body},
+            artifact_refs=artifact_refs,
+        )
+        raise SystemExit(f"POST {path} failed {exc.code}: {error_body}") from exc
+
+
+def get(path, *, participant, stage, action, what_happened, input_data=None, artifact_refs=None):
+    try:
+        with urllib.request.urlopen(f"{base_url}{path}", timeout=30) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            if response.status != 200:
+                raise SystemExit(f"GET {path} returned {response.status}: {body}")
+            log_step(
+                participant,
+                stage,
+                action,
+                what_happened,
+                method="GET",
+                endpoint=path,
+                input_data=input_data or {},
+                output_data={"http_status": response.status, "body": body},
+                artifact_refs=artifact_refs,
+            )
+            return body
+    except urllib.error.HTTPError as exc:
+        error_body = read_error(exc)
+        log_step(
+            participant,
+            stage,
+            action,
+            f"{what_happened}; request failed",
+            method="GET",
+            endpoint=path,
+            input_data=input_data or {},
+            output_data={"http_status": exc.code, "error": error_body},
+            artifact_refs=artifact_refs,
+        )
+        raise SystemExit(f"GET {path} failed {exc.code}: {error_body}") from exc
+
+
+capabilities = get(
+    "/orchestra/capabilities",
+    participant="wizard-as-kimi",
+    stage="preflight",
+    action="read_capabilities",
+    what_happened="Kimi-side wizard verified Gateway capabilities and backend health reporting before creating the demo run.",
+    input_data={"reason": "verify Gateway adapter /orchestra/capabilities demo requirement"},
+)
+create_payload = {
+    "idempotency_key": f"wizard-demo-create-{demo_id}",
+    "ticket": {
+        "background": "MVP guided wizard demo acceptance",
+        "goal": "Complete the substitute demo task by creating a run and verifying its task projection",
+        "deliverables": ["Completed Gateway demo run", "Readable task projection", "Closeout evidence"],
+        "acceptance_criteria": [
+            "Gateway capabilities are readable",
+            "Run task projection is readable",
+            "Run reaches completed closeout",
+        ],
+        "hard_constraints": ["Use Gateway State and Audit as evidence authority"],
+        "soft_constraints": [],
+        "related_tasks": [],
+        "failure_strategy": "Block if any Gateway evidence is missing",
+    },
+    "options": {"mode": "mvp_full"},
+}
+create = post(
+    "/orchestra/runs",
+    create_payload,
+    expected=201,
+    participant="wizard-as-kimi",
+    stage="intake",
+    action="create_run",
+    what_happened="Kimi-side wizard submitted the structured MVP demo ticket; Gateway created the six-stage run, Kanban tasks, initial artifacts, audit, and events.",
+)
+run_id = create["run_id"]
+tasks_response = get(
+    f"/orchestra/runs/{run_id}/tasks",
+    participant="wizard-as-kimi",
+    stage="task_projection",
+    action="read_task_projection",
+    what_happened="Kimi-side wizard read the public task projection that substitutes for the already-complete capabilities demo task.",
+    input_data={"run_id": run_id},
+    artifact_refs=[f"state://runs/{run_id}/tasks.json"],
+)
+tasks = tasks_response["tasks"]
+if not tasks:
+    raise SystemExit("demo run created no projected tasks")
+
+test_execution_ref = f"state://runs/{run_id}/test_execution_report.json"
+for index, task in enumerate(tasks, start=1):
+    changed_files = [".workflow/knowledge/project-summary.json"] if task.get("stage") == "implementation" else []
+    worker_payload = {
+        "idempotency_key": f"wizard-demo-worker-{demo_id}-{index}",
+        "task_id": task["task_id"],
+        "worker_response": {
+            "protocol": "hermes-role-engine/v1",
+            "role": "implementer",
+            "correlation_id": task["task_id"],
+            "turn": index,
+            "status": "completed",
+            "next_action": "complete",
+            "role_specific_payload": {
+                "requested_transition": "task_complete",
+                "artifact_refs": [f"state://runs/{run_id}/run.json"],
+                "changed_files": changed_files,
+                "diff_summary": "Wizard MVP demo task evidence",
+                "write_scope_result": {
+                    "within_scope": True,
+                    "violations": [],
+                    "forbidden_paths_touched": [],
+                },
+                "test_evidence_refs": [test_execution_ref] if changed_files else [],
+                "risk_notes": [],
+                "approval_refs": [],
+                "commands": ["make test"],
+                "backend_execution": {
+                    "backend": "wizard-demo-worker",
+                    "backend_kind": "local_demo_adapter",
+                    "executed": True,
+                },
+            },
+            "conversation_context": [{"summary": "wizard demo uses scoped state refs only"}],
+        },
+    }
+    post(
+        f"/orchestra/runs/{run_id}/worker-outputs",
+        worker_payload,
+        participant="wizard-demo-worker",
+        stage=str(task.get("stage") or "worker"),
+        action="submit_worker_output",
+        what_happened=f"Demo worker submitted schema-valid role-engine output for stage task {task['task_id']}; Gateway validated identity, scoped refs, write scope, and test evidence before completing the task.",
+        artifact_refs=[f"state://runs/{run_id}/run.json"] + ([test_execution_ref] if changed_files else []),
+    )
+
+created_at = now()
+global_report = {
+    "schema_version": "orchestra.v1",
+    "artifact_type": "global_evaluation_report",
+    "run_id": run_id,
+    "stage": "global_evaluation",
+    "input_artifact_refs": [f"state://runs/{run_id}/run.json"],
+    "structured_prd_ref": f"state://runs/{run_id}/structured_prd.json",
+    "development_plan_ref": f"state://runs/{run_id}/development_plan.json",
+    "debate_report_refs": [f"state://runs/{run_id}/debate-reports/direction_debate.json"],
+    "implementation_evidence_refs": [f"state://runs/{run_id}/worker-output-reports"],
+    "review_verdict_refs": [],
+    "qa_verdict_refs": [],
+    "test_execution_refs": [test_execution_ref],
+    "improvement_report_refs": [f"state://runs/{run_id}/improvement_report.json"],
+    "downgrade_refs": [f"state://runs/{run_id}/debate-reports/direction_debate.json"],
+    "unresolved_decision_refs": [],
+    "audit_refs": [],
+    "verdict": "pass_with_warnings",
+    "warnings": [{"warning_id": "W-WIZARD-DEMO", "summary": "Template debate fallback accepted for local MVP demo"}],
+    "residual_risks": ["Template debate fallback accepted for guided demo"],
+    "blocking_issues": [],
+    "authority_required": "kimi",
+    "final_acceptance_ref": None,
+    "next_actions": ["Request final acceptance"],
+    "created_at": created_at,
+}
+global_response = post(
+    f"/orchestra/runs/{run_id}/global-evaluations",
+    {"idempotency_key": f"wizard-demo-global-{demo_id}", "report": global_report},
+    participant="wizard-as-kimi",
+    stage="global_evaluation",
+    action="submit_global_evaluation",
+    what_happened="Kimi-side wizard submitted Stage 5 global evaluation evidence. The warning path intentionally exercises final-acceptance authority.",
+    artifact_refs=[test_execution_ref, f"state://runs/{run_id}/global_evaluation_report.json"],
+)
+decision = post(
+    f"/orchestra/decisions/{global_response['decision_id']}",
+    {
+        "idempotency_key": f"wizard-demo-final-acceptance-{demo_id}",
+        "action": "approve",
+        "actor": "kimi",
+        "rationale": "Template fallback warning accepted for guided MVP demo",
+        "accepted_warning_refs": [global_response["global_evaluation_report_ref"]],
+    },
+    participant="wizard-as-kimi",
+    stage="final_acceptance",
+    action="approve_final_acceptance",
+    what_happened="Kimi-side wizard approved the explicit pass-with-warnings decision so the run could enter Stage 6 closeout.",
+    artifact_refs=[global_response["global_evaluation_report_ref"]],
+)
+final_acceptance_ref = decision["final_acceptance_ref"]
+closeout_ref = f"state://runs/{run_id}/iteration_closeout_report.json"
+proposals_ref = f"state://runs/{run_id}/system_improvement_proposals.json"
+closeout = {
+    "schema_version": "orchestra.v1",
+    "artifact_type": "iteration_closeout_report",
+    "run_id": run_id,
+    "global_evaluation_report_ref": global_response["global_evaluation_report_ref"],
+    "closeout_kind": "completed",
+    "final_acceptance": {
+        "accepted_by": "wizard",
+        "authority": "kimi",
+        "verdict": "accepted_with_warnings",
+        "rationale": "Guided MVP demo completed with accepted template fallback warning",
+        "decision_ref": final_acceptance_ref,
+    },
+    "accepted_warning_refs": [global_response["global_evaluation_report_ref"]],
+    "downgrade_records": [{"kind": "debate_degraded", "backend": "template"}],
+    "unresolved_decisions": [],
+    "pending_decision_refs": [],
+    "deferred_decisions": [],
+    "completed_stage_refs": [f"state://runs/{run_id}/tasks.json"],
+    "incomplete_stage_refs": [],
+    "stop_request_ref": None,
+    "run_stopped_event_ref": None,
+    "preserved_artifact_refs": [f"state://runs/{run_id}/run.json"],
+    "resume_checkpoint_refs": [],
+    "worker_cancel_marker_refs": [],
+    "test_execution_refs": [test_execution_ref],
+    "review_verdict_refs": [],
+    "qa_verdict_refs": [],
+    "worker_fallbacks": [],
+    "knowledge_updates": {
+        "auto_applied_refs": [],
+        "proposal_refs": [],
+        "forbidden_target_refs": [],
+    },
+    "system_improvement_proposals_ref": proposals_ref,
+    "completion_gate": {
+        "artifacts_schema_valid": True,
+        "audit_closeout_recorded": True,
+        "kanban_stage_tasks_done": True,
+        "gateway_state_consistent": True,
+        "completion_blockers": [],
+    },
+    "created_at": created_at,
+}
+proposals = {
+    "schema_version": "orchestra.v1",
+    "artifact_type": "system_improvement_proposals",
+    "run_id": run_id,
+    "source_refs": [closeout_ref],
+    "proposals": [],
+    "auto_applied_refs": [],
+    "proposed_patch_refs": [],
+    "approval_required": [],
+    "decision_refs": [],
+    "final_acceptance_ref": final_acceptance_ref,
+    "downgrade_refs": [f"state://runs/{run_id}/debate-reports/direction_debate.json"],
+    "worker_fallback_refs": [],
+    "knowledge_update_refs": [],
+}
+closeout_response = post(
+    f"/orchestra/runs/{run_id}/closeout",
+    {
+        "idempotency_key": f"wizard-demo-closeout-{demo_id}",
+        "iteration_closeout_report": closeout,
+        "system_improvement_proposals": proposals,
+    },
+    participant="wizard-as-kimi",
+    stage="closeout",
+    action="submit_closeout",
+    what_happened="Kimi-side wizard submitted Stage 6 closeout and improvement-proposal artifacts; Gateway checked schema, Audit, Kanban completion, State consistency, and executed tests.",
+    artifact_refs=[closeout_ref, proposals_ref, final_acceptance_ref, test_execution_ref],
+)
+status = get(
+    f"/orchestra/runs/{run_id}",
+    participant="wizard-as-kimi",
+    stage="verification",
+    action="read_final_status",
+    what_happened="Kimi-side wizard read final run status to verify completed state and artifact refs.",
+    input_data={"run_id": run_id},
+    artifact_refs=[f"state://runs/{run_id}/run.json"],
+)
+events = get(
+    f"/orchestra/runs/{run_id}/events?since_seq=0&limit=200",
+    participant="wizard-as-kimi",
+    stage="verification",
+    action="read_events",
+    what_happened="Kimi-side wizard read the event projection so the demo log shows observable workflow progress.",
+    input_data={"run_id": run_id, "since_seq": 0, "limit": 200},
+    artifact_refs=[f"state://runs/{run_id}/events.jsonl"],
+)
+if status.get("status") != "completed":
+    raise SystemExit(f"demo run did not complete: {status}")
+
+run_dir = pathlib.Path(state_dir) / project_id / "runs" / run_id
+local_files = {
+    "run_state": str(run_dir / "run.json"),
+    "task_projection": str(run_dir / "tasks.json"),
+    "events": str(run_dir / "events.jsonl"),
+    "test_execution": str(run_dir / "test_execution_report.json"),
+    "global_evaluation": str(run_dir / "global_evaluation_report.json"),
+    "final_acceptance": str(run_dir / "final_acceptance.json"),
+    "closeout": str(run_dir / "iteration_closeout_report.json"),
+    "system_improvement_proposals": str(run_dir / "system_improvement_proposals.json"),
+    "audit": str(pathlib.Path(audit_dir) / project_id / "audit.jsonl"),
+    "demo_flow": str(pathlib.Path(flow_path)),
+    "demo_log": str(log_file),
+}
+log_step(
+    "wizard-as-kimi",
+    "verification",
+    "write_demo_summary",
+    "Wizard wrote the demo flow summary with pointers to State, Audit, Events, closeout, and the full JSONL execution log.",
+    input_data={"run_id": run_id},
+    output_data={"local_files": local_files},
+    artifact_refs=[
+        f"state://runs/{run_id}/run.json",
+        f"state://runs/{run_id}/tasks.json",
+        f"state://runs/{run_id}/events.jsonl",
+        closeout_ref,
+        proposals_ref,
+    ],
+    local_files=list(local_files.values()),
+)
+
+with open(flow_path, "w", encoding="utf-8") as handle:
+    json.dump(
+        {
+            "schema_version": "orchestra.v1",
+            "artifact_type": "mvp_demo_flow",
+            "run_id": run_id,
+            "project_id": project_id,
+            "project_dir": project_dir,
+            "base_url": base_url,
+            "log_ref": str(log_file),
+            "participants": [
+                {"name": "wizard-as-kimi", "role": "submits ticket, observes Gateway projections, makes final acceptance decisions"},
+                {"name": "gateway-api", "role": "owns /orchestra/* workflow state, artifacts, events, idempotency, and gates"},
+                {"name": "hermes-kanban", "role": "receives lifecycle create/complete operations from Gateway"},
+                {"name": "wizard-demo-worker", "role": "submits deterministic role-engine worker outputs through the public Gateway API"},
+            ],
+            "capabilities": capabilities,
+            "create_response": create,
+            "closeout_response": closeout_response,
+            "status": status,
+            "events": events,
+            "operation_count": len(operations),
+            "operations": operations,
+            "local_files": local_files,
+            "created_at": created_at,
+        },
+        handle,
+        indent=2,
+        ensure_ascii=False,
+    )
+    handle.write("\n")
+
+print(run_id)
+PY
+}
+
+run_mvp_demo_step() {
+    local flow_path="$STATE_DIR/mvp-demo-flow.json"
+    local log_path="$STATE_DIR/mvp-demo-log.jsonl"
+    local run_id
+    info "运行: mvp-demo-run"
+    if run_id="$(run_mvp_demo "$flow_path" "$log_path")"; then
+        ok "MVP demo run completed: $run_id"
+        ok "MVP demo flow: $flow_path"
+        ok "MVP demo log: $log_path"
+        record_step "mvp-demo-run" "passed" "run_id:$run_id flow:$flow_path log:$log_path"
+    else
+        record_step "mvp-demo-run" "failed" "flow:$flow_path log:$log_path"
+        die "mvp-demo-run failed"
+    fi
+}
+
+run_real_worker_demo() {
+    local base_url="http://$HOST:$PORT"
+    local flow_path="$1"
+    local log_path="$2"
+    python3 - "$base_url" "$flow_path" "$log_path" "$STATE_DIR" "$AUDIT_DIR" "$PROJECT_ID" "$PROJECT_DIR" "$PACKAGE_DIR" "$REAL_WORKER_TIMEOUT" <<'PY'
+import json
+import pathlib
+import shutil
+import shlex
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+import uuid
+
+base_url, flow_path, log_path, state_dir, audit_dir, project_id, project_dir, package_dir, timeout_text = sys.argv[1:]
+timeout_seconds = int(timeout_text)
+project_path = pathlib.Path(project_dir)
+demo_id = uuid.uuid4().hex[:12]
+low_risk_file = pathlib.Path(".workflow/knowledge/orchestra-real-worker-demo.md")
+low_risk_path = project_path / low_risk_file
+evidence_dir = pathlib.Path(state_dir) / project_id / "real-worker-demo" / demo_id
+evidence_dir.mkdir(parents=True, exist_ok=True)
+log_file = pathlib.Path(log_path)
+log_file.parent.mkdir(parents=True, exist_ok=True)
+log_file.write_text("", encoding="utf-8")
+operations = []
+seq = 0
+
+
+def now():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def json_safe(value, limit=4000):
+    if isinstance(value, str) and len(value) > limit:
+        return value[:limit] + "...[truncated]"
+    if isinstance(value, dict):
+        return {key: json_safe(item, limit) for key, item in value.items()}
+    if isinstance(value, list):
+        return [json_safe(item, limit) for item in value]
+    return value
+
+
+def log_step(participant, stage, action, what_happened, *, method=None, endpoint=None, input_data=None, output_data=None, artifact_refs=None, local_files=None):
+    global seq
+    seq += 1
+    record = {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "mvp_real_worker_log_record",
+        "seq": seq,
+        "timestamp": now(),
+        "participant": participant,
+        "stage": stage,
+        "action": action,
+        "what_happened": what_happened,
+        "method": method,
+        "endpoint": endpoint,
+        "input": json_safe(input_data),
+        "output": json_safe(output_data),
+        "artifact_refs": artifact_refs or [],
+        "local_files": local_files or [],
+    }
+    operations.append(record)
+    with log_file.open("a", encoding="utf-8") as handle:
+        json.dump(record, handle, ensure_ascii=False, sort_keys=True)
+        handle.write("\n")
+
+
+def read_error(exc):
+    try:
+        return exc.read().decode("utf-8", errors="replace")
+    except Exception:
+        return str(exc)
+
+
+def post(path, payload, expected=200, *, participant, stage, action, what_happened, artifact_refs=None):
+    request = urllib.request.Request(
+        f"{base_url}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            if response.status != expected:
+                raise SystemExit(f"POST {path} returned {response.status}: {body}")
+            log_step(
+                participant,
+                stage,
+                action,
+                what_happened,
+                method="POST",
+                endpoint=path,
+                input_data=payload,
+                output_data={"http_status": response.status, "body": body},
+                artifact_refs=artifact_refs,
+            )
+            return body
+    except urllib.error.HTTPError as exc:
+        error_body = read_error(exc)
+        log_step(
+            participant,
+            stage,
+            action,
+            f"{what_happened}; request failed",
+            method="POST",
+            endpoint=path,
+            input_data=payload,
+            output_data={"http_status": exc.code, "error": error_body},
+            artifact_refs=artifact_refs,
+        )
+        raise SystemExit(f"POST {path} failed {exc.code}: {error_body}") from exc
+
+
+def get(path, *, participant, stage, action, what_happened, input_data=None, artifact_refs=None):
+    try:
+        with urllib.request.urlopen(f"{base_url}{path}", timeout=30) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            if response.status != 200:
+                raise SystemExit(f"GET {path} returned {response.status}: {body}")
+            log_step(
+                participant,
+                stage,
+                action,
+                what_happened,
+                method="GET",
+                endpoint=path,
+                input_data=input_data or {},
+                output_data={"http_status": response.status, "body": body},
+                artifact_refs=artifact_refs,
+            )
+            return body
+    except urllib.error.HTTPError as exc:
+        error_body = read_error(exc)
+        log_step(
+            participant,
+            stage,
+            action,
+            f"{what_happened}; request failed",
+            method="GET",
+            endpoint=path,
+            input_data=input_data or {},
+            output_data={"http_status": exc.code, "error": error_body},
+            artifact_refs=artifact_refs,
+        )
+        raise SystemExit(f"GET {path} failed {exc.code}: {error_body}") from exc
+
+
+def run_command(command, *, stdin_text, cwd, stdout_path, stderr_path, participant, stage, action, what_happened):
+    started = time.time()
+    stdout_file = pathlib.Path(stdout_path)
+    stderr_file = pathlib.Path(stderr_path)
+    try:
+        completed = subprocess.run(
+            command,
+            input=stdin_text,
+            cwd=cwd,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+        )
+        stdout_file.write_text(completed.stdout or "", encoding="utf-8")
+        stderr_file.write_text(completed.stderr or "", encoding="utf-8")
+        result = {
+            "command": shlex.join(command),
+            "exit_code": completed.returncode,
+            "duration_ms": int((time.time() - started) * 1000),
+            "stdout_path": str(stdout_file),
+            "stderr_path": str(stderr_file),
+            "stdout_tail": (completed.stdout or "")[-1200:],
+            "stderr_tail": (completed.stderr or "")[-1200:],
+        }
+    except subprocess.TimeoutExpired as exc:
+        stdout_file.write_text(exc.stdout or "", encoding="utf-8")
+        stderr_file.write_text(exc.stderr or "", encoding="utf-8")
+        result = {
+            "command": shlex.join(command),
+            "exit_code": 124,
+            "duration_ms": int((time.time() - started) * 1000),
+            "stdout_path": str(stdout_file),
+            "stderr_path": str(stderr_file),
+            "stdout_tail": str(exc.stdout or "")[-1200:],
+            "stderr_tail": str(exc.stderr or "")[-1200:],
+            "timeout_seconds": timeout_seconds,
+        }
+    log_step(
+        participant,
+        stage,
+        action,
+        what_happened,
+        input_data={"command": shlex.join(command), "cwd": str(cwd), "stdin": stdin_text},
+        output_data=result,
+        local_files=[str(stdout_file), str(stderr_file)],
+    )
+    return result
+
+
+def require_command(command_name):
+    resolved = shutil.which(command_name)
+    if not resolved:
+        raise SystemExit(f"{command_name} CLI not found; real-worker demo requires authenticated {command_name}")
+    return resolved
+
+
+require_command("codex")
+require_command("claude")
+low_risk_path.parent.mkdir(parents=True, exist_ok=True)
+log_step(
+    "wizard-as-kimi",
+    "preflight",
+    "prepare_low_risk_directory",
+    "Wizard prepared the approved low-risk parent directory so Codex CLI can modify the target file without touching other paths.",
+    local_files=[str(low_risk_path.parent)],
+)
+
+create_payload = {
+    "idempotency_key": f"real-worker-create-{demo_id}",
+    "ticket": {
+        "background": "Real Codex/Claude CLI MVP acceptance demo",
+        "goal": "Verify real CLI workers can receive work, change a low-risk file, review it, and return evidence through Gateway",
+        "deliverables": ["Low-risk knowledge file update", "Codex CLI execution evidence", "Claude CLI review evidence", "Gateway closeout evidence"],
+        "acceptance_criteria": [
+            "Codex CLI modifies .workflow/knowledge/orchestra-real-worker-demo.md",
+            "Claude CLI reviews the Codex change",
+            "Gateway worker-output reports include Codex and Claude CLI backend evidence",
+            "Run reaches completed closeout",
+        ],
+        "hard_constraints": ["Only modify .workflow/knowledge/orchestra-real-worker-demo.md"],
+        "soft_constraints": [],
+        "related_tasks": [],
+        "failure_strategy": "Fail the real-worker demo if either CLI is missing, times out, or does not produce evidence",
+    },
+    "options": {"mode": "mvp_full", "workers": {"implementer": "codex", "reviewer": "claude"}},
+}
+create = post(
+    "/orchestra/runs",
+    create_payload,
+    expected=201,
+    participant="wizard-as-kimi",
+    stage="intake",
+    action="create_run",
+    what_happened="Wizard submitted a structured ticket for the real-worker demo; Gateway created a six-stage run and task projection.",
+)
+run_id = create["run_id"]
+tasks_response = get(
+    f"/orchestra/runs/{run_id}/tasks",
+    participant="wizard-as-kimi",
+    stage="task_projection",
+    action="read_task_projection",
+    what_happened="Wizard read the run task projection before assigning real CLI worker steps.",
+    input_data={"run_id": run_id},
+    artifact_refs=[f"state://runs/{run_id}/tasks.json"],
+)
+tasks = tasks_response["tasks"]
+implementation_task = next((task for task in tasks if task.get("stage") == "implementation"), None)
+review_task = next((task for task in tasks if task.get("stage") == "improvement"), None)
+if implementation_task is None or review_task is None:
+    raise SystemExit(f"missing implementation or improvement task: {tasks}")
+
+codex_result_path = evidence_dir / "codex-result.json"
+codex_stdout_path = evidence_dir / "codex.stdout.jsonl"
+codex_stderr_path = evidence_dir / "codex.stderr.log"
+codex_prompt = f"""You are the Codex real worker for Hermes Orchestra MVP acceptance.
+DEMO_ID={demo_id}
+Task: modify exactly one low-risk project knowledge file: {low_risk_file.as_posix()}.
+Required file content:
+# Orchestra Real Worker Demo
+
+real_worker_demo_id: {demo_id}
+codex_cli: completed
+low_risk_file: {low_risk_file.as_posix()}
+
+Rules:
+- Do not modify any other file.
+- Create parent directories if needed.
+- After editing, reply with concise JSON containing status, changed_files, and demo_id.
+"""
+codex_result = run_command(
+    ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--json", "--output-last-message", str(codex_result_path), "-"],
+    stdin_text=codex_prompt,
+    cwd=project_path,
+    stdout_path=codex_stdout_path,
+    stderr_path=codex_stderr_path,
+    participant="codex-cli",
+    stage="implementation",
+    action="run_codex_cli",
+    what_happened="Real Codex CLI received the implementation task and was required to modify exactly one low-risk knowledge file.",
+)
+if codex_result["exit_code"] != 0:
+    raise SystemExit(f"Codex real-worker demo failed: {codex_result}")
+if not low_risk_path.is_file():
+    raise SystemExit(f"Codex did not create expected low-risk file: {low_risk_path}")
+low_risk_content = low_risk_path.read_text(encoding="utf-8")
+if f"real_worker_demo_id: {demo_id}" not in low_risk_content or "codex_cli: completed" not in low_risk_content:
+    raise SystemExit(f"Codex low-risk file content did not include required evidence: {low_risk_path}")
+
+status_result = subprocess.run(
+    ["git", "status", "--short", "--", low_risk_file.as_posix()],
+    cwd=project_path,
+    check=False,
+    text=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+)
+diff_result = subprocess.run(
+    ["git", "diff", "--", low_risk_file.as_posix()],
+    cwd=project_path,
+    check=False,
+    text=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+)
+git_status_path = evidence_dir / "low-risk-file.git-status.txt"
+git_diff_path = evidence_dir / "low-risk-file.git-diff.patch"
+file_content_path = evidence_dir / "low-risk-file.content.md"
+git_status_path.write_text(status_result.stdout + status_result.stderr, encoding="utf-8")
+git_diff_path.write_text(diff_result.stdout + diff_result.stderr, encoding="utf-8")
+file_content_path.write_text(low_risk_content, encoding="utf-8")
+log_step(
+    "wizard-as-kimi",
+    "implementation",
+    "validate_low_risk_file_change",
+    "Wizard validated that the real Codex CLI changed only the approved low-risk knowledge file and embedded the demo id.",
+    input_data={"allowed_file": low_risk_file.as_posix(), "demo_id": demo_id},
+    output_data={
+        "file_exists": True,
+        "contains_demo_id": True,
+        "git_status": status_result.stdout.strip(),
+        "git_diff_path": str(git_diff_path),
+        "content_path": str(file_content_path),
+    },
+    local_files=[str(low_risk_path), str(git_status_path), str(git_diff_path), str(file_content_path), str(codex_result_path)],
+)
+
+claude_stdout_path = evidence_dir / "claude-review.stdout.json"
+claude_stderr_path = evidence_dir / "claude-review.stderr.log"
+review_context = json.dumps(
+    {
+        "demo_id": demo_id,
+        "changed_file": low_risk_file.as_posix(),
+        "file_content": low_risk_content,
+        "git_status": status_result.stdout,
+        "git_diff": diff_result.stdout,
+        "codex_result_path": str(codex_result_path),
+    },
+    ensure_ascii=False,
+    indent=2,
+)
+claude_prompt = "You are the Claude reviewer for the Hermes Orchestra real-worker demo. Review stdin and return JSON with decision APPROVED or REJECTED and a concise summary."
+claude_result = run_command(
+    ["claude", "-p", "--output-format", "json", "--permission-mode", "auto", claude_prompt],
+    stdin_text=review_context,
+    cwd=project_path,
+    stdout_path=claude_stdout_path,
+    stderr_path=claude_stderr_path,
+    participant="claude-cli",
+    stage="review",
+    action="run_claude_cli",
+    what_happened="Real Claude CLI received the review task and reviewed the Codex low-risk file change evidence.",
+)
+if claude_result["exit_code"] != 0:
+    raise SystemExit(f"Claude real-worker review failed: {claude_result}")
+if not pathlib.Path(claude_stdout_path).read_text(encoding="utf-8").strip():
+    raise SystemExit("Claude review produced no stdout evidence")
+
+test_execution_ref = f"state://runs/{run_id}/test_execution_report.json"
+
+
+def worker_payload(task, *, role, backend, idempotency_key, changed_files, diff_summary, commands, local_evidence):
+    return {
+        "idempotency_key": idempotency_key,
+        "task_id": task["task_id"],
+        "worker_response": {
+            "protocol": "hermes-role-engine/v1",
+            "role": role,
+            "correlation_id": task["task_id"],
+            "turn": 1,
+            "status": "completed",
+            "next_action": "complete",
+            "role_specific_payload": {
+                "requested_transition": "task_complete",
+                "artifact_refs": [f"state://runs/{run_id}/run.json"],
+                "changed_files": changed_files,
+                "diff_summary": diff_summary,
+                "write_scope_result": {
+                    "within_scope": True,
+                    "violations": [],
+                    "forbidden_paths_touched": [],
+                },
+                "test_evidence_refs": [test_execution_ref] if changed_files else [],
+                "risk_notes": [],
+                "approval_refs": [],
+                "commands": commands,
+                "backend_execution": {
+                    "backend": backend,
+                    "backend_kind": "cli",
+                    "executed": True,
+                    "local_evidence": local_evidence,
+                },
+            },
+            "conversation_context": [{"summary": "real-worker demo evidence was produced by local authenticated CLI workers"}],
+        },
+    }
+
+
+codex_worker_response = post(
+    f"/orchestra/runs/{run_id}/worker-outputs",
+    worker_payload(
+        implementation_task,
+        role="implementer",
+        backend="codex",
+        idempotency_key=f"real-worker-codex-{demo_id}",
+        changed_files=[low_risk_file.as_posix()],
+        diff_summary="Codex CLI updated the approved low-risk Orchestra knowledge demo file.",
+        commands=["codex exec --dangerously-bypass-approvals-and-sandbox --json --output-last-message <state-evidence>/codex-result.json -"],
+        local_evidence=[str(codex_result_path), str(codex_stdout_path), str(codex_stderr_path), str(git_status_path), str(git_diff_path), str(file_content_path)],
+    ),
+    participant="wizard-as-kimi",
+    stage="implementation",
+    action="submit_real_worker_output",
+    what_happened="Wizard submitted the real Codex CLI output through the public Gateway worker-output endpoint.",
+    artifact_refs=[f"state://runs/{run_id}/run.json", test_execution_ref],
+)
+claude_worker_response = post(
+    f"/orchestra/runs/{run_id}/worker-outputs",
+    worker_payload(
+        review_task,
+        role="reviewer",
+        backend="claude",
+        idempotency_key=f"real-worker-claude-{demo_id}",
+        changed_files=[],
+        diff_summary="Claude CLI reviewed the Codex low-risk file change and returned review evidence.",
+        commands=["claude -p --output-format json --permission-mode auto <review-prompt>"],
+        local_evidence=[str(claude_stdout_path), str(claude_stderr_path)],
+    ),
+    participant="wizard-as-kimi",
+    stage="review",
+    action="submit_real_review_output",
+    what_happened="Wizard submitted the real Claude CLI review output through the public Gateway worker-output endpoint.",
+    artifact_refs=[f"state://runs/{run_id}/run.json", codex_worker_response.get("worker_output_report_ref")],
+)
+
+for index, task in enumerate(tasks, start=1):
+    if task["task_id"] in {implementation_task["task_id"], review_task["task_id"]}:
+        continue
+    post(
+        f"/orchestra/runs/{run_id}/worker-outputs",
+        worker_payload(
+            task,
+            role="implementer",
+            backend="wizard-real-worker-harness",
+            idempotency_key=f"real-worker-harness-{demo_id}-{index}",
+            changed_files=[],
+            diff_summary="Harness completed the non-worker-focus stage so the real-worker demo can reach MVP closeout.",
+            commands=[],
+            local_evidence=[],
+        ),
+        participant="wizard-real-worker-harness",
+        stage=str(task.get("stage") or "worker"),
+        action="submit_harness_worker_output",
+        what_happened=f"Wizard harness completed non-focus stage {task['stage']} while preserving real Codex/Claude evidence for the focused implementation/review steps.",
+        artifact_refs=[f"state://runs/{run_id}/run.json"],
+    )
+
+created_at = now()
+global_report = {
+    "schema_version": "orchestra.v1",
+    "artifact_type": "global_evaluation_report",
+    "run_id": run_id,
+    "stage": "global_evaluation",
+    "input_artifact_refs": [f"state://runs/{run_id}/run.json"],
+    "structured_prd_ref": f"state://runs/{run_id}/structured_prd.json",
+    "development_plan_ref": f"state://runs/{run_id}/development_plan.json",
+    "debate_report_refs": [f"state://runs/{run_id}/debate-reports/direction_debate.json"],
+    "implementation_evidence_refs": [codex_worker_response["worker_output_report_ref"], claude_worker_response["worker_output_report_ref"]],
+    "review_verdict_refs": [claude_worker_response["worker_output_report_ref"]],
+    "qa_verdict_refs": [],
+    "test_execution_refs": [test_execution_ref],
+    "improvement_report_refs": [f"state://runs/{run_id}/improvement_report.json"],
+    "downgrade_refs": [f"state://runs/{run_id}/debate-reports/direction_debate.json"],
+    "unresolved_decision_refs": [],
+    "audit_refs": [],
+    "verdict": "pass_with_warnings",
+    "warnings": [{"warning_id": "W-REAL-WORKER-DEMO", "summary": "Template debate fallback accepted; real CLI worker evidence was collected for implementation and review"}],
+    "residual_risks": ["Demo uses one focused low-risk file change rather than arbitrary project work"],
+    "blocking_issues": [],
+    "authority_required": "kimi",
+    "final_acceptance_ref": None,
+    "next_actions": ["Request final acceptance"],
+    "created_at": created_at,
+}
+global_response = post(
+    f"/orchestra/runs/{run_id}/global-evaluations",
+    {"idempotency_key": f"real-worker-global-{demo_id}", "report": global_report},
+    participant="wizard-as-kimi",
+    stage="global_evaluation",
+    action="submit_global_evaluation",
+    what_happened="Wizard submitted global evaluation evidence that includes real Codex and Claude worker-output refs.",
+    artifact_refs=[test_execution_ref, codex_worker_response["worker_output_report_ref"], claude_worker_response["worker_output_report_ref"]],
+)
+decision = post(
+    f"/orchestra/decisions/{global_response['decision_id']}",
+    {
+        "idempotency_key": f"real-worker-final-acceptance-{demo_id}",
+        "action": "approve",
+        "actor": "kimi",
+        "rationale": "Real worker demo evidence accepted with template debate fallback warning",
+        "accepted_warning_refs": [global_response["global_evaluation_report_ref"]],
+    },
+    participant="wizard-as-kimi",
+    stage="final_acceptance",
+    action="approve_final_acceptance",
+    what_happened="Wizard approved the explicit warning gate after real CLI worker evidence was recorded.",
+    artifact_refs=[global_response["global_evaluation_report_ref"]],
+)
+final_acceptance_ref = decision["final_acceptance_ref"]
+closeout_ref = f"state://runs/{run_id}/iteration_closeout_report.json"
+proposals_ref = f"state://runs/{run_id}/system_improvement_proposals.json"
+closeout = {
+    "schema_version": "orchestra.v1",
+    "artifact_type": "iteration_closeout_report",
+    "run_id": run_id,
+    "global_evaluation_report_ref": global_response["global_evaluation_report_ref"],
+    "closeout_kind": "completed",
+    "final_acceptance": {
+        "accepted_by": "wizard",
+        "authority": "kimi",
+        "verdict": "accepted_with_warnings",
+        "rationale": "Real Codex/Claude CLI worker demo completed with accepted template fallback warning",
+        "decision_ref": final_acceptance_ref,
+    },
+    "accepted_warning_refs": [global_response["global_evaluation_report_ref"]],
+    "downgrade_records": [{"kind": "debate_degraded", "backend": "template"}],
+    "unresolved_decisions": [],
+    "pending_decision_refs": [],
+    "deferred_decisions": [],
+    "completed_stage_refs": [f"state://runs/{run_id}/tasks.json"],
+    "incomplete_stage_refs": [],
+    "stop_request_ref": None,
+    "run_stopped_event_ref": None,
+    "preserved_artifact_refs": [f"state://runs/{run_id}/run.json", codex_worker_response["worker_output_report_ref"], claude_worker_response["worker_output_report_ref"]],
+    "resume_checkpoint_refs": [],
+    "worker_cancel_marker_refs": [],
+    "test_execution_refs": [test_execution_ref],
+    "review_verdict_refs": [claude_worker_response["worker_output_report_ref"]],
+    "qa_verdict_refs": [],
+    "worker_fallbacks": [],
+    "knowledge_updates": {
+        "auto_applied_refs": [],
+        "proposal_refs": [],
+        "forbidden_target_refs": [],
+    },
+    "system_improvement_proposals_ref": proposals_ref,
+    "completion_gate": {
+        "artifacts_schema_valid": True,
+        "audit_closeout_recorded": True,
+        "kanban_stage_tasks_done": True,
+        "gateway_state_consistent": True,
+        "completion_blockers": [],
+    },
+    "created_at": created_at,
+}
+proposals = {
+    "schema_version": "orchestra.v1",
+    "artifact_type": "system_improvement_proposals",
+    "run_id": run_id,
+    "source_refs": [closeout_ref],
+    "proposals": [],
+    "auto_applied_refs": [],
+    "proposed_patch_refs": [],
+    "approval_required": [],
+    "decision_refs": [],
+    "final_acceptance_ref": final_acceptance_ref,
+    "downgrade_refs": [f"state://runs/{run_id}/debate-reports/direction_debate.json"],
+    "worker_fallback_refs": [],
+    "knowledge_update_refs": [],
+}
+closeout_response = post(
+    f"/orchestra/runs/{run_id}/closeout",
+    {
+        "idempotency_key": f"real-worker-closeout-{demo_id}",
+        "iteration_closeout_report": closeout,
+        "system_improvement_proposals": proposals,
+    },
+    participant="wizard-as-kimi",
+    stage="closeout",
+    action="submit_closeout",
+    what_happened="Wizard submitted closeout for the real-worker demo after Gateway recorded real CLI worker evidence and Kanban completion.",
+    artifact_refs=[closeout_ref, proposals_ref, final_acceptance_ref, test_execution_ref, codex_worker_response["worker_output_report_ref"], claude_worker_response["worker_output_report_ref"]],
+)
+status = get(
+    f"/orchestra/runs/{run_id}",
+    participant="wizard-as-kimi",
+    stage="verification",
+    action="read_final_status",
+    what_happened="Wizard read final run status to verify the real-worker demo completed.",
+    input_data={"run_id": run_id},
+    artifact_refs=[f"state://runs/{run_id}/run.json"],
+)
+events = get(
+    f"/orchestra/runs/{run_id}/events?since_seq=0&limit=200",
+    participant="wizard-as-kimi",
+    stage="verification",
+    action="read_events",
+    what_happened="Wizard read event projection for the real-worker demo.",
+    input_data={"run_id": run_id, "since_seq": 0, "limit": 200},
+    artifact_refs=[f"state://runs/{run_id}/events.jsonl"],
+)
+if status.get("status") != "completed":
+    raise SystemExit(f"real-worker demo run did not complete: {status}")
+
+run_dir = pathlib.Path(state_dir) / project_id / "runs" / run_id
+local_files = {
+    "run_state": str(run_dir / "run.json"),
+    "task_projection": str(run_dir / "tasks.json"),
+    "events": str(run_dir / "events.jsonl"),
+    "codex_result": str(codex_result_path),
+    "codex_stdout": str(codex_stdout_path),
+    "codex_stderr": str(codex_stderr_path),
+    "claude_stdout": str(claude_stdout_path),
+    "claude_stderr": str(claude_stderr_path),
+    "low_risk_file": str(low_risk_path),
+    "low_risk_file_status": str(git_status_path),
+    "low_risk_file_diff": str(git_diff_path),
+    "low_risk_file_content": str(file_content_path),
+    "global_evaluation": str(run_dir / "global_evaluation_report.json"),
+    "final_acceptance": str(run_dir / "final_acceptance.json"),
+    "closeout": str(run_dir / "iteration_closeout_report.json"),
+    "system_improvement_proposals": str(run_dir / "system_improvement_proposals.json"),
+    "audit": str(pathlib.Path(audit_dir) / project_id / "audit.jsonl"),
+    "real_worker_flow": str(pathlib.Path(flow_path)),
+    "real_worker_log": str(log_file),
+}
+log_step(
+    "wizard-as-kimi",
+    "verification",
+    "write_real_worker_summary",
+    "Wizard wrote the real-worker demo summary with all CLI, Gateway, State, Audit, and changed-file evidence paths.",
+    input_data={"run_id": run_id, "demo_id": demo_id},
+    output_data={"local_files": local_files},
+    artifact_refs=[
+        f"state://runs/{run_id}/run.json",
+        f"state://runs/{run_id}/tasks.json",
+        f"state://runs/{run_id}/events.jsonl",
+        codex_worker_response["worker_output_report_ref"],
+        claude_worker_response["worker_output_report_ref"],
+        closeout_ref,
+        proposals_ref,
+    ],
+    local_files=list(local_files.values()),
+)
+
+with open(flow_path, "w", encoding="utf-8") as handle:
+    json.dump(
+        {
+            "schema_version": "orchestra.v1",
+            "artifact_type": "mvp_real_worker_flow",
+            "run_id": run_id,
+            "project_id": project_id,
+            "project_dir": project_dir,
+            "base_url": base_url,
+            "log_ref": str(log_file),
+            "participants": [
+                {"name": "wizard-as-kimi", "role": "submits run, observes Gateway state, and records final acceptance"},
+                {"name": "gateway-api", "role": "owns /orchestra/* workflow state, artifacts, events, idempotency, and gates"},
+                {"name": "hermes-kanban", "role": "receives lifecycle create/complete operations from Gateway"},
+                {"name": "codex-cli", "role": "real authenticated CLI implementer that modifies the approved low-risk file"},
+                {"name": "claude-cli", "role": "real authenticated CLI reviewer that reviews the Codex change evidence"},
+            ],
+            "real_worker_change": {
+                "demo_id": demo_id,
+                "changed_file": low_risk_file.as_posix(),
+                "codex_exit_code": codex_result["exit_code"],
+                "claude_exit_code": claude_result["exit_code"],
+                "codex_worker_output_ref": codex_worker_response["worker_output_report_ref"],
+                "claude_worker_output_ref": claude_worker_response["worker_output_report_ref"],
+            },
+            "create_response": create,
+            "closeout_response": closeout_response,
+            "status": status,
+            "events": events,
+            "operation_count": len(operations),
+            "operations": operations,
+            "local_files": local_files,
+            "created_at": created_at,
+        },
+        handle,
+        indent=2,
+        ensure_ascii=False,
+    )
+    handle.write("\n")
+
+print(run_id)
+PY
+}
+
+run_real_worker_demo_step() {
+    local flow_path="$STATE_DIR/mvp-real-worker-flow.json"
+    local log_path="$STATE_DIR/mvp-real-worker-log.jsonl"
+    local run_id
+    info "运行: mvp-real-worker-demo"
+    if run_id="$(run_real_worker_demo "$flow_path" "$log_path")"; then
+        ok "MVP real-worker demo completed: $run_id"
+        ok "MVP real-worker flow: $flow_path"
+        ok "MVP real-worker log: $log_path"
+        record_step "mvp-real-worker-demo" "passed" "run_id:$run_id flow:$flow_path log:$log_path"
+    else
+        record_step "mvp-real-worker-demo" "failed" "flow:$flow_path log:$log_path"
+        die "mvp-real-worker-demo failed"
+    fi
+}
+
+echo "========================================"
+echo " Hermes Orchestra MVP Guided Wizard"
+echo "========================================"
+
+check_command git required
+check_command python3 required
+check_command make optional
+check_command npm optional
+check_command hermes optional
+check_command tmux optional
+check_command claude optional
+check_command codex optional
+check_env_file
+
+if [ "$SKIP_SETUP" -eq 1 ]; then
+    record_step "setup" "skipped" "--skip-setup"
+elif [ -f "$PACKAGE_DIR/scripts/setup.sh" ] && ask_yes "是否运行 scripts/setup.sh 安装/刷新 orch-* 命令"; then
+    run_step "setup" bash "$PACKAGE_DIR/scripts/setup.sh"
+else
+    record_step "setup" "skipped" "not requested or setup script unavailable"
+fi
+
+PROJECT_ID="$(prompt_value "Project ID" "$PROJECT_ID")" || die "project id is required"
+PROJECT_DIR="$(prompt_value "Project directory" "$PROJECT_DIR")" || die "project dir is required"
+orch_validate_project_id "$PROJECT_ID" || die "invalid project id"
+
+if [ ! -d "$PROJECT_DIR" ]; then
+    die "Project directory not found: $PROJECT_DIR"
+fi
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+
+if ! git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [ "$INIT_GIT" -eq 1 ] || ask_yes "项目目录不是 git 仓库，是否运行 git init"; then
+        run_step "git-init" git -C "$PROJECT_DIR" init
+    else
+        die "Project directory must be a git repository"
+    fi
+else
+    record_step "git-repository" "passed" "$PROJECT_DIR"
+fi
+
+orch_project_dirs "$PROJECT_ID"
+if [ -z "$REPORT_PATH" ]; then
+    REPORT_PATH="$STATE_DIR/mvp-acceptance-report.json"
+fi
+
+ORCH_INIT="$(resolve_helper orch-init)" || die "orch-init not found"
+run_step "orch-init" "$ORCH_INIT" "$PROJECT_ID" "$PROJECT_DIR"
+
+if [ "$SKIP_START" -eq 1 ]; then
+    record_step "orch-start" "skipped" "--skip-start"
+elif ask_yes "是否启动 Claude/Codex tmux 编排会话 orch-start"; then
+    ORCH_START="$(resolve_helper orch-start)" || die "orch-start not found"
+    run_step "orch-start" "$ORCH_START" "$PROJECT_ID" "$PROJECT_DIR"
+else
+    record_step "orch-start" "skipped" "not requested"
+fi
+
+if [ "$SKIP_GATEWAY" -eq 1 ]; then
+    record_step "orch-gateway" "skipped" "--skip-gateway"
+elif ask_yes "是否启动 Gateway API http://$HOST:$PORT"; then
+    ORCH_GATEWAY="$(resolve_helper orch-gateway)" || die "orch-gateway not found"
+    mkdir -p "$STATE_DIR"
+    GATEWAY_LOG="$STATE_DIR/gateway.log"
+    GATEWAY_PID_FILE="$STATE_DIR/gateway.pid"
+    if gateway_health_once; then
+        if [ "$SKIP_TESTS" -eq 0 ] && { [ "$SKIP_DEMO" -eq 0 ] || [ "$REAL_WORKER_DEMO" -eq 1 ]; }; then
+            record_step "orch-gateway" "failed" "existing:http://$HOST:$PORT"
+            die "Gateway already running on http://$HOST:$PORT; full demo needs a fresh Gateway with ORCH_GATEWAY_RUN_TESTS=1. Use --port with a free port or stop the existing Gateway."
+        fi
+        ok "Gateway already healthy: http://$HOST:$PORT/health"
+        GATEWAY_READY=1
+        record_step "orch-gateway" "passed" "existing:http://$HOST:$PORT"
+    else
+        if [ "$SKIP_TESTS" -eq 0 ] && { [ "$SKIP_DEMO" -eq 0 ] || [ "$REAL_WORKER_DEMO" -eq 1 ]; }; then
+            GATEWAY_TEST_COMMAND="${ORCH_GATEWAY_TEST_COMMAND:-make -C $PACKAGE_DIR test}"
+            if [ "$REAL_WORKER_DEMO" -eq 1 ]; then
+                GATEWAY_TEST_COMMAND="${ORCH_GATEWAY_TEST_COMMAND:-make -C $PACKAGE_DIR test-risk}"
+            fi
+            ORCH_GATEWAY_RUN_TESTS=1 ORCH_GATEWAY_TEST_COMMAND="$GATEWAY_TEST_COMMAND" "$ORCH_GATEWAY" --project-id "$PROJECT_ID" --host "$HOST" --port "$PORT" >"$GATEWAY_LOG" 2>&1 &
+        else
+            "$ORCH_GATEWAY" --project-id "$PROJECT_ID" --host "$HOST" --port "$PORT" >"$GATEWAY_LOG" 2>&1 &
+        fi
+        GATEWAY_PID="$!"
+        printf '%s\n' "$GATEWAY_PID" > "$GATEWAY_PID_FILE"
+        if wait_gateway_health "$GATEWAY_LOG"; then
+            ok "Gateway healthy: http://$HOST:$PORT/health"
+            GATEWAY_READY=1
+            record_step "orch-gateway" "passed" "pid:$GATEWAY_PID"
+        else
+            record_step "orch-gateway" "failed" "$GATEWAY_LOG"
+            die "Gateway failed to become healthy"
+        fi
+    fi
+else
+    record_step "orch-gateway" "skipped" "not requested"
+fi
+
+if [ "$SKIP_TESTS" -eq 1 ]; then
+    record_step "acceptance-tests" "skipped" "--skip-tests"
+elif [ -f "$PACKAGE_DIR/Makefile" ]; then
+    run_step "make-test" make -C "$PACKAGE_DIR" test
+    if [ -f "$PACKAGE_DIR/package.json" ] && command -v npm >/dev/null 2>&1; then
+        run_step "npm-test" npm --prefix "$PACKAGE_DIR" --silent test
+    else
+        record_step "npm-test" "skipped" "npm or package.json unavailable"
+    fi
+    if [ "$STRICT_UPSTREAM" -eq 1 ]; then
+        run_step "upstream-status-strict" make -C "$PACKAGE_DIR" upstream-status-strict
+    else
+        run_step "upstream-status" make -C "$PACKAGE_DIR" upstream-status
+    fi
+else
+    ORCH_VERIFY="$(resolve_helper orch-verify)" || die "orch-verify not found"
+    run_step "orch-verify" "$ORCH_VERIFY"
+fi
+
+if [ "$SKIP_DEMO" -eq 1 ]; then
+    record_step "mvp-demo-run" "skipped" "--skip-demo"
+elif [ "$SKIP_TESTS" -eq 1 ]; then
+    record_step "mvp-demo-run" "skipped" "--skip-tests"
+elif [ "$SKIP_GATEWAY" -eq 1 ]; then
+    record_step "mvp-demo-run" "skipped" "--skip-gateway"
+elif [ "$GATEWAY_READY" -eq 1 ]; then
+    run_mvp_demo_step
+else
+    record_step "mvp-demo-run" "skipped" "gateway not started"
+fi
+
+if [ "$REAL_WORKER_DEMO" -eq 0 ]; then
+    record_step "mvp-real-worker-demo" "skipped" "not requested"
+elif [ "$SKIP_TESTS" -eq 1 ]; then
+    record_step "mvp-real-worker-demo" "failed" "--skip-tests"
+    die "mvp-real-worker-demo requires acceptance tests because closeout needs executed test evidence"
+elif [ "$SKIP_GATEWAY" -eq 1 ]; then
+    record_step "mvp-real-worker-demo" "failed" "--skip-gateway"
+    die "mvp-real-worker-demo requires Gateway"
+elif [ "$GATEWAY_READY" -eq 1 ]; then
+    run_real_worker_demo_step
+else
+    record_step "mvp-real-worker-demo" "failed" "gateway not started"
+    die "mvp-real-worker-demo requires a running Gateway"
+fi
+
+write_report "passed"
+
+echo ""
+echo "MVP 引导验收完成"
+echo "Project: $PROJECT_ID"
+echo "Project dir: $PROJECT_DIR"
+echo "Report: $REPORT_PATH"
+if [ "$SKIP_GATEWAY" -eq 0 ] && [ -f "${GATEWAY_PID_FILE:-}" ]; then
+    echo "Gateway: http://$HOST:$PORT (pid $(cat "$GATEWAY_PID_FILE"))"
+elif [ "$GATEWAY_READY" -eq 1 ]; then
+    echo "Gateway: http://$HOST:$PORT (existing)"
+fi

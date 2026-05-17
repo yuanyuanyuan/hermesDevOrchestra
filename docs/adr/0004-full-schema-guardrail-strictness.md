@@ -1,0 +1,3 @@
+# Full Schema Validates Authority Boundaries Before Deep Content Shape
+
+The first Full Schema Package will strictly validate artifact identity, workflow authority fields, routing fields, artifact references, coverage, degradation, freshness, approval boundaries, and forbidden persistence surfaces. Deep content bodies such as findings, risks, recommendations, conflicts, and synthesis remain structured objects or arrays without overfitting every internal business field in the first version, so the schema blocks MVP summary objects and unsafe evidence while avoiding premature rigidity before implementation feedback.

@@ -1,0 +1,136 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "performance_slo_policy",
+  "package_status": "staged_target",
+  "policy_authority": "project",
+  "fixed_run_duration_sla_allowed": false,
+  "human_wait_excluded_from_slo": true,
+  "external_backend_wait_reported_separately": true,
+  "budget_policy": {
+    "budget_kind": "target_budget_with_degradation",
+    "hard_completion_sla_for_six_stage_run": false,
+    "record_actuals_for_every_run": true,
+    "report_percentiles": ["p50", "p95", "p99"],
+    "minimum_sample_size_for_slo_claim": 20
+  },
+  "run_size_classes": [
+    {
+      "class_id": "small",
+      "description": "Single bounded change with one implementation task and no release or human approval.",
+      "planning_target_minutes": 30,
+      "slo_claim_allowed": false
+    },
+    {
+      "class_id": "medium",
+      "description": "Multiple tasks or review/QA repair, but no production release or L4 approval.",
+      "planning_target_minutes": 120,
+      "slo_claim_allowed": false
+    },
+    {
+      "class_id": "large",
+      "description": "Parallel work, release work, migration, security-sensitive work, or human approval path.",
+      "planning_target_minutes": null,
+      "slo_claim_allowed": false
+    }
+  ],
+  "component_budgets": {
+    "gateway_api": {
+      "health_p95_ms": 250,
+      "capabilities_p95_ms": 500,
+      "status_projection_p95_ms": 750,
+      "tasks_projection_p95_ms": 1000,
+      "event_poll_p95_ms": 1000,
+      "mutating_command_ack_p95_ms": 2000
+    },
+    "event_projection": {
+      "post_commit_emit_target_ms": 1000,
+      "gap_detection_target_ms": 2000,
+      "rebuild_target_ms": 10000,
+      "on_budget_miss": "projection_degraded_result"
+    },
+    "full_contract_validation": {
+      "local_target_ms": 30000,
+      "ci_target_ms": 60000,
+      "on_budget_miss": "warning_only"
+    },
+    "debate_engine": {
+      "assembly_selector_target_ms": 1000,
+      "member_invocation_timeout_seconds_default": 600,
+      "partial_report_target_ms_after_last_member": 5000,
+      "on_required_coverage_timeout": "block_stage",
+      "on_optional_member_timeout": "degraded_partial_report"
+    },
+    "worker_execution": {
+      "dispatch_ack_target_ms": 5000,
+      "heartbeat_interval_seconds": 30,
+      "heartbeat_stale_after_seconds": 120,
+      "sweeper_interval_seconds": 300,
+      "cleanup_graceful_timeout_seconds": 30,
+      "on_timeout": "block_worker_task"
+    },
+    "runtime_knowledge": {
+      "query_target_ms": 10000,
+      "ingestion_operation_target_ms": 60000,
+      "on_query_budget_miss": "warning_context",
+      "on_required_knowledge_timeout": "continue_without_strong_evidence"
+    },
+    "release_pipeline": {
+      "approval_wait_excluded": true,
+      "deploy_timeout_source": "config/release/commands.json",
+      "rollback_timeout_source": "config/release/commands.json",
+      "on_command_timeout": "deployment_report_timed_out_and_block"
+    },
+    "remote_decisions": {
+      "delivery_attempt_target_ms": 5000,
+      "human_response_wait_excluded": true,
+      "decision_expiry_source": "decision_request.expires_at",
+      "on_delivery_timeout": "fallback_to_local_decision_path"
+    }
+  },
+  "degradation_actions": [
+    {
+      "condition": "projection_budget_miss_after_authority_commit",
+      "degradation_status": "degraded",
+      "action": "return_projection_degraded_command_result",
+      "completion_evidence_allowed": false
+    },
+    {
+      "condition": "required_debate_coverage_timeout",
+      "degradation_status": "blocked_due_to_degradation",
+      "action": "block_stage_for_kimi_or_human_decision",
+      "completion_evidence_allowed": false
+    },
+    {
+      "condition": "optional_debate_member_timeout",
+      "degradation_status": "degraded",
+      "action": "write_partial_debate_report",
+      "completion_evidence_allowed": false
+    },
+    {
+      "condition": "worker_heartbeat_timeout",
+      "degradation_status": "blocked_due_to_degradation",
+      "action": "sweeper_cleanup_and_block_worker_task",
+      "completion_evidence_allowed": false
+    },
+    {
+      "condition": "runtime_knowledge_query_timeout",
+      "degradation_status": "degraded",
+      "action": "continue_with_warning_context_only",
+      "completion_evidence_allowed": false
+    },
+    {
+      "condition": "release_command_timeout",
+      "degradation_status": "blocked_due_to_degradation",
+      "action": "write_timed_out_deployment_report_and_block",
+      "completion_evidence_allowed": false
+    }
+  ],
+  "measurement_policy": {
+    "write_per_run_timing_summary": true,
+    "write_component_timing_refs": true,
+    "store_raw_traces_in_audit": false,
+    "audit_records_store_refs_and_summaries": true,
+    "compare_budget_by_component": true,
+    "six_stage_elapsed_time_reported_not_enforced": true
+  }
+}

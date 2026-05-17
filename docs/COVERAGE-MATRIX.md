@@ -1,5 +1,7 @@
 # Hermes Dev Orchestra Coverage Matrix
 
+This matrix tracks MVP/current runtime implementation coverage. For full-system target readiness, see `docs/FULL-COVERAGE-MATRIX.md`.
+
 | Capability | Upstream native | Adapter-provided | Deferred | Evidence | Notes |
 |---|---:|---:|---:|---|---|
 | Upstream install/probe | Yes | No | No | `hermes --version`; pinned commit `023b1bff11c2a01a435f1956a0e2ac1773a065f3` | Upstream remains the `hermes` entry point. |

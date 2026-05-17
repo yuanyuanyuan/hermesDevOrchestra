@@ -1,0 +1,3 @@
+# Idempotency Records Are Retained With Gateway State
+
+Idempotency records are Gateway State, not cache entries or expiring locks. The default store is the local filesystem Gateway State idempotency directory, scoped by project id, endpoint, resource path, and Idempotency Key. Records have no independent TTL: the same key and payload returns the original command result even after a long delay, while the same key with a different payload returns `idempotency_conflict`. If a future archive or garbage collection profile moves Gateway State, the idempotency record must move with it or leave an archived stub that prevents the key from becoming a fresh command. This preserves the rule that an idempotency record cannot expire before the authority side effect it protects.

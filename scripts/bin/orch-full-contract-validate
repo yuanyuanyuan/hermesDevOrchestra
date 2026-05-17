@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+"""Validate Hermes Orchestra full-target contracts without activating them at runtime."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import pathlib
+from dataclasses import dataclass
+from typing import Any
+
+
+CONFIG_CONTRACTS = [
+    ("config/debate/full/teams.json", "debate_team_registry"),
+    ("config/debate/full/modes.json", "debate_mode_registry"),
+    ("config/debate/full/coverage-policy.json", "debate_coverage_policy"),
+    ("config/debate/full/assembly-policy.json", "debate_assembly_policy"),
+    ("config/debate/full/backend-policy.json", "debate_backend_policy"),
+    ("config/workers/full/backends.json", "worker_backend_registry"),
+    ("config/workers/full/roles.json", "worker_role_registry"),
+    ("config/cutover/full-readiness-gates.json", "full_contract_readiness_gate_policy"),
+    ("config/performance/slo-policy.json", "performance_slo_policy"),
+    ("config/testing/full-fixture-policy.json", "full_fixture_policy"),
+    ("config/evolution/self-evolution-review-queue.json", "self_evolution_review_queue_policy"),
+    ("config/degradation/policy.json", "degradation_policy"),
+    ("config/knowledge/runtime-kb.json", "runtime_domain_knowledge_config"),
+    ("config/release/pipeline.json", "release_pipeline_config"),
+    ("config/release/commands.json", "release_command_registry"),
+    ("config/decisions/remote-channel.json", "remote_decision_channel_config"),
+]
+
+
+CANONICAL_TEAM_IDS = {
+    "security",
+    "compliance",
+    "data_engineering",
+    "devops_sre",
+    "frontend",
+    "ai_feature",
+    "scalability_arch",
+    "chaos_engineering",
+    "platform",
+    "privacy_ethics",
+    "oss_compliance",
+    "observability",
+    "business",
+    "documentation",
+    "api_design",
+    "i18n_l10n",
+}
+
+CANONICAL_MODE_IDS = {
+    "sequential_review",
+    "parallel_debate",
+    "adversarial_debate",
+    "jury_panel",
+    "dynamic_assembly",
+    "meta_review",
+    "risk_priority_matrix",
+    "cross_team_conflict_detector",
+}
+
+
+@dataclass
+class CheckResult:
+    ok: bool
+    name: str
+    detail: str
+
+
+class SimpleValidationError(Exception):
+    pass
+
+
+class SimpleDraftValidator:
+    """Small JSON Schema subset validator for staged full-target config files."""
+
+    def __init__(self, schema: dict[str, Any]):
+        self.schema = schema
+        self.defs = schema.get("$defs", {})
+
+    @classmethod
+    def check_schema(cls, schema: dict[str, Any]) -> None:
+        if not isinstance(schema, dict):
+            raise SimpleValidationError("schema root must be an object")
+        if "$defs" not in schema:
+            raise SimpleValidationError("schema is missing $defs")
+
+    def validate(self, data: Any) -> None:
+        self._validate_schema(self.schema, data, "$")
+
+    def _resolve_ref(self, ref: str) -> dict[str, Any]:
+        prefix = "#/$defs/"
+        if not ref.startswith(prefix):
+            raise SimpleValidationError(f"unsupported $ref {ref}")
+        name = ref[len(prefix):]
+        if name not in self.defs:
+            raise SimpleValidationError(f"missing $defs entry {name}")
+        return self.defs[name]
+
+    def _validate_schema(self, schema: dict[str, Any], data: Any, path: str) -> None:
+        if "$ref" in schema:
+            self._validate_schema(self._resolve_ref(schema["$ref"]), data, path)
+            return
+
+        if "const" in schema and data != schema["const"]:
+            raise SimpleValidationError(f"{path}: expected const {schema['const']!r}, got {data!r}")
+
+        if "enum" in schema and data not in schema["enum"]:
+            raise SimpleValidationError(f"{path}: expected one of {schema['enum']!r}, got {data!r}")
+
+        if "type" in schema:
+            self._validate_type(schema["type"], data, path)
+
+        if "pattern" in schema and isinstance(data, str):
+            import re
+
+            if not re.search(schema["pattern"], data):
+                raise SimpleValidationError(f"{path}: value does not match pattern {schema['pattern']!r}")
+
+        if "minimum" in schema and isinstance(data, (int, float)) and data < schema["minimum"]:
+            raise SimpleValidationError(f"{path}: value below minimum {schema['minimum']}")
+
+        if isinstance(data, dict):
+            self._validate_object(schema, data, path)
+
+        if isinstance(data, list):
+            self._validate_array(schema, data, path)
+
+    def _validate_type(self, expected: Any, data: Any, path: str) -> None:
+        expected_types = expected if isinstance(expected, list) else [expected]
+        if any(self._matches_type(type_name, data) for type_name in expected_types):
+            return
+        raise SimpleValidationError(f"{path}: expected type {expected!r}, got {type(data).__name__}")
+
+    def _matches_type(self, type_name: str, data: Any) -> bool:
+        return {
+            "object": isinstance(data, dict),
+            "array": isinstance(data, list),
+            "string": isinstance(data, str),
+            "boolean": isinstance(data, bool),
+            "integer": isinstance(data, int) and not isinstance(data, bool),
+            "number": isinstance(data, (int, float)) and not isinstance(data, bool),
+            "null": data is None,
+        }.get(type_name, False)
+
+    def _validate_object(self, schema: dict[str, Any], data: dict[str, Any], path: str) -> None:
+        required = schema.get("required", [])
+        for key in required:
+            if key not in data:
+                raise SimpleValidationError(f"{path}: missing required property {key!r}")
+
+        properties = schema.get("properties", {})
+        for key, child_schema in properties.items():
+            if key in data:
+                self._validate_schema(child_schema, data[key], f"{path}.{key}")
+
+        additional = schema.get("additionalProperties", True)
+        if isinstance(additional, dict):
+            for key, value in data.items():
+                if key not in properties:
+                    self._validate_schema(additional, value, f"{path}.{key}")
+        elif additional is False:
+            extras = sorted(set(data) - set(properties))
+            if extras:
+                raise SimpleValidationError(f"{path}: unexpected properties {extras!r}")
+
+    def _validate_array(self, schema: dict[str, Any], data: list[Any], path: str) -> None:
+        if "minItems" in schema and len(data) < schema["minItems"]:
+            raise SimpleValidationError(f"{path}: fewer than minItems {schema['minItems']}")
+        if "maxItems" in schema and len(data) > schema["maxItems"]:
+            raise SimpleValidationError(f"{path}: more than maxItems {schema['maxItems']}")
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for index, item in enumerate(data):
+                self._validate_schema(item_schema, item, f"{path}[{index}]")
+
+
+def load_json(path: pathlib.Path) -> object:
+    with path.open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def find_repo_root(start: pathlib.Path) -> pathlib.Path:
+    for candidate in [start, *start.parents]:
+        if (candidate / "config/schemas/orchestra.full.schema.json").is_file():
+            return candidate
+    raise SystemExit("Could not find repo root containing config/schemas/orchestra.full.schema.json")
+
+
+def load_validator():
+    try:
+        import jsonschema
+    except ImportError as exc:
+        return SimpleDraftValidator, f"using built-in schema subset validator because jsonschema is unavailable: {exc}"
+    return jsonschema.Draft202012Validator, "using jsonschema Draft202012Validator"
+
+
+def pass_result(name: str, detail: str) -> CheckResult:
+    return CheckResult(True, name, detail)
+
+
+def fail_result(name: str, detail: str) -> CheckResult:
+    return CheckResult(False, name, detail)
+
+
+def validate_schema(validator_class, schema: dict) -> CheckResult:
+    try:
+        validator_class.check_schema(schema)
+    except Exception as exc:  # jsonschema raises several validation exception classes.
+        return fail_result("schema", str(exc))
+    return pass_result("schema", "config/schemas/orchestra.full.schema.json")
+
+
+def validate_config(validator_class, schema: dict, repo: pathlib.Path, rel_path: str, def_name: str) -> CheckResult:
+    path = repo / rel_path
+    if not path.is_file():
+        return fail_result(rel_path, "missing")
+    if def_name not in schema.get("$defs", {}):
+        return fail_result(rel_path, f"missing schema def {def_name}")
+    try:
+        data = load_json(path)
+        validator = validator_class({"$ref": f"#/$defs/{def_name}", "$defs": schema["$defs"]})
+        validator.validate(data)
+    except Exception as exc:
+        return fail_result(rel_path, str(exc))
+    return pass_result(rel_path, def_name)
+
+
+def validate_cross_refs(repo: pathlib.Path) -> list[CheckResult]:
+    results: list[CheckResult] = []
+
+    teams = load_json(repo / "config/debate/full/teams.json")
+    team_ids = [team["id"] for team in teams["teams"]]
+    if set(team_ids) == CANONICAL_TEAM_IDS and len(team_ids) == len(set(team_ids)):
+        results.append(pass_result("debate team ids", "exact canonical set"))
+    else:
+        results.append(fail_result("debate team ids", f"unexpected ids: {sorted(team_ids)}"))
+
+    modes = load_json(repo / "config/debate/full/modes.json")
+    mode_ids = [mode["id"] for mode in modes["modes"]]
+    if set(mode_ids) == CANONICAL_MODE_IDS and len(mode_ids) == len(set(mode_ids)):
+        results.append(pass_result("debate mode ids", "exact canonical set"))
+    else:
+        results.append(fail_result("debate mode ids", f"unexpected ids: {sorted(mode_ids)}"))
+
+    pipeline = load_json(repo / "config/release/pipeline.json")
+    commands = load_json(repo / "config/release/commands.json")
+    registry_refs = {entry["command_ref"] for entry in commands["commands"]}
+    pipeline_refs = set(pipeline["commands"].values())
+    rollback_ref = pipeline["rollback_policy"]["rollback_command_ref"]
+    missing_refs = sorted((pipeline_refs | {rollback_ref}) - registry_refs)
+    if not missing_refs:
+        results.append(pass_result("release command refs", "pipeline refs resolve through command registry"))
+    else:
+        results.append(fail_result("release command refs", f"missing registry entries: {missing_refs}"))
+
+    if pipeline.get("enabled") is False and commands.get("enabled") is False:
+        results.append(pass_result("release disabled state", "pipeline and command registry remain disabled"))
+    else:
+        results.append(fail_result("release disabled state", "full release configs must remain disabled before cutover"))
+
+    knowledge = load_json(repo / "config/knowledge/runtime-kb.json")
+    backend = knowledge.get("backend", {})
+    if backend.get("id") == "gbrain" and backend.get("no_separate_sqlite") is True:
+        results.append(pass_result("runtime knowledge backend", "gbrain target without separate Hermes SQLite"))
+    else:
+        results.append(fail_result("runtime knowledge backend", "runtime KB must target gbrain and forbid separate Hermes SQLite"))
+
+    cutover = load_json(repo / "config/cutover/full-readiness-gates.json")
+    families = {entry["family_id"] for entry in cutover["artifact_families"]}
+    required_families = {
+        "gateway_authority",
+        "full_debate_package",
+        "worker_execution",
+        "runtime_domain_knowledge",
+        "release_pipeline",
+        "remote_decisions",
+        "closeout_and_self_evolution",
+    }
+    if required_families <= families:
+        results.append(pass_result("cutover artifact families", "required staged cutover families are present"))
+    else:
+        results.append(fail_result("cutover artifact families", f"missing families: {sorted(required_families - families)}"))
+
+    if cutover.get("global_cutover_allowed") is False and cutover.get("historical_run_rewrite_allowed") is False:
+        results.append(pass_result("cutover safety policy", "global cutover and historical rewrites are disabled"))
+    else:
+        results.append(fail_result("cutover safety policy", "global cutover and historical rewrites must be disabled"))
+
+    slo = load_json(repo / "config/performance/slo-policy.json")
+    budget_policy = slo.get("budget_policy", {})
+    if slo.get("fixed_run_duration_sla_allowed") is False and budget_policy.get("hard_completion_sla_for_six_stage_run") is False:
+        results.append(pass_result("performance run SLA policy", "fixed Six-Stage completion SLA is disabled"))
+    else:
+        results.append(fail_result("performance run SLA policy", "Six-Stage runs must use target budgets, not fixed completion SLA"))
+
+    component_budgets = slo.get("component_budgets", {})
+    required_budget_sections = {
+        "gateway_api",
+        "event_projection",
+        "full_contract_validation",
+        "debate_engine",
+        "worker_execution",
+        "runtime_knowledge",
+        "release_pipeline",
+        "remote_decisions",
+    }
+    missing_budget_sections = sorted(required_budget_sections - set(component_budgets))
+    if not missing_budget_sections:
+        results.append(pass_result("performance component budgets", "required component budgets are present"))
+    else:
+        results.append(fail_result("performance component budgets", f"missing budget sections: {missing_budget_sections}"))
+
+    fixture_policy = load_json(repo / "config/testing/full-fixture-policy.json")
+    layers = fixture_policy.get("fixture_layers", {})
+    contract_layer = layers.get("contract_fixtures", {})
+    runtime_layer = layers.get("runtime_fake_adapters", {})
+    if contract_layer.get("runtime_execution_allowed") is False and runtime_layer.get("degraded_fixture_only") is True:
+        results.append(pass_result("fixture layer split", "contract fixtures and runtime fake adapters are separated"))
+    else:
+        results.append(fail_result("fixture layer split", "contract fixtures must not execute and runtime fakes must be degraded fixtures"))
+
+    fixture_families = {entry["family_id"]: entry for entry in fixture_policy.get("fixture_families", [])}
+    required_fixture_families = {"debate", "worker_execution", "release_pipeline", "recovery", "runtime_knowledge", "remote_decisions"}
+    missing_fixture_families = sorted(required_fixture_families - set(fixture_families))
+    if not missing_fixture_families:
+        results.append(pass_result("fixture families", "required fixture families are present"))
+    else:
+        results.append(fail_result("fixture families", f"missing fixture families: {missing_fixture_families}"))
+
+    forbidden_evidence = [
+        entry["family_id"]
+        for entry in fixture_families.values()
+        if entry.get("completion_evidence_allowed") is not False or entry.get("release_evidence_allowed", False) is not False
+    ]
+    if not forbidden_evidence:
+        results.append(pass_result("fixture evidence boundary", "fixtures cannot satisfy completion or release evidence"))
+    else:
+        results.append(fail_result("fixture evidence boundary", f"invalid fixture evidence families: {forbidden_evidence}"))
+
+    evolution_queue = load_json(repo / "config/evolution/self-evolution-review-queue.json")
+    if evolution_queue.get("queue_required") is True and evolution_queue.get("immediate_interrupt_default") is False:
+        results.append(pass_result("self evolution queue", "proposals go through an explicit queue by default"))
+    else:
+        results.append(fail_result("self evolution queue", "self evolution proposals must use an explicit non-interrupting review queue"))
+
+    protected_policy = evolution_queue.get("protected_target_policy", {})
+    if protected_policy.get("human_approval_required") is True and protected_policy.get("auto_apply_allowed") is False:
+        results.append(pass_result("self evolution protected targets", "protected targets require Human Approval and cannot auto-apply"))
+    else:
+        results.append(fail_result("self evolution protected targets", "protected targets must require Human Approval and forbid auto-apply"))
+
+    retention_policy = evolution_queue.get("retention_policy", {})
+    if retention_policy.get("rejected_retained") is True and retention_policy.get("delete_rejected_allowed") is False:
+        results.append(pass_result("self evolution rejected retention", "rejected proposals are retained with reasons"))
+    else:
+        results.append(fail_result("self evolution rejected retention", "rejected proposals must be retained and not deleted"))
+
+    return results
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo", default=".", help="Repository root or a path inside it")
+    args = parser.parse_args()
+
+    repo = find_repo_root(pathlib.Path(args.repo).resolve())
+    validator_class, validator_detail = load_validator()
+    schema = load_json(repo / "config/schemas/orchestra.full.schema.json")
+
+    results = [pass_result("validator", validator_detail), validate_schema(validator_class, schema)]
+    results.extend(validate_config(validator_class, schema, repo, rel_path, def_name) for rel_path, def_name in CONFIG_CONTRACTS)
+    results.extend(validate_cross_refs(repo))
+
+    failed = False
+    for result in results:
+        status = "PASS" if result.ok else "FAIL"
+        print(f"{status} {result.name}: {result.detail}")
+        failed = failed or not result.ok
+
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

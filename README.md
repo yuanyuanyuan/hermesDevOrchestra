@@ -31,6 +31,22 @@ bash scripts/setup.sh
 ## 快速开始
 
 1. **安装**（见上）
+   ```bash
+   # 引导式安装/配置/启动/MVP 验收
+   orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway
+   ```
+   验收完成后会生成：
+   - `~/.local/state/hermes-orchestra/{project}/mvp-acceptance-report.json`
+   - `~/.local/state/hermes-orchestra/{project}/mvp-demo-flow.json`
+   - `~/.local/state/hermes-orchestra/{project}/mvp-demo-log.jsonl`
+
+   `mvp-demo-log.jsonl` 逐步记录 demo case 的参与方、输入、输出、API endpoint、artifact refs 和本地证据文件，可直接用于复盘完整 MVP 流程。
+
+   如果要把真实 Codex/Claude CLI 也纳入验收，运行：
+   ```bash
+   orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway --real-worker-demo
+   ```
+   这会实际调用 `codex exec` 修改 `.workflow/knowledge/orchestra-real-worker-demo.md`，调用 `claude -p` 审查该低风险改动，并生成 `mvp-real-worker-flow.json` / `mvp-real-worker-log.jsonl`。
 2. **初始化项目**（项目目录必须是 git 仓库）：
    ```bash
    orch-init api-gateway ~/projects/api-gateway
@@ -79,6 +95,21 @@ orch-reject <approval_id>
 
 # 风险预检
 orch-risk-check "docker system prune"
+
+# 查看审计日志
+orch-audit api-gateway --limit 20
+
+# 验证安装
+orch-verify
+
+# 引导式配置、启动和 MVP 验收
+orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway
+
+# 只做配置/启动，不跑测试和 demo run
+orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway --skip-tests
+
+# 额外验收真实 Codex/Claude CLI worker
+orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway --real-worker-demo
 ```
 
 ### 运行测试
@@ -104,17 +135,18 @@ make test-risk
 | `skills/` | 4 个 Hermes Skills：dev-orchestra、claude-supervisor、codex-executor、escalation-handler |
 | `hermes/` | SOUL.md、角色引擎协议、profile 分发目录 |
 | `config/` | risk-policy.yaml、rules.json |
-| `specs/` | 派生规范：命令集、文件总线协议、风险决策机制 |
+| `specs/` | 派生规范：命令集、任务交换协议、风险决策机制 |
 
 ## 核心概念
 
 - **三层代理协作**：Hermes（编排者）→ Claude（监督/决策）→ Codex（执行/编码）
-- **文件通信总线**：每个项目在 `/tmp/hermes-orchestra/{project}/` 下通过结构化 Markdown 文件交换任务、问题、决策和结果
+- **文件交换机制**：每个项目在 `/tmp/hermes-orchestra/{project}/` 下通过结构化文件交换任务、问题、决策和结果
+- **审计日志**：每个项目的操作审计记录在 `~/.local/share/hermes-orchestra/{project}/audit.jsonl`
 - **三级决策流转**：技术决策（Claude 秒级自动）→ 风险升级（Hermes 评估 L1-L4）→ 危险操作（L3/L4 阻塞等待用户批准）
-- **多项目隔离**：每个项目拥有独立的 tmux 会话（`hermes-{project}-claude` / `hermes-{project}-codex`）及通信总线
+- **多项目隔离**：每个项目拥有独立的 tmux 会话（`hermes-{project}-claude` / `hermes-{project}-codex`）及独立的任务目录
 
 ## 相关文档
 
-- [`WORKFLOW.md`](WORKFLOW.md) — 单人全周期工作流详细指南
-- [`specs/`](specs/) — 派生规范（命令集、文件总线、风险决策）
+- [`WORKFLOW.md`](docs/WORKFLOW.md) — 单人全周期工作流详细指南
+- [`specs/`](specs/) — 派生规范（命令集、任务交换协议、风险决策）
 - [`docs/COVERAGE-MATRIX.md`](docs/COVERAGE-MATRIX.md) — 功能覆盖矩阵

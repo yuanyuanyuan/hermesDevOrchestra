@@ -1,0 +1,212 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "full_contract_readiness_gate_policy",
+  "package_status": "staged_target",
+  "policy_authority": "project",
+  "global_cutover_allowed": false,
+  "artifact_family_cutover_required": true,
+  "mvp_schema_remains_default": true,
+  "historical_run_rewrite_allowed": false,
+  "active_runtime_default_schema_ref": "config://schemas/orchestra.schema.json",
+  "full_target_schema_ref": "config://schemas/orchestra.full.schema.json",
+  "required_gate_evidence": [
+    "full_contract_validation_report",
+    "mvp_compatibility_report",
+    "runtime_consumption_test_report",
+    "projection_compatibility_report",
+    "rollback_or_disable_plan",
+    "explicit_cutover_decision"
+  ],
+  "default_historical_artifact_policy": {
+    "preserve_original_schema_version": true,
+    "read_legacy_artifacts": true,
+    "rewrite_in_place_allowed": false,
+    "migration_writes_lineage_ref": true
+  },
+  "default_new_run_policy_after_activation": {
+    "write_full_artifacts_for_activated_family": true,
+    "legacy_refs_remain_resolvable": true,
+    "mixed_family_runs_allowed_during_staged_cutover": true,
+    "completion_requires_active_family_contracts_only": true
+  },
+  "artifact_families": [
+    {
+      "family_id": "gateway_authority",
+      "mvp_sources": [
+        "config/schemas/orchestra.schema.json",
+        "scripts/lib/orch_gateway.py"
+      ],
+      "full_targets": [
+        "config/schemas/orchestra.full.schema.json#$defs/run_response",
+        "config/schemas/orchestra.full.schema.json#$defs/command_record",
+        "config/schemas/orchestra.full.schema.json#$defs/idempotency_record",
+        "config/schemas/orchestra.full.schema.json#$defs/command_reconciliation_report"
+      ],
+      "activation_scope": "new_commands_only",
+      "required_checks": [
+        "full_contract_validation",
+        "idempotency_replay_compatibility",
+        "command_reconciliation_compatibility",
+        "event_projection_compatibility",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "rollback_policy": {
+        "disable_full_family_validator": true,
+        "preserve_written_full_artifacts": true,
+        "fallback_to_mvp_runtime_schema": true
+      }
+    },
+    {
+      "family_id": "full_debate_package",
+      "mvp_sources": [
+        "config/debate/teams.json",
+        "config/debate/modes.json"
+      ],
+      "full_targets": [
+        "config/debate/full/teams.json",
+        "config/debate/full/modes.json",
+        "config/debate/full/coverage-policy.json",
+        "config/debate/full/assembly-policy.json",
+        "config/debate/full/backend-policy.json"
+      ],
+      "activation_scope": "new_debate_runs_only",
+      "required_checks": [
+        "canonical_team_mode_validation",
+        "legacy_alias_mapping_report",
+        "assembly_policy_fixture_report",
+        "backend_policy_degradation_fixture_report",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "rollback_policy": {
+        "disable_full_debate_package": true,
+        "preserve_debate_artifacts": true,
+        "fallback_to_mvp_debate_registry": true
+      }
+    },
+    {
+      "family_id": "worker_execution",
+      "mvp_sources": [
+        "config/workers/backends.json",
+        "config/workers/roles.json"
+      ],
+      "full_targets": [
+        "config/workers/full/backends.json",
+        "config/workers/full/roles.json",
+        "config/schemas/orchestra.full.schema.json#$defs/capability_negotiation_report",
+        "config/schemas/orchestra.full.schema.json#$defs/worker_session_record"
+      ],
+      "activation_scope": "new_worker_dispatches_only",
+      "required_checks": [
+        "worker_registry_validation",
+        "capability_negotiation_fixture_report",
+        "tmux_session_cleanup_fixture_report",
+        "write_scope_enforcement_report",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "rollback_policy": {
+        "disable_full_worker_dispatch": true,
+        "preserve_worker_artifacts": true,
+        "fallback_to_mvp_worker_registry": true
+      }
+    },
+    {
+      "family_id": "runtime_domain_knowledge",
+      "mvp_sources": [],
+      "full_targets": [
+        "config/knowledge/runtime-kb.json",
+        "config/schemas/orchestra.full.schema.json#$defs/runtime_domain_knowledge_config",
+        "config/schemas/orchestra.full.schema.json#$defs/runtime_knowledge_query",
+        "config/schemas/orchestra.full.schema.json#$defs/runtime_knowledge_result"
+      ],
+      "activation_scope": "new_runtime_knowledge_queries_only",
+      "required_checks": [
+        "gbrain_adapter_contract_report",
+        "freshness_policy_fixture_report",
+        "authority_boundary_fixture_report",
+        "redaction_fixture_report",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "rollback_policy": {
+        "disable_runtime_knowledge_adapter": true,
+        "preserve_query_result_artifacts": true,
+        "fallback_to_no_runtime_knowledge": true
+      }
+    },
+    {
+      "family_id": "release_pipeline",
+      "mvp_sources": [],
+      "full_targets": [
+        "config/release/pipeline.json",
+        "config/release/commands.json",
+        "config/schemas/orchestra.full.schema.json#$defs/deployment_report"
+      ],
+      "activation_scope": "new_release_attempts_only",
+      "required_checks": [
+        "release_command_registry_validation",
+        "approval_gate_fixture_report",
+        "timeout_kill_fixture_report",
+        "output_redaction_fixture_report",
+        "rollback_report_fixture_report",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "rollback_policy": {
+        "disable_release_pipeline": true,
+        "preserve_deployment_reports": true,
+        "fallback_to_no_release_pipeline": true
+      }
+    },
+    {
+      "family_id": "remote_decisions",
+      "mvp_sources": [],
+      "full_targets": [
+        "config/decisions/remote-channel.json",
+        "config/schemas/orchestra.full.schema.json#$defs/decision_request",
+        "config/schemas/orchestra.full.schema.json#$defs/decision_response",
+        "config/schemas/orchestra.full.schema.json#$defs/remote_decision_channel_config"
+      ],
+      "activation_scope": "new_decision_requests_only",
+      "required_checks": [
+        "remote_transport_disabled_default_validation",
+        "replay_protection_fixture_report",
+        "expiry_fixture_report",
+        "responder_binding_fixture_report",
+        "fixed_phrase_fixture_report",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "rollback_policy": {
+        "disable_remote_decision_channel": true,
+        "preserve_decision_artifacts": true,
+        "fallback_to_local_cli_or_ssh": true
+      }
+    },
+    {
+      "family_id": "closeout_and_self_evolution",
+      "mvp_sources": [
+        "config/schemas/orchestra.schema.json"
+      ],
+      "full_targets": [
+        "config/schemas/orchestra.full.schema.json#$defs/iteration_closeout_report",
+        "config/schemas/orchestra.full.schema.json#$defs/system_improvement_proposals"
+      ],
+      "activation_scope": "new_closeout_attempts_only",
+      "required_checks": [
+        "closeout_completion_gate_fixture_report",
+        "candidate_sweep_fixture_report",
+        "protected_change_fixture_report",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "rollback_policy": {
+        "disable_full_closeout_validator": true,
+        "preserve_closeout_artifacts": true,
+        "fallback_to_mvp_closeout_contract": true
+      }
+    }
+  ]
+}

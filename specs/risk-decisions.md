@@ -6,7 +6,7 @@ Primary: `.planning/SPEC.md` §§AUTH-03, RISK-01..RISK-05, REMOTE-05, Appendix 
 
 If this derived spec conflicts with `.planning/SPEC.md`, update this derived spec to match `.planning/SPEC.md`.
 
-Downstream read order: `.planning/SPEC.md`, then this derived spec, then the root-package implementation projections (`README.md`, `WORKFLOW.md`, `scripts/`, `config/`, `hermes/`, `skills/`, `claude-config/`).
+Downstream read order: `.planning/SPEC.md`, then this derived spec, then the root-package implementation projections (`README.md`, `docs/WORKFLOW.md`, `scripts/`, `config/`, `hermes/`, `skills/`, `claude-config/`).
 
 ## Consumers
 

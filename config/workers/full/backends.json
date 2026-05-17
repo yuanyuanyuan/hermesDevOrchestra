@@ -1,0 +1,89 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "worker_backend_registry",
+  "package_status": "staged_target",
+  "registry_authority": "project",
+  "implicit_backend_fallback_allowed": false,
+  "backends": [
+    {
+      "id": "codex",
+      "name": "Codex CLI",
+      "enabled": true,
+      "adapter_type": "cli",
+      "transport": "local_process",
+      "install_check": {
+        "kind": "executable_on_path",
+        "executable": "codex"
+      },
+      "health_check": {
+        "kind": "command_probe",
+        "timeout_seconds": 5,
+        "degraded_on_failure": true
+      },
+      "compatible_roles": ["implementer"],
+      "protocols": ["hermes-role-engine/v1"],
+      "capabilities": [
+        "structured_envelope",
+        "state_advancing_output",
+        "workspace_execution",
+        "tmux_session",
+        "write_scope_reporting"
+      ],
+      "workspace_support": {
+        "task_workspace": true,
+        "direct_project_fallback": true
+      },
+      "session_support": {
+        "tmux": true,
+        "heartbeat": true,
+        "graceful_stop": true
+      },
+      "risk_ceiling": "L4",
+      "risk_policy": {
+        "max_without_human_approval": "L2",
+        "human_approval_required": ["L3", "L4"]
+      },
+      "fallback_allowed": false
+    },
+    {
+      "id": "claude",
+      "name": "Claude CLI",
+      "enabled": true,
+      "adapter_type": "cli",
+      "transport": "local_process",
+      "install_check": {
+        "kind": "executable_on_path",
+        "executable": "claude"
+      },
+      "health_check": {
+        "kind": "command_probe",
+        "timeout_seconds": 5,
+        "degraded_on_failure": true
+      },
+      "compatible_roles": ["reviewer"],
+      "protocols": ["hermes-role-engine/v1"],
+      "capabilities": [
+        "structured_verdict",
+        "artifact_review",
+        "workspace_read",
+        "tmux_session",
+        "verdict_reporting"
+      ],
+      "workspace_support": {
+        "task_workspace": true,
+        "direct_project_fallback": false
+      },
+      "session_support": {
+        "tmux": true,
+        "heartbeat": true,
+        "graceful_stop": true
+      },
+      "risk_ceiling": "L4",
+      "risk_policy": {
+        "max_without_human_approval": "L2",
+        "human_approval_required": ["L3", "L4"]
+      },
+      "fallback_allowed": false
+    }
+  ]
+}

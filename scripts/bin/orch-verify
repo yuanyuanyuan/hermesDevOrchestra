@@ -6,14 +6,33 @@ ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
 
 echo "Hermes Dev Orchestra smoke verification"
 
-if [ -x "$ORCHESTRA_HOME/tests/run-all.sh" ]; then
-    exec "$ORCHESTRA_HOME/tests/run-all.sh"
+# 策略：从当前工作目录向上查找源码仓库。
+# 这样无论 orch-verify 是通过 ~/.local/bin/ 符号链接调用，还是直接调用，
+# 只要在仓库目录（或其子目录）中运行，就能找到正确的测试套件。
+find_repo_tests() {
+    local dir="$PWD"
+    while [ "$dir" != "/" ]; do
+        if [ -f "$dir/scripts/setup.sh" ] && [ -x "$dir/scripts/tests/run-all.sh" ]; then
+            echo "$dir/scripts/tests/run-all.sh"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+    return 1
+}
+
+REPO_TESTS="$(find_repo_tests 2>/dev/null || true)"
+if [ -n "$REPO_TESTS" ]; then
+    exec "$REPO_TESTS"
 fi
 
-PACKAGE_RUNNER="$(cd "$SCRIPT_DIR/.." && pwd)/tests/run-all.sh"
-if [ -x "$PACKAGE_RUNNER" ]; then
-    exec "$PACKAGE_RUNNER"
-fi
-
-echo "Smoke test runner not found. Expected ORCHESTRA_HOME/tests/run-all.sh or package scripts/tests/run-all.sh." >&2
+# 不在仓库目录中 — 已安装的测试有路径解析 bug，直接提示用户
+echo "" >&2
+echo "无法找到源码仓库中的测试套件。" >&2
+echo "" >&2
+echo "请在仓库根目录（或子目录）中重新运行：" >&2
+echo "  cd /data/hermes && orch-verify" >&2
+echo "" >&2
+echo "原因：已安装到 ~/.hermes-orchestra/tests/ 的测试脚本依赖源码目录结构，" >&2
+echo "      在非仓库目录中运行时路径解析会失败。" >&2
 exit 1

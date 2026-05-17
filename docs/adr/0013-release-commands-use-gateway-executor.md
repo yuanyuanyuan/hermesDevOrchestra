@@ -1,0 +1,5 @@
+# Release Commands Use Gateway Executor
+
+Release deploy and rollback commands resolve through the trusted project registry at `config/release/commands.json`; they are not inline shell strings and are not executed by Kimi, Debate Backends, or Worker Backends. Each registry entry defines argv, cwd ref, environment allowlist, timeout, kill policy, output capture policy, redaction policy, and approval policy. The Gateway Release Executor validates the command ref, verifies required approval refs before staging or production execution, runs the command, captures redacted stdout/stderr as artifact refs, records exit code and timing, applies timeout and kill behavior, and writes a schema-valid `deployment_report`.
+
+Production execution always requires Human Approval with the configured fixed phrase or equivalent strong confirmation. If a command times out, Gateway records `deployment_status: "timed_out"`, preserves output refs and timing, and blocks the run for repair decision. Rollback is not assumed to have happened or succeeded; it must be a separate registered command execution with its own deployment report and rollback or recovery evidence.

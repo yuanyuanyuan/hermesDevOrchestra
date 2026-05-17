@@ -4,9 +4,9 @@
 
 Primary: `.planning/SPEC.md` §§CMD-01..CMD-02.
 
-`README.md` and `WORKFLOW.md` are projections only. If either projection conflicts with `.planning/SPEC.md`, update the projection or this derived spec to match `.planning/SPEC.md`.
+`README.md` and `docs/WORKFLOW.md` are projections only. If either projection conflicts with `.planning/SPEC.md`, update the projection or this derived spec to match `.planning/SPEC.md`.
 
-Downstream read order: `.planning/SPEC.md`, then this derived spec, then the root-package implementation projections (`README.md`, `WORKFLOW.md`, `scripts/`, `config/`, `hermes/`, `skills/`, `claude-config/`).
+Downstream read order: `.planning/SPEC.md`, then this derived spec, then the root-package implementation projections (`README.md`, `docs/WORKFLOW.md`, `scripts/`, `config/`, `hermes/`, `skills/`, `claude-config/`).
 
 ## Consumers
 
@@ -22,7 +22,7 @@ Downstream read order: `.planning/SPEC.md`, then this derived spec, then the roo
 - `scripts/bin/orch-audit` - reads durable audit records.
 - `scripts/bin/orch-verify` - runs smoke verification.
 - `README.md` - human-facing command projection.
-- `WORKFLOW.md` - workflow command projection.
+- `docs/WORKFLOW.md` - workflow command projection.
 - `scripts/tests/test-docs.sh` - smoke-tests documented command coverage.
 
 ## Contract

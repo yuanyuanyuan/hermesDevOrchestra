@@ -1,0 +1,38 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "debate_coverage_policy",
+  "package_kind": "full_debate_package",
+  "policy_authority": "project",
+  "package_status": "staged_target",
+  "project_overrides_may_only_increase_coverage": true,
+  "stage_requirements": {
+    "direction_debate": {
+      "minimum_team_ids": ["business", "platform", "security", "documentation"],
+      "minimum_member_count": 6,
+      "required_modes": ["dynamic_assembly", "adversarial_debate"],
+      "coverage_failure_blocks_stage": true
+    },
+    "solution_debate": {
+      "minimum_team_ids": ["platform", "api_design", "security", "data_engineering", "devops_sre"],
+      "minimum_member_count": 8,
+      "required_modes": ["dynamic_assembly", "parallel_debate", "risk_priority_matrix"],
+      "coverage_failure_blocks_stage": true
+    },
+    "global_evaluation": {
+      "minimum_team_ids": ["business", "security", "observability", "documentation", "devops_sre"],
+      "minimum_member_count": 8,
+      "required_modes": ["jury_panel", "meta_review", "cross_team_conflict_detector"],
+      "coverage_failure_blocks_stage": true
+    }
+  },
+  "partial_report_policy": {
+    "allowed_when_required_coverage_satisfied": true,
+    "must_record_failed_invocations": true,
+    "must_record_degraded_state": true
+  },
+  "template_backend_policy": {
+    "counts_as_required_coverage": false,
+    "allowed_for_schema_fixtures": true,
+    "must_mark_degraded": true
+  }
+}

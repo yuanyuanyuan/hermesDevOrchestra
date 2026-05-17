@@ -1,0 +1,14 @@
+{
+  "schema_version": "orchestra.v1",
+  "artifact_type": "debate_mode_registry",
+  "modes": [
+    {"id": "consensus", "name": "Consensus", "purpose": "find a shared low-risk path"},
+    {"id": "red_team", "name": "Red Team", "purpose": "challenge assumptions and unsafe shortcuts"},
+    {"id": "tradeoff_matrix", "name": "Tradeoff Matrix", "purpose": "compare viable implementation options"},
+    {"id": "risk_review", "name": "Risk Review", "purpose": "surface approval and failure boundaries"},
+    {"id": "implementation_review", "name": "Implementation Review", "purpose": "stress implementation feasibility"},
+    {"id": "test_strategy", "name": "Test Strategy", "purpose": "turn acceptance into executable checks"},
+    {"id": "architecture_review", "name": "Architecture Review", "purpose": "validate module ownership and dependencies"},
+    {"id": "closeout_review", "name": "Closeout Review", "purpose": "evaluate completion evidence and learnings"}
+  ]
+}

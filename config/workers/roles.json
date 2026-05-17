@@ -1,0 +1,22 @@
+{
+  "schema_version": "orchestra.v1",
+  "artifact_type": "worker_role_registry",
+  "roles": [
+    {
+      "role": "implementer",
+      "preferred_backend": "codex",
+      "required_capabilities": ["structured_envelope", "state_advancing_output"],
+      "fallback_backends": [],
+      "fallback_allowed_failure_classes": ["timeout", "crash", "rate_limit"],
+      "protocol": "hermes-role-engine/v1"
+    },
+    {
+      "role": "reviewer",
+      "preferred_backend": "claude",
+      "required_capabilities": ["structured_verdict", "artifact_review"],
+      "fallback_backends": [],
+      "fallback_allowed_failure_classes": ["timeout", "crash", "rate_limit"],
+      "protocol": "hermes-role-engine/v1"
+    }
+  ]
+}
