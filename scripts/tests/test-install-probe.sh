@@ -45,6 +45,11 @@ assert_executable "$LOCAL_BIN_DIR/orch-init" "orch-init not linked"
 assert_executable "$LOCAL_BIN_DIR/orch-profile-sync" "orch-profile-sync not linked"
 assert_executable "$LOCAL_BIN_DIR/orch-risk-check" "orch-risk-check not linked"
 assert_executable "$LOCAL_BIN_DIR/orch-verify" "orch-verify not linked"
+assert_executable "$LOCAL_BIN_DIR/orch-gateway" "orch-gateway not linked"
+assert_executable "$LOCAL_BIN_DIR/orch-mvp-wizard" "orch-mvp-wizard not linked"
+assert_file_exists "$ORCHESTRA_HOME/lib/orch_gateway.py" "Gateway Python library not installed"
+"$LOCAL_BIN_DIR/orch-gateway" --help >/tmp/orch-gateway-help.out
+assert_contains "project-id PROJECT_ID" /tmp/orch-gateway-help.out "installed orch-gateway should load"
 assert_file_exists "$ORCHESTRA_HOME/profile-distribution/distribution.yaml" "profile distribution not installed"
 
 test_done

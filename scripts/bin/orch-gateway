@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORCHESTRA_HOME="${ORCHESTRA_HOME:-$HOME/.hermes-orchestra}"
+if [ -f "$ORCHESTRA_HOME/lib/orch_gateway.py" ]; then
+    exec python3 "$ORCHESTRA_HOME/lib/orch_gateway.py" "$@"
+fi
+exec python3 "$SCRIPT_DIR/../lib/orch_gateway.py" "$@"

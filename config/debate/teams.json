@@ -1,0 +1,22 @@
+{
+  "schema_version": "orchestra.v1",
+  "artifact_type": "debate_team_registry",
+  "teams": [
+    {"id": "architecture", "name": "Architecture", "focus": "module boundaries and technical direction"},
+    {"id": "security", "name": "Security", "focus": "authority, secrets, and forbidden write boundaries"},
+    {"id": "product", "name": "Product", "focus": "user value and acceptance criteria"},
+    {"id": "ux", "name": "UX", "focus": "workflow ergonomics and clarity"},
+    {"id": "data", "name": "Data", "focus": "state, audit, cache, and artifact integrity"},
+    {"id": "testing", "name": "Testing", "focus": "test strategy and executable evidence"},
+    {"id": "operations", "name": "Operations", "focus": "local runtime and failure handling"},
+    {"id": "reliability", "name": "Reliability", "focus": "recovery, idempotency, and retries"},
+    {"id": "performance", "name": "Performance", "focus": "latency and resource use"},
+    {"id": "maintainability", "name": "Maintainability", "focus": "simplicity and change risk"},
+    {"id": "integration", "name": "Integration", "focus": "Hermes Kanban and upstream boundaries"},
+    {"id": "privacy", "name": "Privacy", "focus": "redaction and local evidence boundaries"},
+    {"id": "compliance", "name": "Compliance", "focus": "policy and approval boundaries"},
+    {"id": "devex", "name": "Developer Experience", "focus": "CLI usability and diagnosis"},
+    {"id": "documentation", "name": "Documentation", "focus": "operator-facing docs and closeout"},
+    {"id": "release", "name": "Release", "focus": "ship readiness and rollback"}
+  ]
+}

@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.hermes-orchestra/schemas/orchestra.schema.json",
+  "title": "Hermes Orchestra MVP Schemas",
+  "type": "object",
+  "$defs": {
+    "artifact_reference": {
+      "type": "string",
+      "pattern": "^(state://runs/[^/]+/.+|audit://.+|cache://sha256:[A-Fa-f0-9]+|repo://\\.workflow/knowledge/.+)$"
+    },
+    "run_create_request": {
+      "type": "object",
+      "required": ["idempotency_key"],
+      "anyOf": [{"required": ["intent"]}, {"required": ["ticket"]}],
+      "properties": {
+        "idempotency_key": {"type": "string", "minLength": 1},
+        "intent": {"type": "string"},
+        "ticket": {"type": "object"},
+        "options": {"type": "object"},
+        "source_run_id": {"type": "string"},
+        "resume_from_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}}
+      },
+      "additionalProperties": true
+    },
+    "run_response": {
+      "type": "object",
+      "required": ["schema_version", "command_id", "idempotency_key", "run_id", "status", "run_uri", "events_url", "tasks_url"],
+      "properties": {
+        "schema_version": {"const": "orchestra.v1"},
+        "command_id": {"type": "string"},
+        "idempotency_key": {"type": "string"},
+        "run_id": {"type": "string"},
+        "status": {"enum": ["queued", "running", "blocked", "failed", "completed", "stopped"]},
+        "source_run_id": {"type": ["string", "null"]},
+        "lineage_ref": {"type": ["string", "null"]},
+        "run_uri": {"$ref": "#/$defs/artifact_reference"},
+        "events_url": {"type": "string"},
+        "tasks_url": {"type": "string"},
+        "event_projection_degraded": {"type": "boolean"},
+        "projection_status": {"enum": ["consistent", "inconsistent", "rebuilt"]},
+        "projection_issue_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}}
+      },
+      "additionalProperties": true
+    },
+    "run_status": {
+      "type": "object",
+      "required": ["schema_version", "run_id", "status", "project", "current_stage", "progress", "artifact_refs"],
+      "properties": {
+        "schema_version": {"const": "orchestra.v1"},
+        "run_id": {"type": "string"},
+        "status": {"enum": ["queued", "running", "blocked", "failed", "completed", "stopped"]},
+        "project": {"type": "string"},
+        "current_stage": {"type": ["string", "null"]},
+        "progress": {"type": "object"},
+        "artifact_refs": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "run_lineage": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "lineage_id", "run_id", "source_run_id", "source_status", "resume_from_refs"],
+      "properties": {
+        "schema_version": {"const": "orchestra.v1"},
+        "artifact_type": {"const": "run_lineage"},
+        "lineage_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "source_run_id": {"type": "string"},
+        "source_status": {"enum": ["failed", "stopped"]},
+        "resume_from_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}}
+      },
+      "additionalProperties": true
+    },
+    "run_failure_report": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "failure_class", "terminal_failure_reason", "failed_stage", "authority_chain_assessment", "preserved_state_refs", "lineage_hint_refs"],
+      "properties": {
+        "schema_version": {"const": "orchestra.v1"},
+        "artifact_type": {"const": "run_failure_report"},
+        "run_id": {"type": "string"},
+        "failure_class": {"type": "string"},
+        "terminal_failure_reason": {"enum": ["authority_chain_corrupt", "critical_artifact_unrecoverable", "unauthorized_write_untrusted", "invariant_unrecoverable"]},
+        "failed_stage": {"type": ["string", "null"]},
+        "failed_task_id": {"type": ["string", "null"]},
+        "authority_chain_assessment": {"type": "object"},
+        "preserved_state_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "lineage_hint_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}}
+      },
+      "additionalProperties": true
+    },
+    "event": {
+      "type": "object",
+      "required": ["schema_version", "seq", "timestamp", "run_id", "type", "severity", "status", "message", "artifact_refs"],
+      "properties": {
+        "schema_version": {"const": "orchestra.event.v1"},
+        "seq": {"type": "integer", "minimum": 1},
+        "timestamp": {"type": "string"},
+        "command_id": {"type": ["string", "null"]},
+        "idempotency_key": {"type": ["string", "null"]},
+        "run_id": {"type": "string"},
+        "task_id": {"type": ["string", "null"]},
+        "stage": {"type": ["string", "null"]},
+        "type": {"enum": ["run_created", "ticket_normalized", "knowledge_stale", "stage_started", "stage_completed", "task_created", "task_started", "task_blocked", "task_completed", "artifact_written", "decision_required", "decision_resolved", "cache_degraded", "debate_degraded", "run_failed", "run_stopped", "run_completed"]},
+        "severity": {"type": "string"},
+        "status": {"type": "string"},
+        "message": {"type": "string"},
+        "artifact_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "decision_id": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "event_query_response": {
+      "type": "object",
+      "required": ["schema_version", "run_id", "since_seq", "limit", "events", "next_seq", "has_more", "projection_status", "event_store_ref"],
+      "properties": {
+        "schema_version": {"const": "orchestra.v1"},
+        "run_id": {"type": "string"},
+        "since_seq": {"type": "integer", "minimum": 0},
+        "limit": {"type": "integer", "minimum": 1},
+        "events": {"type": "array", "items": {"$ref": "#/$defs/event"}},
+        "next_seq": {"type": "integer", "minimum": 1},
+        "has_more": {"type": "boolean"},
+        "projection_status": {"enum": ["consistent", "inconsistent", "rebuilt"]},
+        "event_store_ref": {"$ref": "#/$defs/artifact_reference"}
+      },
+      "additionalProperties": true
+    },
+    "command_record": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "command_id", "idempotency_key", "endpoint", "resource_path", "status", "payload_hash", "planned_side_effects", "steps"],
+      "properties": {
+        "schema_version": {"const": "orchestra.v1"},
+        "artifact_type": {"const": "command_record"},
+        "command_id": {"type": "string"},
+        "idempotency_key": {"type": "string"},
+        "endpoint": {"type": "string"},
+        "resource_path": {"type": "string"},
+        "status": {"enum": ["in_progress", "completed", "failed", "blocked"]},
+        "payload_hash": {"type": "string"},
+        "planned_side_effects": {"type": "array"},
+        "steps": {"type": "array"}
+      },
+      "additionalProperties": true
+    },
+    "command_reconciliation_report": {"type": "object", "required": ["schema_version", "artifact_type", "command_id", "run_id"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"const": "command_reconciliation_report"}, "command_id": {"type": "string"}, "run_id": {"type": "string"}}, "additionalProperties": true},
+    "task_projection": {"type": "object", "required": ["schema_version", "run_id", "projection_status", "tasks"], "properties": {"schema_version": {"const": "orchestra.v1"}, "run_id": {"type": "string"}, "projection_status": {"type": "string"}, "tasks": {"type": "array"}}, "additionalProperties": true},
+    "structured_prd": {"type": "object", "required": ["schema_version", "artifact_type", "run_id", "requirement_summary", "acceptance_criteria", "constraints", "risks", "failure_strategy"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"const": "structured_prd"}, "run_id": {"type": "string"}, "requirement_summary": {"type": "string"}, "acceptance_criteria": {"type": "array"}, "constraints": {}, "risks": {"type": "array"}, "failure_strategy": {"type": "string"}}, "additionalProperties": true},
+    "development_plan": {"type": "object", "required": ["schema_version", "artifact_type", "run_id", "mode", "child_task_dag", "worker_assignment", "workspace_strategy", "parallelism_policy", "test_strategy", "acceptance_criteria"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"const": "development_plan"}, "run_id": {"type": "string"}, "mode": {"enum": ["full", "layout-only", "none"]}, "child_task_dag": {"type": "array"}, "worker_assignment": {"type": "object"}, "workspace_strategy": {"enum": ["kanban_worktree", "direct_project_fallback", "none"]}, "parallelism_policy": {"type": "object", "required": ["top_level_serial", "allowed_parallel_groups", "requires_disjoint_write_sets", "merge_arbitration", "notes"]}, "test_strategy": {"type": "object"}, "acceptance_criteria": {"type": "array"}}, "additionalProperties": true},
+    "debate_report": {"type": "object", "required": ["schema_version", "artifact_type", "debate_id", "run_id", "stage", "backend", "degraded", "mode", "findings", "verdict"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"const": "debate_report"}, "debate_id": {"type": "string"}, "run_id": {"type": "string"}, "stage": {"type": "string"}, "backend": {"type": "string"}, "degraded": {"type": "boolean"}, "mode": {"type": "string"}, "findings": {"type": "array"}, "verdict": {"type": "string"}}, "additionalProperties": true},
+    "stage_report": {"type": "object", "required": ["schema_version", "artifact_type", "run_id", "stage", "status", "input_artifact_refs", "output_artifact_refs", "summary", "created_at"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"enum": ["best_choice_report", "implementation_plan_report", "task_feedback_report", "improvement_report", "global_evaluation_report", "iteration_closeout_report"]}, "run_id": {"type": "string"}, "stage": {"type": "string"}, "status": {"type": "string"}, "input_artifact_refs": {"type": "array"}, "output_artifact_refs": {"type": "array"}, "summary": {"type": "string"}, "created_at": {"type": "string"}}, "additionalProperties": true},
+    "global_evaluation_report": {"type": "object", "required": ["schema_version", "artifact_type", "run_id", "stage", "input_artifact_refs", "structured_prd_ref", "development_plan_ref", "debate_report_refs", "test_execution_refs", "verdict", "warnings", "residual_risks", "blocking_issues", "authority_required", "final_acceptance_ref", "next_actions", "created_at"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"const": "global_evaluation_report"}, "run_id": {"type": "string"}, "stage": {"const": "global_evaluation"}, "structured_prd_ref": {"$ref": "#/$defs/artifact_reference"}, "development_plan_ref": {"$ref": "#/$defs/artifact_reference"}, "verdict": {"enum": ["pass", "pass_with_warnings", "fail", "block"]}, "authority_required": {"type": ["string", "null"]}}, "additionalProperties": true},
+    "improvement_report": {"type": "object", "required": ["schema_version", "artifact_type", "run_id", "stage", "improvement_cycle", "development_plan_ref", "scope_assessment", "created_at"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"const": "improvement_report"}, "run_id": {"type": "string"}, "stage": {"const": "improvement"}, "improvement_cycle": {"type": "integer"}, "development_plan_ref": {"$ref": "#/$defs/artifact_reference"}, "scope_assessment": {"type": "object"}, "created_at": {"type": "string"}}, "additionalProperties": true},
+    "iteration_closeout_report": {"type": "object", "required": ["schema_version", "artifact_type", "run_id", "closeout_kind", "completion_gate"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"const": "iteration_closeout_report"}, "run_id": {"type": "string"}, "closeout_kind": {"enum": ["completed", "stopped_before_completion"]}, "completion_gate": {"type": "object"}}, "additionalProperties": true},
+    "system_improvement_proposals": {"type": "object", "required": ["schema_version", "artifact_type", "run_id", "source_refs", "proposals", "auto_applied_refs", "approval_required"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"const": "system_improvement_proposals"}, "run_id": {"type": "string"}, "source_refs": {"type": "array"}, "proposals": {"type": "array"}, "auto_applied_refs": {"type": "array"}, "approval_required": {"type": "array"}}, "additionalProperties": true},
+    "test_plan": {"type": "object", "required": ["schema_version", "artifact_type", "run_id", "development_plan_ref", "acceptance_criteria_refs", "cases", "execution_requirements", "review_status"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"const": "test_plan"}, "run_id": {"type": "string"}, "development_plan_ref": {"$ref": "#/$defs/artifact_reference"}, "acceptance_criteria_refs": {"type": "array"}, "cases": {"type": "array"}, "execution_requirements": {"type": "object"}, "review_status": {"type": "string"}}, "additionalProperties": true},
+    "test_execution_report": {"type": "object", "required": ["schema_version", "artifact_type", "run_id", "test_plan_ref", "commands", "exit_code", "passed", "failed", "blocked_on_failure", "artifact_refs"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"const": "test_execution_report"}, "run_id": {"type": "string"}, "test_plan_ref": {"$ref": "#/$defs/artifact_reference"}, "commands": {"type": "array"}, "exit_code": {"type": "integer"}, "passed": {"type": "integer"}, "failed": {"type": "integer"}, "blocked_on_failure": {"type": "boolean"}, "artifact_refs": {"type": "array"}}, "additionalProperties": true},
+    "review_or_qa_verdict": {"type": "object", "required": ["schema_version", "artifact_type", "run_id", "task_id", "stage", "review_kind", "verdict", "findings", "authority_required"], "properties": {"schema_version": {"const": "orchestra.v1"}, "artifact_type": {"enum": ["review_report", "qa_report", "re_review_report", "re_qa_report"]}, "run_id": {"type": "string"}, "task_id": {"type": "string"}, "stage": {"type": "string"}, "review_kind": {"enum": ["code_review", "qa", "test_review", "security_review"]}, "verdict": {"enum": ["approve", "request_changes", "reject", "block"]}, "findings": {"type": "array"}, "authority_required": {"enum": ["kimi", "human"]}}, "additionalProperties": true},
+    "worker_response": {"type": "object", "required": ["protocol", "role", "correlation_id", "turn", "status", "next_action", "role_specific_payload", "conversation_context"], "properties": {"protocol": {"const": "hermes-role-engine/v1"}, "role": {"type": "string"}, "correlation_id": {"type": "string"}, "turn": {"type": "integer"}, "status": {"type": "string"}, "next_action": {"enum": ["continue", "request_context", "wait_for_user", "create_tasks", "create_research_task", "block", "complete", "defer_to_human"]}, "role_specific_payload": {"type": "object"}, "conversation_context": {"type": "array"}}, "additionalProperties": true},
+    "state_advancing_worker_output": {"type": "object", "required": ["requested_transition", "artifact_refs", "changed_files", "diff_summary", "write_scope_result", "test_evidence_refs", "risk_notes", "approval_refs"], "properties": {"requested_transition": {"enum": ["none", "task_complete", "task_blocked", "create_child_tasks", "defer_to_human"]}, "artifact_refs": {"type": "array"}, "changed_files": {"type": "array"}, "diff_summary": {"type": "string"}, "write_scope_result": {"type": "object"}, "test_evidence_refs": {"type": "array"}, "risk_notes": {"type": "array"}, "approval_refs": {"type": "array"}}, "additionalProperties": true},
+    "worker_context_envelope": {"type": "object", "required": ["protocol", "run_id", "task_id", "correlation_id", "stage", "role", "selected_backend", "task", "allowed_write_scope", "workspace_strategy", "artifact_refs", "context_bundle_refs", "test_requirements", "output_schema_ref"], "properties": {"protocol": {"const": "hermes-role-engine/v1"}, "run_id": {"type": "string"}, "task_id": {"type": "string"}, "correlation_id": {"type": "string"}, "stage": {"type": "string"}, "role": {"type": "string"}, "selected_backend": {"type": "string"}, "task": {"type": "object"}, "allowed_write_scope": {"type": "object"}, "workspace_strategy": {"type": "string"}, "artifact_refs": {"type": "array"}, "context_bundle_refs": {"type": "array"}, "test_requirements": {"type": "object"}, "output_schema_ref": {"$ref": "#/$defs/artifact_reference"}}, "additionalProperties": true},
+    "worker_context_bundle": {"type": "object", "required": ["schema_version", "bundle_id", "run_id", "task_id", "scope", "source_refs", "summaries", "created_at", "redaction_applied"], "properties": {"schema_version": {"const": "orchestra.v1"}, "bundle_id": {"type": "string"}, "run_id": {"type": "string"}, "task_id": {"type": "string"}, "scope": {"type": "string"}, "source_refs": {"type": "array"}, "summaries": {"type": "array"}, "created_at": {"type": "string"}, "redaction_applied": {"type": "boolean"}}, "additionalProperties": true},
+    "worker_backend_registry_entry": {"type": "object", "required": ["name", "enabled", "available", "compatible_roles", "capabilities"], "properties": {"name": {"type": "string"}, "enabled": {"type": "boolean"}, "available": {"type": "boolean"}, "compatible_roles": {"type": "array"}, "capabilities": {"type": "array"}}, "additionalProperties": true},
+    "worker_role_registry_entry": {"type": "object", "required": ["role", "preferred_backend", "required_capabilities", "fallback_allowed_failure_classes", "protocol"], "properties": {"role": {"type": "string"}, "preferred_backend": {"type": "string"}, "required_capabilities": {"type": "array"}, "fallback_allowed_failure_classes": {"type": "array"}, "protocol": {"const": "hermes-role-engine/v1"}}, "additionalProperties": true},
+    "worker_selection_record": {"type": "object", "required": ["role", "requested_backend", "selected_backend", "matched_capabilities", "adapter_type", "fallback_used", "attempt"], "properties": {"role": {"type": "string"}, "requested_backend": {"type": "string"}, "selected_backend": {"type": "string"}, "matched_capabilities": {"type": "array"}, "adapter_type": {"type": "string"}, "fallback_used": {"type": "boolean"}, "attempt": {"type": "integer"}}, "additionalProperties": true},
+    "decision_request": {"type": "object", "required": ["schema_version", "decision_id", "run_id", "authority_required"], "properties": {"schema_version": {"const": "orchestra.v1"}, "decision_id": {"type": "string"}, "run_id": {"type": "string"}, "authority_required": {"enum": ["kimi", "human"]}}, "additionalProperties": true},
+    "decision_command_request": {"type": "object", "required": ["idempotency_key", "action"], "properties": {"idempotency_key": {"type": "string"}, "action": {"enum": ["approve", "reject", "revise"]}}, "additionalProperties": true},
+    "decision_response": {"type": "object", "required": ["schema_version", "command_id", "idempotency_key", "run_id", "decision_id", "action", "status"], "properties": {"schema_version": {"const": "orchestra.v1"}, "command_id": {"type": "string"}, "idempotency_key": {"type": "string"}, "run_id": {"type": "string"}, "decision_id": {"type": "string"}, "action": {"type": "string"}, "status": {"type": "string"}}, "additionalProperties": true},
+    "stop_run_request": {"type": "object", "required": ["idempotency_key"], "properties": {"idempotency_key": {"type": "string"}, "reason": {"type": "string"}, "force": {"type": "boolean"}}, "additionalProperties": true},
+    "stop_run_response": {"type": "object", "required": ["schema_version", "command_id", "idempotency_key", "run_id", "status", "partial_closeout_ref"], "properties": {"schema_version": {"const": "orchestra.v1"}, "command_id": {"type": "string"}, "idempotency_key": {"type": "string"}, "run_id": {"type": "string"}, "status": {"const": "stopped"}, "partial_closeout_ref": {"$ref": "#/$defs/artifact_reference"}}, "additionalProperties": true},
+    "capabilities_response": {"type": "object", "required": ["schema_version", "gateway", "upstream_api", "kanban", "workers", "roles", "cache", "debaters"], "properties": {"schema_version": {"const": "orchestra.v1"}, "gateway": {"type": "object"}, "upstream_api": {"type": "object"}, "kanban": {"type": "object"}, "workers": {"type": "object"}, "roles": {"type": "object"}, "cache": {"type": "object"}, "debaters": {"type": "object"}}, "additionalProperties": true}
+  }
+}

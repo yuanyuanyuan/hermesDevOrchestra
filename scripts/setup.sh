@@ -165,6 +165,14 @@ cp "$HELPER_LIB_SRC_DIR/orch-common.sh" "$ORCHESTRA_HOME/lib/orch-common.sh"
 chmod +x "$ORCHESTRA_HOME/lib/orch-common.sh"
 log_ok "Helper library installed: $ORCHESTRA_HOME/lib/orch-common.sh"
 
+if [ ! -f "$HELPER_LIB_SRC_DIR/orch_gateway.py" ]; then
+    log_err "Gateway library missing: $HELPER_LIB_SRC_DIR/orch_gateway.py"
+    exit 1
+fi
+cp "$HELPER_LIB_SRC_DIR/orch_gateway.py" "$ORCHESTRA_HOME/lib/orch_gateway.py"
+chmod +x "$ORCHESTRA_HOME/lib/orch_gateway.py"
+log_ok "Gateway library installed: $ORCHESTRA_HOME/lib/orch_gateway.py"
+
 if [ ! -d "$PROFILE_DIST_SRC/profiles" ]; then
     log_err "Profile distribution missing: $PROFILE_DIST_SRC/profiles"
     exit 1
@@ -197,7 +205,7 @@ if [ -d "$PLUGINS_SRC_DIR" ]; then
     log_ok "Hermes plugin assets installed: $ORCHESTRA_HOME/plugins"
 fi
 
-for helper in orch-init orch-start orch-stop orch-status orch-bus-loop orch-profile-sync orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify; do
+for helper in orch-init orch-start orch-stop orch-status orch-bus-loop orch-profile-sync orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify orch-gateway orch-mvp-wizard; do
     if [ ! -f "$HELPER_SRC_DIR/$helper" ]; then
         log_err "Helper source missing: $HELPER_SRC_DIR/$helper"
         exit 1
@@ -206,7 +214,7 @@ for helper in orch-init orch-start orch-stop orch-status orch-bus-loop orch-prof
     cp "$HELPER_SRC_DIR/$helper" "$ORCHESTRA_BIN_DIR/$helper"
 done
 
-for helper in orch-init orch-start orch-stop orch-status orch-profile-sync orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify; do
+for helper in orch-init orch-start orch-stop orch-status orch-profile-sync orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify orch-gateway orch-mvp-wizard; do
     install_helper_link "$helper"
 done
 
