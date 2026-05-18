@@ -1,8 +1,8 @@
 ---
 name: my-pr-review-response
 description: >
-  作为 PR 发起人处理所有 review threads：逐项审查、逐条修复或反驳、
-  在原 thread 下回复、提交代码、生成响应汇总报告，并请求 reviewer 重新 review。
+  作为 PR 发起人处理所有 review 意见：逐项审查、逐条修复或反驳、
+  以 PR Comment 方式发送修复结果和反驳说明，提交代码、生成响应汇总报告，并请求 reviewer 重新 review。
   发起人身份：stark-007。
 ---
 
@@ -11,12 +11,12 @@ description: >
 ## 触发条件
 
 当用户要求以下任一操作时激活本 Skill：
-- "respond to review threads"
+- "respond to review"
 - "address review comments"
-- "处理 review threads"
-- "修复 PR review 意见"
+- "处理 review 意见"
+- "修复 PR review 问题"
 - "回复 PR review"
-- 任何涉及对已收到 review threads 进行响应的请求
+- 任何涉及对已收到 review 意见进行响应的请求
 
 ## 调用签名
 
@@ -46,7 +46,6 @@ my-pr-review-response <PR_NUMBER>
 | `${BRANCH}` | `gh pr view ${PR_NUMBER} --json headRefName --jq '.headRefName'` |
 | `${REPO_DIR}` | 当前工作目录（`$(pwd)`） |
 | `${REVIEW_LOG}` | `/tmp/pr-review-response-${PR_NUMBER}.md` |
-| `${THREADS_JSON}` | `/tmp/pr-existing-threads-${PR_NUMBER}.json` |
 
 ---
 
@@ -64,16 +63,21 @@ BRANCH=$(gh pr view ${PR_NUMBER} --json headRefName --jq '.headRefName')
 gh pr view ${PR_NUMBER} --json number,title,body,headRefName,baseRefName,reviewDecision,mergeable
 ```
 
-**步骤 B — 读取所有 Review Threads**
+**步骤 B — 读取 Review 意见**
+
+获取该 PR 上最新的 REQUEST_CHANGES review（提取问题列表）以及所有 PR comments：
 
 ```bash
-gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/comments \
-  --jq '.[] | {id: .id, path: .path, line: .line, body: .body, user: .user.login, in_reply_to_id: .in_reply_to_id, created_at: .created_at}' \
-  > ${THREADS_JSON}
+gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
+  --jq '.[] | {id: .id, state: .state, body: .body, user: .user.login, submitted_at: .submitted_at}' \
+  > /tmp/pr-reviews-${PR_NUMBER}.json
 
-# 统计 thread 数量（in_reply_to_id 为 null 的是 thread 起点）
-cat ${THREADS_JSON} | jq 'select(.in_reply_to_id == null) | .id' | wc -l
+gh api repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments \
+  --jq '.[] | {id: .id, body: .body, user: .user.login, created_at: .created_at}' \
+  > /tmp/pr-comments-${PR_NUMBER}.json
 ```
+
+重点关注 `state == "CHANGES_REQUESTED"` 的 review body 中的发现项清单。
 
 **步骤 C — 读取 PR reviews 整体状态**
 
@@ -93,13 +97,13 @@ git checkout ${BRANCH}
 
 ---
 
-### 阶段 2：逐项审查（REVIEW THREAD TRIAGE）
+### 阶段 2：逐项审查（REVIEW FINDING TRIAGE）
 
-对每个 review thread（以 `in_reply_to_id == null` 的评论为起点），按以下决策树处理：
+对 review body 中提取的每个发现项（问题），按以下决策树处理：
 
 **1. 理解意见：**
-- 引用 thread 原文（含 reviewer 用户名、行号、文件路径）
-- 读取该 thread 下的所有回复（如果有后续讨论）
+- 引用 reviewer 原文（含 reviewer 用户名、文件路径、行号）
+- 读取该问题相关的上下文和讨论（PR comments 中的补充说明）
 - 判断意见类型：`bug` / `style` / `architecture` / `doc` / `test`
 
 **2. 验证意见：**
@@ -113,12 +117,12 @@ git checkout ${BRANCH}
 
 ---
 
-### 阶段 3：修复流水线（AGREE → FIX → REPLY TO THREAD）
+### 阶段 3：修复流水线（AGREE → FIX → COMMENT）
 
-对每条同意的 review thread：
+对每条同意的 review 意见：
 
 **步骤 A — 修复代码**
-- 修改对应文件，确保修复精确对应 thread 指出的问题
+- 修改对应文件，确保修复精确对应 review 意见指出的问题
 - 优先采用最小改动原则
 - 修复后运行相关测试（对应模块）
 
@@ -127,41 +131,44 @@ git checkout ${BRANCH}
 - 运行完整测试套件（如果涉及核心逻辑）
 - 记录验证命令和输出到 `${REVIEW_LOG}`
 
-**步骤 C — 在 Thread 下回复（关键：使用 reply API，不是普通 PR comment）**
+**步骤 C — 在 PR 下回复修复结果（发 Comment）**
+
+修复提交后，针对该问题发一条 PR comment 说明：
 
 ```bash
-# 获取该 thread 的起点 comment_id（in_reply_to_id == null 的那个）
-THREAD_ROOT_ID=$(jq -r --arg path "${FILE_PATH}" --argjson line "${LINE_NUM}" 'select(.path==$path and .line==$line and .in_reply_to_id==null) | .id' ${THREADS_JSON})
+gh pr comment ${PR_NUMBER} --body "✅ 已修复 review 意见。
 
-# 在该 thread 下回复修复说明
-gh api repos/${OWNER}/${REPO}/pulls/comments/${THREAD_ROOT_ID}/replies \
-  --method POST \
-  --field body="✅ 已修复。\n\n修改内容：${CHANGE_SUMMARY}\n\n验证：${VERIFY_COMMAND} 结果 exit 0。\n\nCommit: $(git rev-parse HEAD)"
+**文件**: ${FILE_PATH}:${LINE_NUM}
+**问题**: ${ISSUE_SUMMARY}
+
+**修改内容**: ${CHANGE_SUMMARY}
+**验证**: ${VERIFY_COMMAND} 结果 exit 0。
+**Commit**: $(git rev-parse HEAD)"
 ```
 
 **步骤 D — 提交代码**
 
 ```bash
 git add .
-git commit -m "fix(review): address review thread on ${FILE_PATH}:${LINE_NUM} — ${BRIEF_DESC}"
+git commit -m "fix(review): address review finding on ${FILE_PATH}:${LINE_NUM} — ${BRIEF_DESC}"
 git push origin ${BRANCH}
 ```
 
 **步骤 E — 标记响应**
 
 在 `${REVIEW_LOG}` 中记录：
-- Thread ID: `${THREAD_ROOT_ID}`
+- 问题摘要: ${ISSUE_SUMMARY}
 - 文件:行号: `${FILE_PATH}:${LINE_NUM}`
 - 决策：AGREE
 - 修复文件及 diff 摘要
 - 验证结果
-- Reply 链接: `https://github.com/${OWNER}/${REPO}/pull/${PR_NUMBER}#discussion_r${THREAD_ROOT_ID}`
+- PR Comment 时间戳（发完后记录）
 
 ---
 
-### 阶段 4：反驳流水线（DISAGREE → COUNTER → REPLY TO THREAD）
+### 阶段 4：反驳流水线（DISAGREE → COUNTER → COMMENT）
 
-对每条不同意的 review thread，必须满足反驳门槛（缺一不可）：
+对每条不同意的 review 意见，必须满足反驳门槛（缺一不可）：
 
 **反驳门槛检查清单：**
 - [ ] 有代码/文档证据：引用现有代码、测试输出、ADR、SPEC 证明当前实现正确
@@ -172,7 +179,7 @@ git push origin ${BRANCH}
 
 在 `${REVIEW_LOG}` 中撰写结构化反驳：
 ```markdown
-## Review Thread [ID] on ${FILE_PATH}:${LINE_NUM}
+## Review Finding on ${FILE_PATH}:${LINE_NUM}
 > [引用 reviewer 原文]
 
 ### 决策：DISAGREE
@@ -186,61 +193,65 @@ git push origin ${BRANCH}
 建议 reviewer 重新考虑，或针对 [具体点] 进一步讨论。
 ```
 
-**步骤 B — 在 Thread 下回复反驳（关键：使用 reply API）**
+**步骤 B — 发 PR Comment 进行反驳**
 
 ```bash
-THREAD_ROOT_ID=$(jq -r --arg path "${FILE_PATH}" --argjson line "${LINE_NUM}" 'select(.path==$path and .line==$line and .in_reply_to_id==null) | .id' ${THREADS_JSON})
+gh pr comment ${PR_NUMBER} --body "❌ 不同意此 review 意见。
 
-gh api repos/${OWNER}/${REPO}/pulls/comments/${THREAD_ROOT_ID}/replies \
-  --method POST \
-  --field body="❌ 不同意此 review 意见。\n\n理由：${COUNTER_REASON}\n\n证据：${EVIDENCE}\n\n请 reviewer 重新考虑。"
+**文件**: ${FILE_PATH}:${LINE_NUM}
+**问题**: ${ISSUE_SUMMARY}
+
+**理由**: ${COUNTER_REASON}
+**证据**: ${EVIDENCE}
+
+请 reviewer 重新考虑。"
 ```
 
 **步骤 C — 标记响应**
 
 在 `${REVIEW_LOG}` 中记录：
-- Thread ID: `${THREAD_ROOT_ID}`
+- 问题摘要: ${ISSUE_SUMMARY}
 - 文件:行号: `${FILE_PATH}:${LINE_NUM}`
 - 决策：DISAGREE
 - 反驳证据摘要
-- Reply 链接
+- PR Comment 时间戳（发完后记录）
 
 ---
 
 ### 阶段 5：最终交付（DELIVERY）
 
-全部 review threads 处理完毕后：
+全部 review 意见处理完毕后：
 
 **步骤 A — 生成 Review Response 汇总报告**
 
-将 `${REVIEW_LOG}` 整理，发一条 PR 通用评论（非 thread reply）：
+将 `${REVIEW_LOG}` 整理，发一条 PR 通用评论：
 
 ```markdown
 ## Review Response Summary — PR #${PR_NUMBER}
 
-所有 review threads 已处理完毕：
+所有 review 意见已处理完毕：
 
-| Thread | 文件:行号 | 决策 | 状态 |
+| 问题 | 文件:行号 | 决策 | 状态 |
 |--------|-----------|------|------|
-| #id1 | path:line | AGREE | 已修复，已回复 thread |
-| #id2 | path:line | AGREE | 已修复，已回复 thread |
-| #id3 | path:line | DISAGREE | 已反驳，已回复 thread |
+| #id1 | path:line | AGREE | 已修复，已发 comment |
+| #id2 | path:line | AGREE | 已修复，已发 comment |
+| #id3 | path:line | DISAGREE | 已反驳，已发 comment |
 
 - 同意项：N 项，已修复并提交，Commit range: [first-hash..last-hash]
-- 不同意项：M 项，理由已回复到对应 thread，请 reviewer 查看
+- 不同意项：M 项，理由已发 comment 说明，请 reviewer 查看
 - 待讨论项：K 项，需要 reviewer 进一步澄清
 
 请 reviewer 重新 review。如有需要，可点击 "Re-request review" 按钮。
 ```
 
-**步骤 B — 请求重新 Review（PR 通用评论 + 标签）**
+**步骤 B — 发送 Review Response 汇总报告（PR Comment）**
 
 ```bash
 gh pr comment ${PR_NUMBER} --body-file /tmp/pr-response-summary-${PR_NUMBER}.md
 gh pr edit ${PR_NUMBER} --add-label "awaiting-review"
 ```
 
-注意：PR 作者无法通过 API 触发 "Re-request review" 按钮（这是 GitHub UI 功能），但可以在评论中 @ 原 reviewer。
+注意：PR 作者无法通过 API 触发 "Re-request review" 按钮（这是 GitHub UI 功能），但可以在汇总评论中 @ 原 reviewer。
 
 **步骤 C — 验证 PR 可合并状态**
 - 运行完整测试套件确认无回归
@@ -252,12 +263,12 @@ gh pr edit ${PR_NUMBER} --add-label "awaiting-review"
 ### 阶段 6：约束与边界（CONSTRAINTS）
 
 **硬性约束：**
-- 不修改 PR 范围外的文件（仅修复 review thread 涉及的文件）
+- 不修改 PR 范围外的文件（仅修复 review 涉及的文件）
 - 不引入新依赖（除非 review 明确要求且已论证）
 - 不重构未 review 的代码（最小改动原则）
-- 不自动合并 PR（仅处理 review threads，等待 reviewer 确认）
+- 不自动合并 PR（仅处理 review 意见，等待 reviewer 确认）
 - 反驳必须有证据，禁止主观感受式反驳
-- 必须在原 thread 下回复（使用 reply API），禁止只发普通 PR comment 而不回复 thread
+- 必须以 PR Comment 方式回复每条修复或反驳结果，禁止只修改代码而不发评论说明
 
 **写权限边界（可修改）：**
 - PR diff 中涉及的所有文件
@@ -266,8 +277,8 @@ gh pr edit ${PR_NUMBER} --add-label "awaiting-review"
 - `/tmp/pr-response-summary-*.md`
 
 **只读边界（禁止写入）：**
-- `scripts/lib/orch_gateway.py`（除非 review thread 明确要求修改）
-- `config/schemas/orchestra.full.schema.json`（除非 review thread 明确要求修改）
+- `scripts/lib/orch_gateway.py`（除非 review 意见明确要求修改）
+- `config/schemas/orchestra.full.schema.json`（除非 review 意见明确要求修改）
 - 其他 Sprint 的配置和测试脚本
 
 ---
@@ -275,15 +286,15 @@ gh pr edit ${PR_NUMBER} --add-label "awaiting-review"
 ### 阶段 7：止损条件（BLOCKED STOP）
 
 **立即停止并报告 blocker 的情况：**
-- review thread 涉及文件不在当前 PR 中，且无法定位
+- review 意见涉及文件不在当前 PR 中，且无法定位
 - 修复后测试持续失败 3 次，且失败与 review 修复无关
 - reviewer 意见自相矛盾，无法同时满足
-- `gh` CLI 不可用，无法回复 thread 或推送代码
+- `gh` CLI 不可用，无法发 comment 或推送代码
 - PR 存在未解决的合并冲突，无法推送修复
-- 无法获取 thread 的起点 comment_id（`in_reply_to_id == null` 的评论）
+- 无法从 review body 中解析出明确的问题清单
 
 **报告格式（必须包含）：**
-- Blocker 类型：`out-of-scope` / `test-env-conflict` / `contradictory-review` / `tool-unavailable` / `merge-conflict` / `thread-lost`
-- 涉及的 thread ID / 文件路径 / 行号
+- Blocker 类型：`out-of-scope` / `test-env-conflict` / `contradictory-review` / `tool-unavailable` / `merge-conflict` / `unclear-review`
+- 涉及的问题摘要 / 文件路径 / 行号
 - 已尝试的处理方式
 - 解锁所需的人类输入
