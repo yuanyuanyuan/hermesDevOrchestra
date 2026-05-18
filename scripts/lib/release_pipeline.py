@@ -248,7 +248,8 @@ class ReleasePipeline:
         argv = command.get("argv")
         if not isinstance(argv, list) or not argv or not all(isinstance(item, str) and item for item in argv):
             raise ReleasePipelineError("config_invalid", f"{command_ref} argv must be a non-empty list of strings")
-        if argv[0] in _SHELL_LAUNCHERS:
+        argv0 = argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if argv0 in _SHELL_LAUNCHERS:
             raise ReleasePipelineError("unsafe_command", f"{command_ref} uses a forbidden shell launcher")
 
         cwd_ref = command.get("cwd_ref")
@@ -261,6 +262,19 @@ class ReleasePipeline:
         unknown_env = [item for item in env_allowlist if item not in _ALLOWED_ENV_VARS]
         if unknown_env:
             raise ReleasePipelineError("unsafe_command", f"{command_ref} env_allowlist includes forbidden vars: {unknown_env}")
+
+        approval_policy = command.get("approval_policy")
+        if not isinstance(approval_policy, dict):
+            raise ReleasePipelineError("config_invalid", f"{command_ref} approval_policy must be an object")
+        if (
+            approval_policy.get("fixed_phrase_required") is True
+            and approval_policy.get("approval_refs_required_before_execution") is not True
+            and approval_policy.get("authority_required") == "none"
+        ):
+            raise ReleasePipelineError(
+                "config_invalid",
+                f"{command_ref} fixed_phrase_required cannot be enabled without an approval gate",
+            )
 
     def _validate_definition(self, definition_name: str, artifact: dict[str, Any]) -> None:
         try:

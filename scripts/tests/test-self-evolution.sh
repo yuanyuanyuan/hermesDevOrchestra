@@ -159,6 +159,22 @@ with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = Path(tmp)
     prepare_active_repo(tmp_repo)
     queue = SelfEvolutionQueue(tmp_repo, allow_staged=True)
+    cross_run = queue.generate_cross_run_review(
+        run_id="run-cross-review",
+        source_run_ids=["run-self-1", "run-self-2"],
+        source_refs=["state://runs/run-self-1/closeout.json"],
+        proposals=[non_protected_proposal()],
+        trigger_matches=["review_or_qa_same_class_repeated"],
+    )
+    validate_artifact_definition(tmp_repo, "system_improvement_proposals", cross_run)
+    assert cross_run["trigger_type"] == "manual_cross_run_review", cross_run
+    assert cross_run["source_scope"] == "cross_run", cross_run
+    assert cross_run["source_run_ids"] == ["run-self-1", "run-self-2"], cross_run
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = Path(tmp)
+    prepare_active_repo(tmp_repo)
+    queue = SelfEvolutionQueue(tmp_repo, allow_staged=True)
     artifact = queue.generate_stage6_sweep(
         run_id="run-self-1",
         source_refs=[
@@ -207,6 +223,34 @@ with tempfile.TemporaryDirectory() as tmp:
     )
     assert protected_item["status"] == "applied", protected_item
 
+    protected_supersede_item = queue.transition(
+        next(item for item in enqueued["queue_items"] if item["protected_target_class"] == "root_rules"),
+        "under_review",
+    )
+    protected_supersede_item = queue.transition(
+        protected_supersede_item,
+        "accepted",
+        decision_ref="state://runs/run-self-1/decisions/rules-accept-for-supersede.json",
+        kimi_review_ref="state://runs/run-self-1/reviews/kimi-rules-review.json",
+        human_approval_ref="state://runs/run-self-1/approvals/rules.json",
+    )
+    expect_error(
+        "transition_invalid",
+        lambda: queue.transition(
+            protected_supersede_item,
+            "superseded",
+            decision_ref="state://runs/run-self-1/decisions/rules-superseded.json",
+        ),
+    )
+    protected_supersede_item = queue.transition(
+        protected_supersede_item,
+        "superseded",
+        decision_ref="state://runs/run-self-1/decisions/rules-superseded.json",
+        kimi_review_ref="state://runs/run-self-1/reviews/kimi-rules-review.json",
+        human_approval_ref="state://runs/run-self-1/approvals/rules.json",
+    )
+    assert protected_supersede_item["status"] == "superseded", protected_supersede_item
+
     non_protected_item = queue.transition(non_protected_item, "under_review")
     non_protected_item = queue.transition(
         non_protected_item,
@@ -227,6 +271,30 @@ with tempfile.TemporaryDirectory() as tmp:
         trigger_matches=["decision_exposed_rule_or_doc_gap"],
     )
     expect_error("queue_bypass_forbidden", lambda: queue.enqueue(artifact))
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = Path(tmp)
+    prepare_active_repo(tmp_repo)
+    queue = SelfEvolutionQueue(tmp_repo, allow_staged=True)
+    artifact = queue.generate_stage6_sweep(
+        run_id="run-guards",
+        source_refs=["state://runs/run-guards/closeout.json"],
+        proposals=[non_protected_proposal()],
+        trigger_matches=["review_or_qa_same_class_repeated"],
+    )
+    queue._validate_definition = lambda *args, **kwargs: None
+
+    candidate_bypass = dict(artifact)
+    candidate_bypass["candidate_only"] = False
+    expect_error("queue_bypass_forbidden", lambda: queue.enqueue(candidate_bypass))
+
+    review_queue_bypass = dict(artifact)
+    review_queue_bypass["review_queue_required"] = False
+    expect_error("queue_bypass_forbidden", lambda: queue.enqueue(review_queue_bypass))
+
+    auto_applied_bypass = dict(artifact)
+    auto_applied_bypass["auto_applied_refs"] = ["state://runs/run-guards/applied.json"]
+    expect_error("queue_bypass_forbidden", lambda: queue.enqueue(auto_applied_bypass))
 PY
 
 test_done

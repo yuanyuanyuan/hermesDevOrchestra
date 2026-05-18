@@ -155,7 +155,10 @@ class SelfEvolutionQueue:
             raise SelfEvolutionError("transition_invalid", "decision_ref is required for review outcomes")
         if next_status == "rejected" and not rejection_reason:
             raise SelfEvolutionError("transition_invalid", "rejection_reason is required for rejected items")
-        if queue_item.get("human_approval_required") and next_status in {"accepted", "applied"}:
+        terminal_states = set(policy["status_machine"]["terminal_states"])
+        if policy["status_machine"].get("decision_ref_required_for_terminal") is True and next_status in terminal_states and not decision_ref:
+            raise SelfEvolutionError("transition_invalid", "decision_ref is required for terminal states")
+        if queue_item.get("human_approval_required") and next_status in {"accepted", "applied", "superseded"}:
             if not kimi_review_ref or not human_approval_ref:
                 raise SelfEvolutionError(
                     "transition_invalid",

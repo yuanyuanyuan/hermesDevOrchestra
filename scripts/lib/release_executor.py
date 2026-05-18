@@ -6,6 +6,7 @@ import os
 import re
 import signal
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,10 @@ _SECRET_PATTERNS = [
     re.compile(r"(?i)\b(secret|token|password|api[_-]?key)(\s*[:=]\s*|\s+)([^\s]+)"),
 ]
 _ABSOLUTE_PATH_PATTERN = re.compile(r"(^|[\s=])(/[A-Za-z0-9._~/-]+)")
+_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+_CAPTURE_LIMIT_BYTES = 1024 * 1024
+_CAPTURE_CHUNK_BYTES = 8192
+_TRUNCATED_MARKER = "[OUTPUT_TRUNCATED]"
 
 
 class ReleaseExecutorError(Exception):
@@ -67,6 +72,8 @@ class ReleaseExecutor:
             raise ReleaseExecutorError("module_disabled", "release executor is disabled")
         if not isinstance(run_id, str) or not run_id:
             raise ReleaseExecutorError("validation_error", "run_id must be a non-empty string")
+        if _RUN_ID_PATTERN.fullmatch(run_id) is None:
+            raise ReleaseExecutorError("validation_error", "run_id contains invalid path characters")
 
         if test_execution_report_refs is None:
             test_execution_report_refs = []
@@ -138,8 +145,9 @@ class ReleaseExecutor:
             raise ReleaseExecutorError("approval_required", "approval_ref is required before execution")
         if approval_ref is not None and (not isinstance(approval_ref, str) or not approval_ref):
             raise ReleaseExecutorError("validation_error", "approval_ref must be a non-empty string")
-        if policy.get("fixed_phrase_required") and approval_ref is not None and "fixed-phrase:" not in approval_ref:
-            raise ReleaseExecutorError("approval_required", "approval_ref must include a fixed-phrase confirmation")
+        if policy.get("fixed_phrase_required"):
+            if not isinstance(approval_ref, str) or not approval_ref or "fixed-phrase:" not in approval_ref:
+                raise ReleaseExecutorError("approval_required", "approval_ref must include a fixed-phrase confirmation")
 
     def _resolve_cwd(self, cwd_ref: str) -> Path:
         if cwd_ref == "project://root":
@@ -167,7 +175,7 @@ class ReleaseExecutor:
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                text=False,
                 shell=False,
             )
         except FileNotFoundError as exc:
@@ -176,27 +184,39 @@ class ReleaseExecutor:
             raise ReleaseExecutorError("execution_failed", f"command failed to start: {exc}") from exc
 
         timed_out = False
-        stdout = ""
-        stderr = ""
+        stdout_capture = {"buffer": bytearray(), "truncated": False}
+        stderr_capture = {"buffer": bytearray(), "truncated": False}
+        stdout_thread = threading.Thread(
+            target=self._capture_stream,
+            args=(process.stdout, stdout_capture),
+            daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=self._capture_stream,
+            args=(process.stderr, stderr_capture),
+            daemon=True,
+        )
+        stdout_thread.start()
+        stderr_thread.start()
         try:
-            stdout, stderr = process.communicate(timeout=timeout_seconds)
-        except subprocess.TimeoutExpired as exc:
+            process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
             timed_out = True
-            stdout = self._coerce_text(exc.stdout)
-            stderr = self._coerce_text(exc.stderr)
             self._send_signal(process, str(kill_policy["graceful_signal"]))
             try:
-                more_stdout, more_stderr = process.communicate(timeout=int(kill_policy["graceful_timeout_seconds"]))
-            except subprocess.TimeoutExpired as graceful_exc:
-                stdout += self._coerce_text(graceful_exc.stdout)
-                stderr += self._coerce_text(graceful_exc.stderr)
-                process.kill()
+                process.wait(timeout=int(kill_policy["graceful_timeout_seconds"]))
+            except subprocess.TimeoutExpired:
+                self._send_signal(process, str(kill_policy.get("force_signal", "KILL")))
                 try:
-                    more_stdout, more_stderr = process.communicate(timeout=max(1, int(kill_policy["force_timeout_seconds"])))
+                    process.wait(timeout=max(1, int(kill_policy["force_timeout_seconds"])))
                 except subprocess.TimeoutExpired:
-                    more_stdout, more_stderr = "", ""
-            stdout += self._coerce_text(more_stdout)
-            stderr += self._coerce_text(more_stderr)
+                    process.kill()
+                    process.wait()
+
+        stdout_thread.join()
+        stderr_thread.join()
+        stdout = self._decode_captured_output(stdout_capture)
+        stderr = self._decode_captured_output(stderr_capture)
 
         finished_at = self._timestamp()
         duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
@@ -226,9 +246,16 @@ class ReleaseExecutor:
 
         redacted = text
         if redaction_policy.get("redact_env_not_in_allowlist"):
-            for key, value in self.runtime_env.items():
-                if key in allowed_env or not value:
-                    continue
+            secret_values = sorted(
+                {
+                    value
+                    for key, value in self.runtime_env.items()
+                    if key not in allowed_env and value
+                },
+                key=len,
+                reverse=True,
+            )
+            for value in secret_values:
                 redacted = redacted.replace(value, "[REDACTED_SECRET]")
         if redaction_policy.get("redact_secrets"):
             for pattern in _SECRET_PATTERNS:
@@ -237,12 +264,28 @@ class ReleaseExecutor:
             redacted = _ABSOLUTE_PATH_PATTERN.sub(lambda match: f"{match.group(1)}[REDACTED_PATH]", redacted)
         return redacted
 
-    def _coerce_text(self, value: str | bytes | None) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, bytes):
-            return value.decode("utf-8", errors="replace")
-        return value
+    def _capture_stream(self, stream: Any, capture: dict[str, Any]) -> None:
+        if stream is None:
+            return
+        try:
+            while True:
+                chunk = stream.read(_CAPTURE_CHUNK_BYTES)
+                if not chunk:
+                    break
+                remaining = _CAPTURE_LIMIT_BYTES - len(capture["buffer"])
+                if remaining > 0:
+                    capture["buffer"].extend(chunk[:remaining])
+                if remaining < len(chunk):
+                    capture["truncated"] = True
+        finally:
+            stream.close()
+
+    def _decode_captured_output(self, capture: dict[str, Any]) -> str:
+        text = bytes(capture["buffer"]).decode("utf-8", errors="replace")
+        if capture["truncated"]:
+            separator = "" if not text or text.endswith("\n") else "\n"
+            return f"{text}{separator}{_TRUNCATED_MARKER}"
+        return text
 
     def _store_output(self, run_id: str, stream_name: str, text: str, store: str) -> tuple[str, Path]:
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -303,9 +346,9 @@ class ReleaseExecutor:
             "kill_policy": dict(command["kill_policy"]),
             "health_check_refs": list(health_check_refs),
             "gate_results": {
+                **gate_results,
                 "approval_checked": approval_checked,
                 "approval_ref_present": approval_ref is not None,
-                **gate_results,
             },
             "test_execution_report_refs": list(test_execution_report_refs),
             "approval_refs": [approval_ref] if approval_ref is not None else [],

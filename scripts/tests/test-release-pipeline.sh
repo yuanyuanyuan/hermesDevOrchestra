@@ -36,7 +36,7 @@ repo = Path(sys.argv[1])
 sys.path.insert(0, str(repo / "scripts/lib"))
 
 from debate_report import validate_artifact_definition
-from release_executor import ReleaseExecutor, ReleaseExecutorError
+from release_executor import _CAPTURE_LIMIT_BYTES, ReleaseExecutor, ReleaseExecutorError
 from release_pipeline import ReleasePipeline, ReleasePipelineError
 
 
@@ -176,6 +176,64 @@ with tempfile.TemporaryDirectory() as tmp:
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = Path(tmp)
+    prepare_active_repo(
+        tmp_repo,
+        registry_mutator=lambda payload: payload["commands"].append(
+            {
+                "command_ref": "command://release/dev-shell-abs",
+                "enabled": True,
+                "description": "unsafe shell launcher absolute path",
+                "argv": ["/bin/bash", "-lc", "echo hacked"],
+                "cwd_ref": "project://root",
+                "env_allowlist": ["PATH", "HOME"],
+                "timeout_seconds": 5,
+                "kill_policy": {
+                    "graceful_signal": "TERM",
+                    "graceful_timeout_seconds": 1,
+                    "force_signal": "KILL",
+                    "force_timeout_seconds": 1,
+                },
+                "output_capture_policy": {
+                    "store": "cache_artifact",
+                    "stdout_ref_required": True,
+                    "stderr_ref_required": True,
+                    "max_inline_bytes": 0,
+                    "raw_output_in_audit_allowed": False,
+                },
+                "redaction_policy": {
+                    "enabled": True,
+                    "redact_env_not_in_allowlist": True,
+                    "redact_secrets": True,
+                    "redact_absolute_paths": True,
+                },
+                "approval_policy": {
+                    "approval_refs_required_before_execution": False,
+                    "authority_required": "none",
+                    "fixed_phrase_required": False,
+                },
+            }
+        ),
+    )
+    pipeline = ReleasePipeline(tmp_repo, allow_staged=True)
+    expect_error(ReleasePipelineError, "unsafe_command", pipeline.validate_command_refs)
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = Path(tmp)
+    prepare_active_repo(tmp_repo)
+    registry = load_json(tmp_repo / "config/release/commands.json")
+    for entry in registry["commands"]:
+        if entry["command_ref"] == "command://release/dev-test":
+            entry["approval_policy"] = {
+                "approval_refs_required_before_execution": False,
+                "authority_required": "none",
+                "fixed_phrase_required": True,
+            }
+    write_json(tmp_repo / "config/release/commands.json", registry)
+    pipeline = ReleasePipeline(tmp_repo, allow_staged=True)
+    expect_error(ReleasePipelineError, "config_invalid", pipeline.validate_command_refs)
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = Path(tmp)
     scripts_dir = tmp_repo / "scripts"
     success_script = write_script(
         scripts_dir / "success.py",
@@ -210,7 +268,9 @@ with tempfile.TemporaryDirectory() as tmp:
     )
     result = executor.execute(
         "command://release/dev-test",
+        approval_ref="state://runs/run-release-success/approvals/manual.json",
         run_id="run-release-success",
+        gate_results={"approval_checked": False, "approval_ref_present": False, "custom_gate": "ok"},
         test_execution_report_refs=["state://runs/run-release-success/tests/report.json"],
     )
     validate_artifact_definition(tmp_repo, "deployment_report", result["deployment_report"])
@@ -224,12 +284,91 @@ with tempfile.TemporaryDirectory() as tmp:
     assert stderr_text == "", stderr_text
     assert result["deployment_report"]["deployment_status"] == "succeeded", result["deployment_report"]
     assert result["deployment_report"]["stdout_ref"].startswith("cache://sha256:"), result["deployment_report"]
+    assert result["deployment_report"]["gate_results"]["approval_checked"] is True, result["deployment_report"]
+    assert result["deployment_report"]["gate_results"]["approval_ref_present"] is True, result["deployment_report"]
+    assert result["deployment_report"]["gate_results"]["custom_gate"] == "ok", result["deployment_report"]
     assert result["allowed_env"] == {
         "PATH": os.environ["PATH"],
         "HOME": str(tmp_repo),
         "CI": "1",
         "HERMES_RELEASE_ENV": "dev",
     }, result["allowed_env"]
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = Path(tmp)
+    scripts_dir = tmp_repo / "scripts"
+    binary_script = write_script(
+        scripts_dir / "binary.py",
+        """
+        import sys
+        sys.stdout.buffer.write(b"binary:\\xff\\n")
+        sys.stdout.flush()
+        """,
+    )
+
+    def registry_mutator(payload: dict) -> None:
+        patch_command(payload, "command://release/dev-test", [sys.executable, binary_script])
+
+    prepare_active_repo(tmp_repo, registry_mutator=registry_mutator)
+    executor = ReleaseExecutor(tmp_repo, allow_staged=True)
+    result = executor.execute("command://release/dev-test", run_id="run-release-binary")
+    stdout_text = read_output(Path(result["stdout_path"]))
+    assert "binary:" in stdout_text, stdout_text
+    assert "\ufffd" in stdout_text, stdout_text
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = Path(tmp)
+    scripts_dir = tmp_repo / "scripts"
+    redact_script = write_script(
+        scripts_dir / "redact.py",
+        """
+        print("LEAK=abcdef")
+        """,
+    )
+
+    def registry_mutator(payload: dict) -> None:
+        patch_command(payload, "command://release/dev-test", [sys.executable, redact_script])
+
+    prepare_active_repo(tmp_repo, registry_mutator=registry_mutator)
+    executor = ReleaseExecutor(
+        tmp_repo,
+        allow_staged=True,
+        runtime_env={
+            "PATH": os.environ["PATH"],
+            "HOME": str(tmp_repo),
+            "CI": "1",
+            "HERMES_RELEASE_ENV": "dev",
+            "SHORT_SECRET": "abc",
+            "LONG_SECRET": "abcdef",
+        },
+    )
+    result = executor.execute("command://release/dev-test", run_id="run-release-redact")
+    stdout_text = read_output(Path(result["stdout_path"]))
+    assert "LEAK=[REDACTED_SECRET]" in stdout_text, stdout_text
+    assert "def" not in stdout_text, stdout_text
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = Path(tmp)
+    scripts_dir = tmp_repo / "scripts"
+    big_output_script = write_script(
+        scripts_dir / "big-output.py",
+        """
+        import sys
+        payload = ("A" * (1024 * 1024 + 4096)).encode("utf-8")
+        sys.stdout.buffer.write(payload)
+        sys.stdout.flush()
+        """,
+    )
+
+    def registry_mutator(payload: dict) -> None:
+        patch_command(payload, "command://release/dev-test", [sys.executable, big_output_script])
+
+    prepare_active_repo(tmp_repo, registry_mutator=registry_mutator)
+    executor = ReleaseExecutor(tmp_repo, allow_staged=True)
+    result = executor.execute("command://release/dev-test", run_id="run-release-big-output")
+    stdout_text = read_output(Path(result["stdout_path"]))
+    assert stdout_text.endswith("[OUTPUT_TRUNCATED]"), len(stdout_text)
+    assert len(stdout_text.encode("utf-8")) <= _CAPTURE_LIMIT_BYTES + 64, len(stdout_text.encode("utf-8"))
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = Path(tmp)
@@ -251,6 +390,11 @@ with tempfile.TemporaryDirectory() as tmp:
     result = executor.execute("command://release/dev-test", run_id="run-release-fail")
     assert result["deployment_report"]["deployment_status"] == "failed", result["deployment_report"]
     assert result["deployment_report"]["exit_code"] == 7, result["deployment_report"]
+    expect_error(
+        ReleaseExecutorError,
+        "validation_error",
+        lambda: executor.execute("command://release/dev-test", run_id="../run-release-fail"),
+    )
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = Path(tmp)
