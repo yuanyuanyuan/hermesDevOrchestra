@@ -201,14 +201,14 @@ Blocked stop conditions:
 
 Dependencies on previous sprints:
 
-- [ ] Sprint 0 must be complete and verified.
-- [ ] Sprint 4 must be complete and verified.
+- [x] Sprint 0 must be complete and verified.
+- [x] Sprint 4 must be complete and verified.
 
 Exact files to create:
 
-- [ ] `scripts/lib/worker_session.py`
-- [ ] `scripts/lib/worker_session_sweeper.py`
-- [ ] `scripts/tests/test-worker-session.sh`
+- [x] `scripts/lib/worker_session.py`
+- [x] `scripts/lib/worker_session_sweeper.py`
+- [x] `scripts/tests/test-worker-session.sh`
 
 Verify-only files:
 
@@ -216,19 +216,19 @@ Verify-only files:
 
 Verification commands:
 
-- [ ] `scripts/tests/test-worker-session.sh`
+- [x] `scripts/tests/test-worker-session.sh`
 
 Blocked stop conditions:
 
-- [ ] Stop if lifecycle state transitions are incomplete or invalid.
-- [ ] Stop if session records omit required fields.
-- [ ] Stop if cleanup ownership is not Gateway.
-- [ ] Stop if timeout handling is missing or unclear.
-- [ ] Stop if the sweeper cannot detect and clean timed-out sessions.
-- [ ] Stop if the sweeper cannot detect and clean missing sessions.
-- [ ] Stop if session isolation is missing: unique unpredictable names, per-session tmux socket or `-L`, and 0700 workspace permissions.
-- [ ] Stop if session record schema validation fails.
-- [ ] Stop if `scripts/tests/test-worker-session.sh` fails.
+- [x] Stop if lifecycle state transitions are incomplete or invalid.
+- [x] Stop if session records omit required fields.
+- [x] Stop if cleanup ownership is not Gateway.
+- [x] Stop if timeout handling is missing or unclear.
+- [x] Stop if the sweeper cannot detect and clean timed-out sessions.
+- [x] Stop if the sweeper cannot detect and clean missing sessions.
+- [x] Stop if session isolation is missing: unique unpredictable names, per-session tmux socket or `-L`, and 0700 workspace permissions.
+- [x] Stop if session record schema validation fails.
+- [x] Stop if `scripts/tests/test-worker-session.sh` fails.
 
 ## Sprint 6: Release Pipeline
 
