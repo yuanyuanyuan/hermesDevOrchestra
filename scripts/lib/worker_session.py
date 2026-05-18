@@ -4,6 +4,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -18,9 +19,13 @@ class WorkerSessionError(Exception):
         self.message = message
 
 
+ACTIVE_SESSION_STATUSES = frozenset({"starting", "running", "stopping"})
+TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "timed_out", "abandoned"})
+
+
 class WorkerSessionManager:
-    ACTIVE_STATUSES = {"starting", "running", "stopping"}
-    TERMINAL_STATUSES = {"completed", "failed", "timed_out", "abandoned"}
+    ACTIVE_STATUSES = ACTIVE_SESSION_STATUSES
+    TERMINAL_STATUSES = TERMINAL_SESSION_STATUSES
     ALLOWED_TRANSITIONS = {
         "planned": {"starting", "abandoned"},
         "starting": {"running", "failed", "timed_out", "abandoned"},
@@ -72,38 +77,42 @@ class WorkerSessionManager:
         workspace_path.mkdir(parents=True, exist_ok=False)
         os.chmod(workspace_path, 0o700)
 
-        now = self._now()
-        record = {
-            "schema_version": "orchestra.full.v1",
-            "artifact_type": "worker_session_record",
-            "session_id": session_id,
-            "run_id": run_id,
-            "task_id": task_id,
-            "role": role,
-            "backend_id": backend_id,
-            "workspace_ref": f"state://runs/{run_id}/worker-workspaces/{session_id}.json",
-            "write_scope_ref": write_scope_ref,
-            "context_bundle_ref": context_bundle_ref,
-            "started_at": now,
-            "ended_at": None,
-            "status": "planned",
-            "exit_signal": None,
-            "transcript_ref": transcript_ref or f"state://runs/{run_id}/worker-transcripts/{session_id}.log",
-            "output_envelope_ref": output_envelope_ref,
-            "cleanup_owner": "gateway_worker_session_sweeper",
-            "cleanup_status": "not_started",
-            "timeout_seconds": timeout_seconds,
-            "last_heartbeat_at": None,
-            "termination_reason": None,
-            "workspace_path": str(workspace_path),
-            "tmux_session_name": session_id,
-            "tmux_socket_name": tmux_socket_name,
-            "tmux_launch_args": ["-L", tmux_socket_name, "new-session", "-d", "-s", session_id],
-            "cleanup_attempted_at": None,
-            "cleanup_error": None,
-        }
-        self.validate_record(record)
-        return record
+        try:
+            now = self._now()
+            record = {
+                "schema_version": "orchestra.full.v1",
+                "artifact_type": "worker_session_record",
+                "session_id": session_id,
+                "run_id": run_id,
+                "task_id": task_id,
+                "role": role,
+                "backend_id": backend_id,
+                "workspace_ref": f"state://runs/{run_id}/worker-workspaces/{session_id}.json",
+                "write_scope_ref": write_scope_ref,
+                "context_bundle_ref": context_bundle_ref,
+                "started_at": now,
+                "ended_at": None,
+                "status": "planned",
+                "exit_signal": None,
+                "transcript_ref": transcript_ref or f"state://runs/{run_id}/worker-transcripts/{session_id}.log",
+                "output_envelope_ref": output_envelope_ref,
+                "cleanup_owner": "gateway_worker_session_sweeper",
+                "cleanup_status": "not_started",
+                "timeout_seconds": timeout_seconds,
+                "last_heartbeat_at": None,
+                "termination_reason": None,
+                "workspace_path": str(workspace_path),
+                "tmux_session_name": session_id,
+                "tmux_socket_name": tmux_socket_name,
+                "tmux_launch_args": ["-L", tmux_socket_name, "new-session", "-d", "-s", session_id],
+                "cleanup_attempted_at": None,
+                "cleanup_error": None,
+            }
+            self.validate_record(record)
+            return record
+        except Exception:
+            shutil.rmtree(workspace_path, ignore_errors=True)
+            raise
 
     def transition(
         self,

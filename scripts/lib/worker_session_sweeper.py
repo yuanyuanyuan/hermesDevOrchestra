@@ -3,9 +3,9 @@ from __future__ import annotations
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable, Protocol
 
-from worker_session import WorkerSessionError, WorkerSessionManager
+from worker_session import ACTIVE_SESSION_STATUSES, TERMINAL_SESSION_STATUSES, WorkerSessionError, WorkerSessionManager
 
 
 class WorkerSessionSweeperError(Exception):
@@ -13,6 +13,14 @@ class WorkerSessionSweeperError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class TmuxControllerProtocol(Protocol):
+    def has_session(self, socket_name: str, session_name: str) -> bool: ...
+
+    def send_interrupt(self, socket_name: str, session_name: str) -> bool: ...
+
+    def kill_session(self, socket_name: str, session_name: str) -> bool: ...
 
 
 class TmuxController:
@@ -45,33 +53,36 @@ class TmuxController:
 
 
 class WorkerSessionSweeper:
-    ACTIVE_STATUSES = {"starting", "running", "stopping"}
-    TERMINAL_STATUSES = {"completed", "failed", "timed_out", "abandoned"}
+    ACTIVE_STATUSES = ACTIVE_SESSION_STATUSES
+    TERMINAL_STATUSES = TERMINAL_SESSION_STATUSES
 
     def __init__(
         self,
         repo_root: Path | str,
         clock: Callable[[], datetime] | None = None,
-        tmux_controller: Any | None = None,
+        tmux_controller: TmuxControllerProtocol | None = None,
     ) -> None:
-        self.manager = WorkerSessionManager(repo_root, clock=clock or (lambda: datetime.now(timezone.utc)))
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        clock_fn = clock or (lambda: datetime.now(timezone.utc))
+        self.manager = WorkerSessionManager(repo_root, clock=clock_fn)
+        self._clock = clock_fn
         self.tmux = tmux_controller or TmuxController()
 
     def sweep_directory(self, records_root: Path | str) -> dict[str, int]:
         records_path = Path(records_root)
         if not records_path.exists():
-            return {"updated_records": 0, "timed_out_records": 0, "missing_records": 0}
+            return {"updated_records": 0, "timed_out_records": 0, "missing_records": 0, "invalid_records": 0}
 
         updated_records = 0
         timed_out_records = 0
         missing_records = 0
+        invalid_records = 0
 
         for path in sorted(records_path.glob("*.json")):
             try:
                 record = self.manager.load_record(path)
             except WorkerSessionError as exc:
-                raise WorkerSessionSweeperError("record_invalid", exc.message) from exc
+                invalid_records += 1
+                continue
             updated = self._sweep_record(record)
             if updated is None:
                 continue
@@ -86,6 +97,7 @@ class WorkerSessionSweeper:
             "updated_records": updated_records,
             "timed_out_records": timed_out_records,
             "missing_records": missing_records,
+            "invalid_records": invalid_records,
         }
 
     def _sweep_record(self, record: dict[str, Any]) -> dict[str, Any] | None:
