@@ -117,4 +117,653 @@ for snippet in required_signatures:
     assert snippet in doc, snippet
 PY
 
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+FAKE_BIN="$TMP_DIR/bin"
+make_fake_path "$FAKE_BIN"
+
+cat > "$FAKE_BIN/hermes" <<'SH'
+#!/usr/bin/env bash
+printf '{"status":"ok"}\n'
+SH
+chmod +x "$FAKE_BIN/hermes"
+
+cat > "$FAKE_BIN/codex" <<'SH'
+#!/usr/bin/env bash
+printf 'codex 0.0.0\n'
+SH
+chmod +x "$FAKE_BIN/codex"
+
+cat > "$FAKE_BIN/claude" <<'SH'
+#!/usr/bin/env bash
+printf 'claude 0.0.0\n'
+SH
+chmod +x "$FAKE_BIN/claude"
+
+cat > "$FAKE_BIN/project-release" <<'SH'
+#!/usr/bin/env bash
+printf 'release command stub\n'
+SH
+chmod +x "$FAKE_BIN/project-release"
+
+cat > "$FAKE_BIN/gbrain" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+chmod +x "$FAKE_BIN/gbrain"
+
+export HOME="$TMP_DIR/home"
+export RUNTIME_ROOT="$TMP_DIR/runtime"
+export STATE_ROOT="$TMP_DIR/state"
+export AUDIT_ROOT="$TMP_DIR/audit"
+export CACHE_ROOT="$TMP_DIR/cache"
+mkdir -p "$HOME"
+
+PROJECT_ID="gateway-module-integration"
+PROJECT_DIR="$TMP_DIR/project"
+mkdir -p "$PROJECT_DIR"
+git -C "$PROJECT_DIR" init -q >/dev/null
+"$REPO_ROOT/scripts/bin/orch-init" "$PROJECT_ID" "$PROJECT_DIR" >/dev/null
+
+PORT="$(python3 - <<'PY'
+import socket
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)"
+BASE_URL="http://127.0.0.1:$PORT"
+GATEWAY_LOG="$TMP_DIR/gateway.log"
+"$REPO_ROOT/scripts/bin/orch-gateway" --project-id "$PROJECT_ID" --host 127.0.0.1 --port "$PORT" >"$GATEWAY_LOG" 2>&1 &
+GATEWAY_PID="$!"
+trap 'kill "$GATEWAY_PID" 2>/dev/null || true; rm -rf "$TMP_DIR"' EXIT
+
+python3 - "$BASE_URL/health" "$GATEWAY_LOG" <<'PY'
+import sys
+import time
+import urllib.request
+
+url, log_path = sys.argv[1:]
+deadline = time.time() + 5
+last_error = None
+while time.time() < deadline:
+    try:
+        with urllib.request.urlopen(url, timeout=0.5) as response:
+            if response.status == 200:
+                raise SystemExit(0)
+    except Exception as exc:
+        last_error = exc
+        time.sleep(0.1)
+
+print(open(log_path, encoding="utf-8", errors="replace").read(), file=sys.stderr)
+raise SystemExit(f"gateway did not become healthy: {last_error}")
+PY
+
+python3 - "$BASE_URL" "$REPO_ROOT" "$TMP_DIR" <<'PY'
+import json
+import pathlib
+import sys
+import urllib.error
+import urllib.request
+
+base_url = sys.argv[1]
+repo_root = pathlib.Path(sys.argv[2])
+tmp_dir = pathlib.Path(sys.argv[3])
+
+
+def post(path, body):
+    request = urllib.request.Request(
+        f"{base_url}{path}",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode("utf-8"))
+
+
+with urllib.request.urlopen(f"{base_url}/orchestra/capabilities", timeout=5) as response:
+    assert response.status == 200, response.status
+    capabilities = json.loads(response.read().decode("utf-8"))
+
+specs = {(item["module"], item["operation"]): item for item in capabilities["full_module_endpoints"]}
+routes = set(capabilities["routes"])
+
+required_specs = [
+    ("debate-engine", "create-run"),
+    ("debate-assembly", "select-for-stage"),
+    ("debate-backend-adapter", "select-backend"),
+    ("debate-member-invocation", "execute"),
+    ("debate-report", "build"),
+    ("worker-registry", "load-backends"),
+    ("capability-negotiation", "negotiate"),
+    ("worker-session", "create-session"),
+    ("worker-session-sweeper", "sweep-directory"),
+    ("release-pipeline", "validate-command-refs"),
+    ("release-executor", "execute"),
+    ("runtime-knowledge", "query"),
+    ("knowledge-ingestion", "ingest"),
+    ("self-evolution", "generate-stage6-sweep"),
+    ("performance-slo", "evaluate"),
+    ("fixture-policy", "validate-contract-fixture"),
+    ("degradation-policy", "build-record"),
+    ("full-schema-validation", "validate-all"),
+    ("full-schema-cutover", "plan-artifact-write"),
+]
+for key in required_specs:
+    assert key in specs, key
+    assert specs[key]["route"] in routes, specs[key]
+    assert "authority" in specs[key], specs[key]
+    assert "request_shape" in specs[key], specs[key]
+    assert "response_shape" in specs[key], specs[key]
+
+
+def authority(module, operation):
+    return specs[(module, operation)]["authority"]
+
+
+backend_policy = json.loads((repo_root / "config/debate/full/backend-policy.json").read_text(encoding="utf-8"))
+
+status, registries = post(
+    "/orchestra/modules/debate-engine/load-registries",
+    {"authority": authority("debate-engine", "load-registries"), "allow_staged": True},
+)
+assert status == 200, registries
+assert len(registries["result"]["team_ids"]) == 16, registries
+
+status, run_response = post(
+    "/orchestra/modules/debate-engine/create-run",
+    {
+        "authority": authority("debate-engine", "create-run"),
+        "allow_staged": True,
+        "question": "Should Hermes enable deterministic debate coverage for gateway integration?",
+        "mode_id": "dynamic_assembly",
+    },
+)
+assert status == 200, run_response
+run = run_response["result"]
+
+status, assembly_response = post(
+    "/orchestra/modules/debate-assembly/select-for-stage",
+    {
+        "authority": authority("debate-assembly", "select-for-stage"),
+        "allow_staged": True,
+        "stage": "direction_debate",
+        "task_type": "api_contract",
+        "risk_level": "L2",
+    },
+)
+assert status == 200, assembly_response
+assembly = assembly_response["result"]
+assert assembly["selected_member_ids"], assembly
+
+status, backend_response = post(
+    "/orchestra/modules/debate-backend-adapter/select-backend",
+    {
+        "authority": authority("debate-backend-adapter", "select-backend"),
+        "allow_staged": True,
+        "stage": "direction_debate",
+    },
+)
+assert status == 200, backend_response
+
+input_refs = ["state://runs/demo-run/spec.md"]
+status, invocation_response = post(
+    "/orchestra/modules/debate-member-invocation/build-invocation",
+    {
+        "authority": authority("debate-member-invocation", "build-invocation"),
+        "allow_staged": True,
+        "run": run,
+        "assembly": assembly,
+        "member_id": assembly["selected_member_ids"][0],
+        "input_refs": input_refs,
+        "affected_scopes": ["scripts/lib/orch_gateway.py"],
+    },
+)
+assert status == 200, invocation_response
+
+status, execution_response = post(
+    "/orchestra/modules/debate-member-invocation/execute",
+    {
+        "authority": authority("debate-member-invocation", "execute"),
+        "allow_staged": True,
+        "run": run,
+        "assembly": assembly,
+        "input_refs": input_refs,
+        "affected_scopes": ["scripts/lib/orch_gateway.py"],
+    },
+)
+assert status == 200, execution_response
+execution = execution_response["result"]
+assert execution["opinions"], execution
+
+status, report_response = post(
+    "/orchestra/modules/debate-report/build",
+    {
+        "authority": authority("debate-report", "build"),
+        "run": run,
+        "assembly": assembly,
+        "backend_policy": backend_policy,
+        "invocations": execution["invocations"],
+        "opinions": execution["opinions"],
+        "invocation_receipts": [
+            {
+                "opinion_ref": opinion["artifact_ref"],
+                "status": "completed",
+                "started_at": opinion["created_at"],
+                "finished_at": opinion["created_at"],
+                "retry_count": 0,
+                "degraded": opinion["degraded"],
+                "degradation_status": opinion["degradation_status"],
+                "degradation_record": opinion["degradation_record"],
+                "error_class": None,
+                "timing": {"duration_ms": 1},
+            }
+            for opinion in execution["opinions"]
+        ],
+        "input_refs": input_refs,
+        "affected_scopes": ["scripts/lib/orch_gateway.py"],
+    },
+)
+assert status == 200, report_response
+assert report_response["result"]["report"]["artifact_type"] == "debate_report", report_response
+
+for operation in ("load-backends", "load-roles"):
+    status, body = post(
+        f"/orchestra/modules/worker-registry/{operation}",
+        {"authority": authority("worker-registry", operation), "allow_staged": True},
+    )
+    assert status == 200, body
+
+status, negotiation_response = post(
+    "/orchestra/modules/capability-negotiation/negotiate",
+    {
+        "authority": authority("capability-negotiation", "negotiate"),
+        "allow_staged": True,
+        "role": "implementer",
+        "requested_backend": "codex",
+        "required_capabilities": ["structured_envelope"],
+    },
+)
+assert status == 200, negotiation_response
+assert negotiation_response["result"]["selected_backend"] == "codex", negotiation_response
+
+workspace_root = tmp_dir / "workspaces"
+workspace_root.mkdir(parents=True, exist_ok=True)
+status, session_response = post(
+    "/orchestra/modules/worker-session/create-session",
+    {
+        "authority": authority("worker-session", "create-session"),
+        "run_id": "run-session-1",
+        "task_id": "task-session-1",
+        "role": "implementer",
+        "backend_id": "codex",
+        "workspace_root": str(workspace_root),
+        "write_scope_ref": "state://runs/run-session-1/write-scopes/task-session-1.json",
+        "context_bundle_ref": "state://runs/run-session-1/context/task-session-1.json",
+        "timeout_seconds": 30,
+    },
+)
+assert status == 200, session_response
+session_record = session_response["result"]
+
+status, transition_response = post(
+    "/orchestra/modules/worker-session/transition",
+    {
+        "authority": authority("worker-session", "transition"),
+        "record": session_record,
+        "next_status": "starting",
+    },
+)
+assert status == 200, transition_response
+starting_record = transition_response["result"]
+
+records_root = tmp_dir / "worker-records"
+records_root.mkdir(parents=True, exist_ok=True)
+(records_root / f"{starting_record['session_id']}.json").write_text(json.dumps(starting_record), encoding="utf-8")
+status, sweep_response = post(
+    "/orchestra/modules/worker-session-sweeper/sweep-directory",
+    {
+        "authority": authority("worker-session-sweeper", "sweep-directory"),
+        "records_root": str(records_root),
+    },
+)
+assert status == 200, sweep_response
+assert sweep_response["result"]["updated_records"] >= 1, sweep_response
+
+status, load_pipeline_response = post(
+    "/orchestra/modules/release-pipeline/load-pipeline",
+    {"authority": authority("release-pipeline", "load-pipeline"), "allow_staged": True},
+)
+assert status == 200, load_pipeline_response
+
+status, load_registry_response = post(
+    "/orchestra/modules/release-pipeline/load-registry",
+    {"authority": authority("release-pipeline", "load-registry"), "allow_staged": True},
+)
+assert status == 200, load_registry_response
+
+for path, body in (
+    (
+        "/orchestra/modules/release-pipeline/validate-command-refs",
+        {"authority": authority("release-pipeline", "validate-command-refs"), "allow_staged": True},
+    ),
+    (
+        "/orchestra/modules/release-pipeline/plan",
+        {"authority": authority("release-pipeline", "plan"), "allow_staged": True, "environment": "dev_test"},
+    ),
+    (
+        "/orchestra/modules/release-executor/execute",
+        {
+            "authority": authority("release-executor", "execute"),
+            "allow_staged": True,
+            "command_ref": "command://release/dev-test",
+        },
+    ),
+):
+    status, error_body = post(path, body)
+    assert status == 400, (path, status, error_body)
+    assert error_body["error"]["code"] == "command_disabled", (path, error_body)
+
+knowledge_entry = {
+    "slug": "domain/wechat/routing/navigate-to",
+    "type": "candidate_knowledge",
+    "domain": "wechat",
+    "topic": "routing",
+    "source_type": "official_documentation",
+    "source_refs": [
+        "https://developers.weixin.qq.com/miniprogram/en/dev/framework/app-service/route.html"
+    ],
+    "confidence": "medium",
+    "freshness": "current",
+    "valid_from": "2026-05-18T00:00:00Z",
+    "last_verified_at": None,
+    "tags": ["runtime", "wechat"],
+    "owner": "hermes",
+    "body_sections": {
+        "Claim": "Use wx.navigateTo for non-tabBar pages.",
+        "Context": "Runtime routing guidance for WeChat Mini Program pages.",
+        "Applies When": "Navigating to a standard page route.",
+        "Does Not Apply When": "Switching to a tabBar page.",
+        "Evidence": "Official routing documentation.",
+        "Operational Guidance": "Prefer direct route paths and validate route existence.",
+        "Failure Modes": "Using wx.navigateTo for tabBar pages fails.",
+        "Review Checklist": "Verify against current official docs before promotion.",
+    },
+}
+status, ingest_response = post(
+    "/orchestra/modules/knowledge-ingestion/ingest",
+    {
+        "authority": authority("knowledge-ingestion", "ingest"),
+        "allow_staged": True,
+        "entry": knowledge_entry,
+    },
+)
+assert status == 200, ingest_response
+assert ingest_response["result"]["degraded"] is True, ingest_response
+
+status, query_response = post(
+    "/orchestra/modules/runtime-knowledge/query",
+    {
+        "authority": authority("runtime-knowledge", "query"),
+        "allow_staged": True,
+        "request": {
+            "run_id": "run-runtime",
+            "task_id": "task-runtime",
+            "domain": "wechat",
+            "question": "wx.navigateTo non-tabBar pages",
+            "allowed_types": ["candidate_knowledge"],
+            "required_freshness": "current",
+            "max_results": 3,
+            "evidence_scope": "debate",
+        },
+    },
+)
+assert status == 200, query_response
+assert query_response["result"]["result_artifact"]["slugs"] == ["domain/wechat/routing/navigate-to"], query_response
+
+non_protected_proposal = {
+    "proposal_id": "P-knowledge-001",
+    "target_class": "knowledge_asset",
+    "target": ".workflow/knowledge/release-checklist.md",
+    "target_area": "workflow_docs",
+    "summary": "Clarify release checklist after repeated review comments.",
+    "rationale": "The same review class repeated twice across successful closeouts.",
+    "severity": "medium",
+    "evidence_quality": "high",
+    "source_run_ids": ["run-self-1"],
+    "artifact_refs": ["state://runs/run-self-1/reviews/release-gap.json"],
+    "repeated_failure_count": 2,
+    "source_run_count": 1,
+}
+protected_proposal = {
+    "proposal_id": "P-rules-001",
+    "target_class": "root_rules",
+    "target": "AGENTS.md",
+    "target_area": "root_rules",
+    "summary": "Tighten root rule wording after a decision-exposed gap.",
+    "rationale": "A closeout decision exposed an authority gap in the root rules.",
+    "severity": "high",
+    "evidence_quality": "high",
+    "source_run_ids": ["run-self-1"],
+    "artifact_refs": ["state://runs/run-self-1/decisions/rules-gap.json"],
+    "repeated_failure_count": 1,
+    "source_run_count": 1,
+    "proposed_patch_ref": "state://runs/run-self-1/patches/root-rules.diff",
+    "approval_impact": "authority_boundary",
+}
+status, proposal_response = post(
+    "/orchestra/modules/self-evolution/generate-stage6-sweep",
+    {
+        "authority": authority("self-evolution", "generate-stage6-sweep"),
+        "allow_staged": True,
+        "run_id": "run-self-1",
+        "source_refs": [
+            "state://runs/run-self-1/closeout.json",
+            "state://runs/run-self-1/reviews/release-gap.json",
+        ],
+        "proposals": [non_protected_proposal, protected_proposal],
+        "trigger_matches": ["review_or_qa_same_class_repeated", "decision_exposed_rule_or_doc_gap"],
+    },
+)
+assert status == 200, proposal_response
+
+status, enqueue_response = post(
+    "/orchestra/modules/self-evolution/enqueue",
+    {
+        "authority": authority("self-evolution", "enqueue"),
+        "allow_staged": True,
+        "proposal": proposal_response["result"],
+    },
+)
+assert status == 200, enqueue_response
+queue_items = enqueue_response["result"]["queue_items"]
+
+status, pending_response = post(
+    "/orchestra/modules/self-evolution/list-pending",
+    {
+        "authority": authority("self-evolution", "list-pending"),
+        "allow_staged": True,
+        "queue_items": queue_items,
+    },
+)
+assert status == 200, pending_response
+assert len(pending_response["result"]["items"]) == 2, pending_response
+
+status, transition_queue_response = post(
+    "/orchestra/modules/self-evolution/transition",
+    {
+        "authority": authority("self-evolution", "transition"),
+        "allow_staged": True,
+        "queue_item": next(item for item in queue_items if item["protected_target_class"] == "none"),
+        "next_status": "under_review",
+    },
+)
+assert status == 200, transition_queue_response
+assert transition_queue_response["result"]["status"] == "under_review", transition_queue_response
+
+status, performance_response = post(
+    "/orchestra/modules/performance-slo/evaluate",
+    {
+        "authority": authority("performance-slo", "evaluate"),
+        "allow_staged": True,
+        "component_id": "gateway_api",
+        "observed": {
+            "health_p95_ms": 120,
+            "capabilities_p95_ms": 180,
+            "status_projection_p95_ms": 220,
+            "tasks_projection_p95_ms": 300,
+            "event_poll_p95_ms": 280,
+            "mutating_command_ack_p95_ms": 450,
+        },
+    },
+)
+assert status == 200, performance_response
+assert performance_response["result"]["budget_status"] == "on_budget", performance_response
+
+contract_fixture = {
+    "fixture_name": "valid_debate_member_opinion",
+    "fixture_kind": "contract_fixture",
+    "fixture_backend": "none",
+    "degraded_fixture_only": False,
+    "completion_evidence_allowed": False,
+    "release_evidence_allowed": False,
+    "test_scope": "unit",
+}
+status, contract_fixture_response = post(
+    "/orchestra/modules/fixture-policy/validate-contract-fixture",
+    {
+        "authority": authority("fixture-policy", "validate-contract-fixture"),
+        "allow_staged": True,
+        "family_id": "debate",
+        "fixture": contract_fixture,
+    },
+)
+assert status == 200, contract_fixture_response
+
+runtime_fake_fixture = {
+    "fixture_name": "template_fixture_backend",
+    "fixture_kind": "runtime_fake_adapter",
+    "fixture_backend": "template_fixture_backend",
+    "degraded_fixture_only": True,
+    "completion_evidence_allowed": False,
+    "release_evidence_allowed": False,
+    "test_scope": "integration",
+}
+status, runtime_fixture_response = post(
+    "/orchestra/modules/fixture-policy/validate-runtime-fake-adapter",
+    {
+        "authority": authority("fixture-policy", "validate-runtime-fake-adapter"),
+        "allow_staged": True,
+        "family_id": "debate",
+        "fixture": runtime_fake_fixture,
+    },
+)
+assert status == 200, runtime_fixture_response
+
+status, degradation_transition = post(
+    "/orchestra/modules/degradation-policy/transition",
+    {
+        "authority": authority("degradation-policy", "transition"),
+        "allow_staged": True,
+        "current_status": "normal",
+        "next_status": "degraded",
+    },
+)
+assert status == 200, degradation_transition
+assert degradation_transition["result"]["next_status"] == "degraded", degradation_transition
+
+status, degradation_record = post(
+    "/orchestra/modules/degradation-policy/build-record",
+    {
+        "authority": authority("degradation-policy", "build-record"),
+        "allow_staged": True,
+        "degradation_status": "degraded",
+        "degradation_class": "runtime_knowledge_warning_context",
+        "cause": "warning_context_returned",
+        "affected_evidence_refs": ["state://runs/run-runtime/result.json"],
+        "recovery_options": ["refresh_or_verify_entries"],
+    },
+)
+assert status == 200, degradation_record
+
+status, evidence_response = post(
+    "/orchestra/modules/degradation-policy/allows-completion-evidence",
+    {
+        "authority": authority("degradation-policy", "allows-completion-evidence"),
+        "allow_staged": True,
+        "record": degradation_record["result"],
+    },
+)
+assert status == 200, evidence_response
+assert evidence_response["result"]["allowed"] is False, evidence_response
+
+status, schema_response = post(
+    "/orchestra/modules/full-schema-validation/validate-schema",
+    {
+        "authority": authority("full-schema-validation", "validate-schema"),
+        "allow_staged": True,
+    },
+)
+assert status == 200, schema_response
+
+status, contract_response = post(
+    "/orchestra/modules/full-schema-validation/validate-contract",
+    {
+        "authority": authority("full-schema-validation", "validate-contract"),
+        "allow_staged": True,
+        "rel_path": "config/debate/full/teams.json",
+        "definition_name": "debate_team_registry",
+    },
+)
+assert status == 200, contract_response
+
+status, validate_all_response = post(
+    "/orchestra/modules/full-schema-validation/validate-all",
+    {
+        "authority": authority("full-schema-validation", "validate-all"),
+        "allow_staged": True,
+    },
+)
+assert status == 200, validate_all_response
+
+status, evaluate_family_response = post(
+    "/orchestra/modules/full-schema-cutover/evaluate-family",
+    {
+        "authority": authority("full-schema-cutover", "evaluate-family"),
+        "allow_staged": True,
+        "family_id": "full_debate_package",
+    },
+)
+assert status == 200, evaluate_family_response
+
+status, can_activate_response = post(
+    "/orchestra/modules/full-schema-cutover/can-activate",
+    {
+        "authority": authority("full-schema-cutover", "can-activate"),
+        "allow_staged": True,
+        "family_id": "full_debate_package",
+        "evidence": [],
+        "completed_checks": [],
+    },
+)
+assert status == 200, can_activate_response
+assert can_activate_response["result"]["allowed"] is False, can_activate_response
+
+status, plan_write_response = post(
+    "/orchestra/modules/full-schema-cutover/plan-artifact-write",
+    {
+        "authority": authority("full-schema-cutover", "plan-artifact-write"),
+        "allow_staged": True,
+        "family_id": "full_debate_package",
+        "family_activated": True,
+    },
+)
+assert status == 200, plan_write_response
+assert plan_write_response["result"]["write_full_artifacts"] is True, plan_write_response
+PY
+
 test_done

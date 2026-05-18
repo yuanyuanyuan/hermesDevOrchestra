@@ -457,6 +457,8 @@ Blocked stop conditions:
 - [ ] Stop if `scripts/tests/test-gateway-integration-points.sh` does not cover new endpoints.
 - [ ] Stop if Gateway rejects requests to new endpoints.
 
+[2026-05-18] Verified by Codex — all tests passed
+
 ## Plan Validation Checklist
 
 - [x] The checklist covers 12 sprints: Sprint 0 plus Sprint 1 through Sprint 11.
