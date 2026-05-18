@@ -168,33 +168,34 @@ Blocked stop conditions:
 
 Dependencies on previous sprints:
 
-- [ ] Sprint 0 must be complete and verified.
-- [ ] Sprint 3 must be complete and verified (derived from sequencing diagram).
+- [x] Sprint 0 must be complete and verified.
+- [x] No direct dependency is listed in the sprint section.
+- [x] Sprint 3 must be complete and verified (derived from sequencing diagram).
 
 Exact files to create:
 
-- [ ] `scripts/lib/worker_registry.py`
-- [ ] `scripts/lib/capability_negotiation.py`
-- [ ] `scripts/tests/test-worker-registry.sh`
+- [x] `scripts/lib/worker_registry.py`
+- [x] `scripts/lib/capability_negotiation.py`
+- [x] `scripts/tests/test-worker-registry.sh`
 
 Verify-only files:
 
-- [ ] `config/workers/full/backends.json`
-- [ ] `config/workers/full/roles.json`
+- [x] `config/workers/full/backends.json`
+- [x] `config/workers/full/roles.json`
 
 Verification commands:
 
-- [ ] `scripts/tests/test-worker-registry.sh`
+- [x] `scripts/tests/test-worker-registry.sh`
 
 Blocked stop conditions:
 
-- [ ] Stop if backend registry required fields are missing.
-- [ ] Stop if role registry required fields are missing.
-- [ ] Stop if backend availability, role compatibility, or capability requirements are not checked.
-- [ ] Stop if capability negotiation can silently substitute another backend.
-- [ ] Stop if the negotiation report does not record the decision process.
-- [ ] Stop if the negotiation report schema validation fails.
-- [ ] Stop if `scripts/tests/test-worker-registry.sh` fails.
+- [x] Stop if backend registry required fields are missing.
+- [x] Stop if role registry required fields are missing.
+- [x] Stop if backend availability, role compatibility, or capability requirements are not checked.
+- [x] Stop if capability negotiation can silently substitute another backend.
+- [x] Stop if the negotiation report does not record the decision process.
+- [x] Stop if the negotiation report schema validation fails.
+- [x] Stop if `scripts/tests/test-worker-registry.sh` fails.
 
 ## Sprint 5: Worker Session Lifecycle
 
