@@ -26,6 +26,7 @@ python3 - "$REPO_ROOT" <<'PY'
 import json
 import os
 import pathlib
+import stat
 import shutil
 import sys
 import tempfile
@@ -101,6 +102,16 @@ else:
 localhost_args = parse_args(["--project-id", "demo", "--host", "127.0.0.1"])
 assert localhost_args.host == "127.0.0.1", localhost_args
 
+ipv6_loopback_args = parse_args(["--project-id", "demo", "--host", "::1"])
+assert ipv6_loopback_args.host == "::1", ipv6_loopback_args
+
+try:
+    parse_args(["--project-id", "demo", "--host", "::ffff:127.0.0.1"])
+except SystemExit as exc:
+    assert exc.code != 0, exc.code
+else:
+    raise AssertionError("expected ipv6-mapped loopback to remain blocked without explicit override")
+
 network_args = parse_args(
     ["--project-id", "demo", "--host", "0.0.0.0", "--allow-network-binding"]
 )
@@ -125,6 +136,42 @@ with tempfile.TemporaryDirectory() as tmp:
         "command://release/production",
         "command://release/staging",
     ], validated
+    resolved = active_pipeline.resolve_command("command://release/dev-test")
+    assert resolved["environment"]["id"] == "dev_test", resolved
+    assert resolved["command"]["argv"] == ["project-release", "dev-test"], resolved
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+
+    def dotted_mutator(data):
+        data["commands"]["dev_test"] = "command://release/dev.test"
+        data["environments"][0]["deploy_command_ref"] = "command://release/dev.test"
+
+    def dotted_registry_mutator(data):
+        data["commands"][0]["command_ref"] = "command://release/dev.test"
+
+    prepare_active_repo(tmp_repo, pipeline_mutator=dotted_mutator, commands_mutator=dotted_registry_mutator)
+    dotted = ReleasePipeline(tmp_repo, package_root="config/release")
+    resolved = dotted.resolve_command("command://release/dev.test")
+    assert resolved["command"]["command_ref"] == "command://release/dev.test", resolved
+    bin_dir = tmp_repo / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    write_executable(
+        bin_dir / "project-release",
+        """#!/usr/bin/env python3
+print("dotted")
+""",
+    )
+    env = {
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+        "HOME": str(tmp_repo),
+        "CI": "1",
+        "HERMES_RELEASE_ENV": "stage",
+    }
+    executor = ReleaseExecutor(tmp_repo, project_root=tmp_repo, env=env)
+    result = executor.execute("command://release/dev.test")
+    stdout_text = result["stored_outputs"][result["deployment_report"]["stdout_ref"]]
+    assert "dotted" in stdout_text, stdout_text
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = pathlib.Path(tmp)
@@ -170,6 +217,9 @@ print(f"mode={mode}")
 print(f"HERMES_RELEASE_ENV={os.environ.get('HERMES_RELEASE_ENV', '')}")
 print(f"SECRET_TOKEN={os.environ.get('SECRET_TOKEN', '')}")
 print("API_TOKEN=raw-secret-value")
+print('{"token":"json-secret"}')
+print("Authorization: Bearer bearer-secret")
+print("https://example.com/releases/health")
 print(f"cwd={os.getcwd()}")
 print("PASSWORD=stderr-secret", file=sys.stderr)
 """,
@@ -197,10 +247,46 @@ print("PASSWORD=stderr-secret", file=sys.stderr)
     stderr_text = result["stored_outputs"][report["stderr_ref"]]
     assert "top-secret-token" not in stdout_text, stdout_text
     assert "raw-secret-value" not in stdout_text, stdout_text
+    assert "json-secret" not in stdout_text, stdout_text
+    assert "bearer-secret" not in stdout_text, stdout_text
     assert "stderr-secret" not in stderr_text, stderr_text
     assert str(tmp_repo) not in stdout_text, stdout_text
     assert "HERMES_RELEASE_ENV=stage" in stdout_text, stdout_text
     assert "SECRET_TOKEN=" in stdout_text, stdout_text
+    assert "https://example.com/releases/health" in stdout_text, stdout_text
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    prepare_active_repo(tmp_repo)
+    safe_dir = tmp_repo / "safe-bin"
+    unsafe_dir = tmp_repo / "unsafe-bin"
+    safe_dir.mkdir(parents=True, exist_ok=True)
+    unsafe_dir.mkdir(parents=True, exist_ok=True)
+    unsafe_dir.chmod(0o777)
+    assert stat.S_IMODE(unsafe_dir.stat().st_mode) == 0o777
+    write_executable(
+        unsafe_dir / "project-release",
+        """#!/usr/bin/env python3
+print("unsafe-path")
+""",
+    )
+    write_executable(
+        safe_dir / "project-release",
+        """#!/usr/bin/env python3
+print("safe-path")
+""",
+    )
+    env = {
+        "PATH": f"{unsafe_dir}:{safe_dir}:{os.environ.get('PATH', '')}",
+        "HOME": str(tmp_repo),
+        "CI": "1",
+        "HERMES_RELEASE_ENV": "stage",
+    }
+    executor = ReleaseExecutor(tmp_repo, project_root=tmp_repo, env=env)
+    result = executor.execute("command://release/dev-test")
+    stdout_text = result["stored_outputs"][result["deployment_report"]["stdout_ref"]]
+    assert "safe-path" in stdout_text, stdout_text
+    assert "unsafe-path" not in stdout_text, stdout_text
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = pathlib.Path(tmp)
@@ -227,7 +313,31 @@ print("should-not-run")
     }
     executor = ReleaseExecutor(tmp_repo, project_root=tmp_repo, env=env)
     expect_executor_error("approval_required", lambda: executor.execute("command://release/staging"))
+    expect_executor_error("approval_required", lambda: executor.execute("command://release/staging", approval_ref="   "))
     assert not (tmp_repo / "staging-ran").exists(), "staging command ran before approval"
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    def env_requires_approval_only(data):
+        data["commands"][1]["approval_policy"]["approval_refs_required_before_execution"] = False
+
+    prepare_active_repo(tmp_repo, commands_mutator=env_requires_approval_only)
+    bin_dir = tmp_repo / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    write_executable(
+        bin_dir / "project-release",
+        """#!/usr/bin/env python3
+print("staging")
+""",
+    )
+    env = {
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+        "HOME": str(tmp_repo),
+        "CI": "1",
+        "HERMES_RELEASE_ENV": "stage",
+    }
+    executor = ReleaseExecutor(tmp_repo, project_root=tmp_repo, env=env)
+    expect_executor_error("approval_required", lambda: executor.execute("command://release/staging"))
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = pathlib.Path(tmp)
@@ -261,6 +371,7 @@ with tempfile.TemporaryDirectory() as tmp:
         for command in data["commands"]:
             if command["command_ref"] == "command://release/dev-test":
                 command["timeout_seconds"] = 1
+                command["kill_policy"]["graceful_signal"] = "INT"
                 command["kill_policy"]["graceful_timeout_seconds"] = 0
                 command["kill_policy"]["force_timeout_seconds"] = 0
 
@@ -273,11 +384,11 @@ with tempfile.TemporaryDirectory() as tmp:
 import signal
 import time
 
-def ignore_term(signum, frame):
+def ignore_int(signum, frame):
     while True:
         time.sleep(0.1)
 
-signal.signal(signal.SIGTERM, ignore_term)
+signal.signal(signal.SIGINT, ignore_int)
 while True:
     time.sleep(0.1)
 """,
@@ -293,7 +404,34 @@ while True:
     report = result["deployment_report"]
     assert report["deployment_status"] == "timed_out", report
     assert report["timed_out"] is True, report
-    assert result["termination_sequence"] == ["TERM", "KILL"], result
+    assert result["termination_sequence"] == ["INT", "KILL"], result
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    outside_dir = pathlib.Path(tempfile.mkdtemp())
+
+    def cwd_symlink_mutator(data):
+        data["commands"][0]["cwd_ref"] = "project://root/linked-outside"
+
+    prepare_active_repo(tmp_repo, commands_mutator=cwd_symlink_mutator)
+    linked_dir = tmp_repo / "linked-outside"
+    linked_dir.symlink_to(outside_dir, target_is_directory=True)
+    bin_dir = tmp_repo / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    write_executable(
+        bin_dir / "project-release",
+        """#!/usr/bin/env python3
+print("ok")
+""",
+    )
+    env = {
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+        "HOME": str(tmp_repo),
+        "CI": "1",
+        "HERMES_RELEASE_ENV": "stage",
+    }
+    executor = ReleaseExecutor(tmp_repo, project_root=tmp_repo, env=env)
+    expect_executor_error("cwd_ref_invalid", lambda: executor.execute("command://release/dev-test"))
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = pathlib.Path(tmp)

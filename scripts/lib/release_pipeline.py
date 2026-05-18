@@ -62,6 +62,23 @@ class ReleasePipeline:
             "resolved_commands": resolved_commands,
         }
 
+    def resolve_command(self, command_ref: str) -> dict[str, Any]:
+        if not isinstance(command_ref, str) or not command_ref:
+            raise ReleasePipelineError("validation_error", "command_ref must be a non-empty string")
+
+        pipeline = self._load_pipeline()
+        registry = self._load_registry()
+        command = self._resolved_commands(pipeline, registry).get(command_ref)
+        if command is None:
+            raise ReleasePipelineError("command_not_registered", f"{command_ref} is not registered")
+
+        return {
+            "pipeline": pipeline,
+            "registry": registry,
+            "command": command,
+            "environment": self._find_environment_for_command(pipeline, command_ref),
+        }
+
     def _load_pipeline(self) -> dict[str, Any]:
         self._require_enabled()
         if self._pipeline is not None:
@@ -149,6 +166,12 @@ class ReleasePipeline:
             if entry.get("id") == environment:
                 return entry
         raise ReleasePipelineError("environment_not_found", f"unknown release environment: {environment}")
+
+    def _find_environment_for_command(self, pipeline: dict[str, Any], command_ref: str) -> dict[str, Any]:
+        for entry in pipeline["environments"]:
+            if entry.get("deploy_command_ref") == command_ref:
+                return entry
+        return {"id": command_ref.rsplit("/", 1)[-1], "health_check_refs": [], "requires_approval": False}
 
     def _require_enabled(self) -> None:
         if not self.enabled:

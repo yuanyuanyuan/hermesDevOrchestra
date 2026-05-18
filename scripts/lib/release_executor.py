@@ -5,7 +5,9 @@ import json
 import os
 import re
 import signal
+import stat
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -44,67 +46,32 @@ class ReleaseExecutor:
     def execute(self, command_ref: str, approval_ref: str | None = None) -> dict[str, Any]:
         self._validate_command_ref(command_ref)
         try:
-            pipeline = self.pipeline._load_pipeline()
-            registry = self.pipeline._load_registry()
-            resolved_commands = self.pipeline.validate_command_refs()["resolved_commands"]
+            context = self.pipeline.resolve_command(command_ref)
         except ReleasePipelineError as exc:
             raise ReleaseExecutorError(exc.code, exc.message) from exc
 
-        command = resolved_commands.get(command_ref)
-        if command is None:
-            raise ReleaseExecutorError("command_not_registered", f"{command_ref} is not registered")
-
-        approval_policy = dict(command["approval_policy"])
-        if approval_policy.get("approval_refs_required_before_execution") and not approval_ref:
+        pipeline = context["pipeline"]
+        registry = context["registry"]
+        command = context["command"]
+        environment_entry = context["environment"]
+        normalized_approval_ref = self._normalize_approval_ref(approval_ref)
+        if self._approval_required(command, environment_entry) and normalized_approval_ref is None:
             raise ReleaseExecutorError("approval_required", f"{command_ref} requires approval_ref before execution")
 
-        environment_entry = self._find_environment_entry(pipeline, command_ref)
         filtered_env = self._filtered_env(command["env_allowlist"])
         cwd = self._resolve_cwd(command["cwd_ref"])
         started_at = self._timestamp()
-        started_monotonic = datetime.now(timezone.utc)
-        termination_sequence: list[str] = []
-
-        try:
-            process = subprocess.Popen(
-                list(command["argv"]),
-                cwd=str(cwd),
-                env=filtered_env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                shell=False,
-            )
-        except OSError as exc:
-            raise ReleaseExecutorError("execution_failed", f"{command_ref} failed to start: {exc.strerror or exc}") from exc
-
-        timed_out = False
-        stdout_text = ""
-        stderr_text = ""
+        started_monotonic = time.monotonic()
         timeout_seconds = int(command["timeout_seconds"])
         kill_policy = dict(command["kill_policy"])
-        try:
-            stdout_text, stderr_text = process.communicate(timeout=timeout_seconds)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            graceful_signal = str(kill_policy["graceful_signal"])
-            termination_sequence.append(graceful_signal)
-            self._send_signal(process, graceful_signal)
-            graceful_timeout = int(kill_policy["graceful_timeout_seconds"])
-            try:
-                process.wait(timeout=graceful_timeout if graceful_timeout > 0 else 0.01)
-            except subprocess.TimeoutExpired:
-                termination_sequence.append(str(kill_policy["force_signal"]))
-                process.kill()
-                force_timeout = int(kill_policy["force_timeout_seconds"])
-                try:
-                    process.wait(timeout=force_timeout if force_timeout > 0 else 0.01)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-            stdout_text, stderr_text = process.communicate()
-
+        process = self._start_process(command, cwd, filtered_env)
+        stdout_text, stderr_text, timed_out, termination_sequence = self._run_process(
+            process,
+            timeout_seconds=timeout_seconds,
+            kill_policy=kill_policy,
+        )
         finished_at = self._timestamp()
-        duration_ms = max(0, int((datetime.now(timezone.utc) - started_monotonic).total_seconds() * 1000))
+        duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
 
         stdout_redacted, stdout_findings = self._redact_output(stdout_text, command["env_allowlist"])
         stderr_redacted, stderr_findings = self._redact_output(stderr_text, command["env_allowlist"])
@@ -113,7 +80,7 @@ class ReleaseExecutor:
         stdout_ref = self._cache_ref(stdout_redacted)
         stderr_ref = self._cache_ref(stderr_redacted)
         deployment_status = "timed_out" if timed_out else ("succeeded" if process.returncode == 0 else "failed")
-        approval_refs = [approval_ref] if approval_ref else []
+        approval_refs = [normalized_approval_ref] if normalized_approval_ref is not None else []
 
         report = {
             "schema_version": "orchestra.full.v1",
@@ -158,16 +125,25 @@ class ReleaseExecutor:
         }
 
     def _validate_command_ref(self, command_ref: str) -> None:
-        if not isinstance(command_ref, str) or not re.fullmatch(r"command://release/[a-z0-9-]+", command_ref):
+        if not isinstance(command_ref, str) or not re.fullmatch(r"command://release/[A-Za-z0-9._-]+", command_ref):
             raise ReleaseExecutorError("command_ref_invalid", "command_ref must match command://release/<id>")
         if ".." in command_ref or ";" in command_ref:
             raise ReleaseExecutorError("command_ref_invalid", "command_ref must not contain traversal or shell metacharacters")
 
-    def _find_environment_entry(self, pipeline: dict[str, Any], command_ref: str) -> dict[str, Any]:
-        for entry in pipeline["environments"]:
-            if entry.get("deploy_command_ref") == command_ref:
-                return entry
-        return {"id": command_ref.rsplit("/", 1)[-1], "health_check_refs": []}
+    def _normalize_approval_ref(self, approval_ref: str | None) -> str | None:
+        if approval_ref is None:
+            return None
+        if not isinstance(approval_ref, str):
+            raise ReleaseExecutorError("validation_error", "approval_ref must be a string when provided")
+        normalized = approval_ref.strip()
+        return normalized or None
+
+    def _approval_required(self, command: dict[str, Any], environment_entry: dict[str, Any]) -> bool:
+        approval_policy = command.get("approval_policy", {})
+        return bool(
+            environment_entry.get("requires_approval")
+            or approval_policy.get("approval_refs_required_before_execution")
+        )
 
     def _filtered_env(self, allowlist: list[str]) -> dict[str, str]:
         if not isinstance(allowlist, list) or not all(isinstance(item, str) and item for item in allowlist):
@@ -175,25 +151,127 @@ class ReleaseExecutor:
         filtered: dict[str, str] = {}
         for key in allowlist:
             if key in self.base_env:
-                filtered[key] = self.base_env[key]
+                value = self.base_env[key]
+                if key == "PATH":
+                    value = self._sanitize_path(value)
+                filtered[key] = value
         return filtered
 
+    def _sanitize_path(self, raw_path: str) -> str:
+        safe_entries: list[str] = []
+        for entry in raw_path.split(os.pathsep):
+            if not entry:
+                continue
+            path = Path(entry)
+            if not path.is_absolute() or not path.exists() or not path.is_dir():
+                continue
+            mode = path.stat().st_mode
+            if mode & stat.S_IWOTH:
+                continue
+            safe_entries.append(str(path))
+        return os.pathsep.join(safe_entries)
+
     def _resolve_cwd(self, cwd_ref: str) -> Path:
+        project_root = self.project_root.resolve()
         if cwd_ref == "project://root":
-            return self.project_root
+            return project_root
         if not isinstance(cwd_ref, str) or not cwd_ref.startswith("project://root/"):
             raise ReleaseExecutorError("cwd_ref_invalid", "cwd_ref must stay under project://root")
         relative = cwd_ref.removeprefix("project://root/")
         parts = Path(relative).parts
         if any(part in ("..", "") for part in parts):
             raise ReleaseExecutorError("cwd_ref_invalid", "cwd_ref must not contain path traversal")
-        return self.project_root / relative
+        candidate = (self.project_root / relative).resolve(strict=False)
+        if not candidate.is_relative_to(project_root):
+            raise ReleaseExecutorError("cwd_ref_invalid", "cwd_ref resolved outside project root")
+        return candidate
+
+    def _start_process(
+        self,
+        command: dict[str, Any],
+        cwd: Path,
+        filtered_env: dict[str, str],
+    ) -> subprocess.Popen[str]:
+        try:
+            return subprocess.Popen(
+                list(command["argv"]),
+                cwd=str(cwd),
+                env=filtered_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                shell=False,
+            )
+        except OSError as exc:
+            raise ReleaseExecutorError(
+                "execution_failed",
+                f"{command['command_ref']} failed to start: {exc.strerror or exc}",
+            ) from exc
+
+    def _run_process(
+        self,
+        process: subprocess.Popen[str],
+        timeout_seconds: int,
+        kill_policy: dict[str, Any],
+    ) -> tuple[str, str, bool, list[str]]:
+        try:
+            stdout_text, stderr_text = process.communicate(timeout=timeout_seconds)
+            return stdout_text, stderr_text, False, []
+        except subprocess.TimeoutExpired as exc:
+            termination_sequence: list[str] = []
+            stdout_prefix = exc.stdout or ""
+            stderr_prefix = exc.stderr or ""
+            self._terminate_process(process, kill_policy, termination_sequence)
+            stdout_text, stderr_text = self._collect_output(process, stdout_prefix, stderr_prefix)
+            return stdout_text, stderr_text, True, termination_sequence
+
+    def _terminate_process(
+        self,
+        process: subprocess.Popen[str],
+        kill_policy: dict[str, Any],
+        termination_sequence: list[str],
+    ) -> None:
+        graceful_signal = str(kill_policy["graceful_signal"])
+        termination_sequence.append(graceful_signal)
+        self._send_signal(process, graceful_signal)
+        if self._wait_for_exit(process, int(kill_policy["graceful_timeout_seconds"])):
+            return
+
+        force_signal = str(kill_policy["force_signal"])
+        termination_sequence.append(force_signal)
+        self._send_signal(process, force_signal)
+        self._wait_for_exit(process, int(kill_policy["force_timeout_seconds"]))
+
+    def _wait_for_exit(self, process: subprocess.Popen[str], timeout_seconds: int) -> bool:
+        if timeout_seconds == 0:
+            return process.poll() is not None
+        try:
+            process.wait(timeout=timeout_seconds)
+            return True
+        except subprocess.TimeoutExpired:
+            return False
+
+    def _collect_output(
+        self,
+        process: subprocess.Popen[str],
+        stdout_prefix: str,
+        stderr_prefix: str,
+    ) -> tuple[str, str]:
+        try:
+            stdout_tail, stderr_tail = process.communicate(timeout=1)
+            return stdout_prefix + (stdout_tail or ""), stderr_prefix + (stderr_tail or "")
+        except subprocess.TimeoutExpired as exc:
+            self._send_signal(process, "KILL")
+            return stdout_prefix + (exc.stdout or ""), stderr_prefix + (exc.stderr or "")
 
     def _send_signal(self, process: subprocess.Popen[str], signal_name: str) -> None:
-        if signal_name == "INT":
-            process.send_signal(signal.SIGINT)
+        if signal_name == "KILL":
+            process.kill()
             return
-        process.terminate()
+        mapped_signal = getattr(signal, f"SIG{signal_name}", None)
+        if mapped_signal is None:
+            raise ReleaseExecutorError("config_invalid", f"unsupported signal: {signal_name}")
+        process.send_signal(mapped_signal)
 
     def _timestamp(self) -> str:
         return datetime.now(timezone.utc).isoformat()
@@ -226,28 +304,31 @@ class ReleaseExecutor:
                 redacted = redacted.replace(value, f"[REDACTED_ENV:{key}]")
                 findings = True
 
-        secret_pattern = re.compile(r"(?im)\b(api[_-]?token|token|password|secret|api[_-]?key)=([^\s]+)")
+        secret_patterns = [
+            re.compile(r"(?im)\b((?:api[_-]?token|token|password|secret|api[_-]?key)\s*=\s*)([^\s]+)"),
+            re.compile(r'(?im)("?(?:api[_-]?token|token|password|secret|api[_-]?key)"?\s*:\s*")([^"]+)(")'),
+            re.compile(r"(?im)\b(authorization\s*:\s*bearer\s+)([^\s]+)"),
+        ]
 
         def replace_secret(match: re.Match[str]) -> str:
             nonlocal findings
             findings = True
-            return f"{match.group(1)}=[REDACTED_SECRET]"
+            if len(match.groups()) >= 3:
+                return f"{match.group(1)}[REDACTED_SECRET]{match.group(3)}"
+            return f"{match.group(1)}[REDACTED_SECRET]"
 
-        redacted = secret_pattern.sub(replace_secret, redacted)
+        for pattern in secret_patterns:
+            redacted = pattern.sub(replace_secret, redacted)
 
         project_root_text = str(self.project_root)
         if project_root_text and project_root_text in redacted:
             redacted = redacted.replace(project_root_text, "[REDACTED_PATH]")
             findings = True
 
-        absolute_path_pattern = re.compile(r"(?<![A-Za-z0-9_])/(?:[^\s/]+/)*[^\s/]+")
-
-        def replace_path(match: re.Match[str]) -> str:
-            nonlocal findings
+        home_path = self.base_env.get("HOME", "")
+        if home_path and home_path in redacted:
+            redacted = redacted.replace(home_path, "[REDACTED_PATH]")
             findings = True
-            return "[REDACTED_PATH]"
-
-        redacted = absolute_path_pattern.sub(replace_path, redacted)
         return redacted, findings
 
     def _validate_definition(self, definition_name: str, artifact: dict[str, Any]) -> None:
