@@ -24,14 +24,20 @@ class CapabilityNegotiator:
         role: str,
         requested_backend: str | None = None,
         required_capabilities: list[str] | None = None,
+        negotiation_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        required_capabilities = required_capabilities or []
+        if required_capabilities is None:
+            required_capabilities = []
+        if negotiation_context is None:
+            negotiation_context = {}
         if not isinstance(role, str) or not role:
             raise CapabilityNegotiationError("validation_error", "role must be a non-empty string")
         if not isinstance(required_capabilities, list) or not all(
             isinstance(item, str) and item for item in required_capabilities
         ):
             raise CapabilityNegotiationError("validation_error", "required_capabilities must be a list of non-empty strings")
+        if not isinstance(negotiation_context, dict):
+            raise CapabilityNegotiationError("validation_error", "negotiation_context must be an object")
 
         try:
             role_entry = self.registry.get_role(role)
@@ -41,11 +47,11 @@ class CapabilityNegotiator:
 
         requested = requested_backend or role_entry["preferred_backend"]
         report_id = f"negotiate-{uuid.uuid4().hex}"
-        run_id = "capability-negotiation"
+        run_id = report_id
         task_id = f"{role}-{report_id}"
         report_ref = f"state://runs/{run_id}/capability-negotiation/{task_id}.json"
 
-        checked_backends: list[str] = [requested] if requested else []
+        checked_backends: list[str] = []
         unavailable_reasons: list[str] = []
         fallback_considered: list[str] = []
         fallback_blocked_reasons: list[str] = []
@@ -57,6 +63,7 @@ class CapabilityNegotiator:
         negotiation_status = "blocked"
 
         required = self._combine_required_capabilities(role_entry, required_capabilities)
+        self._record_checked_backend(checked_backends, requested)
         backend = self._get_backend(requested)
         if backend is None:
             blocked_reason = "backend_unknown"
@@ -72,9 +79,11 @@ class CapabilityNegotiator:
                 negotiation_status = "selected"
 
         if negotiation_status == "blocked":
-            fallback = self._select_fallback(role_entry, required, blocked_reason)
+            fallback = self._select_fallback(role_entry, required, blocked_reason, negotiation_context)
             fallback_considered = fallback["considered"]
             fallback_blocked_reasons = fallback["blocked_reasons"]
+            for backend_id in fallback["checked_backends"]:
+                self._record_checked_backend(checked_backends, backend_id)
             if fallback["selected_backend"] is not None:
                 selected_backend = fallback["selected_backend"]
                 adapter_type = fallback["adapter_type"]
@@ -191,6 +200,7 @@ class CapabilityNegotiator:
         role_entry: dict[str, Any],
         required_capabilities: list[str],
         blocked_reason: str | None,
+        negotiation_context: dict[str, Any],
     ) -> dict[str, Any]:
         considered = list(role_entry.get("explicit_fallback_backends", []))
         blocked_reasons: list[str] = []
@@ -198,6 +208,7 @@ class CapabilityNegotiator:
             blocked_reasons.append("no_explicit_fallback_backends")
             return {
                 "considered": considered,
+                "checked_backends": [],
                 "blocked_reasons": blocked_reasons,
                 "selected_backend": None,
                 "adapter_type": None,
@@ -210,24 +221,33 @@ class CapabilityNegotiator:
             blocked_reasons.append(f"failure_class_not_allowed:{failure_class}")
             return {
                 "considered": considered,
+                "checked_backends": [],
                 "blocked_reasons": blocked_reasons,
                 "selected_backend": None,
                 "adapter_type": None,
                 "matched_capabilities": [],
             }
 
-        forbidden_conditions = role_entry.get("fallback_forbidden_when", [])
-        if forbidden_conditions:
-            blocked_reasons.append("fallback_forbidden_by_policy")
+        matched_forbidden_conditions = self._matched_forbidden_conditions(
+            role_entry.get("fallback_forbidden_when", []),
+            negotiation_context,
+        )
+        if matched_forbidden_conditions:
+            blocked_reasons.extend(
+                [f"fallback_forbidden_by_policy:{condition}" for condition in matched_forbidden_conditions]
+            )
             return {
                 "considered": considered,
+                "checked_backends": [],
                 "blocked_reasons": blocked_reasons,
                 "selected_backend": None,
                 "adapter_type": None,
                 "matched_capabilities": [],
             }
 
+        checked_backends: list[str] = []
         for backend_id in considered:
+            self._record_checked_backend(checked_backends, backend_id)
             backend = self._get_backend(backend_id)
             if backend is None:
                 blocked_reasons.append(f"unknown_fallback_backend:{backend_id}")
@@ -236,6 +256,7 @@ class CapabilityNegotiator:
             if evaluation["blocked_reason"] is None:
                 return {
                     "considered": considered,
+                    "checked_backends": checked_backends,
                     "blocked_reasons": blocked_reasons,
                     "selected_backend": backend["id"],
                     "adapter_type": backend["adapter_type"],
@@ -245,11 +266,37 @@ class CapabilityNegotiator:
 
         return {
             "considered": considered,
+            "checked_backends": checked_backends,
             "blocked_reasons": blocked_reasons,
             "selected_backend": None,
             "adapter_type": None,
             "matched_capabilities": [],
         }
+
+    def _matched_forbidden_conditions(
+        self,
+        forbidden_conditions: Any,
+        negotiation_context: dict[str, Any],
+    ) -> list[str]:
+        if not isinstance(forbidden_conditions, list):
+            return []
+
+        matched: list[str] = []
+        risk_level = negotiation_context.get("risk_level")
+        for condition in forbidden_conditions:
+            if not isinstance(condition, str) or not condition:
+                continue
+            if condition.startswith("risk_level:"):
+                if risk_level == condition.split(":", 1)[1]:
+                    matched.append(condition)
+                continue
+            if negotiation_context.get(condition) is True:
+                matched.append(condition)
+        return matched
+
+    def _record_checked_backend(self, checked_backends: list[str], backend_id: str | None) -> None:
+        if isinstance(backend_id, str) and backend_id and backend_id not in checked_backends:
+            checked_backends.append(backend_id)
 
     def _failure_class(self, blocked_reason: str | None) -> str:
         if blocked_reason == "backend_unavailable":

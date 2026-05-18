@@ -35,6 +35,8 @@ class WorkerRegistry:
 
     def load_backends(self) -> dict[str, Any]:
         self._require_enabled()
+        if self._backends is not None:
+            return self._backends
         data = self._load_json("backends.json")
         self._require_package_active(data, "backends.json")
         self._validate_definition("worker_backend_registry", data)
@@ -55,6 +57,8 @@ class WorkerRegistry:
 
     def load_roles(self) -> dict[str, Any]:
         self._require_enabled()
+        if self._roles is not None:
+            return self._roles
         data = self._load_json("roles.json")
         self._require_package_active(data, "roles.json")
         self._validate_definition("worker_role_registry", data)
@@ -143,6 +147,8 @@ class WorkerRegistry:
             raise WorkerRegistryError("config_invalid", f"{filename} is not valid JSON: {exc.msg}") from exc
         except FileNotFoundError as exc:
             raise WorkerRegistryError("config_invalid", f"{filename} is missing") from exc
+        except PermissionError as exc:
+            raise WorkerRegistryError("config_invalid", f"{filename} is not readable: {exc.strerror or exc}") from exc
         if not isinstance(data, dict):
             raise WorkerRegistryError("config_invalid", f"{filename} must contain a JSON object")
         return data

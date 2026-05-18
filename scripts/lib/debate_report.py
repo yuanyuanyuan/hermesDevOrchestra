@@ -17,7 +17,15 @@ class DebateReportError(Exception):
 
 def validate_artifact_definition(repo_root: Path | str, definition_name: str, artifact: dict[str, Any]) -> None:
     repo_path = Path(repo_root)
-    schema = json.loads((repo_path / "config/schemas/orchestra.full.schema.json").read_text(encoding="utf-8"))
+    schema_path = repo_path / "config/schemas/orchestra.full.schema.json"
+    try:
+        raw_schema = schema_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise DebateReportError("schema_invalid", f"schema file is not readable: {exc.strerror or exc}") from exc
+    try:
+        schema = json.loads(raw_schema)
+    except json.JSONDecodeError as exc:
+        raise DebateReportError("schema_invalid", f"schema file is not valid JSON: {exc.msg}") from exc
     try:
         jsonschema.validate(
             instance=artifact,

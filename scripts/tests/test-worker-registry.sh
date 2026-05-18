@@ -23,6 +23,7 @@ grep -Fq "PASS config/workers/full/roles.json: worker_role_registry" <<<"$FULL_V
 
 python3 - "$REPO_ROOT" <<'PY'
 import json
+import os
 import pathlib
 import shutil
 import sys
@@ -92,6 +93,7 @@ validate_definition("capability_negotiation_report", selected["negotiation_repor
 assert selected["selection_record"]["selected_backend"] == "codex", selected
 assert selected["selection_record"]["fallback_used"] is False, selected
 assert selected["selection_record"]["negotiation_status"] == "selected", selected
+assert selected["selection_record"]["run_id"].startswith("negotiate-"), selected
 assert selected["negotiation_report"]["negotiation_status"] == "selected", selected
 assert selected["negotiation_report"]["decision_required"] == "none", selected
 assert selected["negotiation_report"]["checked_backends"] == ["codex"], selected
@@ -181,6 +183,206 @@ with tempfile.TemporaryDirectory() as tmp:
     copy_schema(tmp_repo)
     config_dir = tmp_repo / "config/workers/full"
     config_dir.mkdir(parents=True, exist_ok=True)
+    fallback_backends = {
+        "schema_version": "orchestra.full.v1",
+        "artifact_type": "worker_backend_registry",
+        "package_status": "active",
+        "registry_authority": "project",
+        "implicit_backend_fallback_allowed": False,
+        "backends": [
+            {
+                "id": "primary",
+                "name": "Primary Worker",
+                "enabled": True,
+                "adapter_type": "cli",
+                "transport": "local_process",
+                "install_check": {"kind": "executable_on_path", "executable": "primary-worker"},
+                "health_check": {"kind": "command_probe", "timeout_seconds": 1, "degraded_on_failure": True},
+                "compatible_roles": ["implementer"],
+                "protocols": ["hermes-role-engine/v1"],
+                "capabilities": ["structured_envelope"],
+                "workspace_support": {"task_workspace": True},
+                "session_support": {"tmux": True},
+                "risk_ceiling": "L4",
+                "risk_policy": {"max_without_human_approval": "L2"},
+                "fallback_allowed": False,
+            },
+            {
+                "id": "fallback",
+                "name": "Fallback Worker",
+                "enabled": True,
+                "adapter_type": "cli",
+                "transport": "local_process",
+                "install_check": {"kind": "executable_on_path", "executable": "fallback-worker"},
+                "health_check": {"kind": "command_probe", "timeout_seconds": 1, "degraded_on_failure": True},
+                "compatible_roles": ["implementer"],
+                "protocols": ["hermes-role-engine/v1"],
+                "capabilities": ["structured_envelope"],
+                "workspace_support": {"task_workspace": True},
+                "session_support": {"tmux": True},
+                "risk_ceiling": "L4",
+                "risk_policy": {"max_without_human_approval": "L2"},
+                "fallback_allowed": False,
+            },
+        ],
+    }
+    fallback_roles = {
+        "schema_version": "orchestra.full.v1",
+        "artifact_type": "worker_role_registry",
+        "package_status": "active",
+        "registry_authority": "project",
+        "implicit_backend_fallback_allowed": False,
+        "roles": [
+            {
+                "role": "implementer",
+                "protocol": "hermes-role-engine/v1",
+                "required_capabilities": ["structured_envelope"],
+                "preferred_backend": "primary",
+                "explicit_fallback_backends": ["fallback"],
+                "fallback_allowed_failure_classes": ["unavailable"],
+                "fallback_forbidden_when": ["risk_level:L3", "parallel_worker_task"],
+                "selection_record_required": True,
+                "capability_negotiation_report_required_on_block": True,
+            }
+        ],
+    }
+    (config_dir / "backends.json").write_text(json.dumps(fallback_backends), encoding="utf-8")
+    (config_dir / "roles.json").write_text(json.dumps(fallback_roles), encoding="utf-8")
+
+    fallback_negotiator = CapabilityNegotiator(
+        WorkerRegistry(
+            tmp_repo,
+            allow_staged=True,
+            availability_overrides={
+                "primary": {"available": False, "reasons": ["install_check_failed"]},
+                "fallback": {"available": True, "reasons": []},
+            },
+        )
+    )
+    fallback_selected = fallback_negotiator.negotiate("implementer")
+    assert fallback_selected["selection_record"]["negotiation_status"] == "fallback_selected", fallback_selected
+    assert fallback_selected["selection_record"]["selected_backend"] == "fallback", fallback_selected
+    assert fallback_selected["selection_record"]["fallback_used"] is True, fallback_selected
+    assert fallback_selected["negotiation_report"]["checked_backends"] == ["primary", "fallback"], fallback_selected
+    assert fallback_selected["negotiation_report"]["fallback_selected"] == "fallback", fallback_selected
+
+    fallback_blocked = fallback_negotiator.negotiate(
+        "implementer",
+        negotiation_context={"risk_level": "L3"},
+    )
+    assert fallback_blocked["selection_record"]["negotiation_status"] == "blocked", fallback_blocked
+    assert fallback_blocked["selection_record"]["blocked_reason"] == "backend_unavailable", fallback_blocked
+    assert "fallback_forbidden_by_policy:risk_level:L3" in fallback_blocked["negotiation_report"]["fallback_blocked_reasons"], fallback_blocked
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    copy_schema(tmp_repo)
+    config_dir = tmp_repo / "config/workers/full"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(repo / "config/workers/full/backends.json", config_dir / "backends.json")
+    shutil.copy2(repo / "config/workers/full/roles.json", config_dir / "roles.json")
+    cached_registry = WorkerRegistry(tmp_repo, allow_staged=True)
+    first_backends = cached_registry.load_backends()
+    second_backends = cached_registry.load_backends()
+    assert first_backends is second_backends
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    copy_schema(tmp_repo)
+    config_dir = tmp_repo / "config/workers/full"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    fake_bin = tmp_repo / "bin"
+    fake_bin.mkdir()
+    ok_script = fake_bin / "worker-ok"
+    ok_script.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    ok_script.chmod(0o755)
+    bad_script = fake_bin / "worker-bad"
+    bad_script.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+    bad_script.chmod(0o755)
+    os.environ["PATH"] = f"{fake_bin}:{os.environ['PATH']}"
+
+    availability_backends = {
+        "schema_version": "orchestra.full.v1",
+        "artifact_type": "worker_backend_registry",
+        "package_status": "active",
+        "registry_authority": "project",
+        "implicit_backend_fallback_allowed": False,
+        "backends": [
+            {
+                "id": "ok",
+                "name": "OK Worker",
+                "enabled": True,
+                "adapter_type": "cli",
+                "transport": "local_process",
+                "install_check": {"kind": "executable_on_path", "executable": "worker-ok"},
+                "health_check": {"kind": "command_probe", "timeout_seconds": 1, "degraded_on_failure": True},
+                "compatible_roles": ["implementer"],
+                "protocols": ["hermes-role-engine/v1"],
+                "capabilities": ["structured_envelope"],
+                "workspace_support": {"task_workspace": True},
+                "session_support": {"tmux": True},
+                "risk_ceiling": "L4",
+                "risk_policy": {"max_without_human_approval": "L2"},
+                "fallback_allowed": False,
+            },
+            {
+                "id": "missing",
+                "name": "Missing Worker",
+                "enabled": True,
+                "adapter_type": "cli",
+                "transport": "local_process",
+                "install_check": {"kind": "executable_on_path", "executable": "worker-missing"},
+                "health_check": {"kind": "command_probe", "timeout_seconds": 1, "degraded_on_failure": True},
+                "compatible_roles": ["implementer"],
+                "protocols": ["hermes-role-engine/v1"],
+                "capabilities": ["structured_envelope"],
+                "workspace_support": {"task_workspace": True},
+                "session_support": {"tmux": True},
+                "risk_ceiling": "L4",
+                "risk_policy": {"max_without_human_approval": "L2"},
+                "fallback_allowed": False,
+            },
+            {
+                "id": "bad",
+                "name": "Bad Worker",
+                "enabled": True,
+                "adapter_type": "cli",
+                "transport": "local_process",
+                "install_check": {"kind": "executable_on_path", "executable": "worker-bad"},
+                "health_check": {"kind": "command_probe", "timeout_seconds": 1, "degraded_on_failure": True},
+                "compatible_roles": ["implementer"],
+                "protocols": ["hermes-role-engine/v1"],
+                "capabilities": ["structured_envelope"],
+                "workspace_support": {"task_workspace": True},
+                "session_support": {"tmux": True},
+                "risk_ceiling": "L4",
+                "risk_policy": {"max_without_human_approval": "L2"},
+                "fallback_allowed": False,
+            },
+        ],
+    }
+    (config_dir / "backends.json").write_text(json.dumps(availability_backends), encoding="utf-8")
+    (config_dir / "roles.json").write_text((repo / "config/workers/full/roles.json").read_text(encoding="utf-8"), encoding="utf-8")
+
+    availability_registry = WorkerRegistry(tmp_repo, allow_staged=True)
+    assert availability_registry.backend_availability("ok") == {"available": True, "reasons": []}
+    assert availability_registry.backend_availability("missing") == {"available": False, "reasons": ["install_check_failed"]}
+    assert availability_registry.backend_availability("bad") == {"available": False, "reasons": ["health_check_failed"]}
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    config_dir = tmp_repo / "config/workers/full"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(repo / "config/workers/full/backends.json", config_dir / "backends.json")
+    shutil.copy2(repo / "config/workers/full/roles.json", config_dir / "roles.json")
+    schema_missing_registry = WorkerRegistry(tmp_repo, allow_staged=True)
+    expect_error(WorkerRegistryError, "config_invalid", schema_missing_registry.load_backends)
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    copy_schema(tmp_repo)
+    config_dir = tmp_repo / "config/workers/full"
+    config_dir.mkdir(parents=True, exist_ok=True)
     malformed_roles = {
         "schema_version": "orchestra.full.v1",
         "artifact_type": "worker_role_registry",
@@ -204,6 +406,17 @@ with tempfile.TemporaryDirectory() as tmp:
     (config_dir / "roles.json").write_text(json.dumps(malformed_roles), encoding="utf-8")
     malformed_registry = WorkerRegistry(tmp_repo, allow_staged=True)
     expect_error(WorkerRegistryError, "config_invalid", malformed_registry.load_roles)
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    copy_schema(tmp_repo)
+    config_dir = tmp_repo / "config/workers/full"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(repo / "config/workers/full/backends.json", config_dir / "backends.json")
+    shutil.copy2(repo / "config/workers/full/roles.json", config_dir / "roles.json")
+    (config_dir / "backends.json").chmod(0)
+    unreadable_registry = WorkerRegistry(tmp_repo, allow_staged=True)
+    expect_error(WorkerRegistryError, "config_invalid", unreadable_registry.load_backends)
 PY
 
 test_done
