@@ -312,38 +312,40 @@ Blocked stop conditions:
 
 Dependencies on previous sprints:
 
-- [ ] Sprint 0 must be complete and verified.
-- [ ] Sprint 6 must be complete and verified (derived from sequencing diagram). Sprint 8 and Sprint 9 may run in parallel.
+- [x] Sprint 0 must be complete and verified.
+- [x] Sprint 6 must be complete and verified (derived from sequencing diagram). Sprint 8 and Sprint 9 may run in parallel.
 
 Exact files to create:
 
-- [ ] `scripts/lib/self_evolution.py`
-- [ ] `scripts/lib/performance_slo.py`
-- [ ] `scripts/tests/test-self-evolution.sh`
-- [ ] `scripts/tests/test-performance-slo.sh`
+- [x] `scripts/lib/self_evolution.py`
+- [x] `scripts/lib/performance_slo.py`
+- [x] `scripts/tests/test-self-evolution.sh`
+- [x] `scripts/tests/test-performance-slo.sh`
 
 Verify-only files:
 
-- [ ] `config/evolution/self-evolution-review-queue.json`
-- [ ] `config/performance/slo-policy.json`
+- [x] `config/evolution/self-evolution-review-queue.json`
+- [x] `config/performance/slo-policy.json`
 
 Verification commands:
 
-- [ ] `scripts/tests/test-self-evolution.sh`
-- [ ] `scripts/tests/test-performance-slo.sh`
+- [x] `scripts/tests/test-self-evolution.sh`
+- [x] `scripts/tests/test-performance-slo.sh`
 
 Blocked stop conditions:
 
-- [ ] Stop if self-evolution review queue configuration is invalid.
-- [ ] Stop if performance SLO policy configuration is invalid.
-- [ ] Stop if proposal generation does not match trigger conditions.
-- [ ] Stop if review queue state transitions are incorrect.
-- [ ] Stop if protected goals can be auto-applied or bypass the queue.
-- [ ] Stop if protected goals do not require Kimi review and human approval.
-- [ ] Stop if self-evolution proposal content is not validated against a per-target-class schema.
-- [ ] Stop if component budget monitoring is missing or incorrect.
-- [ ] Stop if missed budgets do not produce explicit degradation behavior.
-- [ ] Stop if either Sprint 8 test command fails.
+- [x] Stop if self-evolution review queue configuration is invalid.
+- [x] Stop if performance SLO policy configuration is invalid.
+- [x] Stop if proposal generation does not match trigger conditions.
+- [x] Stop if review queue state transitions are incorrect.
+- [x] Stop if protected goals can be auto-applied or bypass the queue.
+- [x] Stop if protected goals do not require Kimi review and human approval.
+- [x] Stop if self-evolution proposal content is not validated against a per-target-class schema.
+- [x] Stop if component budget monitoring is missing or incorrect.
+- [x] Stop if missed budgets do not produce explicit degradation behavior.
+- [x] Stop if either Sprint 8 test command fails.
+
+- [2026-05-18] Verified by Codex — all tests passed
 
 ## Sprint 9: Fixture Policy and Degradation Policy
 
