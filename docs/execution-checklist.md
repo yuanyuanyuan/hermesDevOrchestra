@@ -16,8 +16,8 @@ Last updated: 2026-05-18 — Added threat model, Gateway auth, and debate artifa
 - [ ] Do not treat contract fixtures or runtime fake adapters as completion evidence unless the degradation policy explicitly allows it.
 - [x] Use sprint-specific unit/integration command pattern: `scripts/tests/test-*.sh`.
 - [x] Use contract validation command where schema instances are being checked: `python -m jsonschema config/schemas/orchestra.full.schema.json`.
-- [ ] Run final verification after Sprint 10: `scripts/tests/run-all.sh`, `scripts/bin/orch-full-contract-validate`, and `scripts/tests/test-mvp-acceptance.sh`.
-- [ ] Verify threat model documents trust boundaries, threats, and mitigations (see plan Threat Model section).
+- [x] Run final verification after Sprint 10: `scripts/tests/run-all.sh`, `scripts/bin/orch-full-contract-validate`, and `scripts/tests/test-mvp-acceptance.sh`.
+- [x] Verify threat model documents trust boundaries, threats, and mitigations (see plan Threat Model section).
 
 ## Sprint 0: Gateway Integration Architecture
 
@@ -387,45 +387,47 @@ Blocked stop conditions:
 
 Dependencies on previous sprints:
 
-- [ ] Sprint 0 must be complete and verified.
-- [ ] Sprint 1 through Sprint 9 must be complete and verified.
+- [x] Sprint 0 must be complete and verified.
+- [x] Sprint 1 through Sprint 9 must be complete and verified.
 
 Exact files to create:
 
-- [ ] `scripts/lib/full_schema_validation.py`
-- [ ] `scripts/lib/staged_cutover.py`
-- [ ] `scripts/tests/test-full-schema-validation.sh`
-- [ ] `scripts/tests/test-staged-cutover.sh`
+- [x] `scripts/lib/full_schema_validation.py`
+- [x] `scripts/lib/staged_cutover.py`
+- [x] `scripts/tests/test-full-schema-validation.sh`
+- [x] `scripts/tests/test-staged-cutover.sh`
 
 Verify-only files:
 
-- [ ] `config/schemas/orchestra.full.schema.json`
-- [ ] `config/cutover/full-readiness-gates.json`
-- [ ] `scripts/bin/orch-full-contract-validate`
+- [x] `config/schemas/orchestra.full.schema.json`
+- [x] `config/cutover/full-readiness-gates.json`
+- [x] `scripts/bin/orch-full-contract-validate`
 
 Verification commands:
 
 > **Note:** `test-full-schema-validation.sh`, `test-staged-cutover.sh`, and `run-all.sh` are sourced from the origin plan's Final Verification section. `orch-full-contract-validate` and `test-mvp-acceptance.sh` are from the origin plan's Sprint 10 Verification section.
 
-- [ ] `scripts/tests/test-full-schema-validation.sh`
-- [ ] `scripts/tests/test-staged-cutover.sh`
-- [ ] `scripts/bin/orch-full-contract-validate`
-- [ ] `scripts/tests/run-all.sh`
-- [ ] `scripts/tests/test-mvp-acceptance.sh`
+- [x] `scripts/tests/test-full-schema-validation.sh`
+- [x] `scripts/tests/test-staged-cutover.sh`
+- [x] `scripts/bin/orch-full-contract-validate`
+- [x] `scripts/tests/run-all.sh`
+- [x] `scripts/tests/test-mvp-acceptance.sh`
 
 Blocked stop conditions:
 
-- [ ] Stop if `orchestra.full.schema.json` is not a valid Draft 2020-12 schema.
-- [ ] Stop if full debate package configuration does not validate.
-- [ ] Stop if full worker registry configuration does not validate.
-- [ ] Stop if cutover readiness gates are incomplete or invalid.
-- [ ] Stop if artifact-family cutover gate requirements are incomplete.
-- [ ] Stop if historical runs do not preserve their original schema version.
-- [ ] Stop if new runs can write full artifacts before their artifact family passes gates.
-- [ ] Stop if rollback or disable plans are missing.
-- [ ] Stop if either Sprint 10 test command fails.
-- [ ] Stop if `scripts/bin/orch-full-contract-validate` fails.
-- [ ] Stop if final integration or MVP acceptance tests fail.
+- [x] Stop if `orchestra.full.schema.json` is not a valid Draft 2020-12 schema.
+- [x] Stop if full debate package configuration does not validate.
+- [x] Stop if full worker registry configuration does not validate.
+- [x] Stop if cutover readiness gates are incomplete or invalid.
+- [x] Stop if artifact-family cutover gate requirements are incomplete.
+- [x] Stop if historical runs do not preserve their original schema version.
+- [x] Stop if new runs can write full artifacts before their artifact family passes gates.
+- [x] Stop if rollback or disable plans are missing.
+- [x] Stop if either Sprint 10 test command fails.
+- [x] Stop if `scripts/bin/orch-full-contract-validate` fails.
+- [x] Stop if final integration or MVP acceptance tests fail.
+
+[2026-05-18] Verified by Codex — all tests passed
 
 ## Sprint 11: Gateway Integration
 
