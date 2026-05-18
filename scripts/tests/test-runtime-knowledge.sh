@@ -36,6 +36,7 @@ sys.path.insert(0, str(repo / "scripts/lib"))
 
 from debate_report import validate_artifact_definition
 from knowledge_ingestion import KnowledgeIngestion, KnowledgeIngestionError
+from runtime_knowledge import RuntimeKnowledgeBase, RuntimeKnowledgeError
 
 
 def expect_error(code, func):
@@ -107,12 +108,82 @@ def runtime_env(home_dir):
     }
 
 
+def fake_runtime_env(home_dir, slug):
+    bin_dir = home_dir / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    script = bin_dir / "gbrain"
+    script.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+import sys
+
+slug = os.environ["FAKE_GBRAIN_SLUG"]
+args = sys.argv[1:]
+if not args:
+    sys.exit(1)
+if args == ["--version"]:
+    print("gbrain fake 0.0.0")
+    sys.exit(0)
+if args[0] == "init":
+    sys.exit(0)
+if args[0] == "put":
+    print(json.dumps({"slug": slug, "status": "created_or_updated", "chunks": 1}))
+    sys.exit(0)
+if args[0] == "report":
+    print("reports/knowledge-ingestion/fake.md")
+    sys.exit(0)
+if args[0] == "query":
+    print(f"[0.9999] {slug} -- fake query snippet")
+    sys.exit(0)
+sys.exit(1)
+""",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    env = runtime_env(home_dir)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["FAKE_GBRAIN_SLUG"] = slug
+    return env
+
+
+def runtime_request(question, allowed_types=None, evidence_scope="implementation"):
+    return {
+        "run_id": "run-runtime-knowledge",
+        "task_id": "task-runtime-knowledge",
+        "domain": "wechat",
+        "question": question,
+        "allowed_types": allowed_types or ["domain_knowledge"],
+        "required_freshness": "current",
+        "max_results": 3,
+        "evidence_scope": evidence_scope,
+    }
+
+
 blocked = KnowledgeIngestion(repo)
 exc = expect_error("module_disabled", lambda: blocked.ingest(runtime_entry()))
 assert "allow_staged=True" in exc.message, exc.message
 
 disabled = KnowledgeIngestion(repo, allow_staged=True, enabled=False)
 expect_error("module_disabled", lambda: disabled.ingest(runtime_entry()))
+
+blocked_kb = RuntimeKnowledgeBase(repo)
+kb_exc = None
+try:
+    blocked_kb.query(runtime_request("navigateTo routing"))
+except RuntimeKnowledgeError as exc:
+    kb_exc = exc
+assert kb_exc is not None, "expected RuntimeKnowledgeError(module_disabled)"
+assert kb_exc.code == "module_disabled", kb_exc.code
+assert "allow_staged=True" in kb_exc.message, kb_exc.message
+
+disabled_kb = RuntimeKnowledgeBase(repo, allow_staged=True, enabled=False)
+try:
+    disabled_kb.query(runtime_request("navigateTo routing"))
+except RuntimeKnowledgeError as exc:
+    assert exc.code == "module_disabled", exc.code
+else:
+    raise AssertionError("expected RuntimeKnowledgeError(module_disabled)")
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = pathlib.Path(tmp)
@@ -153,12 +224,108 @@ with tempfile.TemporaryDirectory() as tmp:
     prepare_active_repo(tmp_repo)
     home_dir = tmp_repo / "home"
     home_dir.mkdir(parents=True, exist_ok=True)
-    ingestor = KnowledgeIngestion(tmp_repo, allow_staged=True, gbrain_env=runtime_env(home_dir))
+    ingestor = KnowledgeIngestion(
+        tmp_repo,
+        allow_staged=True,
+        gbrain_env=fake_runtime_env(home_dir, "domain/wechat/routing/navigate-to"),
+    )
     result = ingestor.ingest(runtime_entry(entry_type="domain_knowledge", verification_method="official_doc_review"))
     validate_artifact_definition(tmp_repo, "runtime_knowledge_entry", result["entry"])
     validate_artifact_definition(tmp_repo, "knowledge_ingestion_record", result["ingestion_record"])
     assert result["ingestion_record"]["resulting_status"] == "domain_knowledge", result["ingestion_record"]
     assert result["ingestion_record"]["verification_method"] == "official_doc_review", result["ingestion_record"]
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    prepare_active_repo(tmp_repo)
+    home_dir = tmp_repo / "home"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    env = fake_runtime_env(home_dir, "domain/wechat/routing/navigate-to")
+    ingestor = KnowledgeIngestion(tmp_repo, allow_staged=True, gbrain_env=env)
+    ingestor.ingest(runtime_entry(entry_type="domain_knowledge", verification_method="official_doc_review"))
+    kb = RuntimeKnowledgeBase(tmp_repo, allow_staged=True, gbrain_env=env)
+    queried = kb.query(runtime_request("wx.navigateTo non-tabBar pages"))
+    validate_artifact_definition(tmp_repo, "runtime_knowledge_query", queried["query_artifact"])
+    validate_artifact_definition(tmp_repo, "runtime_knowledge_result", queried["result_artifact"])
+    assert queried["result_artifact"]["slugs"] == ["domain/wechat/routing/navigate-to"], queried["result_artifact"]
+    assert queried["result_artifact"]["freshness_status"] == "current", queried["result_artifact"]
+    assert queried["result_artifact"]["degradation_status"] == "normal", queried["result_artifact"]
+    assert queried["result_artifact"]["warnings"] == [], queried["result_artifact"]
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    prepare_active_repo(tmp_repo)
+    home_dir = tmp_repo / "home"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    env = fake_runtime_env(home_dir, "domain/wechat/routing/navigate-to")
+    ingestor = KnowledgeIngestion(tmp_repo, allow_staged=True, gbrain_env=env)
+    ingestor.ingest(runtime_entry())
+    kb = RuntimeKnowledgeBase(tmp_repo, allow_staged=True, gbrain_env=env)
+    queried = kb.query(
+        runtime_request(
+            "wx.navigateTo non-tabBar pages",
+            allowed_types=["domain_knowledge", "candidate_knowledge"],
+            evidence_scope="research",
+        )
+    )
+    validate_artifact_definition(tmp_repo, "runtime_knowledge_result", queried["result_artifact"])
+    assert queried["result_artifact"]["slugs"] == ["domain/wechat/routing/navigate-to"], queried["result_artifact"]
+    assert queried["result_artifact"]["freshness_status"] == "warning_context", queried["result_artifact"]
+    assert queried["result_artifact"]["degradation_status"] == "degraded", queried["result_artifact"]
+    assert "candidate_knowledge_requires_verification" in queried["result_artifact"]["warnings"], queried["result_artifact"]["warnings"]
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    prepare_active_repo(tmp_repo)
+    home_dir = tmp_repo / "home"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    env = fake_runtime_env(home_dir, "domain/wechat/routing/navigate-to")
+    ingestor = KnowledgeIngestion(tmp_repo, allow_staged=True, gbrain_env=env)
+    expired = runtime_entry(entry_type="domain_knowledge", verification_method="official_doc_review")
+    expired["last_verified_at"] = "2026-01-01T00:00:00Z"
+    expired["valid_from"] = "2026-01-01T00:00:00Z"
+    ingestor.ingest(expired)
+    kb = RuntimeKnowledgeBase(tmp_repo, allow_staged=True, gbrain_env=env)
+    queried = kb.query(runtime_request("wx.navigateTo non-tabBar pages"))
+    validate_artifact_definition(tmp_repo, "runtime_knowledge_result", queried["result_artifact"])
+    assert queried["result_artifact"]["slugs"] == ["domain/wechat/routing/navigate-to"], queried["result_artifact"]
+    assert queried["result_artifact"]["freshness_status"] == "warning_context", queried["result_artifact"]
+    assert queried["result_artifact"]["degradation_status"] == "degraded", queried["result_artifact"]
+    assert "expired_entry_warning_context" in queried["result_artifact"]["warnings"], queried["result_artifact"]["warnings"]
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    prepare_active_repo(tmp_repo)
+    home_dir = tmp_repo / "home"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    state_root = tmp_repo / "state-root"
+    degraded_env = runtime_env(home_dir)
+    degraded_env["PATH"] = str(tmp_repo / "missing-bin")
+    ingestor = KnowledgeIngestion(
+        tmp_repo,
+        allow_staged=True,
+        gbrain_env=degraded_env,
+        state_root=state_root,
+    )
+    degraded_ingest = ingestor.ingest(runtime_entry(entry_type="domain_knowledge", verification_method="official_doc_review"))
+    assert degraded_ingest["degraded"] is True, degraded_ingest
+    assert degraded_ingest["storage_ref"].startswith("state://knowledge/entries/"), degraded_ingest["storage_ref"]
+
+    kb = RuntimeKnowledgeBase(
+        tmp_repo,
+        allow_staged=True,
+        gbrain_env=degraded_env,
+        state_root=state_root,
+    )
+    queried = kb.query(runtime_request("wx.navigateTo non-tabBar pages"))
+    validate_artifact_definition(tmp_repo, "runtime_knowledge_result", queried["result_artifact"])
+    assert queried["result_artifact"]["slugs"] == ["domain/wechat/routing/navigate-to"], queried["result_artifact"]
+    assert queried["result_artifact"]["degradation_status"] == "degraded", queried["result_artifact"]
+    assert queried["result_artifact"]["freshness_status"] == "warning_context", queried["result_artifact"]
+    assert "backend_unavailable_state_store" in queried["result_artifact"]["warnings"], queried["result_artifact"]["warnings"]
+    assert queried["degraded_storage_refs"][0].startswith("state://knowledge/entries/"), queried["degraded_storage_refs"]
+    degraded_entry_path = state_root / "knowledge" / "entries" / "wechat" / "routing" / "navigate-to.json"
+    assert degraded_entry_path.exists(), degraded_entry_path
 PY
 
 test_done

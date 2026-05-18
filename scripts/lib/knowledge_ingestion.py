@@ -46,6 +46,7 @@ class KnowledgeIngestion:
         normalized_entry = self._normalize_entry(entry)
         page_markdown = self._render_page_markdown(normalized_entry)
         record = self._build_ingestion_record(normalized_entry)
+        state_refs = self._write_state_copy(normalized_entry, record)
 
         if self._gbrain_available(config):
             self._run_gbrain_command([config["backend"]["cli_command"], "init"])
@@ -58,17 +59,20 @@ class KnowledgeIngestion:
                 "gbrain_put_result": put_result,
                 "ingestion_record": record,
                 "gbrain_report_ref": report_ref,
+                "state_storage_ref": state_refs["entry_ref"],
+                "state_record_ref": state_refs["record_ref"],
                 "degraded": False,
             }
 
-        degraded_refs = self._write_degraded_entry(normalized_entry, record)
         return {
             "entry": normalized_entry,
             "page_markdown": page_markdown,
-            "storage_ref": degraded_refs["entry_ref"],
+            "storage_ref": state_refs["entry_ref"],
             "gbrain_put_result": {"status": "degraded_state_store"},
             "ingestion_record": record,
-            "gbrain_report_ref": degraded_refs["record_ref"],
+            "gbrain_report_ref": state_refs["record_ref"],
+            "state_storage_ref": state_refs["entry_ref"],
+            "state_record_ref": state_refs["record_ref"],
             "degraded": True,
         }
 
@@ -236,7 +240,7 @@ class KnowledgeIngestion:
             raise KnowledgeIngestionError("backend_invalid", "gbrain report did not return a report path")
         return f"gbrain://{report_path.lstrip('./')}"
 
-    def _write_degraded_entry(self, entry: dict[str, Any], record: dict[str, Any]) -> dict[str, str]:
+    def _write_state_copy(self, entry: dict[str, Any], record: dict[str, Any]) -> dict[str, str]:
         entry_dir = self.state_root / "knowledge" / "entries" / entry["domain"] / entry["topic"]
         record_dir = self.state_root / "knowledge" / "ingestion"
         entry_dir.mkdir(parents=True, exist_ok=True)
