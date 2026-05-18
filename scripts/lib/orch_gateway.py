@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 import subprocess
@@ -5119,8 +5120,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--project-id", required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8642)
+    parser.add_argument("--allow-network-binding", action="store_true")
     parser.add_argument("--upstream-api-url", default="http://127.0.0.1:8643")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not _is_loopback_host(args.host) and not args.allow_network_binding:
+        parser.error("non-loopback --host requires --allow-network-binding")
+    return args
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:
