@@ -234,39 +234,41 @@ Blocked stop conditions:
 
 Dependencies on previous sprints:
 
-- [ ] Sprint 0 must be complete and verified.
-- [ ] Sprint 5 must be complete and verified (derived from sequencing diagram). Sprint 6 and Sprint 7 may run in parallel.
+- [x] Sprint 0 must be complete and verified.
+- [x] Sprint 5 must be complete and verified (derived from sequencing diagram). Sprint 6 and Sprint 7 may run in parallel.
 
 Exact files to create:
 
-- [ ] `scripts/lib/release_pipeline.py`
-- [ ] `scripts/lib/release_executor.py`
-- [ ] `scripts/tests/test-release-pipeline.sh`
+- [x] `scripts/lib/release_pipeline.py`
+- [x] `scripts/lib/release_executor.py`
+- [x] `scripts/tests/test-release-pipeline.sh`
 
 Verify-only files:
 
-- [ ] `config/release/pipeline.json`
-- [ ] `config/release/commands.json`
+- [x] `config/release/pipeline.json`
+- [x] `config/release/commands.json`
 
 Verification commands:
 
-- [ ] `scripts/tests/test-release-pipeline.sh`
+- [x] `scripts/tests/test-release-pipeline.sh`
 
 Blocked stop conditions:
 
-- [ ] Stop if release pipeline or command registry required fields are missing.
-- [ ] Stop if command references are not resolved through the trusted registry.
-- [ ] Stop if unregistered commands can execute.
-- [ ] Stop if command reference validation does not block injection or path traversal.
-- [ ] Stop if environment variables are not filtered to `PATH`, `HOME`, `CI`, and `HERMES_RELEASE_ENV`.
-- [ ] Stop if output redaction does not remove sensitive data before storage.
-- [ ] Stop if release pipeline output is not scanned for secrets before storage.
-- [ ] Stop if `arbitrary_shell_allowed: false` is not enforced without `shell=True`.
-- [ ] Stop if approval references are not checked before process start.
-- [ ] Stop if timeout or termination behavior is missing.
-- [ ] Stop if deployment report schema validation fails.
-- [ ] Stop if Gateway does not reject non-loopback connections by default.
-- [ ] Stop if `scripts/tests/test-release-pipeline.sh` fails.
+- [x] Stop if release pipeline or command registry required fields are missing.
+- [x] Stop if command references are not resolved through the trusted registry.
+- [x] Stop if unregistered commands can execute.
+- [x] Stop if command reference validation does not block injection or path traversal.
+- [x] Stop if environment variables are not filtered to `PATH`, `HOME`, `CI`, and `HERMES_RELEASE_ENV`.
+- [x] Stop if output redaction does not remove sensitive data before storage.
+- [x] Stop if release pipeline output is not scanned for secrets before storage.
+- [x] Stop if `arbitrary_shell_allowed: false` is not enforced without `shell=True`.
+- [x] Stop if approval references are not checked before process start.
+- [x] Stop if timeout or termination behavior is missing.
+- [x] Stop if deployment report schema validation fails.
+- [x] Stop if Gateway does not reject non-loopback connections by default.
+- [x] Stop if `scripts/tests/test-release-pipeline.sh` fails.
+
+- [2026-05-18] Verified by Codex — all tests passed
 
 ## Sprint 7: Runtime Domain Knowledge Base
 
@@ -310,38 +312,40 @@ Blocked stop conditions:
 
 Dependencies on previous sprints:
 
-- [ ] Sprint 0 must be complete and verified.
-- [ ] Sprint 6 must be complete and verified (derived from sequencing diagram). Sprint 8 and Sprint 9 may run in parallel.
+- [x] Sprint 0 must be complete and verified.
+- [x] Sprint 6 must be complete and verified (derived from sequencing diagram). Sprint 8 and Sprint 9 may run in parallel.
 
 Exact files to create:
 
-- [ ] `scripts/lib/self_evolution.py`
-- [ ] `scripts/lib/performance_slo.py`
-- [ ] `scripts/tests/test-self-evolution.sh`
-- [ ] `scripts/tests/test-performance-slo.sh`
+- [x] `scripts/lib/self_evolution.py`
+- [x] `scripts/lib/performance_slo.py`
+- [x] `scripts/tests/test-self-evolution.sh`
+- [x] `scripts/tests/test-performance-slo.sh`
 
 Verify-only files:
 
-- [ ] `config/evolution/self-evolution-review-queue.json`
-- [ ] `config/performance/slo-policy.json`
+- [x] `config/evolution/self-evolution-review-queue.json`
+- [x] `config/performance/slo-policy.json`
 
 Verification commands:
 
-- [ ] `scripts/tests/test-self-evolution.sh`
-- [ ] `scripts/tests/test-performance-slo.sh`
+- [x] `scripts/tests/test-self-evolution.sh`
+- [x] `scripts/tests/test-performance-slo.sh`
 
 Blocked stop conditions:
 
-- [ ] Stop if self-evolution review queue configuration is invalid.
-- [ ] Stop if performance SLO policy configuration is invalid.
-- [ ] Stop if proposal generation does not match trigger conditions.
-- [ ] Stop if review queue state transitions are incorrect.
-- [ ] Stop if protected goals can be auto-applied or bypass the queue.
-- [ ] Stop if protected goals do not require Kimi review and human approval.
-- [ ] Stop if self-evolution proposal content is not validated against a per-target-class schema.
-- [ ] Stop if component budget monitoring is missing or incorrect.
-- [ ] Stop if missed budgets do not produce explicit degradation behavior.
-- [ ] Stop if either Sprint 8 test command fails.
+- [x] Stop if self-evolution review queue configuration is invalid.
+- [x] Stop if performance SLO policy configuration is invalid.
+- [x] Stop if proposal generation does not match trigger conditions.
+- [x] Stop if review queue state transitions are incorrect.
+- [x] Stop if protected goals can be auto-applied or bypass the queue.
+- [x] Stop if protected goals do not require Kimi review and human approval.
+- [x] Stop if self-evolution proposal content is not validated against a per-target-class schema.
+- [x] Stop if component budget monitoring is missing or incorrect.
+- [x] Stop if missed budgets do not produce explicit degradation behavior.
+- [x] Stop if either Sprint 8 test command fails.
+
+- [2026-05-18] Verified by Codex — all tests passed
 
 ## Sprint 9: Fixture Policy and Degradation Policy
 
