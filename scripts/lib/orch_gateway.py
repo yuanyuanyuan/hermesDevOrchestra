@@ -18,26 +18,6 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
-from capability_negotiation import CapabilityNegotiator
-from debate_assembly import DebateAssembly
-from debate_backend_adapter import DebateBackendAdapterRegistry
-from debate_engine import DebateEngine
-from debate_member_invocation import DebateMemberInvocationService
-from debate_report import DebateReportBuilder
-from degradation_policy import DegradationPolicy
-from fixture_policy import FixturePolicy
-from full_schema_validation import FullSchemaValidation
-from knowledge_ingestion import KnowledgeIngestion
-from performance_slo import PerformanceBudgetPolicy
-from release_executor import ReleaseExecutor
-from release_pipeline import ReleasePipeline
-from runtime_knowledge import RuntimeKnowledgeBase
-from self_evolution import SelfEvolutionQueue
-from staged_cutover import FullSchemaCutover
-from worker_registry import WorkerRegistry
-from worker_session import WorkerSessionManager
-from worker_session_sweeper import WorkerSessionSweeper
-
 
 SCHEMA_VERSION = "orchestra.v1"
 EVENT_SCHEMA_VERSION = "orchestra.event.v1"
@@ -304,6 +284,12 @@ class GatewayApp:
                 "host": "127.0.0.1",
                 "schema_version": SCHEMA_VERSION,
             },
+            "authority_model": {
+                "phase": "phase_1",
+                "trust_boundary": "localhost_only",
+                "authentication": "none",
+                "authority_field_is_advisory_within_loopback": True,
+            },
             "upstream_api": {
                 "url": self.upstream_api_url,
                 "status": self.upstream_status(),
@@ -394,6 +380,8 @@ class GatewayApp:
         enabled = self.bool_payload(payload, "enabled", True)
 
         if module == "debate-engine":
+            from debate_engine import DebateEngine
+
             engine = DebateEngine(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "load-registries":
                 return engine.load_registries()
@@ -406,6 +394,8 @@ class GatewayApp:
                 )
 
         if module == "debate-assembly":
+            from debate_assembly import DebateAssembly
+
             assembly = DebateAssembly(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "select-for-stage":
                 return assembly.select_for_stage(
@@ -416,6 +406,8 @@ class GatewayApp:
                 )
 
         if module == "debate-backend-adapter":
+            from debate_backend_adapter import DebateBackendAdapterRegistry
+
             adapter = DebateBackendAdapterRegistry(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "select-backend":
                 return adapter.select_backend(
@@ -424,6 +416,8 @@ class GatewayApp:
                 )
 
         if module == "debate-member-invocation":
+            from debate_member_invocation import DebateMemberInvocationService
+
             service = DebateMemberInvocationService(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "build-invocation":
                 return service.build_invocation(
@@ -448,6 +442,8 @@ class GatewayApp:
                 )
 
         if module == "debate-report":
+            from debate_report import DebateReportBuilder
+
             builder = DebateReportBuilder(self.repo_root)
             if operation == "build":
                 return builder.build(
@@ -462,6 +458,8 @@ class GatewayApp:
                 )
 
         if module == "worker-registry":
+            from worker_registry import WorkerRegistry
+
             registry = WorkerRegistry(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "load-backends":
                 return registry.load_backends()
@@ -469,6 +467,9 @@ class GatewayApp:
                 return registry.load_roles()
 
         if module == "capability-negotiation":
+            from capability_negotiation import CapabilityNegotiator
+            from worker_registry import WorkerRegistry
+
             registry = WorkerRegistry(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             negotiator = CapabilityNegotiator(registry)
             if operation == "negotiate":
@@ -480,6 +481,8 @@ class GatewayApp:
                 )
 
         if module == "worker-session":
+            from worker_session import WorkerSessionManager
+
             manager = WorkerSessionManager(self.repo_root)
             if operation == "create-session":
                 return manager.create_session(
@@ -505,11 +508,15 @@ class GatewayApp:
                 )
 
         if module == "worker-session-sweeper":
+            from worker_session_sweeper import WorkerSessionSweeper
+
             sweeper = WorkerSessionSweeper(self.repo_root)
             if operation == "sweep-directory":
                 return sweeper.sweep_directory(self.require_string(payload, "records_root"))
 
         if module == "release-pipeline":
+            from release_pipeline import ReleasePipeline
+
             pipeline = ReleasePipeline(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "load-pipeline":
                 return pipeline.load_pipeline()
@@ -521,6 +528,8 @@ class GatewayApp:
                 return pipeline.plan(self.require_string(payload, "environment"))
 
         if module == "release-executor":
+            from release_executor import ReleaseExecutor
+
             executor = ReleaseExecutor(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "execute":
                 return executor.execute(
@@ -535,16 +544,22 @@ class GatewayApp:
                 )
 
         if module == "runtime-knowledge":
+            from runtime_knowledge import RuntimeKnowledgeBase
+
             knowledge = RuntimeKnowledgeBase(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "query":
                 return knowledge.query(self.require_dict(payload, "request"))
 
         if module == "knowledge-ingestion":
+            from knowledge_ingestion import KnowledgeIngestion
+
             ingestion = KnowledgeIngestion(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "ingest":
                 return ingestion.ingest(self.require_dict(payload, "entry"))
 
         if module == "self-evolution":
+            from self_evolution import SelfEvolutionQueue
+
             queue = SelfEvolutionQueue(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "generate-stage6-sweep":
                 return queue.generate_stage6_sweep(
@@ -569,6 +584,8 @@ class GatewayApp:
                 return {"items": pending}
 
         if module == "performance-slo":
+            from performance_slo import PerformanceBudgetPolicy
+
             slo = PerformanceBudgetPolicy(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "evaluate":
                 return slo.evaluate(
@@ -577,6 +594,8 @@ class GatewayApp:
                 )
 
         if module == "fixture-policy":
+            from fixture_policy import FixturePolicy
+
             fixture_policy = FixturePolicy(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "validate-contract-fixture":
                 return fixture_policy.validate_contract_fixture(
@@ -590,6 +609,8 @@ class GatewayApp:
                 )
 
         if module == "degradation-policy":
+            from degradation_policy import DegradationPolicy
+
             policy = DegradationPolicy(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "transition":
                 next_status = policy.transition(
@@ -615,6 +636,8 @@ class GatewayApp:
                 return {"allowed": policy.allows_completion_evidence(self.require_dict(payload, "record"))}
 
         if module == "full-schema-validation":
+            from full_schema_validation import FullSchemaValidation
+
             validation = FullSchemaValidation(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "validate-schema":
                 return validation.validate_schema()
@@ -627,6 +650,8 @@ class GatewayApp:
                 return validation.validate_all()
 
         if module == "full-schema-cutover":
+            from staged_cutover import FullSchemaCutover
+
             cutover = FullSchemaCutover(self.repo_root, allow_staged=allow_staged, enabled=enabled)
             if operation == "evaluate-family":
                 return cutover.evaluate_family(self.require_string(payload, "family_id"))
