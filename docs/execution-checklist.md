@@ -351,35 +351,37 @@ Blocked stop conditions:
 
 Dependencies on previous sprints:
 
-- [ ] Sprint 0 must be complete and verified.
-- [ ] Sprint 7 must be complete and verified (derived from sequencing diagram). Sprint 8 and Sprint 9 may run in parallel.
+- [x] Sprint 0 must be complete and verified.
+- [x] Sprint 7 must be complete and verified (derived from sequencing diagram). Sprint 8 and Sprint 9 may run in parallel.
 
 Exact files to create:
 
-- [ ] `scripts/lib/fixture_policy.py`
-- [ ] `scripts/lib/degradation_policy.py`
-- [ ] `scripts/tests/test-fixture-policy.sh`
-- [ ] `scripts/tests/test-degradation-policy.sh`
+- [x] `scripts/lib/fixture_policy.py`
+- [x] `scripts/lib/degradation_policy.py`
+- [x] `scripts/tests/test-fixture-policy.sh`
+- [x] `scripts/tests/test-degradation-policy.sh`
 
 Verify-only files:
 
-- [ ] `config/testing/full-fixture-policy.json`
-- [ ] `config/degradation/policy.json`
+- [x] `config/testing/full-fixture-policy.json`
+- [x] `config/degradation/policy.json`
 
 Verification commands:
 
-- [ ] `scripts/tests/test-fixture-policy.sh`
-- [ ] `scripts/tests/test-degradation-policy.sh`
+- [x] `scripts/tests/test-fixture-policy.sh`
+- [x] `scripts/tests/test-degradation-policy.sh`
 
 Blocked stop conditions:
 
-- [ ] Stop if fixture policy or degradation policy configuration is invalid.
-- [ ] Stop if contract fixtures can become completion evidence.
-- [ ] Stop if runtime fake adapters are not marked as degraded.
-- [ ] Stop if degradation state-machine transitions are incorrect.
-- [ ] Stop if degradation records omit required fields.
-- [ ] Stop if degraded evidence can satisfy completion evidence when policy does not allow it.
-- [ ] Stop if either Sprint 9 test command fails.
+- [x] Stop if fixture policy or degradation policy configuration is invalid.
+- [x] Stop if contract fixtures can become completion evidence.
+- [x] Stop if runtime fake adapters are not marked as degraded.
+- [x] Stop if degradation state-machine transitions are incorrect.
+- [x] Stop if degradation records omit required fields.
+- [x] Stop if degraded evidence can satisfy completion evidence when policy does not allow it.
+- [x] Stop if either Sprint 9 test command fails.
+
+- [2026-05-18] Verified by Codex — all tests passed
 
 ## Sprint 10: Full Schema Validation and Staged Cutover
 
