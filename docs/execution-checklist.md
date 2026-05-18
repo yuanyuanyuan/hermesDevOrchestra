@@ -272,37 +272,39 @@ Blocked stop conditions:
 
 Dependencies on previous sprints:
 
-- [ ] Sprint 0 must be complete and verified.
-- [ ] Sprint 5 must be complete and verified (derived from sequencing diagram). Sprint 6 and Sprint 7 may run in parallel.
+- [x] Sprint 0 must be complete and verified.
+- [x] Sprint 5 must be complete and verified (derived from sequencing diagram). Sprint 6 and Sprint 7 may run in parallel.
 
 Exact files to create:
 
-- [ ] `scripts/lib/runtime_knowledge.py`
-- [ ] `scripts/lib/knowledge_ingestion.py`
-- [ ] `scripts/tests/test-runtime-knowledge.sh`
+- [x] `scripts/lib/runtime_knowledge.py`
+- [x] `scripts/lib/knowledge_ingestion.py`
+- [x] `scripts/tests/test-runtime-knowledge.sh`
 
 Verify-only files:
 
-- [ ] `config/knowledge/runtime-kb.json`
+- [x] `config/knowledge/runtime-kb.json`
 
 Verification commands:
 
-- [ ] `which gbrain`
-- [ ] `gbrain --version`
-- [ ] `scripts/tests/test-runtime-knowledge.sh`
+- [x] `which gbrain`
+- [x] `gbrain --version`
+- [x] `scripts/tests/test-runtime-knowledge.sh`
 
 Blocked stop conditions:
 
-- [ ] Stop and delay Sprint 7 if `which gbrain` or `gbrain --version` fails.
-- [ ] Stop if `runtime-kb.json` does not conform to the expected runtime knowledge configuration.
-- [ ] Stop if gbrain CLI/MCP integration cannot create entries.
-- [ ] Stop if knowledge entries or ingestion records do not match schema.
-- [ ] Stop if knowledge ingestion entries are not validated against a defined schema before passing to gbrain.
-- [ ] Stop if retrieval does not return contract-shaped results.
-- [ ] Stop if expired entries are not marked as warning context.
-- [ ] Stop if candidate knowledge can be promoted without verification.
-- [ ] Stop if the gbrain-unavailable path does not write JSON under `state://knowledge/` and return degraded query results.
-- [ ] Stop if `scripts/tests/test-runtime-knowledge.sh` fails.
+- [x] Stop and delay Sprint 7 if `which gbrain` or `gbrain --version` fails.
+- [x] Stop if `runtime-kb.json` does not conform to the expected runtime knowledge configuration.
+- [x] Stop if gbrain CLI/MCP integration cannot create entries.
+- [x] Stop if knowledge entries or ingestion records do not match schema.
+- [x] Stop if knowledge ingestion entries are not validated against a defined schema before passing to gbrain.
+- [x] Stop if retrieval does not return contract-shaped results.
+- [x] Stop if expired entries are not marked as warning context.
+- [x] Stop if candidate knowledge can be promoted without verification.
+- [x] Stop if the gbrain-unavailable path does not write JSON under `state://knowledge/` and return degraded query results.
+- [x] Stop if `scripts/tests/test-runtime-knowledge.sh` fails.
+
+- [2026-05-18] Verified by Codex — all tests passed
 
 ## Sprint 8: Self Evolution Review Queue and Performance SLO
 
