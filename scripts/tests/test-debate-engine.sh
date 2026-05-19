@@ -66,6 +66,15 @@ assert run["selected_team_ids"] == ["compliance", "security"], run["selected_tea
 assert run["metadata"]["stage"] == "direction_debate", run["metadata"]
 
 expect_error("validation_error", lambda: engine.create_run(question="", mode_id="parallel_debate"))
+expect_error("validation_error", lambda: engine.create_run(question="x" * 4001, mode_id="parallel_debate"))
+expect_error(
+    "validation_error",
+    lambda: engine.create_run(
+        question="valid question",
+        mode_id="parallel_debate",
+        metadata={"stage": "x" * 4001},
+    ),
+)
 expect_error("mode_not_found", lambda: engine.create_run(question="valid question", mode_id="missing"))
 expect_error(
     "member_not_found",

@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+_QUESTION_MAX_LENGTH = 4000
+_METADATA_MAX_LENGTH = 4000
+
 
 class DebateEngineError(Exception):
     def __init__(self, code: str, message: str):
@@ -82,10 +85,18 @@ class DebateEngine:
         registries = self.load_registries()
         if not isinstance(question, str) or not question.strip():
             raise DebateEngineError("validation_error", "question must be a non-empty string")
+        if len(question.strip()) > _QUESTION_MAX_LENGTH:
+            raise DebateEngineError("validation_error", f"question must be <= {_QUESTION_MAX_LENGTH} characters")
         if not isinstance(mode_id, str) or not mode_id:
             raise DebateEngineError("validation_error", "mode_id must be a non-empty string")
         if mode_id not in registries["mode_ids"]:
             raise DebateEngineError("mode_not_found", f"unknown debate mode: {mode_id}")
+        if metadata is None:
+            metadata = {}
+        if not isinstance(metadata, dict):
+            raise DebateEngineError("validation_error", "metadata must be an object")
+        if len(json.dumps(metadata, ensure_ascii=False, sort_keys=True)) > _METADATA_MAX_LENGTH:
+            raise DebateEngineError("validation_error", f"metadata must be <= {_METADATA_MAX_LENGTH} characters")
 
         if selected_member_ids is None:
             selected_member_ids = []
@@ -113,7 +124,7 @@ class DebateEngine:
             "package_ref": self.package_root,
             "package_status": registries["package_status"],
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "metadata": metadata or {},
+            "metadata": metadata,
         }
 
     def _require_enabled(self) -> None:
