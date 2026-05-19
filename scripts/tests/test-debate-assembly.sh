@@ -110,6 +110,7 @@ assert "jury_panel" in override_selection["required_modes"], override_selection[
 assert len(override_selection["selected_member_ids"]) == 9, override_selection["selected_member_ids"]
 assert override_selection["project_overrides_applied"]["minimum_member_count"] == 9, override_selection["project_overrides_applied"]
 
+expect_error("validation_error", lambda: assembly.select_for_stage("", "release_deploy", "L1"))
 expect_error("stage_not_found", lambda: assembly.select_for_stage("missing", "release_deploy", "L1"))
 expect_error("risk_level_not_found", lambda: assembly.select_for_stage("direction_debate", "release_deploy", "LX"))
 

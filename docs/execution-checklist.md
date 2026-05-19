@@ -4,16 +4,16 @@ Source plan: `/home/stark/.claude/plans/plan-sprint-sprint-1-curried-scone.md`
 
 This checklist is derived from the full Hermes Orchestra plan dated 2026-05-18. It is an execution and verification guide only; it does not contain implementation code.
 
-Last updated: 2026-05-18 — Added threat model, Gateway auth, and debate artifact secret leakage verification conditions.
+Last updated: 2026-05-19 — Closed host binding, debate input length, and negative-test coverage gaps; refreshed completion evidence checks.
 
 ## Global Gates
 
 - [x] Complete Sprint 0 before starting any implementation sprint.
 - [x] Use Shell-based tests (`scripts/tests/*.sh`) and `scripts/tests/lib/assert.sh`, matching the existing test strategy.
-- [ ] Include negative tests in every sprint: nil/empty input, malformed configuration, and explicit failure paths.
+- [x] Include negative tests in every sprint: nil/empty input, malformed configuration, and explicit failure paths.
 - [x] Every new module must check `enabled` / `package_status`; inactive modules must return no-op or a clear error.
 - [x] Verify Python 3.10+ and `jsonschema` availability before relying on schema validation.
-- [ ] Do not treat contract fixtures or runtime fake adapters as completion evidence unless the degradation policy explicitly allows it.
+- [x] Do not treat contract fixtures or runtime fake adapters as completion evidence unless the degradation policy explicitly allows it.
 - [x] Use sprint-specific unit/integration command pattern: `scripts/tests/test-*.sh`.
 - [x] Use contract validation command where schema instances are being checked: `python -m jsonschema config/schemas/orchestra.full.schema.json`.
 - [x] Run final verification after Sprint 10: `scripts/tests/run-all.sh`, `scripts/bin/orch-full-contract-validate`, and `scripts/tests/test-mvp-acceptance.sh`.
@@ -57,7 +57,7 @@ Blocked stop conditions:
 - [x] Stop if MVP vs full configuration routing is undefined.
 - [x] Stop if `enabled` / `package_status` feature-flag behavior is undefined.
 - [x] Stop if Gateway bind address policy is undefined (localhost-only default).
-- [ ] Stop if Gateway accepts --host values not matching 127.0.0.1 or localhost without explicit --allow-network-binding flag.
+- [x] Stop if Gateway accepts --host values not matching 127.0.0.1 or localhost without explicit --allow-network-binding flag.
 - [x] Stop if MVP configuration paths do not exist on disk (`config/debate/teams.json`, `config/debate/modes.json`, `config/workers/backends.json`, `config/workers/roles.json`).
 - [x] Stop if Full-target configuration paths do not exist on disk (`config/debate/full/teams.json`, `config/debate/full/modes.json`, `config/workers/full/backends.json`, `config/workers/full/roles.json`).
 - [x] Stop if `config/cutover/full-readiness-gates.json` does not exist on disk.
@@ -95,7 +95,7 @@ Blocked stop conditions:
 - [x] Stop if empty registries or malformed configuration do not return clear errors.
 - [x] Stop if feature flags do not block inactive modules.
 - [x] Stop if configuration schema validation fails.
-- [ ] Stop if debate question or metadata fields have no maximum length constraints.
+- [x] Stop if debate question or metadata fields have no maximum length constraints.
 - [x] Stop if `scripts/tests/test-debate-engine.sh` fails.
 
 ## Sprint 2: Debate Coverage and Assembly Policy
