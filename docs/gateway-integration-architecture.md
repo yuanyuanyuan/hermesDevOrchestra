@@ -179,6 +179,13 @@ The module classes below are the contract for implementation sprints. Method nam
 - Module returns structured Python dictionaries.
 - Gateway persists artifacts and events.
 
+## Authority Trust Boundary
+
+- Phase 1 trust model: localhost-only.
+- The default Gateway deployment binds to `127.0.0.1`, and the local loopback boundary is the only trust boundary assumed for Sprint 11 module endpoints.
+- The `authority` field on `/orchestra/modules/*` requests is an intent selector within that loopback boundary, not standalone remote authentication.
+- If Gateway is ever exposed beyond localhost, the module endpoints must gain an additional authentication layer such as a token check, Unix socket permission boundary, or mTLS before the `authority` field can be trusted.
+
 ## Non-Goals for Sprint 0
 
 - No Gateway refactor.

@@ -42,6 +42,78 @@ WORKER_BACKENDS = {
 }
 
 
+def module_endpoint(
+    module: str,
+    operation: str,
+    class_name: str,
+    authority: str,
+    required_fields: list[str],
+    optional_fields: list[str],
+    response_keys: list[str],
+) -> dict[str, Any]:
+    path = f"/orchestra/modules/{module}/{operation}"
+    return {
+        "module": module,
+        "operation": operation,
+        "class_name": class_name,
+        "method": "POST",
+        "path": path,
+        "route": f"POST {path}",
+        "authority": authority,
+        "request_shape": {
+            "type": "object",
+            "required_fields": ["authority", *required_fields],
+            "optional_fields": optional_fields,
+        },
+        "response_shape": {
+            "type": "object",
+            "top_level_keys": ["schema_version", "module", "operation", "authority", "result"],
+            "result_keys": response_keys,
+        },
+    }
+
+
+FULL_MODULE_ENDPOINTS = [
+    module_endpoint("debate-engine", "load-registries", "DebateEngine", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["teams", "modes", "team_ids", "mode_ids"]),
+    module_endpoint("debate-engine", "create-run", "DebateEngine", "gateway_local_operator", ["question", "mode_id"], ["selected_member_ids", "metadata", "allow_staged", "enabled"], ["debate_id", "status", "mode_id", "question"]),
+    module_endpoint("debate-assembly", "select-for-stage", "DebateAssembly", "gateway_local_operator", ["stage", "task_type", "risk_level"], ["project_overrides", "allow_staged", "enabled"], ["audit_id", "stage", "selected_team_ids", "selected_member_ids", "required_modes"]),
+    module_endpoint("debate-backend-adapter", "select-backend", "DebateBackendAdapterRegistry", "gateway_local_runtime", ["stage"], ["preferred_backend_id", "allow_staged", "enabled"], ["id", "family", "degraded_fixture_only", "allowed_stages"]),
+    module_endpoint("debate-member-invocation", "build-invocation", "DebateMemberInvocationService", "gateway_local_operator", ["run", "assembly", "member_id", "input_refs"], ["context_refs", "option_refs", "affected_scopes", "preferred_backend_id", "allow_staged", "enabled"], ["invocation_id", "member_id", "backend_id", "artifact_refs"]),
+    module_endpoint("debate-member-invocation", "execute", "DebateMemberInvocationService", "gateway_local_operator", ["run", "assembly", "input_refs"], ["context_refs", "option_refs", "affected_scopes", "preferred_backend_id", "allow_staged", "enabled"], ["invocations", "opinions", "report", "audit_trail"]),
+    module_endpoint("debate-report", "build", "DebateReportBuilder", "gateway_local_operator", ["run", "assembly", "backend_policy", "invocations", "opinions", "invocation_receipts", "input_refs", "affected_scopes"], [], ["report", "report_ref", "audit_trail", "audit_ref"]),
+    module_endpoint("worker-registry", "load-backends", "WorkerRegistry", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["backends", "package_status"]),
+    module_endpoint("worker-registry", "load-roles", "WorkerRegistry", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["roles", "package_status"]),
+    module_endpoint("capability-negotiation", "negotiate", "CapabilityNegotiator", "gateway_local_operator", ["role"], ["requested_backend", "required_capabilities", "negotiation_context", "allow_staged", "enabled"], ["role", "selected_backend", "selection_record", "negotiation_report"]),
+    module_endpoint("worker-session", "create-session", "WorkerSessionManager", "gateway_local_operator", ["run_id", "task_id", "role", "backend_id", "workspace_root", "write_scope_ref", "context_bundle_ref", "timeout_seconds"], ["transcript_ref", "output_envelope_ref"], ["session_id", "status", "workspace_path", "tmux_session_name"]),
+    module_endpoint("worker-session", "transition", "WorkerSessionManager", "gateway_local_operator", ["record", "next_status"], ["exit_signal", "output_envelope_ref", "cleanup_status", "termination_reason"], ["session_id", "status", "cleanup_status", "termination_reason"]),
+    module_endpoint("worker-session-sweeper", "sweep-directory", "WorkerSessionSweeper", "gateway_local_operator", ["records_root"], [], ["updated_records", "timed_out_records", "missing_records", "invalid_records"]),
+    module_endpoint("release-pipeline", "load-pipeline", "ReleasePipeline", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["command_registry_ref", "environments", "gates"]),
+    module_endpoint("release-pipeline", "load-registry", "ReleasePipeline", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["commands", "package_status", "command_index"]),
+    module_endpoint("release-pipeline", "validate-command-refs", "ReleasePipeline", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["command_registry_ref", "validated_command_refs", "environment_ids"]),
+    module_endpoint("release-pipeline", "plan", "ReleasePipeline", "gateway_local_runtime", ["environment"], ["allow_staged", "enabled"], ["environment", "deploy_command", "rollback_command", "gates"]),
+    module_endpoint("release-executor", "execute", "ReleaseExecutor", "gateway_local_release_operator", ["command_ref"], ["approval_ref", "run_id", "environment", "test_execution_report_refs", "health_check_refs", "rollback_or_recovery_refs", "gate_results", "allow_staged", "enabled"], ["deployment_report", "stdout_path", "stderr_path", "allowed_env"]),
+    module_endpoint("runtime-knowledge", "query", "RuntimeKnowledgeBase", "gateway_local_operator", ["request"], ["allow_staged", "enabled"], ["query_artifact", "result_artifact", "degraded_storage_refs"]),
+    module_endpoint("knowledge-ingestion", "ingest", "KnowledgeIngestion", "gateway_local_operator", ["entry"], ["allow_staged", "enabled"], ["entry", "storage_ref", "ingestion_record", "degraded"]),
+    module_endpoint("self-evolution", "generate-stage6-sweep", "SelfEvolutionQueue", "gateway_local_review", ["run_id", "source_refs", "proposals", "trigger_matches"], ["allow_staged", "enabled"], ["schema_version", "artifact_type", "run_id", "proposals", "queued_item_refs"]),
+    module_endpoint("self-evolution", "enqueue", "SelfEvolutionQueue", "gateway_local_review", ["proposal"], ["allow_staged", "enabled"], ["proposals_artifact", "queue_items"]),
+    module_endpoint("self-evolution", "transition", "SelfEvolutionQueue", "gateway_local_review", ["queue_item", "next_status"], ["decision_ref", "rejection_reason", "kimi_review_ref", "human_approval_ref", "allow_staged", "enabled"], ["queue_item_id", "status", "decision_ref", "rejection_reason"]),
+    module_endpoint("self-evolution", "list-pending", "SelfEvolutionQueue", "gateway_local_review", [], ["queue_items", "allow_staged", "enabled"], ["items"]),
+    module_endpoint("performance-slo", "evaluate", "PerformanceBudgetPolicy", "gateway_local_runtime", ["component_id", "observed"], ["allow_staged", "enabled"], ["component_id", "budget_status", "budget_misses", "degradation_status"]),
+    module_endpoint("fixture-policy", "validate-contract-fixture", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "completion_evidence_allowed"]),
+    module_endpoint("fixture-policy", "validate-runtime-fake-adapter", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "degraded", "required_degradation_class"]),
+    module_endpoint("degradation-policy", "transition", "DegradationPolicy", "gateway_local_runtime", ["current_status", "next_status"], ["allow_staged", "enabled"], ["next_status"]),
+    module_endpoint("degradation-policy", "build-record", "DegradationPolicy", "gateway_local_runtime", ["degradation_status", "degradation_class", "cause", "affected_evidence_refs", "recovery_options"], ["policy_key", "decision_required", "accepted_by_ref", "completion_evidence_allowed", "replacement_evidence_ref", "policy_ref", "allow_staged", "enabled"], ["degradation_status", "degradation_class", "decision_required", "completion_evidence_allowed"]),
+    module_endpoint("degradation-policy", "allows-completion-evidence", "DegradationPolicy", "gateway_local_runtime", ["record"], ["allow_staged", "enabled"], ["allowed"]),
+    module_endpoint("full-schema-validation", "validate-schema", "FullSchemaValidation", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["ok", "path", "draft"]),
+    module_endpoint("full-schema-validation", "validate-contract", "FullSchemaValidation", "gateway_local_runtime", ["rel_path", "definition_name"], ["allow_staged", "enabled"], ["ok", "path", "definition", "artifact_type"]),
+    module_endpoint("full-schema-validation", "validate-all", "FullSchemaValidation", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["ok", "schema", "contracts"]),
+    module_endpoint("full-schema-cutover", "evaluate-family", "FullSchemaCutover", "gateway_local_runtime", ["family_id"], ["allow_staged", "enabled"], ["family_id", "gate_ready", "required_gate_evidence", "required_checks"]),
+    module_endpoint("full-schema-cutover", "can-activate", "FullSchemaCutover", "gateway_local_runtime", ["family_id"], ["evidence", "completed_checks", "allow_staged", "enabled"], ["family_id", "allowed", "missing_evidence", "missing_checks"]),
+    module_endpoint("full-schema-cutover", "plan-artifact-write", "FullSchemaCutover", "gateway_local_runtime", ["family_id", "family_activated"], ["historical_run", "existing_schema_version", "allow_staged", "enabled"], ["family_id", "historical_run", "schema_ref", "write_full_artifacts"]),
+]
+FULL_MODULE_ENDPOINT_INDEX = {(spec["module"], spec["operation"]): spec for spec in FULL_MODULE_ENDPOINTS}
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -173,6 +245,22 @@ class GatewayApp:
         cache_root = os.environ.get("CACHE_ROOT", str(Path(os.environ.get("HOME", str(Path.home()))) / ".cache/hermes-orchestra"))
         debate_teams = self.config_items("config/debate/teams.json", "teams")
         debate_modes = self.config_items("config/debate/modes.json", "modes")
+        routes = [
+            "GET /health",
+            "GET /orchestra/capabilities",
+            "POST /orchestra/runs",
+            "GET /orchestra/runs/{run_id}",
+            "GET /orchestra/runs/{run_id}/events",
+            "GET /orchestra/runs/{run_id}/tasks",
+            "POST /orchestra/runs/{run_id}/stop",
+            "POST /orchestra/runs/{run_id}/worker-outputs",
+            "POST /orchestra/runs/{run_id}/verdicts",
+            "POST /orchestra/runs/{run_id}/global-evaluations",
+            "POST /orchestra/runs/{run_id}/closeout",
+            "POST /orchestra/runs/{run_id}/failures",
+            "POST /orchestra/decisions/{decision_id}",
+            *[spec["route"] for spec in FULL_MODULE_ENDPOINTS],
+        ]
         worker_registry = {
             name: {
                 "name": name,
@@ -196,6 +284,12 @@ class GatewayApp:
                 "host": "127.0.0.1",
                 "schema_version": SCHEMA_VERSION,
             },
+            "authority_model": {
+                "phase": "phase_1",
+                "trust_boundary": "localhost_only",
+                "authentication": "none",
+                "authority_field_is_advisory_within_loopback": True,
+            },
             "upstream_api": {
                 "url": self.upstream_api_url,
                 "status": self.upstream_status(),
@@ -205,21 +299,7 @@ class GatewayApp:
                 "project": self.store.project_id,
                 "kimi_mutation_api": False,
             },
-            "routes": [
-                "GET /health",
-                "GET /orchestra/capabilities",
-                "POST /orchestra/runs",
-                "GET /orchestra/runs/{run_id}",
-                "GET /orchestra/runs/{run_id}/events",
-                "GET /orchestra/runs/{run_id}/tasks",
-                "POST /orchestra/runs/{run_id}/stop",
-                "POST /orchestra/runs/{run_id}/worker-outputs",
-                "POST /orchestra/runs/{run_id}/verdicts",
-                "POST /orchestra/runs/{run_id}/global-evaluations",
-                "POST /orchestra/runs/{run_id}/closeout",
-                "POST /orchestra/runs/{run_id}/failures",
-                "POST /orchestra/decisions/{decision_id}",
-            ],
+            "routes": routes,
             "modes": ["mvp_full"],
             "workers": {
                 "config_ref": "config/workers/backends.json",
@@ -256,6 +336,7 @@ class GatewayApp:
                 },
             },
             "worker_backends": WORKER_BACKENDS,
+            "full_module_endpoints": FULL_MODULE_ENDPOINTS,
         }
 
     def config_items(self, relative_path: str, key: str) -> list[Any]:
@@ -266,6 +347,388 @@ class GatewayApp:
             return []
         items = data.get(key)
         return items if isinstance(items, list) else []
+
+    def module_endpoint(self, module: str, operation: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        spec = FULL_MODULE_ENDPOINT_INDEX.get((module, operation))
+        if spec is None:
+            return 404, self.error("not_found", "module endpoint not found")
+        authority_error = self.require_module_authority(payload, spec["authority"])
+        if authority_error is not None:
+            return authority_error
+        try:
+            result = self.dispatch_module_operation(module, operation, payload)
+        except Exception as exc:  # noqa: BLE001
+            code = getattr(exc, "code", "module_execution_failed")
+            message = getattr(exc, "message", str(exc) or f"{module}/{operation} failed")
+            return 400, self.error(code, message)
+        return 200, {
+            "schema_version": SCHEMA_VERSION,
+            "module": module,
+            "operation": operation,
+            "authority": spec["authority"],
+            "result": result,
+        }
+
+    def require_module_authority(self, payload: dict[str, Any], expected_authority: str) -> tuple[int, dict[str, Any]] | None:
+        authority = payload.get("authority")
+        if authority == expected_authority:
+            return None
+        return 403, self.error("authority_required", f"authority must be {expected_authority}")
+
+    def dispatch_module_operation(self, module: str, operation: str, payload: dict[str, Any]) -> Any:
+        allow_staged = self.bool_payload(payload, "allow_staged", False)
+        enabled = self.bool_payload(payload, "enabled", True)
+
+        if module == "debate-engine":
+            from debate_engine import DebateEngine
+
+            engine = DebateEngine(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "load-registries":
+                return engine.load_registries()
+            if operation == "create-run":
+                return engine.create_run(
+                    question=self.require_string(payload, "question"),
+                    mode_id=self.require_string(payload, "mode_id"),
+                    selected_member_ids=self.list_value(payload, "selected_member_ids", []),
+                    metadata=self.dict_value(payload, "metadata", {}),
+                )
+
+        if module == "debate-assembly":
+            from debate_assembly import DebateAssembly
+
+            assembly = DebateAssembly(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "select-for-stage":
+                return assembly.select_for_stage(
+                    stage=self.require_string(payload, "stage"),
+                    task_type=self.require_string(payload, "task_type"),
+                    risk_level=self.require_string(payload, "risk_level"),
+                    project_overrides=self.dict_value(payload, "project_overrides", {}),
+                )
+
+        if module == "debate-backend-adapter":
+            from debate_backend_adapter import DebateBackendAdapterRegistry
+
+            adapter = DebateBackendAdapterRegistry(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "select-backend":
+                return adapter.select_backend(
+                    stage=self.require_string(payload, "stage"),
+                    preferred_backend_id=self.optional_string(payload, "preferred_backend_id"),
+                )
+
+        if module == "debate-member-invocation":
+            from debate_member_invocation import DebateMemberInvocationService
+
+            service = DebateMemberInvocationService(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "build-invocation":
+                return service.build_invocation(
+                    run=self.require_dict(payload, "run"),
+                    assembly=self.require_dict(payload, "assembly"),
+                    member_id=self.require_string(payload, "member_id"),
+                    input_refs=self.require_string_list(payload, "input_refs"),
+                    context_refs=self.list_value(payload, "context_refs", []),
+                    option_refs=self.list_value(payload, "option_refs", []),
+                    affected_scopes=self.list_value(payload, "affected_scopes", []),
+                    preferred_backend_id=self.optional_string(payload, "preferred_backend_id"),
+                )
+            if operation == "execute":
+                return service.execute(
+                    run=self.require_dict(payload, "run"),
+                    assembly=self.require_dict(payload, "assembly"),
+                    input_refs=self.require_string_list(payload, "input_refs"),
+                    context_refs=self.list_value(payload, "context_refs", []),
+                    option_refs=self.list_value(payload, "option_refs", []),
+                    affected_scopes=self.list_value(payload, "affected_scopes", []),
+                    preferred_backend_id=self.optional_string(payload, "preferred_backend_id"),
+                )
+
+        if module == "debate-report":
+            from debate_report import DebateReportBuilder
+
+            builder = DebateReportBuilder(self.repo_root)
+            if operation == "build":
+                return builder.build(
+                    run=self.require_dict(payload, "run"),
+                    assembly=self.require_dict(payload, "assembly"),
+                    backend_policy=self.require_dict(payload, "backend_policy"),
+                    invocations=self.require_list(payload, "invocations"),
+                    opinions=self.require_list(payload, "opinions"),
+                    invocation_receipts=self.require_list(payload, "invocation_receipts"),
+                    input_refs=self.require_string_list(payload, "input_refs"),
+                    affected_scopes=self.require_string_list(payload, "affected_scopes"),
+                )
+
+        if module == "worker-registry":
+            from worker_registry import WorkerRegistry
+
+            registry = WorkerRegistry(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "load-backends":
+                return registry.load_backends()
+            if operation == "load-roles":
+                return registry.load_roles()
+
+        if module == "capability-negotiation":
+            from capability_negotiation import CapabilityNegotiator
+            from worker_registry import WorkerRegistry
+
+            registry = WorkerRegistry(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            negotiator = CapabilityNegotiator(registry)
+            if operation == "negotiate":
+                return negotiator.negotiate(
+                    role=self.require_string(payload, "role"),
+                    requested_backend=self.optional_string(payload, "requested_backend"),
+                    required_capabilities=self.list_value(payload, "required_capabilities", []),
+                    negotiation_context=self.dict_value(payload, "negotiation_context", {}),
+                )
+
+        if module == "worker-session":
+            from worker_session import WorkerSessionManager
+
+            manager = WorkerSessionManager(self.repo_root)
+            if operation == "create-session":
+                return manager.create_session(
+                    run_id=self.require_string(payload, "run_id"),
+                    task_id=self.require_string(payload, "task_id"),
+                    role=self.require_string(payload, "role"),
+                    backend_id=self.require_string(payload, "backend_id"),
+                    workspace_root=self.require_string(payload, "workspace_root"),
+                    write_scope_ref=self.require_string(payload, "write_scope_ref"),
+                    context_bundle_ref=self.require_string(payload, "context_bundle_ref"),
+                    timeout_seconds=self.require_int(payload, "timeout_seconds"),
+                    transcript_ref=self.optional_string(payload, "transcript_ref"),
+                    output_envelope_ref=self.optional_string(payload, "output_envelope_ref"),
+                )
+            if operation == "transition":
+                return manager.transition(
+                    record=self.require_dict(payload, "record"),
+                    next_status=self.require_string(payload, "next_status"),
+                    exit_signal=self.optional_string(payload, "exit_signal"),
+                    output_envelope_ref=self.optional_string(payload, "output_envelope_ref"),
+                    cleanup_status=self.optional_string(payload, "cleanup_status"),
+                    termination_reason=self.optional_string(payload, "termination_reason"),
+                )
+
+        if module == "worker-session-sweeper":
+            from worker_session_sweeper import WorkerSessionSweeper
+
+            sweeper = WorkerSessionSweeper(self.repo_root)
+            if operation == "sweep-directory":
+                return sweeper.sweep_directory(self.require_string(payload, "records_root"))
+
+        if module == "release-pipeline":
+            from release_pipeline import ReleasePipeline
+
+            pipeline = ReleasePipeline(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "load-pipeline":
+                return pipeline.load_pipeline()
+            if operation == "load-registry":
+                return pipeline.load_registry()
+            if operation == "validate-command-refs":
+                return pipeline.validate_command_refs()
+            if operation == "plan":
+                return pipeline.plan(self.require_string(payload, "environment"))
+
+        if module == "release-executor":
+            from release_executor import ReleaseExecutor
+
+            executor = ReleaseExecutor(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "execute":
+                return executor.execute(
+                    command_ref=self.require_string(payload, "command_ref"),
+                    approval_ref=self.optional_string(payload, "approval_ref"),
+                    run_id=self.string_value(payload, "run_id", "gateway-release-executor"),
+                    environment=self.optional_string(payload, "environment"),
+                    test_execution_report_refs=self.list_value(payload, "test_execution_report_refs", []),
+                    health_check_refs=self.list_value(payload, "health_check_refs", []),
+                    rollback_or_recovery_refs=self.list_value(payload, "rollback_or_recovery_refs", []),
+                    gate_results=self.dict_value(payload, "gate_results", {}),
+                )
+
+        if module == "runtime-knowledge":
+            from runtime_knowledge import RuntimeKnowledgeBase
+
+            knowledge = RuntimeKnowledgeBase(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "query":
+                return knowledge.query(self.require_dict(payload, "request"))
+
+        if module == "knowledge-ingestion":
+            from knowledge_ingestion import KnowledgeIngestion
+
+            ingestion = KnowledgeIngestion(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "ingest":
+                return ingestion.ingest(self.require_dict(payload, "entry"))
+
+        if module == "self-evolution":
+            from self_evolution import SelfEvolutionQueue
+
+            queue = SelfEvolutionQueue(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "generate-stage6-sweep":
+                return queue.generate_stage6_sweep(
+                    run_id=self.require_string(payload, "run_id"),
+                    source_refs=self.require_string_list(payload, "source_refs"),
+                    proposals=self.require_list(payload, "proposals"),
+                    trigger_matches=self.require_string_list(payload, "trigger_matches"),
+                )
+            if operation == "enqueue":
+                return queue.enqueue(self.require_dict(payload, "proposal"))
+            if operation == "transition":
+                return queue.transition(
+                    queue_item=self.require_dict(payload, "queue_item"),
+                    next_status=self.require_string(payload, "next_status"),
+                    decision_ref=self.optional_string(payload, "decision_ref"),
+                    rejection_reason=self.optional_string(payload, "rejection_reason"),
+                    kimi_review_ref=self.optional_string(payload, "kimi_review_ref"),
+                    human_approval_ref=self.optional_string(payload, "human_approval_ref"),
+                )
+            if operation == "list-pending":
+                pending = queue.list_pending(self.list_value(payload, "queue_items", []))
+                return {"items": pending}
+
+        if module == "performance-slo":
+            from performance_slo import PerformanceBudgetPolicy
+
+            slo = PerformanceBudgetPolicy(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "evaluate":
+                return slo.evaluate(
+                    component_id=self.require_string(payload, "component_id"),
+                    observed=self.require_dict(payload, "observed"),
+                )
+
+        if module == "fixture-policy":
+            from fixture_policy import FixturePolicy
+
+            fixture_policy = FixturePolicy(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "validate-contract-fixture":
+                return fixture_policy.validate_contract_fixture(
+                    family_id=self.require_string(payload, "family_id"),
+                    fixture=self.require_dict(payload, "fixture"),
+                )
+            if operation == "validate-runtime-fake-adapter":
+                return fixture_policy.validate_runtime_fake_adapter(
+                    family_id=self.require_string(payload, "family_id"),
+                    fixture=self.require_dict(payload, "fixture"),
+                )
+
+        if module == "degradation-policy":
+            from degradation_policy import DegradationPolicy
+
+            policy = DegradationPolicy(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "transition":
+                next_status = policy.transition(
+                    current_status=self.require_string(payload, "current_status"),
+                    next_status=self.require_string(payload, "next_status"),
+                )
+                return {"next_status": next_status}
+            if operation == "build-record":
+                return policy.build_record(
+                    degradation_status=self.require_string(payload, "degradation_status"),
+                    degradation_class=self.require_string(payload, "degradation_class"),
+                    cause=self.require_string(payload, "cause"),
+                    affected_evidence_refs=self.require_string_list(payload, "affected_evidence_refs"),
+                    recovery_options=self.require_string_list(payload, "recovery_options"),
+                    policy_key=self.optional_string(payload, "policy_key"),
+                    decision_required=self.optional_string(payload, "decision_required"),
+                    accepted_by_ref=self.optional_string(payload, "accepted_by_ref"),
+                    completion_evidence_allowed=payload.get("completion_evidence_allowed"),
+                    replacement_evidence_ref=self.optional_string(payload, "replacement_evidence_ref"),
+                    policy_ref=self.string_value(payload, "policy_ref", "config://degradation/policy"),
+                )
+            if operation == "allows-completion-evidence":
+                return {"allowed": policy.allows_completion_evidence(self.require_dict(payload, "record"))}
+
+        if module == "full-schema-validation":
+            from full_schema_validation import FullSchemaValidation
+
+            validation = FullSchemaValidation(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "validate-schema":
+                return validation.validate_schema()
+            if operation == "validate-contract":
+                return validation.validate_contract(
+                    rel_path=self.require_string(payload, "rel_path"),
+                    definition_name=self.require_string(payload, "definition_name"),
+                )
+            if operation == "validate-all":
+                return validation.validate_all()
+
+        if module == "full-schema-cutover":
+            from staged_cutover import FullSchemaCutover
+
+            cutover = FullSchemaCutover(self.repo_root, allow_staged=allow_staged, enabled=enabled)
+            if operation == "evaluate-family":
+                return cutover.evaluate_family(self.require_string(payload, "family_id"))
+            if operation == "can-activate":
+                return cutover.can_activate(
+                    self.require_string(payload, "family_id"),
+                    evidence=self.list_value(payload, "evidence", []),
+                    completed_checks=self.list_value(payload, "completed_checks", []),
+                )
+            if operation == "plan-artifact-write":
+                return cutover.plan_artifact_write(
+                    family_id=self.require_string(payload, "family_id"),
+                    family_activated=self.bool_payload(payload, "family_activated", False),
+                    historical_run=self.bool_payload(payload, "historical_run", False),
+                    existing_schema_version=self.optional_string(payload, "existing_schema_version"),
+                )
+
+        raise ValueError(f"unsupported module operation: {module}/{operation}")
+
+    def bool_payload(self, payload: dict[str, Any], key: str, default: bool) -> bool:
+        value = payload.get(key, default)
+        if not isinstance(value, bool):
+            raise ValueError(f"{key} must be a boolean")
+        return value
+
+    def string_value(self, payload: dict[str, Any], key: str, default: str) -> str:
+        value = payload.get(key, default)
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"{key} must be a non-empty string")
+        return value
+
+    def optional_string(self, payload: dict[str, Any], key: str) -> str | None:
+        value = payload.get(key)
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"{key} must be a non-empty string when provided")
+        return value
+
+    def require_string(self, payload: dict[str, Any], key: str) -> str:
+        return self.string_value(payload, key, "")
+
+    def require_int(self, payload: dict[str, Any], key: str) -> int:
+        value = payload.get(key)
+        if not isinstance(value, int):
+            raise ValueError(f"{key} must be an integer")
+        return value
+
+    def require_dict(self, payload: dict[str, Any], key: str) -> dict[str, Any]:
+        value = payload.get(key)
+        if not isinstance(value, dict):
+            raise ValueError(f"{key} must be an object")
+        return value
+
+    def dict_value(self, payload: dict[str, Any], key: str, default: dict[str, Any]) -> dict[str, Any]:
+        value = payload.get(key, default)
+        if not isinstance(value, dict):
+            raise ValueError(f"{key} must be an object")
+        return value
+
+    def require_list(self, payload: dict[str, Any], key: str) -> list[Any]:
+        value = payload.get(key)
+        if not isinstance(value, list):
+            raise ValueError(f"{key} must be a list")
+        return value
+
+    def list_value(self, payload: dict[str, Any], key: str, default: list[Any]) -> list[Any]:
+        value = payload.get(key, default)
+        if not isinstance(value, list):
+            raise ValueError(f"{key} must be a list")
+        return value
+
+    def require_string_list(self, payload: dict[str, Any], key: str) -> list[str]:
+        values = self.require_list(payload, key)
+        if not all(isinstance(item, str) and item for item in values):
+            raise ValueError(f"{key} must contain only non-empty strings")
+        return list(values)
 
     def recover_in_progress_commands(self) -> None:
         runs_dir = self.store.state_dir / "runs"
@@ -4996,6 +5459,16 @@ class GatewayHandler(BaseHTTPRequestHandler):
             status, body = self.app.create_run(payload)
             self.send_json(status, body)
             return
+        module_route = self.module_route(parsed.path)
+        if module_route:
+            module, operation = module_route
+            payload = self.read_json_body()
+            if payload is None:
+                self.send_json(400, self.app.error("invalid_json", "request body must be JSON"))
+                return
+            status, body = self.app.module_endpoint(module, operation, payload)
+            self.send_json(status, body)
+            return
         route = self.run_route(parsed.path)
         if route:
             run_id, child = route
@@ -5063,6 +5536,12 @@ class GatewayHandler(BaseHTTPRequestHandler):
         if len(parts) == 3 and parts[:2] == ["orchestra", "runs"]:
             return parts[2], None
         if len(parts) == 4 and parts[:2] == ["orchestra", "runs"] and parts[3] in {"events", "tasks", "stop", "worker-outputs", "verdicts", "global-evaluations", "closeout", "failures"}:
+            return parts[2], parts[3]
+        return None
+
+    def module_route(self, path: str) -> tuple[str, str] | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) == 4 and parts[:2] == ["orchestra", "modules"]:
             return parts[2], parts[3]
         return None
 
