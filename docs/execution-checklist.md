@@ -433,16 +433,16 @@ Blocked stop conditions:
 
 Dependencies on previous sprints:
 
-- [ ] Sprint 0 must be complete and verified.
-- [ ] Sprint 1 through Sprint 10 must be complete and verified.
+- [x] Sprint 0 must be complete and verified.
+- [x] Sprint 1 through Sprint 10 must be complete and verified.
 
 Exact files to create:
 
-- [ ] None. This sprint modifies existing files only.
+- [x] None. This sprint modifies existing files only.
 
 Files to modify:
 
-- [ ] `scripts/lib/orch_gateway.py`
+- [x] `scripts/lib/orch_gateway.py`
 
 Objective:
 
@@ -450,12 +450,12 @@ Wire the 18+ new module classes from Sprint 1-10 into Gateway HTTP endpoints so 
 
 Blocked stop conditions:
 
-- [ ] Stop if any Sprint 1-10 module class is not accessible via a Gateway endpoint.
-- [ ] Stop if endpoint routes are not defined for new module methods.
-- [ ] Stop if request/response shapes are not specified for new endpoints.
-- [ ] Stop if authority rules for new endpoints are not defined.
-- [ ] Stop if `scripts/tests/test-gateway-integration-points.sh` does not cover new endpoints.
-- [ ] Stop if Gateway rejects requests to new endpoints.
+- [x] Stop if any Sprint 1-10 module class is not accessible via a Gateway endpoint.
+- [x] Stop if endpoint routes are not defined for new module methods.
+- [x] Stop if request/response shapes are not specified for new endpoints.
+- [x] Stop if authority rules for new endpoints are not defined.
+- [x] Stop if `scripts/tests/test-gateway-integration-points.sh` does not cover new endpoints.
+- [x] Stop if Gateway rejects requests to new endpoints.
 
 [2026-05-18] Verified by Codex — all tests passed
 
