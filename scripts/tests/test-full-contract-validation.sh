@@ -9,8 +9,11 @@ REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
 source "$TEST_DIR/lib/assert.sh"
 
 VALIDATOR="$REPO_ROOT/scripts/bin/orch-full-contract-validate"
+MVP_ACCEPTANCE="$REPO_ROOT/scripts/tests/test-mvp-acceptance.sh"
 assert_file_exists "$VALIDATOR" "full contract validator missing"
 assert_executable "$VALIDATOR" "full contract validator must be executable"
+assert_file_exists "$MVP_ACCEPTANCE" "mvp acceptance test missing"
+assert_executable "$MVP_ACCEPTANCE" "mvp acceptance test must be directly executable"
 
 OUTPUT="$("$VALIDATOR" --repo "$REPO_ROOT")"
 

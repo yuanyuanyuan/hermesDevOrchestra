@@ -183,6 +183,7 @@ The module classes below are the contract for implementation sprints. Method nam
 
 - Phase 1 trust model: localhost-only.
 - The default Gateway deployment binds to `127.0.0.1`, and the local loopback boundary is the only trust boundary assumed for Sprint 11 module endpoints.
+- Non-loopback `--host` values are rejected unless the operator also passes `--allow-network-binding`.
 - The `authority` field on `/orchestra/modules/*` requests is an intent selector within that loopback boundary, not standalone remote authentication.
 - If Gateway is ever exposed beyond localhost, the module endpoints must gain an additional authentication layer such as a token check, Unix socket permission boundary, or mTLS before the `authority` field can be trusted.
 

@@ -79,6 +79,30 @@ for snippet in required_snippets:
     assert snippet in gateway, snippet
 PY
 
+python3 - "$REPO_ROOT" <<'PY'
+import pathlib
+import sys
+
+repo = pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(repo / "scripts/lib"))
+
+from orch_gateway import parse_args
+
+try:
+    parse_args(["--project-id", "test-project", "--host", "0.0.0.0"])
+except SystemExit as exc:
+    assert exc.code == 2, exc.code
+else:
+    raise AssertionError("expected non-loopback host to be rejected without --allow-network-binding")
+
+allowed = parse_args(["--project-id", "test-project", "--host", "0.0.0.0", "--allow-network-binding"])
+assert allowed.host == "0.0.0.0", allowed.host
+assert allowed.allow_network_binding is True, allowed.allow_network_binding
+
+localhost = parse_args(["--project-id", "test-project", "--host", "localhost"])
+assert localhost.host == "localhost", localhost.host
+PY
+
 python3 - "$DOC" <<'PY'
 import pathlib
 import sys
