@@ -88,6 +88,12 @@ assert activation.default_allow_staged("runtime-knowledge") is True
 assert activation.default_allow_staged("self-evolution") is True
 assert activation.default_allow_staged("release-pipeline") is False
 
+activation_payload = load_json(repo / "config/cutover/runtime-family-activation.json")
+for entry in activation_payload["activated_families"]:
+    decision_ref = entry["decision_ref"]
+    decision_path = repo / decision_ref.removeprefix("repo://")
+    assert decision_path.is_file(), decision_ref
+
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = Path(tmp)
     prepare_repo(tmp_repo, lambda payload: payload["activated_families"][0]["evidence"].remove("explicit_cutover_decision"))

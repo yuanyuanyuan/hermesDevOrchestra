@@ -1,0 +1,24 @@
+# Full Debate Package Cutover Decision
+
+- Date: 2026-05-20
+- Family: `full_debate_package`
+- Scope: activate the full debate package on the default runtime path for new debate runs without enabling unrelated full-runtime families
+- Context:
+  - Sprint 13 promotes `config/debate/full/*` from `staged_target` to `active`.
+  - Gateway default runtime activation now routes debate modules through `full_debate_package`.
+  - Debate report and audit artifacts must preserve degraded evidence when template fallback remains in use.
+- Options:
+  - Keep full debate staged and require explicit `allow_staged=True`.
+  - Activate `full_debate_package` on the default runtime path for new debate runs.
+- Decision: activate `full_debate_package` through the runtime family activation manifest and make the full debate config the default runtime authority for new debate runs.
+- Consequences:
+  - Debate runtime no longer depends on caller-side `allow_staged=True` for normal success paths.
+  - Legacy debate config remains compatibility data rather than runtime authority.
+  - Degraded template-backend evidence remains audit-visible and cannot count as strong completion evidence.
+- Evidence:
+  - `full_contract_validation_report`
+  - `mvp_compatibility_report`
+  - `runtime_consumption_test_report`
+  - `projection_compatibility_report`
+  - `rollback_or_disable_plan`
+  - `explicit_cutover_decision`
