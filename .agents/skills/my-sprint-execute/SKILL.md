@@ -1,22 +1,14 @@
 ---
 name: my-sprint-execute
 description: >
-  加载指定 Skill（如 TDD），按 Plan 完成指定 Sprint 的开发、验证、提交与 PR 交付。
+  按 Plan 完成指定 Sprint 的开发、验证、提交与 PR 交付。
   包含 Git 分支工作流、顺序执行任务、验证验收、交付流水线、迭代修复与止损处理。
+  需要由 /my-sprint-plan（Codex: $my-sprint-plan）先生成 Plan 和 Checklist 文件。
+  触发词：execute sprint N、完成 sprint N、run sprint N、开发 sprint N、sprint N 交付。
   开发者身份：stark-007（PR Owner）。
 ---
 
 # Sprint Execute Skill
-
-## 触发条件
-
-当用户要求以下任一操作时激活本 Skill：
-- "execute sprint N"
-- "完成 sprint N"
-- "run sprint N"
-- "开发 sprint N"
-- "sprint N 交付"
-- 任何包含 Sprint 编号和 Plan 路径的开发执行请求
 
 ## 调用签名
 
@@ -24,8 +16,8 @@ description: >
 my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
 ```
 
-- `PLAN_PATH`: Sprint Plan 文件绝对路径（如 `/home/stark/.claude/plans/plan-sprint-8.md`）
-- `CHECKLIST_PATH`: 验收清单文件绝对路径（如 `/data/hermes/docs/execution-checklist.md`）
+- `PLAN_PATH`: Sprint Plan 文件绝对路径（由 /my-sprint-plan 生成）
+- `CHECKLIST_PATH`: 验收清单文件绝对路径（由 /my-sprint-plan 生成）
 - `SPRINT`: Sprint 编号（如 `8`）
 
 ## 环境要求
@@ -37,15 +29,13 @@ my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
 
 ## 变量定义（每次执行时解析）
 
-执行前将以下占位符替换为实际值：
-
 | 变量 | 来源 |
 |------|------|
 | `${PLAN_PATH}` | 调用参数 `<PLAN_PATH>` |
 | `${CHECKLIST_PATH}` | 调用参数 `<CHECKLIST_PATH>` |
 | `${SPRINT}` | 调用参数 `<SPRINT>` |
 | `${PREV_SPRINT}` | `${SPRINT} - 1` |
-| `${SKILL}` | 固定为 `$tdd`（开发方法论 Skill） |
+| `${SKILL}` | 固定为 `/tdd`（Codex: `$tdd`，开发方法论 Skill） |
 | `${MAX_FIX_ATTEMPTS}` | `3` |
 | `${REPO_DIR}` | 当前工作目录（`$(pwd)`） |
 | `${BRANCH}` | `feat/sprint${SPRINT}`（可覆盖） |
@@ -61,9 +51,7 @@ my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
 
 ---
 
-## 执行流程
-
-### 阶段 1：GIT 分支工作流（GIT WORKFLOW）
+## 阶段 1：GIT 分支工作流（GIT WORKFLOW）
 
 **工作流选择策略：**
 
@@ -77,7 +65,6 @@ my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
 ```bash
 cd ${REPO_DIR}
 git fetch origin
-# 确认 base 分支最新
 git checkout ${BASE_BRANCH}
 git pull origin ${BASE_BRANCH}
 ```
@@ -85,16 +72,13 @@ git pull origin ${BASE_BRANCH}
 **步骤 B — 创建/切换分支**
 
 ```bash
-# 如果分支不存在，从 main 创建
 git checkout -b ${BRANCH} 2>/dev/null || git checkout ${BRANCH}
-# 如果分支已存在但落后 main，rebase
 git rebase ${BASE_BRANCH} || (git rebase --abort && echo "Rebase failed, manual merge needed")
 ```
 
 **步骤 C — Worktree 模式（可选，仅在需要时）**
 
 ```bash
-# 创建 worktree（用于隔离验证或并行开发）
 git worktree add ${WORKTREE_DIR} ${BRANCH}
 cd ${WORKTREE_DIR}
 # 使用完毕后必须清理：
@@ -112,9 +96,7 @@ cd ${WORKTREE_DIR}
 **步骤 E — 推送与 PR**
 
 ```bash
-# 首次推送并建立追踪
 git push -u origin ${BRANCH}
-# 发起 PR（如果尚未存在）
 gh pr create \
   --title "feat(sprint-${SPRINT}): ${PR_TITLE}" \
   --body-file ${PR_BODY_FILE} \
@@ -123,7 +105,7 @@ gh pr create \
   --repo ${OWNER}/${REPO} 2>/dev/null || echo "PR may already exist"
 ```
 
-**步骤 F — 冲突处理（如果 rebase/push 遇到冲突）**
+**步骤 F — 冲突处理**
 
 1. 停止执行，报告冲突文件列表
 2. 不允许自动解决冲突（需人类判断）
@@ -131,22 +113,20 @@ gh pr create \
 
 ---
 
-### 阶段 2：执行顺序（SEQUENTIAL）
+## 阶段 2：执行顺序（SEQUENTIAL）
 
-**加载开发方法论 Skill：**
-```
-$tdd
-```
+**加载开发方法论 Skill：** `/tdd`（Codex: `$tdd`）
 
-按 Sprint `${SPRINT}` 内部任务顺序逐个完成，每完成一个子任务：
+读取 `${PLAN_PATH}`，按任务清单顺序逐个完成，每完成一个子任务：
 1. **实现代码/配置** — 根据 Plan 和当前子任务描述进行开发
 2. **运行对应验证脚本** — 确认 exit 0
 3. **git add + git commit** — 遵循阶段 1 的提交规范
-4. **进入下一个子任务**
+4. **更新 Checklist** — 在 `${CHECKLIST_PATH}` 中勾选对应项
+5. **进入下一个子任务**
 
 ---
 
-### 阶段 3：验证与验收（VERIFICATION）
+## 阶段 3：验证与验收（VERIFICATION）
 
 **步骤 A — 读取验收清单**
 
@@ -156,14 +136,7 @@ cat ${CHECKLIST_PATH} | grep -A 50 "Sprint ${SPRINT}"
 
 **步骤 B — 逐项执行验证（必须全部 exit 0）**
 
-```bash
-bash scripts/tests/test-runtime-knowledge.sh
-python -m jsonschema -i config/knowledge/runtime-kb.json config/schemas/orchestra.full.schema.json
-# 如果 gbrain 可用，额外验证：
-which gbrain && gbrain --version || echo "gbrain not available, using degraded path"
-```
-
-注意：以上验证命令为示例，实际执行时应根据 `${PLAN_PATH}` 和项目结构确定具体验证脚本。
+根据 `${PLAN_PATH}` 和项目结构确定具体验证脚本。
 
 **步骤 C — 标记完成**
 
@@ -174,7 +147,7 @@ which gbrain && gbrain --version || echo "gbrain not available, using degraded p
 
 ---
 
-### 阶段 4：交付流水线（DELIVERY PIPELINE）
+## 阶段 4：交付流水线（DELIVERY PIPELINE）
 
 **PR Body 生成（自动写入 `${PR_BODY_FILE}`）**
 
@@ -207,11 +180,11 @@ which gbrain && gbrain --version || echo "gbrain not available, using degraded p
 
 ---
 
-### 阶段 5：约束与边界（CONSTRAINTS & BOUNDARIES）
+## 阶段 5：约束与边界（CONSTRAINTS & BOUNDARIES）
 
 **硬性约束：**
 - 不实现 Sprint `${SPRINT}` 范围外的任何内容
-- 不修改现有 MVP 代码（如 `scripts/lib/orch_gateway.py` 等核心模块，除非 Plan 明确要求）
+- 不修改现有 MVP 代码（除非 Plan 明确要求）
 - 不修改其他 Sprint 的配置或测试脚本
 - 不自动合并 PR（仅发起，等待 review）
 - 不删除 `${BASE_BRANCH}` 或任何现有 release tags
@@ -228,7 +201,7 @@ which gbrain && gbrain --version || echo "gbrain not available, using degraded p
 
 ---
 
-### 阶段 6：迭代策略（ITERATION POLICY）
+## 阶段 6：迭代策略（ITERATION POLICY）
 
 每轮失败后的下一步：
 1. 记录失败测试名和错误输出摘要（写入 `${DEBUG_LOG}`）
@@ -239,13 +212,11 @@ which gbrain && gbrain --version || echo "gbrain not available, using degraded p
 
 ---
 
-### 阶段 7：止损条件（BLOCKED STOP）
+## 阶段 7：止损条件（BLOCKED STOP）
 
 **立即停止并报告 blocker 的情况：**
 - 任一验证脚本运行 `${MAX_FIX_ATTEMPTS}` 次仍失败
-- Sprint `${SPRINT}` 前置依赖文件缺失（如 Sprint `${PREV_SPRINT}` 交付物不存在）
-- `config/knowledge/runtime-kb.json` 缺失或 schema 验证失败（项目特定，根据实际调整）
-- `gbrain` 不可用且降级路径也无法实现（如 Sprint 有特殊依赖）
+- Sprint `${SPRINT}` 前置依赖文件缺失
 - `gh` CLI 不可用且无法生成手动 PR 指令
 - `git rebase` 冲突无法自动解决
 - worktree 创建失败或清理失败
