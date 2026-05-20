@@ -1,4 +1,9 @@
 # TDD 长任务工作流操作手册
+> **归档状态**: 已归档
+> **归档日期**: 2026-05-20
+> **原始位置**: docs/TDD-LONG-TASK-WORKFLOW.md
+> **说明**: 本文档为历史版本，内容可能已被后续迭代取代，仅供参考。
+
 
 > **定位**：原 [tdd skill](/home/stark/.claude/skills/tdd/SKILL.md) 在长任务场景下的**前置对齐与协作补充**。原 skill 的 RED/GREEN/REFACTOR、Vertical Slicing、行为测试等核心在长任务中绝对主导，本手册只解决多模块并行时的边界对齐问题。
 > 
