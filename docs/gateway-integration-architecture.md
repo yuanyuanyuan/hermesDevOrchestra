@@ -37,6 +37,7 @@ These points imply that new modules should be called from Gateway methods, not f
   - Gateway default uses MVP registries.
   - Full-family modules may load `*/full/` config only when the caller explicitly selects the full package and the module passes feature-flag checks.
   - `config/cutover/full-readiness-gates.json` remains the source of truth for staged-vs-active policy.
+  - `config/cutover/runtime-family-activation.json` may activate specific artifact families for default Gateway module dispatch without permitting a one-shot global cutover.
 
 ## Feature-Flag Contract
 
@@ -46,6 +47,9 @@ Every new module must enforce both checks before doing real work:
    - If a module or backend config says `enabled: false`, return a clear error such as `module_disabled` or `backend_disabled`.
 2. `package_status` check
    - If a full-target config has `package_status != "active"` and the caller did not explicitly allow staged validation/runtime use, return a clear error such as `package_not_active`.
+3. Runtime activation override
+   - Gateway may treat a staged family as default-runnable only when `config/cutover/runtime-family-activation.json` proves that family has satisfied the required cutover evidence and checks.
+   - This override is family-scoped and must preserve mixed-family cutover; inactive families still require explicit `allow_staged`.
 
 Allowed behavior for inactive modules:
 
