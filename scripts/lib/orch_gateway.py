@@ -18,6 +18,8 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
+from runtime_activation import RuntimeActivation
+
 
 SCHEMA_VERSION = "orchestra.v1"
 EVENT_SCHEMA_VERSION = "orchestra.event.v1"
@@ -195,6 +197,7 @@ class GatewayApp:
         self.store = GatewayStore(project_id)
         self.upstream_api_url = upstream_api_url
         self.repo_root = Path(__file__).resolve().parents[2]
+        self.runtime_activation = RuntimeActivation(self.repo_root)
         self.recover_in_progress_commands()
 
     def health(self) -> dict[str, Any]:
@@ -245,6 +248,13 @@ class GatewayApp:
         cache_root = os.environ.get("CACHE_ROOT", str(Path(os.environ.get("HOME", str(Path.home()))) / ".cache/hermes-orchestra"))
         debate_teams = self.config_items("config/debate/teams.json", "teams")
         debate_modes = self.config_items("config/debate/modes.json", "modes")
+        try:
+            runtime_activation = self.runtime_activation.summary()
+        except Exception as exc:  # noqa: BLE001
+            runtime_activation = {
+                "config_ref": self.runtime_activation.config_path,
+                "error": getattr(exc, "message", str(exc) or "runtime activation unavailable"),
+            }
         routes = [
             "GET /health",
             "GET /orchestra/capabilities",
@@ -318,6 +328,7 @@ class GatewayApp:
                 "degraded": False,
                 "fallback_backend": None,
             },
+            "runtime_activation": runtime_activation,
             "debaters": {
                 "default_backend": "template",
                 "teams_config_ref": "config/debate/teams.json",
@@ -376,7 +387,7 @@ class GatewayApp:
         return 403, self.error("authority_required", f"authority must be {expected_authority}")
 
     def dispatch_module_operation(self, module: str, operation: str, payload: dict[str, Any]) -> Any:
-        allow_staged = self.bool_payload(payload, "allow_staged", False)
+        allow_staged = self.module_allow_staged(module, payload)
         enabled = self.bool_payload(payload, "enabled", True)
 
         if module == "debate-engine":
@@ -670,6 +681,11 @@ class GatewayApp:
                 )
 
         raise ValueError(f"unsupported module operation: {module}/{operation}")
+
+    def module_allow_staged(self, module: str, payload: dict[str, Any]) -> bool:
+        if "allow_staged" in payload:
+            return self.bool_payload(payload, "allow_staged", False)
+        return self.runtime_activation.default_allow_staged(module)
 
     def bool_payload(self, payload: dict[str, Any], key: str, default: bool) -> bool:
         value = payload.get(key, default)
