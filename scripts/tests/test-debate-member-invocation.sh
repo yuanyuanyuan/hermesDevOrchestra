@@ -22,6 +22,7 @@ grep -Fq "PASS config/debate/full/backend-policy.json: debate_backend_policy" <<
 python3 - "$REPO_ROOT" <<'PY'
 import json
 import pathlib
+import shutil
 import sys
 import tempfile
 
@@ -59,8 +60,8 @@ def expect_error(code, func):
     raise AssertionError(f"expected DebateMemberInvocationError({code})")
 
 
-engine = DebateEngine(repo, allow_staged=True)
-assembly = DebateAssembly(repo, allow_staged=True)
+engine = DebateEngine(repo)
+assembly = DebateAssembly(repo)
 run = engine.create_run(
     question="Should Hermes accept template debate fallback for Sprint 3 integration?",
     mode_id="parallel_debate",
@@ -84,14 +85,15 @@ option_refs = [
     f"state://runs/{run['debate_id']}/options/template-fallback.json",
 ]
 
-registry = DebateBackendAdapterRegistry(repo, allow_staged=True)
+registry = DebateBackendAdapterRegistry(repo)
 policy = registry.load_policy()
 assert policy["artifact_type"] == "debate_backend_policy", policy
+assert policy["package_status"] == "active", policy["package_status"]
 backend = registry.select_backend(stage="direction_debate")
 assert backend["id"] == "template_fixture", backend
 assert backend["family"] == "template", backend
 
-service = DebateMemberInvocationService(repo, allow_staged=True)
+service = DebateMemberInvocationService(repo)
 expect_error(
     "validation_error",
     lambda: service.build_invocation(
@@ -159,11 +161,7 @@ recorded_invocation_ids = {entry["invocation_id"] for entry in result["audit_tra
 expected_invocation_ids = {entry["invocation_id"] for entry in result["invocations"]}
 assert recorded_invocation_ids == expected_invocation_ids, (recorded_invocation_ids, expected_invocation_ids)
 
-blocked = DebateMemberInvocationService(repo)
-exc = expect_error("package_not_active", blocked.load_backend_policy)
-assert "staged_target" in exc.message, exc.message
-
-disabled = DebateMemberInvocationService(repo, allow_staged=True, enabled=False)
+disabled = DebateMemberInvocationService(repo, enabled=False)
 expect_error(
     "module_disabled",
     lambda: disabled.execute(
@@ -175,6 +173,17 @@ expect_error(
     ),
 )
 
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    shutil.copytree(repo / "config", tmp_repo / "config")
+    backend_policy_path = tmp_repo / "config/debate/full/backend-policy.json"
+    backend_policy = json.loads(backend_policy_path.read_text(encoding="utf-8"))
+    backend_policy["package_status"] = "staged_target"
+    backend_policy_path.write_text(json.dumps(backend_policy), encoding="utf-8")
+    blocked = DebateMemberInvocationService(tmp_repo)
+    exc = expect_error("package_not_active", blocked.load_backend_policy)
+    assert "staged_target" in exc.message, exc.message
+
 
 class SecretLeakingTemplateAdapter(TemplateFixtureDebateAdapter):
     def invoke(self, invocation):
@@ -185,7 +194,6 @@ class SecretLeakingTemplateAdapter(TemplateFixtureDebateAdapter):
 
 secret_leak_service = DebateMemberInvocationService(
     repo,
-    allow_staged=True,
     adapter_overrides={"template_fixture": SecretLeakingTemplateAdapter(backend)},
 )
 expect_error(
@@ -209,7 +217,6 @@ class RawPromptTemplateAdapter(TemplateFixtureDebateAdapter):
 
 raw_prompt_service = DebateMemberInvocationService(
     repo,
-    allow_staged=True,
     adapter_overrides={"template_fixture": RawPromptTemplateAdapter(backend)},
 )
 expect_error(
@@ -228,7 +235,7 @@ with tempfile.TemporaryDirectory() as tmp:
     config_dir = tmp_repo / "config/debate/full"
     config_dir.mkdir(parents=True)
     (config_dir / "backend-policy.json").write_text("{ not valid json }", encoding="utf-8")
-    malformed = DebateMemberInvocationService(tmp_repo, allow_staged=True)
+    malformed = DebateMemberInvocationService(tmp_repo)
     expect_error("config_invalid", malformed.load_backend_policy)
 PY
 

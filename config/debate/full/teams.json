@@ -3,7 +3,7 @@
   "artifact_type": "debate_team_registry",
   "package_kind": "full_debate_package",
   "registry_authority": "qnN4o510",
-  "package_status": "staged_target",
+  "package_status": "active",
   "teams": [
     {
       "id": "security",

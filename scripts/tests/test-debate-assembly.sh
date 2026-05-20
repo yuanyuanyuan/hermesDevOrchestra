@@ -24,6 +24,7 @@ grep -Fq "PASS config/debate/full/assembly-policy.json: debate_assembly_policy" 
 python3 - "$REPO_ROOT" <<'PY'
 import json
 import pathlib
+import shutil
 import sys
 import tempfile
 
@@ -42,14 +43,11 @@ def expect_error(code, func):
     raise AssertionError(f"expected DebateAssemblyError({code})")
 
 
-blocked = DebateAssembly(repo)
-exc = expect_error("package_not_active", blocked.load_policy)
-assert "staged_target" in exc.message, exc.message
-
-assembly = DebateAssembly(repo, allow_staged=True)
+assembly = DebateAssembly(repo)
 policy = assembly.load_policy()
 assert policy["coverage_policy"]["artifact_type"] == "debate_coverage_policy", policy
 assert policy["assembly_policy"]["artifact_type"] == "debate_assembly_policy", policy
+assert policy["package_status"] == "active", policy["package_status"]
 assert policy["stage_requirements"]["direction_debate"]["minimum_member_count"] == 6, policy["stage_requirements"]
 assert policy["assembly_policy"]["deterministic_selector"] is True, policy["assembly_policy"]
 
@@ -114,8 +112,23 @@ expect_error("validation_error", lambda: assembly.select_for_stage("", "release_
 expect_error("stage_not_found", lambda: assembly.select_for_stage("missing", "release_deploy", "L1"))
 expect_error("risk_level_not_found", lambda: assembly.select_for_stage("direction_debate", "release_deploy", "LX"))
 
-disabled = DebateAssembly(repo, allow_staged=True, enabled=False)
+disabled = DebateAssembly(repo, enabled=False)
 expect_error("module_disabled", disabled.load_policy)
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    shutil.copytree(repo / "config", tmp_repo / "config")
+    coverage_path = tmp_repo / "config/debate/full/coverage-policy.json"
+    assembly_path = tmp_repo / "config/debate/full/assembly-policy.json"
+    coverage_data = json.loads(coverage_path.read_text(encoding="utf-8"))
+    assembly_data = json.loads(assembly_path.read_text(encoding="utf-8"))
+    coverage_data["package_status"] = "staged_target"
+    assembly_data["package_status"] = "staged_target"
+    coverage_path.write_text(json.dumps(coverage_data), encoding="utf-8")
+    assembly_path.write_text(json.dumps(assembly_data), encoding="utf-8")
+    blocked = DebateAssembly(tmp_repo)
+    exc = expect_error("package_not_active", blocked.load_policy)
+    assert "staged_target" in exc.message, exc.message
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = pathlib.Path(tmp)
@@ -131,7 +144,7 @@ with tempfile.TemporaryDirectory() as tmp:
         "stage_requirements": {},
     }), encoding="utf-8")
     (config_dir / "assembly-policy.json").write_text("{ bad json", encoding="utf-8")
-    malformed = DebateAssembly(tmp_repo, allow_staged=True)
+    malformed = DebateAssembly(tmp_repo)
     expect_error("config_invalid", malformed.load_policy)
 PY
 

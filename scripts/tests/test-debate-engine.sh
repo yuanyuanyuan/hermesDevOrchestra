@@ -24,6 +24,7 @@ grep -Fq "PASS config/debate/full/modes.json: debate_mode_registry" <<<"$FULL_VA
 python3 - "$REPO_ROOT" <<'PY'
 import json
 import pathlib
+import shutil
 import sys
 import tempfile
 
@@ -42,16 +43,13 @@ def expect_error(code, func):
     raise AssertionError(f"expected DebateEngineError({code})")
 
 
-blocked = DebateEngine(repo)
-exc = expect_error("package_not_active", blocked.load_registries)
-assert "staged_target" in exc.message, exc.message
-
-engine = DebateEngine(repo, allow_staged=True)
+engine = DebateEngine(repo)
 registries = engine.load_registries()
 assert len(registries["teams"]) == 16, len(registries["teams"])
 assert len(registries["modes"]) == 8, len(registries["modes"])
 assert registries["team_ids"][0] == "security", registries["team_ids"][:3]
 assert "dynamic_assembly" in registries["mode_ids"], registries["mode_ids"]
+assert registries["package_status"] == "active", registries["package_status"]
 
 run = engine.create_run(
     question="How should Hermes stage full debate package rollout?",
@@ -81,8 +79,23 @@ expect_error(
     lambda: engine.create_run(question="valid question", mode_id="parallel_debate", selected_member_ids=["missing_member"]),
 )
 
-disabled = DebateEngine(repo, allow_staged=True, enabled=False)
+disabled = DebateEngine(repo, enabled=False)
 expect_error("module_disabled", disabled.load_registries)
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    shutil.copytree(repo / "config", tmp_repo / "config")
+    teams_path = tmp_repo / "config/debate/full/teams.json"
+    modes_path = tmp_repo / "config/debate/full/modes.json"
+    teams_data = json.loads(teams_path.read_text(encoding="utf-8"))
+    modes_data = json.loads(modes_path.read_text(encoding="utf-8"))
+    teams_data["package_status"] = "staged_target"
+    modes_data["package_status"] = "staged_target"
+    teams_path.write_text(json.dumps(teams_data), encoding="utf-8")
+    modes_path.write_text(json.dumps(modes_data), encoding="utf-8")
+    blocked = DebateEngine(tmp_repo)
+    exc = expect_error("package_not_active", blocked.load_registries)
+    assert "staged_target" in exc.message, exc.message
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = pathlib.Path(tmp)
@@ -104,7 +117,7 @@ with tempfile.TemporaryDirectory() as tmp:
         "package_status": "active",
         "modes": [],
     }), encoding="utf-8")
-    empty_engine = DebateEngine(tmp_repo, allow_staged=True)
+    empty_engine = DebateEngine(tmp_repo)
     expect_error("empty_registry", empty_engine.load_registries)
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -120,7 +133,7 @@ with tempfile.TemporaryDirectory() as tmp:
         "teams": [{"id": "security", "name": "Security"}],
     }), encoding="utf-8")
     (config_dir / "modes.json").write_text("{ not valid json }", encoding="utf-8")
-    malformed_engine = DebateEngine(tmp_repo, allow_staged=True)
+    malformed_engine = DebateEngine(tmp_repo)
     expect_error("config_invalid", malformed_engine.load_registries)
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -147,7 +160,7 @@ with tempfile.TemporaryDirectory() as tmp:
         "package_status": "active",
         "modes": [{"id": "parallel_debate", "name": "Parallel Debate"}],
     }), encoding="utf-8")
-    short_team_engine = DebateEngine(tmp_repo, allow_staged=True)
+    short_team_engine = DebateEngine(tmp_repo)
     exc = expect_error("config_invalid", short_team_engine.load_registries)
     assert "at least 3 members" in exc.message, exc.message
 PY

@@ -3,7 +3,7 @@
   "artifact_type": "debate_coverage_policy",
   "package_kind": "full_debate_package",
   "policy_authority": "project",
-  "package_status": "staged_target",
+  "package_status": "active",
   "project_overrides_may_only_increase_coverage": true,
   "stage_requirements": {
     "direction_debate": {

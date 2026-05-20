@@ -3,7 +3,7 @@
   "artifact_type": "debate_assembly_policy",
   "package_kind": "full_debate_package",
   "policy_authority": "project",
-  "package_status": "staged_target",
+  "package_status": "active",
   "deterministic_selector": true,
   "selection_order": [
     "stage_floor",
