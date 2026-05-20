@@ -1,9 +1,8 @@
 ---
 name: my-sprint-plan
 description: >
-  根据传入的需求/PRD/Plan 内容，创建 Sprint 计划和验收 Checklist。
-  内部调用 /ce-plan（Codex: $ce-plan）生成结构化实现计划，再按中级开发工程师产能（7 SP/Sprint）进行故事点估算和 Sprint 拆分。
-  单 Sprint = 1 周（5 工作日），超容量自动拆分多 Sprint，输出可直接交给 /my-sprint-execute 执行的产物。
+  根据需求/PRD 创建完整 Sprint 产物包：Plan、Spec、Schema（可选）、Checklist。
+  内部调用 /ce-plan 生成结构化计划，脚本完成解析/拆分/文件生成，LLM 仅负责 SP 估算和 Spec/Schema 编写。
   触发词：创建 sprint 计划、拆分 sprint、规划 sprint、sprint plan、根据 xxx 创建 sprint。
 ---
 
@@ -20,166 +19,103 @@ my-sprint-plan <CONTENT_PATH> [--output <OUTPUT_DIR>]
 
 ## 核心流程
 
-```
-CONTENT_PATH → /ce-plan → 结构化 Plan → SP 估算 → Sprint 拆分 → 输出文件
-```
-
-### 步骤 1：调用 /ce-plan 生成结构化计划
-
-调用 `/ce-plan`（Codex: `$ce-plan`）skill，传入 `${CONTENT_PATH}` 作为需求来源。
-
-- `/ce-plan` 会自动处理：上下文收集、需求分析、实现单元（U-ID）拆分、计划文件生成
-- 等待 `/ce-plan` 完成后，获取生成的 Plan 文件路径（`${PLAN_FILE}`）
-
-### 步骤 2：解析实现单元
-
-从 `${PLAN_FILE}` 中提取所有实现单元（Implementation Units），每个单元包含：
-- U-ID（如 U-1, U-2）
-- 任务描述
-- 涉及文件
-- 验收标准
-
-### 步骤 3：故事点估算
-
-对每个实现单元估算故事点。
-
-**中级开发工程师单 Sprint 产能（1 周 = 5 工作日）：**
-
-| 指标 | 值 |
-|------|------|
-| 有效编码时间/天 | 6 小时（扣除会议、Code Review、上下文切换） |
-| 单 Sprint 有效工时 | 30 小时 |
-| **Sprint 容量** | **7 SP** |
-
-**估算尺（Fibonacci 变体）：**
-
-| SP | 预估工时 | 典型任务 |
-|----|----------|----------|
-| 1 | ~4h | 配置修改、简单 bug 修复、文档更新 |
-| 2 | ~8h（1 天） | 单个接口、简单组件、单元测试补充 |
-| 3 | ~12h | 模块级功能、中等复杂度集成 |
-| 5 | ~20h | 跨模块功能、复杂业务逻辑 |
-| 8 | ~32h | 架构级变更、多模块联动 |
-| 13 | ~52h | **必须拆分**，不允许作为单个任务 |
-
-**估算原则：**
-- 包含开发 + 单元测试 + Code Review 修改时间
-- 不确定的任务取高估值
-- 含外部依赖的任务 +1 SP 缓冲
-- 超过 8 SP 的单元必须拆分后再分配
-
-### 步骤 4：Sprint 拆分
+| 步骤 | 执行者 | 动作 | 产物 |
+|------|--------|------|------|
+| 1 | /ce-plan | 生成结构化 Plan | `PLAN_FILE` |
+| 2 | `scripts/parse-plan.sh` | 解析 Plan → JSON | `/tmp/sprint-plan-parsed.json` |
+| 3 | **LLM** | SP 估算 + Spec + Schema | `spec.md`, `schema.md`(可选), 估算 JSON |
+| 4 | `scripts/split-sprints.sh` | 拓扑排序 + 贪心装箱 | `/tmp/sprint-plan-assigned.json` |
+| 5 | `scripts/generate-sprint-files.sh` | 生成所有 Markdown | `plan-sprint-*.md`, `checklist-sprint-*.md`, `sprint-overview.md` |
 
 ```
-SPRINT_CAPACITY = 7
-remaining = SPRINT_CAPACITY
-sprint_num = 1
-
-对按优先级排序的实现单元列表：
-  unit = 当前单元
-
-  如果 unit.sp > SPRINT_CAPACITY:
-    将 unit 拆分为 2+ 个子单元（每个 ≤ SPRINT_CAPACITY）
-    重新插入队列
-
-  如果 remaining >= unit.sp:
-    加入当前 sprint
-    remaining -= unit.sp
-  否则:
-    关闭当前 sprint
-    sprint_num += 1
-    创建新 sprint（remaining = SPRINT_CAPACITY）
-    加入新 sprint
-    remaining -= unit.sp
-
-  // 依赖检查：被依赖单元必须在同 Sprint 或更早 Sprint
-  // 如果依赖在更晚 Sprint → 调整顺序或合并
+CONTENT_PATH → /ce-plan → PLAN_FILE → parse → JSON → LLM(SP+Spec) → split → assigned → generate → 产物
 ```
 
-**约束：**
-- 单 Sprint 总 SP ≤ 7
-- 依赖关系必须满足拓扑序
-- 每个 Sprint 必须有可独立交付的增量价值
+## 步骤详情
 
-### 步骤 5：输出生成
+### Step 1: 调用 /ce-plan
 
-#### 5A — 每个 Sprint 的 Plan 文件
+调用 `/ce-plan`（Codex: `$ce-plan`）skill，传入 `${CONTENT_PATH}`。
 
-路径：`${OUTPUT_DIR}/plan-sprint-{N}.md`
+- `/ce-plan` 自动处理上下文收集、需求分析、U-ID 拆分
+- 等待完成后获取 `${PLAN_FILE}` 路径
 
-```markdown
-# Sprint {N} Plan
-
-**周期**: 第 {N} 周
-**总故事点**: {X} SP / 7 SP 容量
-**目标**: {一句话 Sprint 目标}
-
-## 任务清单
-
-| # | U-ID | 任务 | 类型 | SP | 依赖 | 状态 |
-|---|------|------|------|----|------|------|
-| 1 | U-1 | {任务描述} | feature | 3 | - | ⬜ |
-| 2 | U-2 | {任务描述} | test | 2 | U-1 | ⬜ |
-
-## 详细说明
-
-### Task 1 (U-1): {任务名}
-- **描述**: {详细描述}
-- **验收标准**: {可验证的条件}
-- **涉及文件**: {文件列表}
-```
-
-#### 5B — 每个 Sprint 的 Checklist 文件
-
-路径：`${OUTPUT_DIR}/checklist-sprint-{N}.md`
-
-```markdown
-# Sprint {N} 验收清单
-
-## 验收条件
-
-- [ ] {U-1 验收条件}
-- [ ] {U-2 验收条件}
-- [ ] 全部测试通过（exit 0）
-- [ ] 代码符合项目规范
-
-## 验证命令
+### Step 2: 解析计划（脚本）
 
 ```bash
-{根据项目结构生成的具体验证命令}
+PARSED=/tmp/sprint-plan-parsed.json
+bash scripts/parse-plan.sh "${PLAN_FILE}" > "${PARSED}"
 ```
 
-## 签核
+输出 JSON 结构：`frontmatter`, `requirements[]`, `implementation_units[]`
 
-- [ ] 开发完成
-- [ ] 测试通过
-- [ ] Code Review 完成
-- [ ] 合并到 main
+每个 unit 包含：`uid`, `name`, `goal`, `requirements`, `dependencies`, `files`, `approach`, `test_scenarios`, `verification`
+
+### Step 3: LLM 智力环节
+
+读取 `${PARSED}`，完成以下三项：
+
+**3A — SP 估算**（参考 `reference/sp-estimation.md`）
+
+为每个 UID 赋故事点值（Fibonacci: 1/2/3/5/8），写入估算结果：
+
+```bash
+# 读取解析结果，在 implementation_units 中添加 sp 字段
+cat ${PARSED} | jq '
+  .implementation_units |= [.[] | . + {sp: <LLM估算值>}]
+' > /tmp/sprint-plan-estimated.json
 ```
 
-#### 5C — 总览文件
+**3B — 生成 spec.md**（参考 `reference/output-formats.md` 中 Spec 模板）
 
-路径：`${OUTPUT_DIR}/sprint-overview.md`
+从 plan 的 requirements 和 implementation_units 中提取，结构化为功能规格：
+- 功能需求（FR-1, FR-2, ...）+ 验收标准
+- 非功能需求（性能、安全、兼容性）
+- 接口契约（API 端点、数据模型）
+- 范围边界（包含 / 不包含）
+- 风险与依赖
 
-汇总所有 Sprint 的目标、任务分配、依赖关系图（Mermaid）和时间线。
+写入 `${OUTPUT_DIR}/spec.md`
+
+**3C — 决定是否生成 schema.md**（参考 `reference/output-formats.md` 中 Schema 模板）
+
+仅当 Plan 涉及以下变更时生成：
+- 新增/修改 API 端点
+- 数据库 Schema 变更（新增表/列/索引）
+- 数据模型变更
+
+如需要，按模板生成 `${OUTPUT_DIR}/schema.md`
+
+### Step 4: Sprint 拆分（脚本）
+
+```bash
+bash scripts/split-sprints.sh /tmp/sprint-plan-estimated.json > /tmp/sprint-plan-assigned.json
+```
+
+算法：拓扑排序（依赖序）→ 贪心装箱（容量 7 SP/ Sprint）
+
+### Step 5: 生成文件（脚本）
+
+```bash
+bash scripts/generate-sprint-files.sh /tmp/sprint-plan-assigned.json "${OUTPUT_DIR}"
+```
 
 ## 产物清单
 
-执行完成后输出：
-
 ```
 ${OUTPUT_DIR}/
-├── sprint-overview.md          # 总览
-├── plan-sprint-1.md            # Sprint 1 Plan
-├── checklist-sprint-1.md       # Sprint 1 Checklist
-├── plan-sprint-2.md            # Sprint 2 Plan（如有）
-├── checklist-sprint-2.md       # Sprint 2 Checklist（如有）
-└── ...
+├── spec.md                    # 功能规格说明（必须）
+├── schema.md                  # API/DB Schema 变更（可选）
+├── sprint-overview.md         # 总览（含依赖图）
+├── plan-sprint-1.md           # Sprint 1 Plan
+├── checklist-sprint-1.md      # Sprint 1 验收清单（必须）
+├── plan-sprint-2.md           # Sprint 2 Plan（如有）
+└── checklist-sprint-2.md      # Sprint 2 验收清单（如有）
 ```
 
 ## 与 /my-sprint-execute 的衔接
 
-生成的 `plan-sprint-{N}.md` 和 `checklist-sprint-{N}.md` 可直接作为 `/my-sprint-execute`（Codex: `$my-sprint-execute`）的输入：
+生成的文件可直接作为 `/my-sprint-execute`（Codex: `$my-sprint-execute`）的输入：
 
 ```
 /my-sprint-execute <OUTPUT_DIR>/plan-sprint-{N}.md <OUTPUT_DIR>/checklist-sprint-{N}.md {N}
