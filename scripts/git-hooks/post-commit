@@ -1,0 +1,72 @@
+#!/bin/bash
+# =============================================================================
+# Compound Engineering - Post-Commit Hook
+# =============================================================================
+# Triggered after each commit. Detects fix/solution commits and reminds the
+# user (or auto-runs) to document the knowledge via ce:compound.
+# =============================================================================
+
+set -eu
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# Source the shared library
+source "${REPO_ROOT}/scripts/lib/compound-git-hooks.sh"
+
+# Get the commit message
+COMMIT_MSG="$(git log -1 --pretty=%B)"
+COMMIT_SUBJECT="$(git log -1 --pretty=%s)"
+
+# Skip if this is a merge commit (handled by post-merge)
+if git log -1 --pretty=%P | grep -q ' '; then
+    exit 0
+fi
+
+# Skip if commit message contains skip markers
+if echo "$COMMIT_MSG" | grep -qiE '\[skip compound\]|\[no compound\]'; then
+    exit 0
+fi
+
+# ---- Main Logic ----
+
+# Check if this is a fix commit
+if _compound_is_fix_commit "$COMMIT_MSG"; then
+    # Check if docs/solutions exists
+    if ! _compound_has_solutions_dir; then
+        _compound_tip_init
+        exit 0
+    fi
+
+    # Extract context for the compound prompt
+    CONTEXT="$(_compound_extract_context "$COMMIT_SUBJECT")"
+
+    # Try auto-run first (if enabled)
+    if _compound_auto_run_compound "$CONTEXT"; then
+        exit 0
+    fi
+
+    # Fall back to reminder
+    _compound_remind_compound "$COMMIT_SUBJECT"
+
+    # Also check if this commit touches files referenced in existing docs
+    if _compound_touches_solutions_references; then
+        local scope
+        scope="$(_compound_detect_scope)"
+        _compound_remind_refresh "$scope"
+    fi
+fi
+
+# Check if this is a refactor/migration that may invalidate docs
+if _compound_is_refactor_commit "$COMMIT_MSG"; then
+    if _compound_has_solutions_dir && _compound_touches_solutions_references; then
+        local scope
+        scope="$(_compound_detect_scope)"
+
+        if ! _compound_auto_run_refresh "$scope"; then
+            _compound_remind_refresh "$scope"
+        fi
+    fi
+fi
+
+exit 0

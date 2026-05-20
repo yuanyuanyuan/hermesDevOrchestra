@@ -1,0 +1,130 @@
+#!/bin/bash
+# =============================================================================
+# Compound Engineering - Post-Merge Hook
+# =============================================================================
+# Triggered after a merge (including git pull). Detects if the merged changes
+# may have invalidated existing documentation and suggests running
+# ce:compound-refresh.
+# =============================================================================
+
+set -eu
+
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# Source the shared library
+source "${REPO_ROOT}/scripts/lib/compound-git-hooks.sh"
+
+# Skip if docs/solutions doesn't exist yet
+if ! _compound_has_solutions_dir; then
+    exit 0
+fi
+
+# Skip if no solution docs exist
+if [ "$(_compound_solutions_count)" -eq 0 ]; then
+    exit 0
+fi
+
+# Determine the merge source (if available)
+MERGE_HEAD="${GITHEAD:-}"
+if [ -z "$MERGE_HEAD" ] && [ -f "${REPO_ROOT}/.git/MERGE_HEAD" ]; then
+    MERGE_HEAD="$(cat "${REPO_ROOT}/.git/MERGE_HEAD" 2>/dev/null || true)"
+fi
+
+# Get the range of commits that were merged
+if [ -n "$MERGE_HEAD" ]; then
+    COMMIT_RANGE="HEAD..$MERGE_HEAD"
+else
+    # Fallback: check the last 20 commits for changes
+    COMMIT_RANGE="HEAD~20..HEAD"
+fi
+
+# Count how many files changed
+CHANGED_FILES_COUNT=0
+if git rev-parse --verify "$COMMIT_RANGE" >/dev/null 2>&1; then
+    CHANGED_FILES_COUNT="$(git diff --name-only "$COMMIT_RANGE" 2>/dev/null | wc -l || echo "0")"
+fi
+
+# Count fix/refactor commits in the merge
+FIX_COMMIT_COUNT=0
+if git rev-parse --verify "$COMMIT_RANGE" >/dev/null 2>&1; then
+    FIX_COMMIT_COUNT="$(git log --oneline "$COMMIT_RANGE" 2>/dev/null | grep -ciE "$COMPOUND_FIX_PATTERNS" || echo "0")"
+fi
+
+REFACTOR_COMMIT_COUNT=0
+if git rev-parse --verify "$COMMIT_RANGE" >/dev/null 2>&1; then
+    REFACTOR_COMMIT_COUNT="$(git log --oneline "$COMMIT_RANGE" 2>/dev/null | grep -ciE "$COMPOUND_REFACTOR_PATTERNS" || echo "0")"
+fi
+
+# Thresholds for triggering a refresh reminder
+FILES_THRESHOLD=30
+FIX_THRESHOLD=3
+REFACTOR_THRESHOLD=2
+
+should_remind=false
+remind_reason=""
+
+if [ "$CHANGED_FILES_COUNT" -gt "$FILES_THRESHOLD" ]; then
+    should_remind=true
+    remind_reason="大量文件变更 (${CHANGED_FILES_COUNT} 个文件)"
+fi
+
+if [ "$FIX_COMMIT_COUNT" -ge "$FIX_THRESHOLD" ]; then
+    should_remind=true
+    remind_reason="多个修复提交 (${FIX_COMMIT_COUNT} 个)"
+fi
+
+if [ "$REFACTOR_COMMIT_COUNT" -ge "$REFACTOR_THRESHOLD" ]; then
+    should_remind=true
+    remind_reason="重构/迁移提交 (${REFACTOR_COMMIT_COUNT} 个)"
+fi
+
+# Check if any merged commit touches files referenced in docs/solutions/
+touches_refs=false
+if git rev-parse --verify "$COMMIT_RANGE" >/dev/null 2>&1; then
+    local_changed="$(git diff --name-only "$COMMIT_RANGE" 2>/dev/null || true)"
+    if [ -n "$local_changed" ]; then
+        while IFS= read -r file; do
+            case "$file" in
+                *.md|*.txt|*.json|*.yaml|*.yml|*.lock|*.svg|*.png|*.jpg) continue ;;
+            esac
+            local basename
+            basename="$(basename "$file")"
+            if grep -r -l "$basename" "$SOLUTIONS_DIR" >/dev/null 2>&1; then
+                touches_refs=true
+                break
+            fi
+        done <<< "$local_changed"
+    fi
+fi
+
+if [ "$touches_refs" = true ]; then
+    should_remind=true
+    if [ -n "$remind_reason" ]; then
+        remind_reason="${remind_reason}，且触及已有文档引用的文件"
+    else
+        remind_reason="变更触及已有文档引用的文件"
+    fi
+fi
+
+# ---- Output ----
+
+if [ "$should_remind" = true ]; then
+    local scope
+    scope="$(_compound_detect_scope)"
+
+    if ! _compound_auto_run_refresh "$scope"; then
+        _compound_header
+        _compound_log "${COMPOUND_CYAN}║${COMPOUND_RESET}  Merge 检测到可能影响文档的变更：                                 ${COMPOUND_CYAN}║${COMPOUND_RESET}"
+        _compound_log "${COMPOUND_CYAN}║${COMPOUND_RESET}    ${COMPOUND_YELLOW}${remind_reason}${COMPOUND_RESET}  ${COMPOUND_CYAN}║${COMPOUND_RESET}"
+        _compound_log "${COMPOUND_CYAN}║${COMPOUND_RESET}                                                                      ${COMPOUND_CYAN}║${COMPOUND_RESET}"
+        _compound_log "${COMPOUND_CYAN}║${COMPOUND_RESET}  建议刷新知识文档：                                                  ${COMPOUND_CYAN}║${COMPOUND_RESET}"
+        _compound_log "${COMPOUND_CYAN}║${COMPOUND_RESET}                                                                      ${COMPOUND_CYAN}║${COMPOUND_RESET}"
+        _compound_log "${COMPOUND_CYAN}║${COMPOUND_RESET}    ${COMPOUND_BOLD}/ce-compound-refresh${scope:+ }${scope}${COMPOUND_RESET}  ${COMPOUND_CYAN}║${COMPOUND_RESET}"
+        _compound_log "${COMPOUND_CYAN}║${COMPOUND_RESET}                                                                      ${COMPOUND_CYAN}║${COMPOUND_RESET}"
+        _compound_log "${COMPOUND_CYAN}║${COMPOUND_RESET}  当前知识库文档数: $(_compound_solutions_count)                          ${COMPOUND_CYAN}║${COMPOUND_RESET}"
+        _compound_footer
+    fi
+fi
+
+exit 0

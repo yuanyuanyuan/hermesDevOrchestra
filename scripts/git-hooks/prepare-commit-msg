@@ -1,0 +1,80 @@
+#!/bin/bash
+# =============================================================================
+# Compound Engineering - Prepare-Commit-Msg Hook
+# =============================================================================
+# Adds a reminder comment to the commit message template when the staged
+# changes suggest a fix or significant change worth documenting.
+# =============================================================================
+
+set -eu
+
+COMMIT_MSG_FILE="$1"
+COMMIT_SOURCE="${2:-}"
+COMMIT_SHA="${3:-}"
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# Source the shared library
+source "${REPO_ROOT}/scripts/lib/compound-git-hooks.sh"
+
+# Skip for merge commits, squash commits, and amend
+if [ "$COMMIT_SOURCE" = "merge" ] || [ "$COMMIT_SOURCE" = "squash" ] || [ "$COMMIT_SOURCE" = "commit" ]; then
+    exit 0
+fi
+
+# Skip if docs/solutions doesn't exist yet
+if ! _compound_has_solutions_dir; then
+    exit 0
+fi
+
+# Analyze staged changes
+STAGED_FILES="$(git diff --cached --name-only 2>/dev/null || true)"
+if [ -z "$STAGED_FILES" ]; then
+    exit 0
+fi
+
+# Check if any staged file is referenced in docs/solutions/
+touches_solutions=false
+while IFS= read -r file; do
+    case "$file" in
+        *.md|*.txt|*.json|*.yaml|*.yml|*.lock|*.svg|*.png|*.jpg) continue ;;
+    esac
+    local basename
+    basename="$(basename "$file")"
+    if grep -r -l "$basename" "$SOLUTIONS_DIR" >/dev/null 2>&1; then
+        touches_solutions=true
+        break
+    fi
+done <<< "$STAGED_FILES"
+
+# Determine what hint to add
+HINT=""
+
+# Check if commit message already has a conventional prefix
+if ! head -1 "$COMMIT_MSG_FILE" | grep -qE '^[a-z]+(\([^)]*\))?!?:'; then
+    HINT="${HINT}
+# 💡 提示：使用 conventional commits 前缀有助于 compound 检测
+#    fix:     修复问题（会自动建议记录 ce:compound）
+#    feat:    新功能
+#    refactor: 重构（会自动建议运行 ce:compound-refresh）
+#    docs:    文档更新
+#    test:    测试相关"
+fi
+
+# Add compound-specific hint if this touches documented files
+if [ "$touches_solutions" = true ]; then
+    HINT="${HINT}
+# ⚠️  注意：此变更触及 docs/solutions/ 中已有文档引用的文件。
+#    提交后建议运行：/ce-compound-refresh"
+fi
+
+# Add skip marker hint
+HINT="${HINT}
+# 🚫 如不需要 compound 提醒，在提交消息中加入：[skip compound]"
+
+# Append hint to commit message file (only if not already present)
+if [ -n "$HINT" ] && ! grep -q "skip compound" "$COMMIT_MSG_FILE"; then
+    echo "$HINT" >> "$COMMIT_MSG_FILE"
+fi
+
+exit 0
