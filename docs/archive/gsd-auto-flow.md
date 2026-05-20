@@ -1,4 +1,9 @@
 # GSD Auto Flow — Claude Code 自动化开发工作流
+> **归档状态**: 已归档
+> **归档日期**: 2026-05-20
+> **原始位置**: docs/gsd-auto-flow.md
+> **说明**: 本文档为历史版本，内容可能已被后续迭代取代，仅供参考。
+
 
 > **用途**: Claude Code 读取本文件后，自动执行完整的 GSD 开发流程（含 Codex 跨 AI Review）
 > **GSD 版本**: v1.41.2

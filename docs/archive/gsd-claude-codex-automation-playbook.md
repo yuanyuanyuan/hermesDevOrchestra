@@ -1,4 +1,9 @@
 # Claude Code + GSD + Codex CLI 自动化开发方案
+> **归档状态**: 已归档
+> **归档日期**: 2026-05-20
+> **原始位置**: docs/gsd-claude-codex-automation-playbook.md
+> **说明**: 本文档为历史版本，内容可能已被后续迭代取代，仅供参考。
+
 
 > 基于 GSD v1.41.2 文档整理
 > 适用场景：在 Claude Code 中使用 GSD 技能完成开发任务，并通过 Codex CLI 等外部模型进行自动化 Review
