@@ -71,8 +71,20 @@ def invalid_activation_case(expected_code: str, mutator) -> None:
 
 activation = RuntimeActivation(repo)
 summary = activation.summary()
-assert summary["active_family_ids"] == ["closeout_and_self_evolution", "gateway_authority"], summary
+assert summary["active_family_ids"] == [
+    "closeout_and_self_evolution",
+    "full_debate_package",
+    "gateway_authority",
+    "runtime_domain_knowledge",
+    "worker_execution",
+], summary
+assert summary["module_defaults"]["debate-engine"] == "full_debate_package", summary
+assert summary["module_defaults"]["worker-registry"] == "worker_execution", summary
+assert summary["module_defaults"]["runtime-knowledge"] == "runtime_domain_knowledge", summary
 assert activation.default_allow_staged("full-schema-cutover") is True
+assert activation.default_allow_staged("debate-engine") is True
+assert activation.default_allow_staged("worker-registry") is True
+assert activation.default_allow_staged("runtime-knowledge") is True
 assert activation.default_allow_staged("self-evolution") is True
 assert activation.default_allow_staged("release-pipeline") is False
 
@@ -147,6 +159,7 @@ with tempfile.TemporaryDirectory() as tmp:
         capabilities = app.capabilities()
         assert "error" in capabilities["runtime_activation"], capabilities
         assert app.module_allow_staged("full-schema-cutover", {}) is False
+        assert app.module_allow_staged("debate-engine", {}) is False
         assert app.module_allow_staged("release-pipeline", {}) is False
     finally:
         for key, value in env_backup.items():
@@ -251,7 +264,16 @@ with urllib.request.urlopen(f"{base_url}/orchestra/capabilities", timeout=5) as 
     capabilities = json.loads(response.read().decode("utf-8"))
 
 runtime_activation = capabilities["runtime_activation"]
-assert runtime_activation["active_family_ids"] == ["closeout_and_self_evolution", "gateway_authority"], runtime_activation
+assert runtime_activation["active_family_ids"] == [
+    "closeout_and_self_evolution",
+    "full_debate_package",
+    "gateway_authority",
+    "runtime_domain_knowledge",
+    "worker_execution",
+], runtime_activation
+assert runtime_activation["module_defaults"]["debate-engine"] == "full_debate_package", runtime_activation
+assert runtime_activation["module_defaults"]["worker-registry"] == "worker_execution", runtime_activation
+assert runtime_activation["module_defaults"]["runtime-knowledge"] == "runtime_domain_knowledge", runtime_activation
 assert runtime_activation["module_defaults"]["full-schema-cutover"] == "gateway_authority", runtime_activation
 assert runtime_activation["module_defaults"]["self-evolution"] == "closeout_and_self_evolution", runtime_activation
 
