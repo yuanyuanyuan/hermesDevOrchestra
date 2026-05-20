@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import sys
 from dataclasses import dataclass
 from typing import Any
 
@@ -287,6 +288,26 @@ def validate_cross_refs(repo: pathlib.Path) -> list[CheckResult]:
         results.append(pass_result("cutover safety policy", "global cutover and historical rewrites are disabled"))
     else:
         results.append(fail_result("cutover safety policy", "global cutover and historical rewrites must be disabled"))
+
+    lib_dir = repo / "scripts/lib"
+    if str(lib_dir) not in sys.path:
+        sys.path.insert(0, str(lib_dir))
+    try:
+        from runtime_activation import RuntimeActivation, RuntimeActivationError
+    except Exception as exc:
+        results.append(fail_result("runtime family activation", f"unable to load runtime activation validator: {exc}"))
+    else:
+        try:
+            summary = RuntimeActivation(repo).summary()
+        except RuntimeActivationError as exc:
+            results.append(fail_result("runtime family activation", exc.message))
+        else:
+            results.append(
+                pass_result(
+                    "runtime family activation",
+                    f"activated families satisfy cutover evidence and checks: {summary['active_family_ids']}",
+                )
+            )
 
     slo = load_json(repo / "config/performance/slo-policy.json")
     budget_policy = slo.get("budget_policy", {})

@@ -26,6 +26,7 @@ grep -Fq "PASS config/testing/full-fixture-policy.json: full_fixture_policy" <<<
 grep -Fq "PASS config/evolution/self-evolution-review-queue.json: self_evolution_review_queue_policy" <<<"$OUTPUT" || fail "self evolution review queue policy was not validated" "evolution queue pass" "$OUTPUT"
 grep -Fq "PASS release command refs: pipeline refs resolve through command registry" <<<"$OUTPUT" || fail "release command refs were not checked" "release refs pass" "$OUTPUT"
 grep -Fq "PASS cutover safety policy: global cutover and historical rewrites are disabled" <<<"$OUTPUT" || fail "cutover safety policy was not checked" "cutover pass" "$OUTPUT"
+grep -Fq "PASS runtime family activation: activated families satisfy cutover evidence and checks" <<<"$OUTPUT" || fail "runtime family activation was not checked" "runtime activation pass" "$OUTPUT"
 grep -Fq "PASS performance run SLA policy: fixed Six-Stage completion SLA is disabled" <<<"$OUTPUT" || fail "performance run SLA policy was not checked" "slo policy pass" "$OUTPUT"
 grep -Fq "PASS fixture layer split: contract fixtures and runtime fake adapters are separated" <<<"$OUTPUT" || fail "fixture layer split was not checked" "fixture split pass" "$OUTPUT"
 grep -Fq "PASS fixture evidence boundary: fixtures cannot satisfy completion or release evidence" <<<"$OUTPUT" || fail "fixture evidence boundary was not checked" "fixture evidence pass" "$OUTPUT"

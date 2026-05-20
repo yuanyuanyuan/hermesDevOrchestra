@@ -1,0 +1,47 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "runtime_family_activation",
+  "activation_policy_ref": "config://cutover/full-readiness-gates",
+  "default_runtime_mode": "mixed_family_cutover",
+  "activated_families": [
+    {
+      "family_id": "gateway_authority",
+      "evidence": [
+        "full_contract_validation_report",
+        "mvp_compatibility_report",
+        "runtime_consumption_test_report",
+        "projection_compatibility_report",
+        "rollback_or_disable_plan",
+        "explicit_cutover_decision"
+      ],
+      "completed_checks": [
+        "full_contract_validation",
+        "idempotency_replay_compatibility",
+        "command_reconciliation_compatibility",
+        "event_projection_compatibility",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "decision_ref": "repo://.workflow/knowledge/decisions/2026-05-20-gateway-authority-cutover.md"
+    },
+    {
+      "family_id": "closeout_and_self_evolution",
+      "evidence": [
+        "full_contract_validation_report",
+        "mvp_compatibility_report",
+        "runtime_consumption_test_report",
+        "projection_compatibility_report",
+        "rollback_or_disable_plan",
+        "explicit_cutover_decision"
+      ],
+      "completed_checks": [
+        "closeout_completion_gate_fixture_report",
+        "candidate_sweep_fixture_report",
+        "protected_change_fixture_report",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "decision_ref": "repo://.workflow/knowledge/decisions/2026-05-20-closeout-self-evolution-cutover.md"
+    }
+  ]
+}

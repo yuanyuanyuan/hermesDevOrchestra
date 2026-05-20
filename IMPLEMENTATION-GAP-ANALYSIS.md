@@ -17,6 +17,7 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 - **Active Runtime Adoption**: 低到中
   - 当前活动运行时仍以 MVP/current runtime 为主。
   - 多个 full-path 子系统仍处于 `staged_target` 或 `enabled: false`，尚未成为默认运行路径。
+  - `goal-gateway-cutover` 范围内已新增 mixed-family runtime activation substrate，但它只激活了 Gateway authority / closeout 相关模块默认路径，还不是全量 full runtime。
 - **测试结论**: 应理解为“合约有效、staged 组件在测试场景可工作”，而不是“full runtime 已完成切换”。
 
 本次复核后，更准确的结论是：
@@ -98,18 +99,18 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 
 | 能力域 | PRD / SPEC / SCHEMAS 对应 | `FULL-COVERAGE-MATRIX` 对齐项 | Full Target 状态 | Active Runtime 状态 | 当前结论 |
 |---|---|---|---|---|---|
-| Run 与 Gateway Authority | PRD: User Stories 1-14；SPEC: 4.1-4.5；SCHEMAS: 3.1 | Gateway runtime contract、Gateway full runtime implementation、Idempotency record contract | 部分完成 | 部分完成 | 本地 Python Gateway、Run API、幂等与部分投影链路已存在，但 full runtime consumption 与 family cutover 仍未完成。 |
-| Six-Stage Evidence 与 Closeout | PRD: User Stories 15-19、63-66、75；SPEC: 4、6、10；SCHEMAS: 3.2 | Self evolution review queue policy，外加 current runtime 的 closeout / evaluation 链路 | 部分完成 | 部分完成 | full schema 已覆盖 `structured_prd`、`development_plan`、`test_plan`、`global_evaluation_report`、`iteration_closeout_report`、`system_improvement_proposals`，且 current runtime 已写入其中多类 artifact，但 full family 仍未完成 cutover。 |
+| Run 与 Gateway Authority | PRD: User Stories 1-14；SPEC: 4.1-4.5；SCHEMAS: 3.1 | Gateway runtime contract、Gateway full runtime implementation、Idempotency record contract | 部分完成 | 部分完成 | 本地 Python Gateway、Run API、幂等与部分投影链路已存在；Sprint 12 新增了 `gateway_authority` mixed-family activation substrate，但 run-level full artifact cutover 仍未完成。 |
+| Six-Stage Evidence 与 Closeout | PRD: User Stories 15-19、63-66、75；SPEC: 4、6、10；SCHEMAS: 3.2 | Self evolution review queue policy，外加 current runtime 的 closeout / evaluation 链路 | 部分完成 | 部分完成 | full schema 已覆盖 `structured_prd`、`development_plan`、`test_plan`、`global_evaluation_report`、`iteration_closeout_report`、`system_improvement_proposals`；Sprint 12 让 `closeout_and_self_evolution` 模块默认激活，但 closeout route 仍未全量消费 full artifacts。 |
 | Full Debate Package | PRD: User Stories 20-37；SPEC: 5；SCHEMAS: 3.3 | Full debate team registry、mode registry、coverage policy、assembly policy、backend policy | 已完成 | 未完成 | canonical teams/modes、assembly/coverage/backend policy、report/audit 代码与测试已就位，但 full debate package 仍是 `staged`，不是 active runtime authority。 |
 | Worker Execution | PRD: User Stories 38-52；SPEC: 7；SCHEMAS: 3.4 | Full worker backend registry、role registry、capability negotiation report、worker session lifecycle、worker parallel integration | 部分完成 | 未完成 | registry、negotiation、session record 代码已存在；但 full worker path 仍是 `staged`，parallel integration 与 default runtime 接线未完成。 |
 | Runtime Domain Knowledge Base | PRD: User Stories 53-62；SPEC: 11.1；SCHEMAS: 3.5 | Runtime Domain Knowledge Base config、runtime knowledge entry contract、ingestion audit、retrieval audit | 部分完成 | 未完成 | config、ingestion/query/result 代码与测试已存在，但默认 `enabled: false`，gbrain 接线未成为 active runtime。 |
-| Kimi-Audited Self Evolution | PRD: User Stories 63-66；SPEC: 6；SCHEMAS: 3.2 中 `system_improvement_proposals` + queue policy | Self evolution review queue policy | 部分完成 | 未完成 | queue policy 与 proposal 生成逻辑已存在，但 Stage 6 默认触发与 active runtime 接入还不完整。 |
+| Kimi-Audited Self Evolution | PRD: User Stories 63-66；SPEC: 6；SCHEMAS: 3.2 中 `system_improvement_proposals` + queue policy | Self evolution review queue policy | 部分完成 | 部分完成 | queue policy 与 proposal 生成逻辑已存在；Sprint 12 让 self-evolution module endpoint 脱离 `allow_staged=True`，但 Stage 6 默认触发与 closeout 自动接线仍不完整。 |
 | Release Pipeline | PRD: User Stories 67-70；SPEC: 9；SCHEMAS: 3.6 | Release pipeline config、release command registry、release evidence | 部分完成 | 未完成 | pipeline/registry/executor 与 `deployment_report` 校验已存在，但 formal path 默认 disabled，不是当前发布 authority。 |
 | Remote Decision Channel | PRD: User Stories 71-74；SPEC: 8.1；SCHEMAS: 3.6 | Remote decision config、remote decision evidence | 部分完成 | 未完成 | request/response contract 与 disabled config 已定义，但 adapter 与默认运行时接线未实现。 |
-| Degradation Policy | PRD: Implementation Decisions + Testing Decisions；SPEC: 3.3、4.6；SCHEMAS: 3.7 | Degradation policy | 已完成 | 未完成 | policy、schema、代码与测试已就位，但它仍是 staged full policy，不是默认 active runtime policy。 |
+| Degradation Policy | PRD: Implementation Decisions + Testing Decisions；SPEC: 3.3、4.6；SCHEMAS: 3.7 | Degradation policy | 已完成 | 部分完成 | policy、schema、代码与测试已就位；Sprint 12 让 Gateway 可按 mixed-family activation 默认调用该 policy，但 run-level enforcement 仍未全量接入。 |
 | Cutover Policy | PRD: Implementation Decisions；SPEC: 4.4-4.5；SCHEMAS: 3.8 | Full contract readiness gate policy | 已完成 | 未完成 | artifact-family cutover 规则、禁用全局切换、保留历史 artifact 的策略已定义，但真正 cutover 尚未发生。 |
-| Performance SLO Policy | PRD: Implementation Decisions；SPEC: 4.6；SCHEMAS: 3.9 | Performance SLO policy | 已完成 | 未完成 | component budget 与 degradation action 策略已定义并可验证，但当前不是 active runtime enforcement path。 |
-| Fixture Policy | PRD: Testing Decisions；SPEC: 4.7；SCHEMAS: 3.10 | Full fixture policy | 已完成 | 未完成 | contract fixtures / runtime fake adapters 的边界与限制已定义并可验证，但它属于测试与 readiness 层，不是 runtime capability cutover 本身。 |
+| Performance SLO Policy | PRD: Implementation Decisions；SPEC: 4.6；SCHEMAS: 3.9 | Performance SLO policy | 已完成 | 部分完成 | component budget 与 degradation action 策略已定义并可验证；Sprint 12 让 Gateway 默认可调用该 policy，但它还不是所有 run command 的统一 enforcement path。 |
+| Fixture Policy | PRD: Testing Decisions；SPEC: 4.7；SCHEMAS: 3.10 | Full fixture policy | 已完成 | 部分完成 | contract fixtures / runtime fake adapters 的边界与限制已定义并可验证；Sprint 12 让 Gateway 默认可调用该 policy，但它仍主要约束 test/readiness 边界。 |
 
 ---
 
@@ -132,7 +133,7 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 - 这并不等于“Gateway 已完整消费 full target configs 并完成全量 cutover”。
 - `docs/FULL-COVERAGE-MATRIX.md` 更准确地将当前状态表述为：
   - Gateway runtime contract: `partially implemented`
-  - Gateway full runtime implementation: `pending`
+  - Gateway full runtime implementation: `pending`（已补 mixed-family activation substrate，但未完成 run-level cutover）
   - 当前 active runtime: `MVP/current runtime active`
 
 ### 真实差距
