@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import sys
 from dataclasses import dataclass
 from typing import Any
 
@@ -288,61 +289,25 @@ def validate_cross_refs(repo: pathlib.Path) -> list[CheckResult]:
     else:
         results.append(fail_result("cutover safety policy", "global cutover and historical rewrites must be disabled"))
 
-    activation = load_json(repo / "config/cutover/runtime-family-activation.json")
-    if not isinstance(activation, dict):
-        results.append(fail_result("runtime family activation", "runtime-family-activation.json must contain an object"))
-    elif activation.get("schema_version") != "orchestra.full.v1" or activation.get("artifact_type") != "runtime_family_activation":
-        results.append(fail_result("runtime family activation", "runtime activation config must declare orchestra.full.v1/runtime_family_activation"))
+    lib_dir = repo / "scripts/lib"
+    if str(lib_dir) not in sys.path:
+        sys.path.insert(0, str(lib_dir))
+    try:
+        from runtime_activation import RuntimeActivation, RuntimeActivationError
+    except Exception as exc:
+        results.append(fail_result("runtime family activation", f"unable to load runtime activation validator: {exc}"))
     else:
-        entries = activation.get("activated_families")
-        if not isinstance(entries, list) or not entries:
-            results.append(fail_result("runtime family activation", "activated_families must be a non-empty list"))
+        try:
+            summary = RuntimeActivation(repo).summary()
+        except RuntimeActivationError as exc:
+            results.append(fail_result("runtime family activation", exc.message))
         else:
-            required_evidence = set(cutover["required_gate_evidence"])
-            family_index = {entry["family_id"]: entry for entry in cutover["artifact_families"]}
-            activated_ids: list[str] = []
-            activation_errors: list[str] = []
-            for entry in entries:
-                if not isinstance(entry, dict):
-                    activation_errors.append("activated family entries must be objects")
-                    continue
-                family_id = entry.get("family_id")
-                evidence = entry.get("evidence")
-                completed_checks = entry.get("completed_checks")
-                decision_ref = entry.get("decision_ref")
-                if not isinstance(family_id, str) or not family_id:
-                    activation_errors.append("family_id missing")
-                    continue
-                family = family_index.get(family_id)
-                if family is None:
-                    activation_errors.append(f"{family_id}: unknown family")
-                    continue
-                if not isinstance(evidence, list) or not all(isinstance(item, str) and item for item in evidence):
-                    activation_errors.append(f"{family_id}: evidence must be a non-empty string list")
-                    continue
-                if not isinstance(completed_checks, list) or not all(isinstance(item, str) and item for item in completed_checks):
-                    activation_errors.append(f"{family_id}: completed_checks must be a non-empty string list")
-                    continue
-                if not isinstance(decision_ref, str) or not decision_ref.startswith("repo://.workflow/knowledge/"):
-                    activation_errors.append(f"{family_id}: decision_ref must target repo://.workflow/knowledge/")
-                    continue
-                missing_evidence = sorted(required_evidence - set(evidence))
-                missing_checks = sorted(set(family["required_checks"]) - set(completed_checks))
-                if missing_evidence or missing_checks:
-                    activation_errors.append(
-                        f"{family_id}: missing evidence={missing_evidence} checks={missing_checks}"
-                    )
-                    continue
-                activated_ids.append(family_id)
-            if activation_errors:
-                results.append(fail_result("runtime family activation", "; ".join(activation_errors)))
-            else:
-                results.append(
-                    pass_result(
-                        "runtime family activation",
-                        f"activated families satisfy cutover evidence and checks: {sorted(activated_ids)}",
-                    )
+            results.append(
+                pass_result(
+                    "runtime family activation",
+                    f"activated families satisfy cutover evidence and checks: {summary['active_family_ids']}",
                 )
+            )
 
     slo = load_json(repo / "config/performance/slo-policy.json")
     budget_policy = slo.get("budget_policy", {})

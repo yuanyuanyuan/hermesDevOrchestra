@@ -18,7 +18,7 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
-from runtime_activation import RuntimeActivation
+from runtime_activation import RuntimeActivation, RuntimeActivationError
 
 
 SCHEMA_VERSION = "orchestra.v1"
@@ -250,7 +250,7 @@ class GatewayApp:
         debate_modes = self.config_items("config/debate/modes.json", "modes")
         try:
             runtime_activation = self.runtime_activation.summary()
-        except Exception as exc:  # noqa: BLE001
+        except RuntimeActivationError as exc:
             runtime_activation = {
                 "config_ref": self.runtime_activation.config_path,
                 "error": getattr(exc, "message", str(exc) or "runtime activation unavailable"),
@@ -685,7 +685,10 @@ class GatewayApp:
     def module_allow_staged(self, module: str, payload: dict[str, Any]) -> bool:
         if "allow_staged" in payload:
             return self.bool_payload(payload, "allow_staged", False)
-        return self.runtime_activation.default_allow_staged(module)
+        try:
+            return self.runtime_activation.default_allow_staged(module)
+        except RuntimeActivationError:
+            return False
 
     def bool_payload(self, payload: dict[str, Any], key: str, default: bool) -> bool:
         value = payload.get(key, default)

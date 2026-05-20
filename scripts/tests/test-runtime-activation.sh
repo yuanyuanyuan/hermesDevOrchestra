@@ -14,6 +14,7 @@ grep -Fq "PASS runtime family activation: activated families satisfy cutover evi
 
 python3 - "$REPO_ROOT" <<'PY'
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -53,6 +54,21 @@ def prepare_repo(tmp_repo: Path, activation_mutator=None) -> None:
     write_json(activation_path, payload)
 
 
+def mutate_activation(tmp_repo: Path, mutator) -> None:
+    activation_path = tmp_repo / "config/cutover/runtime-family-activation.json"
+    payload = load_json(activation_path)
+    mutator(payload)
+    write_json(activation_path, payload)
+
+
+def invalid_activation_case(expected_code: str, mutator) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_repo = Path(tmp)
+        prepare_repo(tmp_repo)
+        mutator(tmp_repo)
+        expect_error(expected_code, lambda: RuntimeActivation(tmp_repo).summary())
+
+
 activation = RuntimeActivation(repo)
 summary = activation.summary()
 assert summary["active_family_ids"] == ["closeout_and_self_evolution", "gateway_authority"], summary
@@ -65,10 +81,79 @@ with tempfile.TemporaryDirectory() as tmp:
     prepare_repo(tmp_repo, lambda payload: payload["activated_families"][0]["evidence"].remove("explicit_cutover_decision"))
     expect_error("activation_blocked", lambda: RuntimeActivation(tmp_repo).summary())
 
+invalid_activation_case(
+    "config_invalid",
+    lambda tmp_repo: (tmp_repo / "config/cutover/runtime-family-activation.json").unlink(),
+)
+invalid_activation_case(
+    "config_invalid",
+    lambda tmp_repo: (tmp_repo / "config/cutover/runtime-family-activation.json").write_text("{bad json", encoding="utf-8"),
+)
+invalid_activation_case(
+    "config_invalid",
+    lambda tmp_repo: mutate_activation(tmp_repo, lambda payload: payload.__setitem__("schema_version", "orchestra.v1")),
+)
+invalid_activation_case(
+    "config_invalid",
+    lambda tmp_repo: mutate_activation(tmp_repo, lambda payload: payload.__setitem__("artifact_type", "wrong_type")),
+)
+invalid_activation_case(
+    "config_invalid",
+    lambda tmp_repo: mutate_activation(tmp_repo, lambda payload: payload.__setitem__("activation_policy_ref", "config://wrong/policy")),
+)
+invalid_activation_case(
+    "config_invalid",
+    lambda tmp_repo: mutate_activation(tmp_repo, lambda payload: payload.__setitem__("default_runtime_mode", "global_cutover")),
+)
+invalid_activation_case(
+    "config_invalid",
+    lambda tmp_repo: mutate_activation(tmp_repo, lambda payload: payload.__setitem__("activated_families", [])),
+)
+invalid_activation_case(
+    "config_invalid",
+    lambda tmp_repo: mutate_activation(
+        tmp_repo,
+        lambda payload: payload.__setitem__("activated_families", [*payload["activated_families"], payload["activated_families"][0]]),
+    ),
+)
+invalid_activation_case(
+    "config_invalid",
+    lambda tmp_repo: mutate_activation(
+        tmp_repo,
+        lambda payload: payload["activated_families"][0].__setitem__("decision_ref", "repo://AGENTS.md"),
+    ),
+)
+invalid_activation_case(
+    "config_invalid",
+    lambda tmp_repo: mutate_activation(
+        tmp_repo,
+        lambda payload: payload["activated_families"][0].__setitem__("decision_ref", "repo://.workflow/knowledge/../../AGENTS.md"),
+    ),
+)
+
 with tempfile.TemporaryDirectory() as tmp:
-    tmp_repo = Path(tmp)
-    prepare_repo(tmp_repo, lambda payload: payload["activated_families"][0].__setitem__("decision_ref", "repo://AGENTS.md"))
-    expect_error("config_invalid", lambda: RuntimeActivation(tmp_repo).summary())
+    tmp_root = Path(tmp)
+    broken_repo = tmp_root / "repo"
+    prepare_repo(broken_repo, lambda payload: payload.__setitem__("schema_version", "orchestra.v0"))
+    env_backup = {key: os.environ.get(key) for key in ("HOME", "STATE_ROOT", "AUDIT_ROOT")}
+    os.environ["HOME"] = str(tmp_root / "home")
+    os.environ["STATE_ROOT"] = str(tmp_root / "state")
+    os.environ["AUDIT_ROOT"] = str(tmp_root / "audit")
+    from orch_gateway import GatewayApp
+    try:
+        app = GatewayApp("runtime-activation-unit", "http://127.0.0.1:9")
+        app.repo_root = broken_repo
+        app.runtime_activation = RuntimeActivation(broken_repo)
+        capabilities = app.capabilities()
+        assert "error" in capabilities["runtime_activation"], capabilities
+        assert app.module_allow_staged("full-schema-cutover", {}) is False
+        assert app.module_allow_staged("release-pipeline", {}) is False
+    finally:
+        for key, value in env_backup.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 PY
 
 TMP_DIR="$(mktemp -d)"

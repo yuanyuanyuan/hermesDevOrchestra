@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from staged_cutover import FullSchemaCutover, StagedCutoverError
@@ -111,15 +111,21 @@ class RuntimeActivation:
         family_id = self._require_string(entry, "family_id")
         evidence = self._require_string_list(entry, "evidence")
         completed_checks = self._require_string_list(entry, "completed_checks")
-        decision_ref = self._require_string(entry, "decision_ref")
-        if not decision_ref.startswith("repo://.workflow/knowledge/"):
-            raise RuntimeActivationError("config_invalid", f"{self.config_path} family {family_id} decision_ref must target repo://.workflow/knowledge/")
+        decision_ref = self._validate_decision_ref(family_id, self._require_string(entry, "decision_ref"))
         return {
             "family_id": family_id,
             "evidence": evidence,
             "completed_checks": completed_checks,
             "decision_ref": decision_ref,
         }
+
+    def _validate_decision_ref(self, family_id: str, decision_ref: str) -> str:
+        if not decision_ref.startswith("repo://"):
+            raise RuntimeActivationError("config_invalid", f"{self.config_path} family {family_id} decision_ref must target repo://.workflow/knowledge/")
+        repo_path = PurePosixPath(decision_ref.removeprefix("repo://"))
+        if repo_path.is_absolute() or ".." in repo_path.parts or repo_path.parts[:2] != (".workflow", "knowledge"):
+            raise RuntimeActivationError("config_invalid", f"{self.config_path} family {family_id} decision_ref must target repo://.workflow/knowledge/")
+        return decision_ref
 
     def _load_json(self) -> dict[str, Any]:
         path = self.repo_root / self.config_path
