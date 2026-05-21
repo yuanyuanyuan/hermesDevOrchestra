@@ -1,0 +1,24 @@
+# Worker Execution Cutover Decision
+
+- Date: 2026-05-20
+- Family: `worker_execution`
+- Scope: activate default runtime access to full worker registry loading and capability negotiation for new worker dispatches only
+- Context:
+  - Sprint 13 runtime activation expands worker-facing module defaults to the full worker execution family.
+  - Full worker registry and capability negotiation remain guarded by the mixed-family cutover model.
+  - Worker execution must preserve explicit negotiation records and fallback reasoning.
+- Options:
+  - Keep worker execution staged and require explicit `allow_staged=True`.
+  - Activate `worker_execution` on the default runtime path for new worker dispatches.
+- Decision: activate `worker_execution` through the runtime family activation manifest so worker registry and capability negotiation can resolve on the default runtime path.
+- Consequences:
+  - Gateway worker module defaults no longer require caller-side staged overrides once the family is active.
+  - Worker selection still records checked backends, fallback decisions, and blocked outcomes.
+  - Unrelated families remain outside the activation scope.
+- Evidence:
+  - `full_contract_validation_report`
+  - `mvp_compatibility_report`
+  - `runtime_consumption_test_report`
+  - `projection_compatibility_report`
+  - `rollback_or_disable_plan`
+  - `explicit_cutover_decision`

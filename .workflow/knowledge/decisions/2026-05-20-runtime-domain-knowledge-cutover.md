@@ -1,0 +1,24 @@
+# Runtime Domain Knowledge Cutover Decision
+
+- Date: 2026-05-20
+- Family: `runtime_domain_knowledge`
+- Scope: activate default runtime access to gbrain-backed runtime knowledge query and ingestion paths for new runtime knowledge operations only
+- Context:
+  - Sprint 13 runtime activation expands runtime knowledge defaults to the full runtime-domain-knowledge family.
+  - Runtime knowledge must stay within freshness, provenance, redaction, and degraded-warning evidence boundaries.
+  - The mixed-family cutover model must avoid activating unrelated runtime families.
+- Options:
+  - Keep runtime knowledge staged and require explicit `allow_staged=True`.
+  - Activate `runtime_domain_knowledge` on the default runtime path for new knowledge queries and ingestions.
+- Decision: activate `runtime_domain_knowledge` through the runtime family activation manifest while preserving degraded warning-context handling and authority boundaries.
+- Consequences:
+  - Runtime knowledge query and ingestion defaults no longer require caller-side staged overrides once the family is active.
+  - Degraded storage or warning-context results remain non-authoritative completion evidence.
+  - Redaction and approval constraints remain part of the active runtime contract.
+- Evidence:
+  - `full_contract_validation_report`
+  - `mvp_compatibility_report`
+  - `runtime_consumption_test_report`
+  - `projection_compatibility_report`
+  - `rollback_or_disable_plan`
+  - `explicit_cutover_decision`

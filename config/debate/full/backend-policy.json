@@ -3,7 +3,7 @@
   "artifact_type": "debate_backend_policy",
   "package_kind": "full_debate_package",
   "policy_authority": "project",
-  "package_status": "staged_target",
+  "package_status": "active",
   "real_backend_required_for_full_acceptance": true,
   "backend_selection_order": ["project_configured_real_backend", "package_fallback_backend", "template_fixture"],
   "backends": [

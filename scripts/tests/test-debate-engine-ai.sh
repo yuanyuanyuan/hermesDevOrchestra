@@ -17,7 +17,7 @@ sys.path.insert(0, '/data/hermes/scripts/lib')
 
 from debate_engine import DebateEngine
 
-engine = DebateEngine(repo_root='/data/hermes', allow_staged=True)
+engine = DebateEngine(repo_root='/data/hermes')
 registries = engine.load_registries()
 
 teams = registries.get('teams', [])
@@ -43,7 +43,7 @@ sys.path.insert(0, '/data/hermes/scripts/lib')
 
 from debate_assembly import DebateAssembly
 
-assembly = DebateAssembly(repo_root='/data/hermes', allow_staged=True)
+assembly = DebateAssembly(repo_root='/data/hermes')
 assembly.load_policy()
 
 selection = assembly.select_for_stage(
@@ -73,7 +73,7 @@ sys.path.insert(0, '/data/hermes/scripts/lib')
 
 from debate_backend_adapter import DebateBackendAdapterRegistry
 
-registry = DebateBackendAdapterRegistry(allow_staged=True, repo_root='/data/hermes')
+registry = DebateBackendAdapterRegistry(repo_root='/data/hermes')
 registry.load_policy()
 
 backend = registry.select_backend(stage='direction_debate')
@@ -98,7 +98,7 @@ sys.path.insert(0, '/data/hermes/scripts/lib')
 
 from debate_engine import DebateEngine
 
-engine = DebateEngine(repo_root='/data/hermes', allow_staged=True)
+engine = DebateEngine(repo_root='/data/hermes')
 engine.load_registries()
 
 run = engine.create_run(
@@ -130,7 +130,7 @@ from debate_assembly import DebateAssembly
 from debate_backend_adapter import DebateBackendAdapterRegistry
 from debate_member_invocation import DebateMemberInvocationService
 
-engine = DebateEngine(repo_root='/data/hermes', allow_staged=True)
+engine = DebateEngine(repo_root='/data/hermes')
 engine.load_registries()
 
 run = engine.create_run(
@@ -138,7 +138,7 @@ run = engine.create_run(
     mode_id='parallel_debate'
 )
 
-assembly_tool = DebateAssembly(repo_root='/data/hermes', allow_staged=True)
+assembly_tool = DebateAssembly(repo_root='/data/hermes')
 assembly_tool.load_policy()
 assembly = assembly_tool.select_for_stage(
     stage='direction_debate',
@@ -146,7 +146,7 @@ assembly = assembly_tool.select_for_stage(
     risk_level='L3'
 )
 
-service = DebateMemberInvocationService(repo_root='/data/hermes', allow_staged=True)
+service = DebateMemberInvocationService(repo_root='/data/hermes')
 run_id = run.get('debate_id')
 result = service.execute(
     run=run,

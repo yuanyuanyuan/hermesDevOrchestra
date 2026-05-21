@@ -302,7 +302,7 @@ backend_policy = json.loads((repo_root / "config/debate/full/backend-policy.json
 
 status, registries = post(
     "/orchestra/modules/debate-engine/load-registries",
-    {"authority": authority("debate-engine", "load-registries"), "allow_staged": True},
+    {"authority": authority("debate-engine", "load-registries")},
 )
 assert status == 200, registries
 assert len(registries["result"]["team_ids"]) == 16, registries
@@ -311,7 +311,6 @@ status, run_response = post(
     "/orchestra/modules/debate-engine/create-run",
     {
         "authority": authority("debate-engine", "create-run"),
-        "allow_staged": True,
         "question": "Should Hermes enable deterministic debate coverage for gateway integration?",
         "mode_id": "dynamic_assembly",
     },
@@ -323,7 +322,6 @@ status, assembly_response = post(
     "/orchestra/modules/debate-assembly/select-for-stage",
     {
         "authority": authority("debate-assembly", "select-for-stage"),
-        "allow_staged": True,
         "stage": "direction_debate",
         "task_type": "api_contract",
         "risk_level": "L2",
@@ -337,7 +335,6 @@ status, backend_response = post(
     "/orchestra/modules/debate-backend-adapter/select-backend",
     {
         "authority": authority("debate-backend-adapter", "select-backend"),
-        "allow_staged": True,
         "stage": "direction_debate",
     },
 )
@@ -348,7 +345,6 @@ status, invocation_response = post(
     "/orchestra/modules/debate-member-invocation/build-invocation",
     {
         "authority": authority("debate-member-invocation", "build-invocation"),
-        "allow_staged": True,
         "run": run,
         "assembly": assembly,
         "member_id": assembly["selected_member_ids"][0],
@@ -362,7 +358,6 @@ status, execution_response = post(
     "/orchestra/modules/debate-member-invocation/execute",
     {
         "authority": authority("debate-member-invocation", "execute"),
-        "allow_staged": True,
         "run": run,
         "assembly": assembly,
         "input_refs": input_refs,
@@ -407,7 +402,7 @@ assert report_response["result"]["report"]["artifact_type"] == "debate_report", 
 for operation in ("load-backends", "load-roles"):
     status, body = post(
         f"/orchestra/modules/worker-registry/{operation}",
-        {"authority": authority("worker-registry", operation), "allow_staged": True},
+        {"authority": authority("worker-registry", operation)},
     )
     assert status == 200, body
 
@@ -415,7 +410,6 @@ status, negotiation_response = post(
     "/orchestra/modules/capability-negotiation/negotiate",
     {
         "authority": authority("capability-negotiation", "negotiate"),
-        "allow_staged": True,
         "role": "implementer",
         "requested_backend": "codex",
         "required_capabilities": ["structured_envelope"],
@@ -531,7 +525,6 @@ status, ingest_response = post(
     "/orchestra/modules/knowledge-ingestion/ingest",
     {
         "authority": authority("knowledge-ingestion", "ingest"),
-        "allow_staged": True,
         "entry": knowledge_entry,
     },
 )
@@ -542,7 +535,6 @@ status, query_response = post(
     "/orchestra/modules/runtime-knowledge/query",
     {
         "authority": authority("runtime-knowledge", "query"),
-        "allow_staged": True,
         "request": {
             "run_id": "run-runtime",
             "task_id": "task-runtime",
