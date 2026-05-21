@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -18,6 +19,7 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
+from debate_report import validate_artifact_definition
 from runtime_activation import RuntimeActivation, RuntimeActivationError
 
 
@@ -173,6 +175,9 @@ class GatewayStore:
 
     def tasks_path(self, run_id: str) -> Path:
         return self.run_dir(run_id) / "tasks.json"
+
+    def worker_session_path(self, run_id: str, session_id: str) -> Path:
+        return self.run_dir(run_id) / "worker-sessions" / f"{session_id}.json"
 
     def audit_path(self) -> Path:
         return self.audit_dir / "audit.jsonl"
@@ -496,7 +501,7 @@ class GatewayApp:
 
             manager = WorkerSessionManager(self.repo_root)
             if operation == "create-session":
-                return manager.create_session(
+                record = manager.create_session(
                     run_id=self.require_string(payload, "run_id"),
                     task_id=self.require_string(payload, "task_id"),
                     role=self.require_string(payload, "role"),
@@ -508,15 +513,25 @@ class GatewayApp:
                     transcript_ref=self.optional_string(payload, "transcript_ref"),
                     output_envelope_ref=self.optional_string(payload, "output_envelope_ref"),
                 )
+                return {
+                    **record,
+                    "session_record_ref": self.persist_worker_session_record(record, manager=manager),
+                }
             if operation == "transition":
-                return manager.transition(
-                    record=self.require_dict(payload, "record"),
+                current_record = dict(self.require_dict(payload, "record"))
+                current_record.pop("session_record_ref", None)
+                record = manager.transition(
+                    record=current_record,
                     next_status=self.require_string(payload, "next_status"),
                     exit_signal=self.optional_string(payload, "exit_signal"),
                     output_envelope_ref=self.optional_string(payload, "output_envelope_ref"),
                     cleanup_status=self.optional_string(payload, "cleanup_status"),
                     termination_reason=self.optional_string(payload, "termination_reason"),
                 )
+                return {
+                    **record,
+                    "session_record_ref": self.persist_worker_session_record(record, manager=manager),
+                }
 
         if module == "worker-session-sweeper":
             from worker_session_sweeper import WorkerSessionSweeper
@@ -695,6 +710,181 @@ class GatewayApp:
         if not isinstance(value, bool):
             raise ValueError(f"{key} must be a boolean")
         return value
+
+    def persist_worker_session_record(
+        self,
+        record: dict[str, Any],
+        *,
+        manager: Any | None = None,
+    ) -> str:
+        from worker_session import WorkerSessionManager
+
+        session_manager = manager or WorkerSessionManager(self.repo_root)
+        run_id = record.get("run_id")
+        session_id = record.get("session_id")
+        if not isinstance(run_id, str) or not run_id:
+            raise ValueError("worker session record is missing run_id")
+        if not isinstance(session_id, str) or not session_id:
+            raise ValueError("worker session record is missing session_id")
+        path = self.store.worker_session_path(run_id, session_id)
+        clean_record = dict(record)
+        clean_record.pop("session_record_ref", None)
+        session_manager.write_record(path, clean_record)
+        return self.store.state_ref(run_id, f"worker-sessions/{session_id}.json")
+
+    def build_parallel_worker_artifacts(
+        self,
+        run_id: str,
+        task_id: str,
+        role_payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        parallel = role_payload.get("parallel_execution")
+        if parallel is None:
+            return None
+        if not isinstance(parallel, dict):
+            raise ValueError("parallel_execution must be an object when provided")
+
+        expected_prefix = f"state://runs/{run_id}/"
+        raw_group_id = parallel.get("parallel_group_id") or f"parallel-{task_id}"
+        if not isinstance(raw_group_id, str) or not raw_group_id:
+            raise ValueError("parallel_execution.parallel_group_id must be a non-empty string when provided")
+        group_id = re.sub(r"[^A-Za-z0-9._-]+", "-", raw_group_id).strip("-") or f"parallel-{task_id}"
+        group_dir = self.store.run_dir(run_id) / "parallel-groups" / group_id
+        plan_ref = self.store.state_ref(run_id, f"parallel-groups/{group_id}/plan.json")
+        scan_ref = self.store.state_ref(run_id, f"parallel-groups/{group_id}/conflict-scan.json")
+        report_ref = self.store.state_ref(run_id, f"parallel-groups/{group_id}/merge-conflict-report.json")
+
+        task_ids = self._normalize_string_list(parallel.get("task_ids") or [task_id], "parallel_execution.task_ids")
+        if task_id not in task_ids:
+            task_ids.insert(0, task_id)
+        workspace_refs = self._normalize_scoped_state_refs(
+            parallel.get("workspace_refs") or [f"state://runs/{run_id}/worker-workspaces/{task_id}.json"],
+            expected_prefix,
+            "parallel_execution.workspace_refs",
+        )
+        write_scope_refs = self._normalize_scoped_state_refs(
+            parallel.get("write_scope_refs") or [f"state://runs/{run_id}/write-scopes/{task_id}.json"],
+            expected_prefix,
+            "parallel_execution.write_scope_refs",
+        )
+        declared_conflict_locks = self._normalize_string_list(
+            parallel.get("declared_conflict_locks") or [],
+            "parallel_execution.declared_conflict_locks",
+        )
+        merge_order = self._normalize_string_list(parallel.get("merge_order") or list(task_ids), "parallel_execution.merge_order")
+        review_gate = parallel.get("review_gate") or {
+            "required": True,
+            "owner": "gateway_serial_integrator",
+            "serial_integration": True,
+        }
+        if not isinstance(review_gate, dict):
+            raise ValueError("parallel_execution.review_gate must be an object when provided")
+
+        actual_changed_files = self._normalize_string_list(
+            parallel.get("actual_changed_files") or role_payload.get("changed_files") or [],
+            "parallel_execution.actual_changed_files",
+        )
+        out_of_scope_writes = self._normalize_string_list(
+            parallel.get("out_of_scope_writes") or [],
+            "parallel_execution.out_of_scope_writes",
+        )
+        overlapping_writes = self._normalize_string_list(
+            parallel.get("overlapping_writes") or [],
+            "parallel_execution.overlapping_writes",
+        )
+        declared_lock_conflicts = self._normalize_string_list(
+            parallel.get("declared_lock_conflicts") or [],
+            "parallel_execution.declared_lock_conflicts",
+        )
+        authority_file_writes = self._normalize_string_list(
+            parallel.get("authority_file_writes") or [],
+            "parallel_execution.authority_file_writes",
+        )
+
+        merge_allowed = not any([out_of_scope_writes, overlapping_writes, declared_lock_conflicts, authority_file_writes])
+        scan_status = "passed" if merge_allowed else "failed"
+        conflicts = (
+            [{"kind": "overlapping_write", "path": path} for path in overlapping_writes]
+            + [{"kind": "declared_lock_conflict", "lock": lock} for lock in declared_lock_conflicts]
+            + [{"kind": "authority_file_write", "path": path} for path in authority_file_writes]
+            + [{"kind": "out_of_scope_write", "path": path} for path in out_of_scope_writes]
+        )
+
+        plan = {
+            "schema_version": "orchestra.full.v1",
+            "artifact_type": "parallel_group_plan",
+            "parallel_group_id": group_id,
+            "task_ids": task_ids,
+            "workspace_refs": workspace_refs,
+            "write_scope_refs": write_scope_refs,
+            "declared_conflict_locks": declared_conflict_locks,
+            "merge_order": merge_order,
+            "review_gate": review_gate,
+        }
+        scan = {
+            "schema_version": "orchestra.full.v1",
+            "artifact_type": "conflict_scan",
+            "parallel_group_id": group_id,
+            "scan_status": scan_status,
+            "actual_changed_files": actual_changed_files,
+            "out_of_scope_writes": out_of_scope_writes,
+            "overlapping_writes": overlapping_writes,
+            "declared_lock_conflicts": declared_lock_conflicts,
+            "authority_file_writes": authority_file_writes,
+            "merge_allowed": merge_allowed,
+            "semantic_conflict_detection": "not_claimed",
+        }
+        report = None
+        if conflicts:
+            report = {
+                "schema_version": "orchestra.full.v1",
+                "artifact_type": "merge_conflict_report",
+                "parallel_group_id": group_id,
+                "conflicts": conflicts,
+                "affected_task_ids": task_ids,
+                "semantic_conflict_detection": "not_claimed",
+                "kimi_decision_required": True,
+                "recommended_next_actions": [
+                    "Resolve mechanical write-scope or overlap conflicts before merge.",
+                    "Ask Kimi to arbitrate the conflicting write set if the merge order needs to change.",
+                ],
+            }
+
+        validate_artifact_definition(self.repo_root, "parallel_group_plan", plan)
+        validate_artifact_definition(self.repo_root, "conflict_scan", scan)
+        if report is not None:
+            validate_artifact_definition(self.repo_root, "merge_conflict_report", report)
+
+        return {
+            "parallel_group_id": group_id,
+            "group_dir": group_dir,
+            "plan": plan,
+            "scan": scan,
+            "report": report,
+            "plan_ref": plan_ref,
+            "scan_ref": scan_ref,
+            "report_ref": report_ref if report is not None else None,
+            "artifact_refs": [ref for ref in [plan_ref, scan_ref, report_ref if report is not None else None] if ref is not None],
+            "blocked": report is not None,
+        }
+
+    def persist_parallel_worker_artifacts(self, artifacts: dict[str, Any]) -> None:
+        group_dir = artifacts["group_dir"]
+        write_json(group_dir / "plan.json", artifacts["plan"])
+        write_json(group_dir / "conflict-scan.json", artifacts["scan"])
+        if artifacts.get("report") is not None:
+            write_json(group_dir / "merge-conflict-report.json", artifacts["report"])
+
+    def _normalize_string_list(self, value: Any, label: str) -> list[str]:
+        if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
+            raise ValueError(f"{label} must be a list of non-empty strings")
+        return list(value)
+
+    def _normalize_scoped_state_refs(self, value: Any, expected_prefix: str, label: str) -> list[str]:
+        refs = self._normalize_string_list(value, label)
+        if not all(self.valid_scoped_state_ref(ref, expected_prefix) for ref in refs):
+            raise ValueError(f"{label} must contain only {expected_prefix} scoped refs")
+        return refs
 
     def string_value(self, payload: dict[str, Any], key: str, default: str) -> str:
         value = payload.get(key, default)
@@ -4070,6 +4260,25 @@ class GatewayApp:
         role_payload = worker_response.get("role_specific_payload")
         if not isinstance(role_payload, dict) or role_payload.get("requested_transition") != "task_complete":
             return 400, self.error("unsupported_worker_output", "only task_complete is implemented")
+        try:
+            parallel_artifacts = self.build_parallel_worker_artifacts(run_id, task_id, role_payload)
+        except ValueError as exc:
+            return 400, self.error("validation_error", str(exc))
+        if parallel_artifacts is not None:
+            self.persist_parallel_worker_artifacts(parallel_artifacts)
+            if parallel_artifacts["blocked"]:
+                return self.block_worker_output_parallel_conflict(
+                    run_id=run_id,
+                    task_id=task_id,
+                    task=task,
+                    tasks=tasks,
+                    idempotency_key=idempotency_key,
+                    endpoint=endpoint,
+                    resource_path=resource_path,
+                    payload_hash=payload_hash,
+                    idempotency_path=idempotency_path,
+                    parallel_artifacts=parallel_artifacts,
+                )
 
         now = utc_now()
         command_id = f"cmd-{uuid.uuid4().hex[:16]}"
@@ -4077,6 +4286,7 @@ class GatewayApp:
         run_ref = self.store.state_ref(run_id, "run.json")
         task_projection_ref = self.store.state_ref(run_id, "tasks.json")
         worker_output_report_ref = self.store.state_ref(run_id, f"worker-output-reports/{command_id}.json")
+        parallel_refs = parallel_artifacts["artifact_refs"] if parallel_artifacts is not None else []
 
         command_record = {
             "schema_version": SCHEMA_VERSION,
@@ -4090,6 +4300,14 @@ class GatewayApp:
             "payload_hash": payload_hash,
             "intent": "submit_worker_output",
             "planned_side_effects": [
+                *(
+                    [
+                        "write_parallel_group_plan",
+                        "write_conflict_scan",
+                    ]
+                    if parallel_artifacts is not None
+                    else []
+                ),
                 "write_worker_output_report",
                 "write_task_projection",
                 "write_run_state",
@@ -4118,6 +4336,8 @@ class GatewayApp:
             "diff_summary": role_payload.get("diff_summary", ""),
             "test_evidence_refs": role_payload.get("test_evidence_refs", []),
             "commands": role_payload.get("commands", []),
+            "parallel_artifact_refs": parallel_refs,
+            "parallel_group_id": parallel_artifacts["parallel_group_id"] if parallel_artifacts is not None else None,
             "backend_execution": role_payload.get(
                 "backend_execution",
                 {
@@ -4133,6 +4353,9 @@ class GatewayApp:
         task_refs = task.get("artifact_refs") if isinstance(task.get("artifact_refs"), list) else []
         if worker_output_report_ref not in task_refs:
             task_refs.append(worker_output_report_ref)
+        for ref in parallel_refs:
+            if ref not in task_refs:
+                task_refs.append(ref)
         task.update({"status": "completed", "artifact_refs": task_refs})
         task.pop("blocked_reason", None)
         tasks["updated_at"] = now
@@ -4162,6 +4385,7 @@ class GatewayApp:
                 "session_id": "",
                 "command_id": command_id,
                 "run_id": run_id,
+                "parallel_group_id": parallel_artifacts["parallel_group_id"] if parallel_artifacts is not None else "",
             },
         )
 
@@ -4183,7 +4407,7 @@ class GatewayApp:
                 "severity": "info",
                 "status": "completed",
                 "message": "Target task completed after Advancement Gate validation",
-                "artifact_refs": [worker_output_report_ref, run_ref, task_projection_ref, audit_ref],
+                "artifact_refs": [worker_output_report_ref, run_ref, task_projection_ref, audit_ref, *parallel_refs],
                 "decision_id": None,
             },
         )
@@ -4204,7 +4428,7 @@ class GatewayApp:
                 "severity": "info",
                 "status": "completed",
                 "message": "Stage task completed through Advancement Gate",
-                "artifact_refs": [worker_output_report_ref, run_ref, task_projection_ref, audit_ref],
+                "artifact_refs": [worker_output_report_ref, run_ref, task_projection_ref, audit_ref, *parallel_refs],
                 "decision_id": None,
             },
         )
@@ -4220,6 +4444,7 @@ class GatewayApp:
             "gate_result": "accepted",
             "transition": "task_complete",
             "worker_output_report_ref": worker_output_report_ref,
+            "parallel_artifact_refs": parallel_refs,
             "kanban_lifecycle_advanced": kanban_completed,
             "event_projection_degraded": bool(projection_issue_refs),
             "projection_status": "inconsistent" if projection_issue_refs else "consistent",
@@ -4228,11 +4453,196 @@ class GatewayApp:
         command_record["status"] = "completed"
         command_record["updated_at"] = utc_now()
         command_record["steps"] = [
+            *(
+                [
+                    {"step_id": "write_parallel_group_plan", "target_authority": "state", "operation": "write", "status": "completed", "refs": [parallel_artifacts["plan_ref"]]},
+                    {"step_id": "write_conflict_scan", "target_authority": "state", "operation": "write", "status": "completed", "refs": [parallel_artifacts["scan_ref"]]},
+                ]
+                if parallel_artifacts is not None
+                else []
+            ),
             {"step_id": "write_worker_output_report", "target_authority": "state", "operation": "write", "status": "completed", "refs": [worker_output_report_ref]},
             {"step_id": "write_task_projection", "target_authority": "state", "operation": "write", "status": "completed", "refs": [task_projection_ref]},
             {"step_id": "write_run_state", "target_authority": "state", "operation": "write", "status": "completed", "refs": [run_ref]},
             {"step_id": "append_audit", "target_authority": "audit", "operation": "append", "status": "completed", "refs": [audit_ref]},
             {"step_id": "complete_kanban_task", "target_authority": "hermes_kanban", "operation": "complete", "status": "completed" if kanban_completed else "failed", "refs": [task.get("kanban_ref")]},
+            {
+                "step_id": "append_event_projection",
+                "target_authority": "state",
+                "operation": "append",
+                "status": "failed" if projection_issue_refs else "completed",
+                "refs": projection_issue_refs or [self.store.state_ref(run_id, f"events.jsonl#seq={seq}")],
+            },
+        ]
+        command_record["response_summary"] = response
+        write_json(command_path, command_record)
+        write_json(
+            idempotency_path,
+            {
+                "schema_version": SCHEMA_VERSION,
+                "artifact_type": "idempotency_record",
+                "project": self.store.project_id,
+                "endpoint": endpoint,
+                "resource_path": resource_path,
+                "idempotency_key": idempotency_key,
+                "payload_hash": payload_hash,
+                "status": "completed",
+                "http_status": 200,
+                "command_id": command_id,
+                "run_id": run_id,
+                "task_id": task_id,
+                "command_record_ref": self.store.state_ref(run_id, f"commands/{command_id}.json"),
+                "response_summary": response,
+                "created_at": now,
+                "updated_at": utc_now(),
+            },
+        )
+        return 200, response
+
+    def block_worker_output_parallel_conflict(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        task: dict[str, Any],
+        tasks: dict[str, Any],
+        idempotency_key: str,
+        endpoint: str,
+        resource_path: str,
+        payload_hash: str,
+        idempotency_path: Path,
+        parallel_artifacts: dict[str, Any],
+    ) -> tuple[int, dict[str, Any]]:
+        now = utc_now()
+        command_id = f"cmd-{uuid.uuid4().hex[:16]}"
+        command_path = self.store.command_path(run_id, command_id)
+        run_ref = self.store.state_ref(run_id, "run.json")
+        task_projection_ref = self.store.state_ref(run_id, "tasks.json")
+        report_ref = parallel_artifacts["report_ref"]
+        artifact_refs = [parallel_artifacts["plan_ref"], parallel_artifacts["scan_ref"], report_ref]
+
+        command_record = {
+            "schema_version": SCHEMA_VERSION,
+            "artifact_type": "command_record",
+            "command_id": command_id,
+            "idempotency_key": idempotency_key,
+            "project": self.store.project_id,
+            "endpoint": endpoint,
+            "resource_path": resource_path,
+            "status": "in_progress",
+            "payload_hash": payload_hash,
+            "intent": "submit_worker_output",
+            "planned_side_effects": [
+                "write_parallel_group_plan",
+                "write_conflict_scan",
+                "write_merge_conflict_report",
+                "write_task_projection",
+                "write_run_state",
+                "append_audit",
+                "append_event_projection",
+            ],
+            "steps": [],
+            "created_at": now,
+            "updated_at": now,
+        }
+        write_json(command_path, command_record)
+
+        task_refs = task.get("artifact_refs") if isinstance(task.get("artifact_refs"), list) else []
+        for ref in artifact_refs:
+            if ref not in task_refs:
+                task_refs.append(ref)
+        task.update({"status": "blocked", "blocked_reason": "worker_output_parallel_conflict", "artifact_refs": task_refs})
+        tasks["updated_at"] = now
+        write_json(self.store.tasks_path(run_id), tasks)
+
+        run = read_json(self.store.run_path(run_id))
+        pending_decision_refs = run.get("pending_decision_refs") if isinstance(run.get("pending_decision_refs"), list) else []
+        if report_ref not in pending_decision_refs:
+            pending_decision_refs.append(report_ref)
+        run.update(
+            {
+                "status": "blocked",
+                "last_command_id": command_id,
+                "updated_at": now,
+                "blocked_reason": "worker_output_parallel_conflict",
+                "pending_decision_refs": pending_decision_refs,
+            }
+        )
+        write_json(self.store.run_path(run_id), run)
+        write_json(self.store.active_run_path(), {"schema_version": SCHEMA_VERSION, "run_id": run_id, "status": "blocked", "updated_at": now})
+
+        audit_ref = self.store.audit_ref(command_id)
+        append_jsonl(
+            self.store.audit_path(),
+            {
+                "timestamp": now,
+                "level": "L2",
+                "project": self.store.project_id,
+                "type": "worker_output_blocked",
+                "decision": "BLOCKED",
+                "user_decision": "",
+                "details": "Parallel integration conflict requires Kimi decision before serial merge",
+                "approval_id": "",
+                "ttl": "",
+                "task_id": task_id,
+                "escalation_id": "",
+                "agent_source": "orch-gateway",
+                "session_id": "",
+                "command_id": command_id,
+                "run_id": run_id,
+                "failure_class": "parallel_conflict",
+                "parallel_group_id": parallel_artifacts["parallel_group_id"],
+            },
+        )
+
+        seq = self.next_event_seq(run_id)
+        projection_issue_refs = []
+        projection_issue_ref = self.append_event(
+            run_id,
+            {
+                "schema_version": EVENT_SCHEMA_VERSION,
+                "seq": seq,
+                "timestamp": now,
+                "command_id": command_id,
+                "idempotency_key": idempotency_key,
+                "run_id": run_id,
+                "task_id": task_id,
+                "stage": task.get("stage"),
+                "type": "worker_output_blocked",
+                "severity": "error",
+                "status": "blocked",
+                "message": "Parallel integration conflict blocked worker output acceptance",
+                "artifact_refs": [*artifact_refs, run_ref, task_projection_ref, audit_ref],
+                "decision_id": None,
+            },
+        )
+        if projection_issue_ref:
+            projection_issue_refs.append(projection_issue_ref)
+
+        response = {
+            "schema_version": SCHEMA_VERSION,
+            "command_id": command_id,
+            "idempotency_key": idempotency_key,
+            "run_id": run_id,
+            "task_id": task_id,
+            "gate_result": "blocked",
+            "failure_class": "parallel_conflict",
+            "parallel_group_plan_ref": parallel_artifacts["plan_ref"],
+            "conflict_scan_ref": parallel_artifacts["scan_ref"],
+            "merge_conflict_report_ref": report_ref,
+            "event_projection_degraded": bool(projection_issue_refs),
+            "projection_status": "inconsistent" if projection_issue_refs else "consistent",
+            "projection_issue_refs": projection_issue_refs,
+        }
+        command_record["status"] = "completed"
+        command_record["updated_at"] = utc_now()
+        command_record["steps"] = [
+            {"step_id": "write_parallel_group_plan", "target_authority": "state", "operation": "write", "status": "completed", "refs": [parallel_artifacts["plan_ref"]]},
+            {"step_id": "write_conflict_scan", "target_authority": "state", "operation": "write", "status": "completed", "refs": [parallel_artifacts["scan_ref"]]},
+            {"step_id": "write_merge_conflict_report", "target_authority": "state", "operation": "write", "status": "completed", "refs": [report_ref]},
+            {"step_id": "write_task_projection", "target_authority": "state", "operation": "write", "status": "completed", "refs": [task_projection_ref]},
+            {"step_id": "write_run_state", "target_authority": "state", "operation": "write", "status": "completed", "refs": [run_ref]},
+            {"step_id": "append_audit", "target_authority": "audit", "operation": "append", "status": "completed", "refs": [audit_ref]},
             {
                 "step_id": "append_event_projection",
                 "target_authority": "state",

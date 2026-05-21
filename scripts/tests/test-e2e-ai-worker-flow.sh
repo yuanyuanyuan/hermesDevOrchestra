@@ -31,6 +31,20 @@ printf '{"status":"ok"}\n'
 SH
 chmod +x "$FAKE_BIN/hermes"
 
+cat > "$FAKE_BIN/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  -L)
+    shift 2
+    ;;
+esac
+case "${1:-}" in
+  has-session|send-keys|kill-session) exit 0 ;;
+esac
+exit 1
+SH
+chmod +x "$FAKE_BIN/tmux"
+
 export HOME="$TMP_DIR/home"
 export RUNTIME_ROOT="$TMP_DIR/runtime"
 export STATE_ROOT="$TMP_DIR/state"
@@ -83,6 +97,7 @@ python3 - "$BASE_URL" "$TMP_DIR/workspace" "$STATE_ROOT" "$AUDIT_ROOT" "$PROJECT
 import json
 import pathlib
 import sys
+import urllib.error
 import urllib.request
 
 base_url, workspace_root, state_root, audit_root, project_id, hermes_log = sys.argv[1:]
@@ -94,9 +109,13 @@ def post(path, payload, *, expected=200):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        assert response.status == expected, (path, response.status)
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            assert response.status == expected, (path, response.status)
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = json.loads(exc.read().decode("utf-8"))
+        raise AssertionError((path, exc.code, body)) from exc
 
 def get(path):
     with urllib.request.urlopen(f"{base_url}{path}", timeout=10) as response:
@@ -131,7 +150,6 @@ negotiation = post(
     "/orchestra/modules/capability-negotiation/negotiate",
     {
         "authority": "gateway_local_operator",
-        "allow_staged": True,
         "role": "implementer",
         "requested_backend": "codex",
         "required_capabilities": ["structured_envelope"],
@@ -157,6 +175,50 @@ session = post(
 session_result = session["result"]
 assert session_result["session_id"], session_result
 assert session_result["status"], session_result
+assert session_result["session_record_ref"].startswith(f"state://runs/{run_id}/worker-sessions/"), session_result
+session_record_path = pathlib.Path(state_root) / project_id / "runs" / run_id / "worker-sessions" / f"{session_result['session_id']}.json"
+session_record = json.loads(session_record_path.read_text(encoding="utf-8"))
+assert session_record["status"] == "planned", session_record
+assert session_record["cleanup_owner"] == "gateway_worker_session_sweeper", session_record
+
+starting = post(
+    "/orchestra/modules/worker-session/transition",
+    {
+        "authority": "gateway_local_operator",
+        "record": session_result,
+        "next_status": "starting",
+    },
+)
+running = post(
+    "/orchestra/modules/worker-session/transition",
+    {
+        "authority": "gateway_local_operator",
+        "record": starting["result"],
+        "next_status": "running",
+    },
+)
+completed = post(
+    "/orchestra/modules/worker-session/transition",
+    {
+        "authority": "gateway_local_operator",
+        "record": running["result"],
+        "next_status": "completed",
+        "output_envelope_ref": f"state://runs/{run_id}/worker-output-envelopes/{task_id}.json",
+    },
+)
+assert completed["result"]["status"] == "completed", completed
+
+sweep = post(
+    "/orchestra/modules/worker-session-sweeper/sweep-directory",
+    {
+        "authority": "gateway_local_operator",
+        "records_root": str(session_record_path.parent),
+    },
+)
+assert sweep["result"]["updated_records"] == 1, sweep
+session_record = json.loads(session_record_path.read_text(encoding="utf-8"))
+assert session_record["status"] == "completed", session_record
+assert session_record["cleanup_status"] in {"cleaned", "not_found"}, session_record
 
 worker_output = post(
     f"/orchestra/runs/{run_id}/worker-outputs",
@@ -184,6 +246,30 @@ worker_output = post(
                 "risk_notes": [],
                 "approval_refs": [],
                 "commands": ["make test"],
+                "parallel_execution": {
+                    "parallel_group_id": "parallel-impl-success",
+                    "task_ids": [task_id, "task-review-pass"],
+                    "workspace_refs": [
+                        f"state://runs/{run_id}/worker-workspaces/{task_id}.json",
+                        f"state://runs/{run_id}/worker-workspaces/task-review-pass.json"
+                    ],
+                    "write_scope_refs": [
+                        f"state://runs/{run_id}/write-scopes/{task_id}.json",
+                        f"state://runs/{run_id}/write-scopes/task-review-pass.json"
+                    ],
+                    "declared_conflict_locks": ["repo://docs/runtime-boundary.md"],
+                    "merge_order": [task_id, "task-review-pass"],
+                    "review_gate": {
+                        "required": True,
+                        "owner": "gateway_serial_integrator",
+                        "serial_integration": True
+                    },
+                    "actual_changed_files": ["scripts/example.py"],
+                    "overlapping_writes": [],
+                    "declared_lock_conflicts": [],
+                    "authority_file_writes": [],
+                    "out_of_scope_writes": []
+                },
                 "backend_execution": {
                     "backend": selected_backend,
                     "backend_kind": "cli",
@@ -197,6 +283,7 @@ worker_output = post(
 assert worker_output["gate_result"] == "accepted", worker_output
 assert worker_output["transition"] == "task_complete", worker_output
 assert worker_output["worker_output_report_ref"].startswith(f"state://runs/{run_id}/worker-output-reports/"), worker_output
+assert len(worker_output["parallel_artifact_refs"]) == 2, worker_output
 
 status = get(f"/orchestra/runs/{run_id}")
 events = get(f"/orchestra/runs/{run_id}/events?since_seq=0&limit=20")
@@ -217,6 +304,13 @@ report = json.loads(report_path.read_text(encoding="utf-8"))
 assert report["artifact_type"] == "worker_output_report", report
 assert report["result"] == "accepted", report
 assert report["backend_execution"]["backend"] == selected_backend, report
+parallel_dir = pathlib.Path(state_root) / project_id / "runs" / run_id / "parallel-groups" / "parallel-impl-success"
+plan = json.loads((parallel_dir / "plan.json").read_text(encoding="utf-8"))
+scan = json.loads((parallel_dir / "conflict-scan.json").read_text(encoding="utf-8"))
+assert plan["artifact_type"] == "parallel_group_plan", plan
+assert scan["artifact_type"] == "conflict_scan", scan
+assert scan["merge_allowed"] is True, scan
+assert not (parallel_dir / "merge-conflict-report.json").exists(), parallel_dir
 
 audit_records = [
     json.loads(line)
@@ -228,6 +322,81 @@ assert any(record.get("type") == "worker_output_accepted" and record.get("task_i
 calls = pathlib.Path(hermes_log).read_text(encoding="utf-8").splitlines()
 assert len([line for line in calls if line.startswith("kanban create")]) == 7, calls
 assert f"kanban complete --board {project_id} --task {kanban_ref}" in calls, calls
+
+conflict_task = next(task for task in tasks_after["tasks"] if task["status"] != "completed")
+conflict_task_id = conflict_task["task_id"]
+
+conflict_output = post(
+    f"/orchestra/runs/{run_id}/worker-outputs",
+    {
+        "idempotency_key": "gw-e2e-worker-output-conflict",
+        "task_id": conflict_task_id,
+        "worker_response": {
+            "protocol": "hermes-role-engine/v1",
+            "role": "implementer",
+            "correlation_id": conflict_task_id,
+            "turn": 1,
+            "status": "completed",
+            "next_action": "complete",
+            "role_specific_payload": {
+                "requested_transition": "task_complete",
+                "artifact_refs": [f"state://runs/{run_id}/run.json"],
+                "changed_files": ["scripts/example.py"],
+                "diff_summary": "Gateway worker parallel conflict",
+                "write_scope_result": {
+                    "within_scope": True,
+                    "violations": [],
+                    "forbidden_paths_touched": []
+                },
+                "test_evidence_refs": [f"state://runs/{run_id}/test-execution-report.json"],
+                "risk_notes": [],
+                "approval_refs": [],
+                "parallel_execution": {
+                    "parallel_group_id": "parallel-impl-conflict",
+                    "task_ids": [conflict_task_id, "task-review-conflict"],
+                    "workspace_refs": [
+                        f"state://runs/{run_id}/worker-workspaces/{conflict_task_id}.json",
+                        f"state://runs/{run_id}/worker-workspaces/task-review-conflict.json"
+                    ],
+                    "write_scope_refs": [
+                        f"state://runs/{run_id}/write-scopes/{conflict_task_id}.json",
+                        f"state://runs/{run_id}/write-scopes/task-review-conflict.json"
+                    ],
+                    "declared_conflict_locks": ["repo://scripts/example.py"],
+                    "merge_order": [conflict_task_id, "task-review-conflict"],
+                    "review_gate": {
+                        "required": True,
+                        "owner": "gateway_serial_integrator",
+                        "serial_integration": True
+                    },
+                    "actual_changed_files": ["scripts/example.py"],
+                    "overlapping_writes": ["scripts/example.py"],
+                    "declared_lock_conflicts": ["repo://scripts/example.py"],
+                    "authority_file_writes": [],
+                    "out_of_scope_writes": []
+                }
+            },
+            "conversation_context": [{"summary": "Parallel conflict flow"}]
+        }
+    },
+)
+assert conflict_output["gate_result"] == "blocked", conflict_output
+assert conflict_output["failure_class"] == "parallel_conflict", conflict_output
+
+conflict_status = get(f"/orchestra/runs/{run_id}")
+conflict_events = get(f"/orchestra/runs/{run_id}/events?since_seq=0&limit=20")
+conflict_tasks_after = get(f"/orchestra/runs/{run_id}/tasks")
+conflict_target = next(task for task in conflict_tasks_after["tasks"] if task["task_id"] == conflict_task_id)
+assert conflict_status["status"] == "blocked", conflict_status
+assert conflict_status["blocked_reason"] == "worker_output_parallel_conflict", conflict_status
+assert conflict_target["status"] == "blocked", conflict_target
+assert conflict_target["blocked_reason"] == "worker_output_parallel_conflict", conflict_target
+conflict_parallel_dir = pathlib.Path(state_root) / project_id / "runs" / run_id / "parallel-groups" / "parallel-impl-conflict"
+conflict_report = json.loads((conflict_parallel_dir / "merge-conflict-report.json").read_text(encoding="utf-8"))
+assert conflict_report["artifact_type"] == "merge_conflict_report", conflict_report
+assert conflict_report["kimi_decision_required"] is True, conflict_report
+event_types = [event["type"] for event in conflict_events["events"]]
+assert "worker_output_blocked" in event_types, event_types
 PY
 
 test_done

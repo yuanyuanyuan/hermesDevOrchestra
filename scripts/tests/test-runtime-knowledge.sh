@@ -160,24 +160,33 @@ def runtime_request(question, allowed_types=None, evidence_scope="implementation
     }
 
 
-blocked = KnowledgeIngestion(repo)
-exc = expect_error("module_disabled", lambda: blocked.ingest(runtime_entry()))
-assert "allow_staged=True" in exc.message, exc.message
+with tempfile.TemporaryDirectory() as tmp:
+    home_dir = pathlib.Path(tmp) / "home"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    env = fake_runtime_env(home_dir, "domain/wechat/routing/navigate-to")
+    direct_ingestor = KnowledgeIngestion(repo, gbrain_env=env)
+    direct_result = direct_ingestor.ingest(runtime_entry())
+    validate_artifact_definition(repo, "runtime_knowledge_entry", direct_result["entry"])
+    validate_artifact_definition(repo, "knowledge_ingestion_record", direct_result["ingestion_record"])
+    assert direct_result["degraded"] is False, direct_result
+    assert direct_result["storage_ref"] == "knowledge://gbrain/domain/wechat/routing/navigate-to", direct_result
 
-disabled = KnowledgeIngestion(repo, allow_staged=True, enabled=False)
+    direct_kb = RuntimeKnowledgeBase(repo, gbrain_env=env)
+    direct_query = direct_kb.query(
+        runtime_request(
+            "wx.navigateTo non-tabBar pages",
+            allowed_types=["candidate_knowledge"],
+            evidence_scope="debate",
+        )
+    )
+    validate_artifact_definition(repo, "runtime_knowledge_query", direct_query["query_artifact"])
+    validate_artifact_definition(repo, "runtime_knowledge_result", direct_query["result_artifact"])
+    assert direct_query["result_artifact"]["slugs"] == ["domain/wechat/routing/navigate-to"], direct_query["result_artifact"]
+
+disabled = KnowledgeIngestion(repo, enabled=False)
 expect_error("module_disabled", lambda: disabled.ingest(runtime_entry()))
 
-blocked_kb = RuntimeKnowledgeBase(repo)
-kb_exc = None
-try:
-    blocked_kb.query(runtime_request("navigateTo routing"))
-except RuntimeKnowledgeError as exc:
-    kb_exc = exc
-assert kb_exc is not None, "expected RuntimeKnowledgeError(module_disabled)"
-assert kb_exc.code == "module_disabled", kb_exc.code
-assert "allow_staged=True" in kb_exc.message, kb_exc.message
-
-disabled_kb = RuntimeKnowledgeBase(repo, allow_staged=True, enabled=False)
+disabled_kb = RuntimeKnowledgeBase(repo, enabled=False)
 try:
     disabled_kb.query(runtime_request("navigateTo routing"))
 except RuntimeKnowledgeError as exc:

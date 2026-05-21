@@ -71,6 +71,7 @@ def invalid_activation_case(expected_code: str, mutator) -> None:
 
 activation = RuntimeActivation(repo)
 summary = activation.summary()
+knowledge_config = load_json(repo / "config/knowledge/runtime-kb.json")
 assert summary["active_family_ids"] == [
     "closeout_and_self_evolution",
     "full_debate_package",
@@ -87,6 +88,8 @@ assert activation.default_allow_staged("worker-registry") is True
 assert activation.default_allow_staged("runtime-knowledge") is True
 assert activation.default_allow_staged("self-evolution") is True
 assert activation.default_allow_staged("release-pipeline") is False
+assert knowledge_config["enabled"] is True, knowledge_config
+assert knowledge_config["backend"]["enabled"] is True, knowledge_config
 
 activation_payload = load_json(repo / "config/cutover/runtime-family-activation.json")
 for entry in activation_payload["activated_families"]:
