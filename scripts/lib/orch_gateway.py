@@ -44,6 +44,7 @@ WORKER_BACKENDS = {
     "codex": {"roles": ["implementer"], "enabled": True, "available": True, "kind": "cli"},
     "claude": {"roles": ["reviewer"], "enabled": True, "available": True, "kind": "cli"},
 }
+SAFE_PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def module_endpoint(
@@ -88,8 +89,8 @@ FULL_MODULE_ENDPOINTS = [
     module_endpoint("worker-registry", "load-backends", "WorkerRegistry", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["backends", "package_status"]),
     module_endpoint("worker-registry", "load-roles", "WorkerRegistry", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["roles", "package_status"]),
     module_endpoint("capability-negotiation", "negotiate", "CapabilityNegotiator", "gateway_local_operator", ["role"], ["requested_backend", "required_capabilities", "negotiation_context", "allow_staged", "enabled"], ["role", "selected_backend", "selection_record", "negotiation_report"]),
-    module_endpoint("worker-session", "create-session", "WorkerSessionManager", "gateway_local_operator", ["run_id", "task_id", "role", "backend_id", "workspace_root", "write_scope_ref", "context_bundle_ref", "timeout_seconds"], ["transcript_ref", "output_envelope_ref"], ["session_id", "status", "workspace_path", "tmux_session_name"]),
-    module_endpoint("worker-session", "transition", "WorkerSessionManager", "gateway_local_operator", ["record", "next_status"], ["exit_signal", "output_envelope_ref", "cleanup_status", "termination_reason"], ["session_id", "status", "cleanup_status", "termination_reason"]),
+    module_endpoint("worker-session", "create-session", "WorkerSessionManager", "gateway_local_operator", ["run_id", "task_id", "role", "backend_id", "workspace_root", "write_scope_ref", "context_bundle_ref", "timeout_seconds"], ["transcript_ref", "output_envelope_ref"], ["session_id", "status", "workspace_path", "tmux_session_name", "session_record_ref"]),
+    module_endpoint("worker-session", "transition", "WorkerSessionManager", "gateway_local_operator", ["record", "next_status"], ["exit_signal", "output_envelope_ref", "cleanup_status", "termination_reason"], ["session_id", "status", "cleanup_status", "termination_reason", "session_record_ref"]),
     module_endpoint("worker-session-sweeper", "sweep-directory", "WorkerSessionSweeper", "gateway_local_operator", ["records_root"], [], ["updated_records", "timed_out_records", "missing_records", "invalid_records"]),
     module_endpoint("release-pipeline", "load-pipeline", "ReleasePipeline", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["command_registry_ref", "environments", "gates"]),
     module_endpoint("release-pipeline", "load-registry", "ReleasePipeline", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["commands", "package_status", "command_index"]),
@@ -373,6 +374,8 @@ class GatewayApp:
             return authority_error
         try:
             result = self.dispatch_module_operation(module, operation, payload)
+        except ValueError as exc:
+            return 400, self.error("validation_error", str(exc) or f"{module}/{operation} validation failed")
         except Exception as exc:  # noqa: BLE001
             code = getattr(exc, "code", "module_execution_failed")
             message = getattr(exc, "message", str(exc) or f"{module}/{operation} failed")
@@ -717,6 +720,7 @@ class GatewayApp:
         *,
         manager: Any | None = None,
     ) -> str:
+        """Persist a worker session record under the run-scoped Gateway state tree."""
         from worker_session import WorkerSessionManager
 
         session_manager = manager or WorkerSessionManager(self.repo_root)
@@ -726,6 +730,8 @@ class GatewayApp:
             raise ValueError("worker session record is missing run_id")
         if not isinstance(session_id, str) or not session_id:
             raise ValueError("worker session record is missing session_id")
+        run_id = self._require_safe_path_component(run_id, "worker session record run_id")
+        session_id = self._require_safe_path_component(session_id, "worker session record session_id")
         path = self.store.worker_session_path(run_id, session_id)
         clean_record = dict(record)
         clean_record.pop("session_record_ref", None)
@@ -738,76 +744,81 @@ class GatewayApp:
         task_id: str,
         role_payload: dict[str, Any],
     ) -> dict[str, Any] | None:
-        parallel = role_payload.get("parallel_execution")
-        if parallel is None:
+        """Build run-scoped parallel merge artifacts from worker output payload metadata."""
+        run_id = self._require_safe_path_component(run_id, "run_id")
+        parallel_config = role_payload.get("parallel_execution")
+        if parallel_config is None:
             return None
-        if not isinstance(parallel, dict):
+        if not isinstance(parallel_config, dict):
             raise ValueError("parallel_execution must be an object when provided")
 
         expected_prefix = f"state://runs/{run_id}/"
-        raw_group_id = parallel.get("parallel_group_id") or f"parallel-{task_id}"
+        raw_group_id = parallel_config.get("parallel_group_id")
+        if raw_group_id is None:
+            raw_group_id = f"parallel-{task_id}"
         if not isinstance(raw_group_id, str) or not raw_group_id:
             raise ValueError("parallel_execution.parallel_group_id must be a non-empty string when provided")
-        group_id = re.sub(r"[^A-Za-z0-9._-]+", "-", raw_group_id).strip("-") or f"parallel-{task_id}"
+        group_id = self._normalize_parallel_group_id(raw_group_id, task_id)
         group_dir = self.store.run_dir(run_id) / "parallel-groups" / group_id
         plan_ref = self.store.state_ref(run_id, f"parallel-groups/{group_id}/plan.json")
         scan_ref = self.store.state_ref(run_id, f"parallel-groups/{group_id}/conflict-scan.json")
         report_ref = self.store.state_ref(run_id, f"parallel-groups/{group_id}/merge-conflict-report.json")
 
-        task_ids = self._normalize_string_list(parallel.get("task_ids") or [task_id], "parallel_execution.task_ids")
+        task_ids = self._normalize_string_list(parallel_config.get("task_ids") or [task_id], "parallel_execution.task_ids")
         if task_id not in task_ids:
             task_ids.insert(0, task_id)
         workspace_refs = self._normalize_scoped_state_refs(
-            parallel.get("workspace_refs") or [f"state://runs/{run_id}/worker-workspaces/{task_id}.json"],
+            parallel_config.get("workspace_refs") or [f"state://runs/{run_id}/worker-workspaces/{task_id}.json"],
             expected_prefix,
             "parallel_execution.workspace_refs",
         )
         write_scope_refs = self._normalize_scoped_state_refs(
-            parallel.get("write_scope_refs") or [f"state://runs/{run_id}/write-scopes/{task_id}.json"],
+            parallel_config.get("write_scope_refs") or [f"state://runs/{run_id}/write-scopes/{task_id}.json"],
             expected_prefix,
             "parallel_execution.write_scope_refs",
         )
         declared_conflict_locks = self._normalize_string_list(
-            parallel.get("declared_conflict_locks") or [],
+            parallel_config.get("declared_conflict_locks") or [],
             "parallel_execution.declared_conflict_locks",
         )
-        merge_order = self._normalize_string_list(parallel.get("merge_order") or list(task_ids), "parallel_execution.merge_order")
-        review_gate = parallel.get("review_gate") or {
-            "required": True,
-            "owner": "gateway_serial_integrator",
-            "serial_integration": True,
-        }
-        if not isinstance(review_gate, dict):
-            raise ValueError("parallel_execution.review_gate must be an object when provided")
+        merge_order = self._normalize_string_list(parallel_config.get("merge_order") or list(task_ids), "parallel_execution.merge_order")
+        raw_review_gate = parallel_config.get("review_gate")
+        if raw_review_gate is None:
+            raw_review_gate = {
+                "required": True,
+                "owner": "gateway_serial_integrator",
+                "serial_integration": True,
+            }
+        review_gate = self._normalize_parallel_review_gate(raw_review_gate)
 
         actual_changed_files = self._normalize_string_list(
-            parallel.get("actual_changed_files") or role_payload.get("changed_files") or [],
+            parallel_config.get("actual_changed_files") or role_payload.get("changed_files") or [],
             "parallel_execution.actual_changed_files",
         )
         out_of_scope_writes = self._normalize_string_list(
-            parallel.get("out_of_scope_writes") or [],
+            parallel_config.get("out_of_scope_writes") or [],
             "parallel_execution.out_of_scope_writes",
         )
         overlapping_writes = self._normalize_string_list(
-            parallel.get("overlapping_writes") or [],
+            parallel_config.get("overlapping_writes") or [],
             "parallel_execution.overlapping_writes",
         )
         declared_lock_conflicts = self._normalize_string_list(
-            parallel.get("declared_lock_conflicts") or [],
+            parallel_config.get("declared_lock_conflicts") or [],
             "parallel_execution.declared_lock_conflicts",
         )
         authority_file_writes = self._normalize_string_list(
-            parallel.get("authority_file_writes") or [],
+            parallel_config.get("authority_file_writes") or [],
             "parallel_execution.authority_file_writes",
         )
 
-        merge_allowed = not any([out_of_scope_writes, overlapping_writes, declared_lock_conflicts, authority_file_writes])
+        merge_allowed = not any((out_of_scope_writes, overlapping_writes, declared_lock_conflicts, authority_file_writes))
         scan_status = "passed" if merge_allowed else "failed"
-        conflicts = (
-            [{"kind": "overlapping_write", "path": path} for path in overlapping_writes]
-            + [{"kind": "declared_lock_conflict", "lock": lock} for lock in declared_lock_conflicts]
-            + [{"kind": "authority_file_write", "path": path} for path in authority_file_writes]
-            + [{"kind": "out_of_scope_write", "path": path} for path in out_of_scope_writes]
+        conflicts = self._build_parallel_conflicts(
+            overlapping_writes=overlapping_writes,
+            declared_lock_conflicts=declared_lock_conflicts,
+            authority_file_writes=authority_file_writes,
+            out_of_scope_writes=out_of_scope_writes,
         )
 
         plan = {
@@ -869,6 +880,7 @@ class GatewayApp:
         }
 
     def persist_parallel_worker_artifacts(self, artifacts: dict[str, Any]) -> None:
+        """Write parallel worker artifacts into the run-scoped state tree."""
         group_dir = artifacts["group_dir"]
         write_json(group_dir / "plan.json", artifacts["plan"])
         write_json(group_dir / "conflict-scan.json", artifacts["scan"])
@@ -879,6 +891,50 @@ class GatewayApp:
         if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
             raise ValueError(f"{label} must be a list of non-empty strings")
         return list(value)
+
+    def _require_safe_path_component(self, value: str, label: str) -> str:
+        if value in {".", ".."} or "/" in value or "\\" in value or ".." in value or SAFE_PATH_COMPONENT_RE.fullmatch(value) is None:
+            raise ValueError(f"{label} must be a safe path component")
+        return value
+
+    def _normalize_parallel_group_id(self, raw_group_id: str, task_id: str) -> str:
+        fallback_group_id = re.sub(r"[^A-Za-z0-9._-]+", "-", f"parallel-{task_id}").strip("-") or "parallel-group"
+        group_id = re.sub(r"[^A-Za-z0-9._-]+", "-", raw_group_id).strip("-") or fallback_group_id
+        return self._require_safe_path_component(group_id, "parallel_execution.parallel_group_id")
+
+    def _normalize_parallel_review_gate(self, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("parallel_execution.review_gate must be an object when provided")
+        required = value.get("required")
+        owner = value.get("owner")
+        serial_integration = value.get("serial_integration")
+        if not isinstance(required, bool):
+            raise ValueError("parallel_execution.review_gate.required must be a boolean")
+        if not isinstance(owner, str) or not owner:
+            raise ValueError("parallel_execution.review_gate.owner must be a non-empty string")
+        if not isinstance(serial_integration, bool):
+            raise ValueError("parallel_execution.review_gate.serial_integration must be a boolean")
+        return {
+            **value,
+            "required": required,
+            "owner": owner,
+            "serial_integration": serial_integration,
+        }
+
+    def _build_parallel_conflicts(
+        self,
+        *,
+        overlapping_writes: list[str],
+        declared_lock_conflicts: list[str],
+        authority_file_writes: list[str],
+        out_of_scope_writes: list[str],
+    ) -> list[dict[str, str]]:
+        return (
+            [{"kind": "overlapping_write", "path": path} for path in overlapping_writes]
+            + [{"kind": "declared_lock_conflict", "lock": lock} for lock in declared_lock_conflicts]
+            + [{"kind": "authority_file_write", "path": path} for path in authority_file_writes]
+            + [{"kind": "out_of_scope_write", "path": path} for path in out_of_scope_writes]
+        )
 
     def _normalize_scoped_state_refs(self, value: Any, expected_prefix: str, label: str) -> list[str]:
         refs = self._normalize_string_list(value, label)
@@ -4513,6 +4569,7 @@ class GatewayApp:
         idempotency_path: Path,
         parallel_artifacts: dict[str, Any],
     ) -> tuple[int, dict[str, Any]]:
+        """Persist a blocked worker-output decision when mechanical parallel conflicts exist."""
         now = utc_now()
         command_id = f"cmd-{uuid.uuid4().hex[:16]}"
         command_path = self.store.command_path(run_id, command_id)

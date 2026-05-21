@@ -115,6 +115,8 @@ def post(path, payload, *, expected=200):
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = json.loads(exc.read().decode("utf-8"))
+        if exc.code == expected:
+            return body
         raise AssertionError((path, exc.code, body)) from exc
 
 def get(path):
@@ -157,6 +159,23 @@ negotiation = post(
 )
 selected_backend = negotiation["result"]["selected_backend"]
 assert selected_backend == "codex", negotiation
+
+invalid_session = post(
+    "/orchestra/modules/worker-session/create-session",
+    {
+        "authority": "gateway_local_operator",
+        "run_id": "../escape-run",
+        "task_id": task_id,
+        "role": "implementer",
+        "backend_id": selected_backend,
+        "workspace_root": workspace_root,
+        "write_scope_ref": f"state://runs/{run_id}/write-scopes/{task_id}.json",
+        "context_bundle_ref": f"state://runs/{run_id}/worker-context-bundles/{task_id}.json",
+        "timeout_seconds": 300,
+    },
+    expected=400,
+)
+assert invalid_session["error"]["code"] == "validation_error", invalid_session
 
 session = post(
     "/orchestra/modules/worker-session/create-session",
@@ -207,6 +226,20 @@ completed = post(
     },
 )
 assert completed["result"]["status"] == "completed", completed
+
+invalid_transition = post(
+    "/orchestra/modules/worker-session/transition",
+    {
+        "authority": "gateway_local_operator",
+        "record": {
+            **running["result"],
+            "session_id": "../escape-session",
+        },
+        "next_status": "completed",
+    },
+    expected=400,
+)
+assert invalid_transition["error"]["code"] == "validation_error", invalid_transition
 
 sweep = post(
     "/orchestra/modules/worker-session-sweeper/sweep-directory",
@@ -326,6 +359,116 @@ assert f"kanban complete --board {project_id} --task {kanban_ref}" in calls, cal
 conflict_task = next(task for task in tasks_after["tasks"] if task["status"] != "completed")
 conflict_task_id = conflict_task["task_id"]
 
+invalid_parallel = post(
+    f"/orchestra/runs/{run_id}/worker-outputs",
+    {
+        "idempotency_key": "gw-e2e-worker-output-invalid-parallel",
+        "task_id": conflict_task_id,
+        "worker_response": {
+            "protocol": "hermes-role-engine/v1",
+            "role": "implementer",
+            "correlation_id": conflict_task_id,
+            "turn": 1,
+            "status": "completed",
+            "next_action": "complete",
+            "role_specific_payload": {
+                "requested_transition": "task_complete",
+                "artifact_refs": [f"state://runs/{run_id}/run.json"],
+                "changed_files": ["scripts/example.py"],
+                "diff_summary": "Gateway worker invalid parallel metadata",
+                "write_scope_result": {
+                    "within_scope": True,
+                    "violations": [],
+                    "forbidden_paths_touched": []
+                },
+                "test_evidence_refs": [f"state://runs/{run_id}/test-execution-report.json"],
+                "risk_notes": [],
+                "approval_refs": [],
+                "parallel_execution": {
+                    "parallel_group_id": "../escape-group",
+                    "task_ids": [conflict_task_id],
+                    "workspace_refs": [
+                        f"state://runs/{run_id}/worker-workspaces/{conflict_task_id}.json"
+                    ],
+                    "write_scope_refs": [
+                        f"state://runs/{run_id}/write-scopes/{conflict_task_id}.json"
+                    ],
+                    "declared_conflict_locks": [],
+                    "merge_order": [conflict_task_id],
+                    "review_gate": {
+                        "required": "yes",
+                        "owner": "",
+                        "serial_integration": True
+                    },
+                    "actual_changed_files": ["scripts/example.py"],
+                    "overlapping_writes": [],
+                    "declared_lock_conflicts": [],
+                    "authority_file_writes": [],
+                    "out_of_scope_writes": []
+                }
+            },
+            "conversation_context": [{"summary": "Invalid parallel metadata"}]
+        }
+    },
+    expected=400,
+)
+assert invalid_parallel["error"]["code"] == "validation_error", invalid_parallel
+
+invalid_review_gate = post(
+    f"/orchestra/runs/{run_id}/worker-outputs",
+    {
+        "idempotency_key": "gw-e2e-worker-output-invalid-review-gate",
+        "task_id": conflict_task_id,
+        "worker_response": {
+            "protocol": "hermes-role-engine/v1",
+            "role": "implementer",
+            "correlation_id": conflict_task_id,
+            "turn": 1,
+            "status": "completed",
+            "next_action": "complete",
+            "role_specific_payload": {
+                "requested_transition": "task_complete",
+                "artifact_refs": [f"state://runs/{run_id}/run.json"],
+                "changed_files": ["scripts/example.py"],
+                "diff_summary": "Gateway worker invalid review gate metadata",
+                "write_scope_result": {
+                    "within_scope": True,
+                    "violations": [],
+                    "forbidden_paths_touched": []
+                },
+                "test_evidence_refs": [f"state://runs/{run_id}/test-execution-report.json"],
+                "risk_notes": [],
+                "approval_refs": [],
+                "parallel_execution": {
+                    "parallel_group_id": "parallel-invalid-review-gate",
+                    "task_ids": [conflict_task_id],
+                    "workspace_refs": [
+                        f"state://runs/{run_id}/worker-workspaces/{conflict_task_id}.json"
+                    ],
+                    "write_scope_refs": [
+                        f"state://runs/{run_id}/write-scopes/{conflict_task_id}.json"
+                    ],
+                    "declared_conflict_locks": [],
+                    "merge_order": [conflict_task_id],
+                    "review_gate": {
+                        "required": "yes",
+                        "owner": "",
+                        "serial_integration": True
+                    },
+                    "actual_changed_files": ["scripts/example.py"],
+                    "overlapping_writes": [],
+                    "declared_lock_conflicts": [],
+                    "authority_file_writes": [],
+                    "out_of_scope_writes": []
+                }
+            },
+            "conversation_context": [{"summary": "Invalid review gate metadata"}]
+        }
+    },
+    expected=400,
+)
+assert invalid_review_gate["error"]["code"] == "validation_error", invalid_review_gate
+
 conflict_output = post(
     f"/orchestra/runs/{run_id}/worker-outputs",
     {
@@ -372,8 +515,8 @@ conflict_output = post(
                     "actual_changed_files": ["scripts/example.py"],
                     "overlapping_writes": ["scripts/example.py"],
                     "declared_lock_conflicts": ["repo://scripts/example.py"],
-                    "authority_file_writes": [],
-                    "out_of_scope_writes": []
+                    "authority_file_writes": ["scripts/lib/orch_gateway.py"],
+                    "out_of_scope_writes": ["docs/out-of-scope.md"]
                 }
             },
             "conversation_context": [{"summary": "Parallel conflict flow"}]
@@ -395,6 +538,13 @@ conflict_parallel_dir = pathlib.Path(state_root) / project_id / "runs" / run_id 
 conflict_report = json.loads((conflict_parallel_dir / "merge-conflict-report.json").read_text(encoding="utf-8"))
 assert conflict_report["artifact_type"] == "merge_conflict_report", conflict_report
 assert conflict_report["kimi_decision_required"] is True, conflict_report
+conflict_kinds = {entry["kind"] for entry in conflict_report["conflicts"]}
+assert conflict_kinds == {
+    "overlapping_write",
+    "declared_lock_conflict",
+    "authority_file_write",
+    "out_of_scope_write",
+}, conflict_report
 event_types = [event["type"] for event in conflict_events["events"]]
 assert "worker_output_blocked" in event_types, event_types
 PY

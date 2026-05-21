@@ -11,7 +11,7 @@ echo "Testing Debate Engine modules..."
 
 # Test debate engine: load registries
 echo "  Loading debate registries..."
-RESULT=$("$PYTHON_BIN" -c "
+if ! RESULT=$("$PYTHON_BIN" -c "
 import sys
 sys.path.insert(0, '/data/hermes/scripts/lib')
 
@@ -22,22 +22,21 @@ registries = engine.load_registries()
 
 teams = registries.get('teams', [])
 modes = registries.get('modes', [])
+assert teams, registries
+assert modes, registries
 print(f'Teams: {len(teams)}')
 print(f'Modes: {len(modes)}')
 print(f'Team IDs: {registries.get(\"team_ids\", [])[:5]}')
-" 2>&1) || true
-
-if echo "$RESULT" | grep -q "Teams:"; then
-    echo "    ✓ Debate registries loaded"
-    echo "      $RESULT" | head -3
-else
+" 2>&1); then
     echo "    ✗ Failed to load registries: $RESULT"
     fail "DebateEngine should load registries" "Teams: N" "$RESULT"
 fi
+echo "    ✓ Debate registries loaded"
+echo "      $RESULT" | head -3
 
 # Test debate assembly
 echo "  Testing debate assembly selection..."
-RESULT=$("$PYTHON_BIN" -c "
+if ! RESULT=$("$PYTHON_BIN" -c "
 import sys
 sys.path.insert(0, '/data/hermes/scripts/lib')
 
@@ -52,22 +51,21 @@ selection = assembly.select_for_stage(
     risk_level='L3'
 )
 
+assert selection.get('stage') == 'direction_debate', selection
+assert selection.get('selected_team_ids'), selection
 print(f'Stage: {selection.get(\"stage\")}')
 print(f'Selected teams: {selection.get(\"selected_team_ids\", [])}')
 print(f'Members: {len(selection.get(\"selected_member_ids\", []))}')
-" 2>&1) || true
-
-if echo "$RESULT" | grep -q "Stage:"; then
-    echo "    ✓ Debate assembly works"
-    echo "      $RESULT" | head -3
-else
+" 2>&1); then
     echo "    ✗ Assembly failed: $RESULT"
     fail "DebateAssembly should select teams" "Stage:" "$RESULT"
 fi
+echo "    ✓ Debate assembly works"
+echo "      $RESULT" | head -3
 
 # Test backend adapter: select backend
 echo "  Testing backend adapter selection..."
-RESULT=$("$PYTHON_BIN" -c "
+if ! RESULT=$("$PYTHON_BIN" -c "
 import sys
 sys.path.insert(0, '/data/hermes/scripts/lib')
 
@@ -77,22 +75,21 @@ registry = DebateBackendAdapterRegistry(repo_root='/data/hermes')
 registry.load_policy()
 
 backend = registry.select_backend(stage='direction_debate')
+assert backend.get('id'), backend
+assert backend.get('family'), backend
 print(f'Backend ID: {backend.get(\"id\")}')
 print(f'Family: {backend.get(\"family\")}')
 print(f'Stages: {backend.get(\"allowed_stages\", [])}')
-" 2>&1) || true
-
-if echo "$RESULT" | grep -q "Backend ID:"; then
-    echo "    ✓ Backend adapter works"
-    echo "      $RESULT" | head -2
-else
+" 2>&1); then
     echo "    ✗ Backend adapter failed: $RESULT"
     fail "DebateBackendAdapterRegistry should select backend" "Backend ID:" "$RESULT"
 fi
+echo "    ✓ Backend adapter works"
+echo "      $RESULT" | head -2
 
 # Test debate engine: create run
 echo "  Testing debate engine create run..."
-RESULT=$("$PYTHON_BIN" -c "
+if ! RESULT=$("$PYTHON_BIN" -c "
 import sys
 sys.path.insert(0, '/data/hermes/scripts/lib')
 
@@ -106,22 +103,21 @@ run = engine.create_run(
     mode_id='parallel_debate'
 )
 
+assert run.get('status'), run
+assert run.get('mode_id') == 'parallel_debate', run
 print(f'Run ID: {run.get(\"debate_id\", run.get(\"run_id\", \"?\"))}')
 print(f'Status: {run.get(\"status\")}')
 print(f'Mode: {run.get(\"mode_id\")}')
-" 2>&1) || true
-
-if echo "$RESULT" | grep -q "Run ID:"; then
-    echo "    ✓ Debate engine create_run works"
-    echo "      $RESULT" | head -2
-else
+" 2>&1); then
     echo "    ✗ create_run failed: $RESULT"
     fail "DebateEngine should create run" "Run ID:" "$RESULT"
 fi
+echo "    ✓ Debate engine create_run works"
+echo "      $RESULT" | head -2
 
 # Test degraded mode: invoke through template fixture adapter
 echo "  Testing degraded mode (template fixture)..."
-RESULT=$("$PYTHON_BIN" -c "
+if ! RESULT=$("$PYTHON_BIN" -c "
 import sys
 sys.path.insert(0, '/data/hermes/scripts/lib')
 
@@ -157,26 +153,18 @@ result = service.execute(
 opinions = result.get('opinions', [])
 degraded_count = sum(1 for o in opinions if o.get('degraded'))
 has_degradation_record = any('degradation_record' in o for o in opinions)
+assert degraded_count > 0, result
+assert has_degradation_record is True, result
 
 print(f'Opinions: {len(opinions)}')
 print(f'Degraded count: {degraded_count}')
 print(f'Has degradation_record: {has_degradation_record}')
 print(f'Backend ID: {opinions[0].get(\"backend_id\") if opinions else \"n/a\"}')
-" 2>&1) || true
-
-if echo "$RESULT" | grep -q "Degraded count:"; then
-    DEGRADED_COUNT=$(echo "$RESULT" | grep "Degraded count:" | grep -o '[0-9]*')
-    HAS_DEG_REC=$(echo "$RESULT" | grep "Has degradation_record:" | awk '{print $NF}')
-    if [ "$DEGRADED_COUNT" -gt 0 ] 2>/dev/null && [ "$HAS_DEG_REC" = "True" ]; then
-        echo "    ✓ Degraded mode assertions passed (degraded_count=$DEGRADED_COUNT, degradation_record=True)"
-        echo "      $RESULT" | head -4
-    else
-        echo "    ✗ Degraded mode assertions failed: $RESULT"
-        fail "Degraded mode: degraded_count > 0 and degradation_record required" "degraded_count > 0, degradation_record=True" "$RESULT"
-    fi
-else
+" 2>&1); then
     echo "    ✗ Degraded mode test failed: $RESULT"
     fail "DebateMemberInvocationService.execute should work in degraded mode" "Degraded count:" "$RESULT"
 fi
+echo "    ✓ Degraded mode assertions passed"
+echo "      $RESULT" | head -4
 
 test_done

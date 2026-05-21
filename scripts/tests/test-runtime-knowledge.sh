@@ -147,6 +147,38 @@ sys.exit(1)
     return env
 
 
+def malformed_query_env(home_dir):
+    bin_dir = home_dir / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    script = bin_dir / "gbrain"
+    script.write_text(
+        """#!/usr/bin/env python3
+import sys
+
+args = sys.argv[1:]
+if not args:
+    sys.exit(1)
+if args == ["--version"]:
+    print("gbrain malformed-query 0.0.0")
+    sys.exit(0)
+if args[0] == "query":
+    print("this output does not contain a query slug line")
+    sys.exit(0)
+if args[0] == "get":
+    print("unexpected get for malformed query output", file=sys.stderr)
+    sys.exit(1)
+if args[0] == "init":
+    sys.exit(0)
+sys.exit(1)
+""",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    env = runtime_env(home_dir)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    return env
+
+
 def runtime_request(question, allowed_types=None, evidence_scope="implementation"):
     return {
         "run_id": "run-runtime-knowledge",
@@ -301,6 +333,19 @@ with tempfile.TemporaryDirectory() as tmp:
     assert queried["result_artifact"]["freshness_status"] == "warning_context", queried["result_artifact"]
     assert queried["result_artifact"]["degradation_status"] == "degraded", queried["result_artifact"]
     assert "expired_entry_warning_context" in queried["result_artifact"]["warnings"], queried["result_artifact"]["warnings"]
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    prepare_active_repo(tmp_repo)
+    home_dir = tmp_repo / "home"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    kb = RuntimeKnowledgeBase(tmp_repo, allow_staged=True, gbrain_env=malformed_query_env(home_dir))
+    queried = kb.query(runtime_request("wx.navigateTo malformed query output"))
+    validate_artifact_definition(tmp_repo, "runtime_knowledge_result", queried["result_artifact"])
+    assert queried["result_artifact"]["slugs"] == [], queried["result_artifact"]
+    assert queried["result_artifact"]["result_refs"] == [], queried["result_artifact"]
+    assert queried["result_artifact"]["warnings"] == [], queried["result_artifact"]
+    assert queried["result_artifact"]["degradation_status"] == "normal", queried["result_artifact"]
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = pathlib.Path(tmp)

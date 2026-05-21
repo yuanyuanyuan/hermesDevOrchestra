@@ -293,6 +293,9 @@ for key in required_specs:
     assert "request_shape" in specs[key], specs[key]
     assert "response_shape" in specs[key], specs[key]
 
+assert "session_record_ref" in specs[("worker-session", "create-session")]["response_shape"]["result_keys"], specs[("worker-session", "create-session")]
+assert "session_record_ref" in specs[("worker-session", "transition")]["response_shape"]["result_keys"], specs[("worker-session", "transition")]
+
 
 def authority(module, operation):
     return specs[(module, operation)]["authority"]
@@ -436,6 +439,7 @@ status, session_response = post(
 )
 assert status == 200, session_response
 session_record = session_response["result"]
+assert session_record["session_record_ref"].startswith("state://runs/run-session-1/worker-sessions/"), session_record
 
 status, transition_response = post(
     "/orchestra/modules/worker-session/transition",
@@ -447,6 +451,7 @@ status, transition_response = post(
 )
 assert status == 200, transition_response
 starting_record = transition_response["result"]
+assert starting_record["session_record_ref"].startswith("state://runs/run-session-1/worker-sessions/"), starting_record
 
 records_root = tmp_dir / "worker-records"
 records_root.mkdir(parents=True, exist_ok=True)
