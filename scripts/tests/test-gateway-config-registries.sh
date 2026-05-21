@@ -12,6 +12,7 @@ assert_file_exists "$REPO_ROOT/config/workers/backends.json" "worker backend reg
 assert_file_exists "$REPO_ROOT/config/workers/roles.json" "worker role registry missing"
 assert_file_exists "$REPO_ROOT/config/debate/teams.json" "debate team registry missing"
 assert_file_exists "$REPO_ROOT/config/debate/modes.json" "debate mode registry missing"
+assert_file_exists "$REPO_ROOT/config/knowledge/runtime-kb.json" "runtime knowledge config missing"
 
 python3 - "$REPO_ROOT" <<'PY'
 import json
@@ -23,6 +24,7 @@ backends = json.loads((repo / "config/workers/backends.json").read_text(encoding
 roles = json.loads((repo / "config/workers/roles.json").read_text(encoding="utf-8"))
 teams = json.loads((repo / "config/debate/teams.json").read_text(encoding="utf-8"))
 modes = json.loads((repo / "config/debate/modes.json").read_text(encoding="utf-8"))
+knowledge = json.loads((repo / "config/knowledge/runtime-kb.json").read_text(encoding="utf-8"))
 
 backend_names = {entry["name"] for entry in backends["backends"]}
 assert {"codex", "claude"} <= backend_names, backends
@@ -39,6 +41,8 @@ assert len(modes["modes"]) == 8, modes
 assert len({mode["id"] for mode in modes["modes"]}) == 8, modes
 assert any(team["id"] == "architecture" for team in teams["teams"]), teams
 assert any(mode["id"] == "red_team" for mode in modes["modes"]), modes
+assert knowledge["enabled"] is True, knowledge
+assert knowledge["backend"]["enabled"] is True, knowledge
 PY
 
 TMP_DIR="$(mktemp -d)"

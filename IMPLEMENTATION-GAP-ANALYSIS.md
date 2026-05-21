@@ -1,6 +1,6 @@
 # Hermes Orchestra 实现差距分析报告（修订版）
 
-**日期**: 2026-05-20
+**日期**: 2026-05-21
 **分析范围**: `HERMES-ORCHESTRA-FULL-PRD.md`, `HERMES-ORCHESTRA-FULL-SCHEMAS.md`, `HERMES-ORCHESTRA-FULL-SPEC.md`
 **状态**: Full Target Readiness 与 Active Runtime 差距复核
 
@@ -16,8 +16,9 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
   - Full Schema、Full Debate Package、Full Worker Registry、Cutover/Fixture/SLO/Self-Evolution 等目标产物已落盘，可被验证工具消费。
 - **Active Runtime Adoption**: 低到中
   - 当前活动运行时仍以 MVP/current runtime 为主。
-  - 多个 full-path 子系统仍处于 `staged_target` 或 `enabled: false`，尚未成为默认运行路径。
-  - `goal-gateway-cutover` 范围内已新增 mixed-family runtime activation substrate，但它只激活了 Gateway authority / closeout 相关模块默认路径，还不是全量 full runtime。
+  - debate / worker 模块路径已通过 mixed-family runtime activation 进入默认 Gateway 路径，但对应 target config 文件在磁盘上仍保持 `staged_target` 形态。
+  - runtime knowledge family 已在 activation manifest 与正式配置中进入默认模块路径；默认实例化与 Gateway 模块入口都不再依赖 staged override。
+  - `goal-gateway-cutover` 范围内的 mixed-family runtime activation substrate 已覆盖 Gateway authority、debate、worker、runtime knowledge、closeout/self-evolution 的模块默认分流，但这仍不是 run-level full artifact cutover。
 - **测试结论**: 应理解为“合约有效、staged 组件在测试场景可工作”，而不是“full runtime 已完成切换”。
 
 本次复核后，更准确的结论是：
@@ -37,16 +38,21 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 - `scripts/tests/test-worker-registry.sh`: PASS
 - `scripts/tests/test-release-pipeline.sh`: PASS
 - `scripts/tests/test-debate-assembly.sh`: PASS
+- `scripts/tests/test-runtime-activation.sh`: PASS
+- `scripts/tests/test-e2e-ai-debate-flow.sh`: PASS
+- `scripts/tests/test-e2e-ai-worker-flow.sh`: PASS
+- `scripts/tests/test-runtime-knowledge.sh`: PASS
 
 这些结果证明：
 
 - Full Schema 与 staged/disabled 配置之间的 **静态合约一致性** 是成立的。
-- 若在测试中显式允许 `allow_staged=True`，或在临时测试仓库中将配置改为 active/enabled，若干 full-path 模块可按预期工作。
+- debate / worker 的代表性 Gateway 流程现在可以在默认 runtime 分流下运行，不再依赖调用方显式传入 `allow_staged=True`。
+- Runtime knowledge 的合约、ingestion/query 代码与 gbrain 适配器测试现在可在默认 repo 配置下运行；gbrain 不可用时按 degraded state-store 边界继续工作。
 
 这些结果**没有**证明：
 
 - 当前默认 Gateway runtime 已切换到 full schema artifact family。
-- `config/debate/full/*`、`config/workers/full/*`、`config/release/*`、`config/knowledge/runtime-kb.json`、`config/decisions/remote-channel.json` 已成为 active runtime authority。
+- `config/release/*`、`config/decisions/remote-channel.json` 已成为 active runtime authority。
 
 ---
 
@@ -101,9 +107,9 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 |---|---|---|---|---|---|
 | Run 与 Gateway Authority | PRD: User Stories 1-14；SPEC: 4.1-4.5；SCHEMAS: 3.1 | Gateway runtime contract、Gateway full runtime implementation、Idempotency record contract | 部分完成 | 部分完成 | 本地 Python Gateway、Run API、幂等与部分投影链路已存在；Sprint 12 新增了 `gateway_authority` mixed-family activation substrate，但 run-level full artifact cutover 仍未完成。 |
 | Six-Stage Evidence 与 Closeout | PRD: User Stories 15-19、63-66、75；SPEC: 4、6、10；SCHEMAS: 3.2 | Self evolution review queue policy，外加 current runtime 的 closeout / evaluation 链路 | 部分完成 | 部分完成 | full schema 已覆盖 `structured_prd`、`development_plan`、`test_plan`、`global_evaluation_report`、`iteration_closeout_report`、`system_improvement_proposals`；Sprint 12 让 `closeout_and_self_evolution` 模块默认激活，但 closeout route 仍未全量消费 full artifacts。 |
-| Full Debate Package | PRD: User Stories 20-37；SPEC: 5；SCHEMAS: 3.3 | Full debate team registry、mode registry、coverage policy、assembly policy、backend policy | 已完成 | 未完成 | canonical teams/modes、assembly/coverage/backend policy、report/audit 代码与测试已就位，但 full debate package 仍是 `staged`，不是 active runtime authority。 |
-| Worker Execution | PRD: User Stories 38-52；SPEC: 7；SCHEMAS: 3.4 | Full worker backend registry、role registry、capability negotiation report、worker session lifecycle、worker parallel integration | 部分完成 | 未完成 | registry、negotiation、session record 代码已存在；但 full worker path 仍是 `staged`，parallel integration 与 default runtime 接线未完成。 |
-| Runtime Domain Knowledge Base | PRD: User Stories 53-62；SPEC: 11.1；SCHEMAS: 3.5 | Runtime Domain Knowledge Base config、runtime knowledge entry contract、ingestion audit、retrieval audit | 部分完成 | 未完成 | config、ingestion/query/result 代码与测试已存在，但默认 `enabled: false`，gbrain 接线未成为 active runtime。 |
+| Full Debate Package | PRD: User Stories 20-37；SPEC: 5；SCHEMAS: 3.3 | Full debate team registry、mode registry、coverage policy、assembly policy、backend policy | 已完成 | 部分完成 | canonical teams/modes、assembly/coverage/backend policy、report/audit 代码与测试已就位；代表性 Gateway debate flow 已默认走 mixed-family full package，但 artifact-family authority 仍未完成 run-level cutover。 |
+| Worker Execution | PRD: User Stories 38-52；SPEC: 7；SCHEMAS: 3.4 | Full worker backend registry、role registry、capability negotiation report、worker session lifecycle、worker parallel integration | 部分完成 | 部分完成 | registry、default-path negotiation、session record persistence/sweeper、parallel plan/conflict artifact 覆盖已存在；但更深的 serial merge orchestration 与 full worker artifact authority 仍未完成 run-level cutover。 |
+| Runtime Domain Knowledge Base | PRD: User Stories 53-62；SPEC: 11.1；SCHEMAS: 3.5 | Runtime Domain Knowledge Base config、runtime knowledge entry contract、ingestion audit、retrieval audit | 部分完成 | 部分完成 | config 已启用，默认 repo 下的 ingestion/query 路径与 gbrain 降级边界均有测试覆盖；但它仍只是 warning-context / bounded evidence，不等于 full runtime authority cutover 完成。 |
 | Kimi-Audited Self Evolution | PRD: User Stories 63-66；SPEC: 6；SCHEMAS: 3.2 中 `system_improvement_proposals` + queue policy | Self evolution review queue policy | 部分完成 | 部分完成 | queue policy 与 proposal 生成逻辑已存在；Sprint 12 让 self-evolution module endpoint 脱离 `allow_staged=True`，但 Stage 6 默认触发与 closeout 自动接线仍不完整。 |
 | Release Pipeline | PRD: User Stories 67-70；SPEC: 9；SCHEMAS: 3.6 | Release pipeline config、release command registry、release evidence | 部分完成 | 未完成 | pipeline/registry/executor 与 `deployment_report` 校验已存在，但 formal path 默认 disabled，不是当前发布 authority。 |
 | Remote Decision Channel | PRD: User Stories 71-74；SPEC: 8.1；SCHEMAS: 3.6 | Remote decision config、remote decision evidence | 部分完成 | 未完成 | request/response contract 与 disabled config 已定义，但 adapter 与默认运行时接线未实现。 |
@@ -147,7 +153,7 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 
 ### 结论
 
-**目标产物完整，运行时默认未切换。**
+**目标产物完整，且代表性 debate 模块路径已进入默认 Gateway 运行流，但尚未完成 run-level authority cutover。**
 
 ### 已就位内容
 
@@ -164,8 +170,8 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 
 ### 需要纠正的表述
 
-- 这些 full debate 配置的 `package_status` 仍是 `staged_target`，不应写成 active runtime 下“无明显差距”。
-- 当前更准确的说法是：**配置和组件代码完整，默认运行时路径尚未切换。**
+- 这些 full debate 配置的 `package_status` 仍是 `staged_target`，不能把磁盘状态误写成 “config 已 active”。
+- 当前更准确的说法是：**配置和组件代码完整，代表性 Gateway debate flow 已默认消费 mixed-family full package，但 artifact-family authority 仍未整体切换。**
 
 ---
 
@@ -173,7 +179,7 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 
 ### 结论
 
-**Full Worker target 已成型，但默认仍非 active runtime。**
+**Full Worker target 已成型，且 default runtime 已接入 negotiation / session lifecycle 的代表性链路，但并行集成仍未完成。**
 
 ### 已就位内容
 
@@ -187,13 +193,15 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 ### 关键事实
 
 - full worker registry 配置仍是 `package_status: "staged_target"`。
-- 默认构造 `WorkerRegistry(repo)` 会因 package 未 active 而阻塞。
-- 相关测试通过的前提，通常是 `allow_staged=True` 或临时把测试配置改成 active。
+- 直接实例化 `WorkerRegistry(repo)` 仍会因 package 未 active 而阻塞，但 Gateway default path 现在会通过 runtime activation 为 worker family 提供默认 staged override。
+- 相关代表性 Gateway 测试已不再要求调用方显式传 `allow_staged=True`。
+- Gateway 现在会把 worker session create/transition 结果持久化到 `state://runs/<run_id>/worker-sessions/<session_id>.json`。
+- Gateway 现在会在 worker output 路径写出 `parallel_group_plan`、`conflict_scan`，并在机械冲突时写出 `merge_conflict_report` 后阻塞该次输出。
 
 ### 真实差距
 
-- 与 active Gateway runtime 的默认接线仍不完整。
-- 并行工作区隔离、会话生命周期、串行集成与 conflict artifact 的真实运行链路，还不能只凭 staged 测试就判定“已完成”。
+- 当前并行能力只覆盖机械层的 plan / scan / conflict artifact 产出，还没有完成更深的 serial merge orchestration、语义兼容校验和 full worker artifact authority cutover。
+- 当前更准确的说法是：worker negotiation、session lifecycle、parallel mechanical evidence 已有默认 runtime 证据，但完整并行编排与 run-level full artifact cutover 仍未完成。
 
 ---
 
@@ -201,7 +209,7 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 
 ### 结论
 
-**目标设计、代码和测试都已具备，但默认运行时未启用。**
+**默认 repo 路径现已启用 runtime knowledge，但它仍只是 bounded evidence / warning context，不是 full runtime authority cutover。**
 
 ### 已就位内容
 
@@ -211,17 +219,16 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 
 ### 关键事实
 
-- `runtime-kb.json` 默认 `enabled: false`
-- backend `gbrain` 也默认 `enabled: false`
-- 默认实例化 `KnowledgeIngestion(repo)` 或 `RuntimeKnowledgeBase(repo)` 会得到 `module_disabled`
-- 测试通过依赖两种手段：
-  - 显式 `allow_staged=True`
-  - 在临时 repo 中把配置改成 enabled
+- `config/knowledge/runtime-kb.json` 当前默认 `enabled: true`。
+- `backend.gbrain.enabled` 当前默认 `true`。
+- 默认 repo 路径下的 ingestion / query 合约测试已可直接运行，不再要求 staged-only repo truth。
+- `enabled: false` 的显式禁用负例仍保留，确保关闭配置时继续返回 `module_disabled`。
+- gbrain 不可用时，Gateway 和运行库仍按 degraded state-store / warning-context 边界运行，而不是把检索结果提升为最终 authority。
 
 ### 真实差距
 
-- gbrain CLI/MCP 的实际运行时接入尚未完成 cutover。
-- retrieval audit、promotion path、gateway consumption 还未成为默认运行流的一部分。
+- runtime knowledge 当前仍是 bounded evidence，不会直接决定 closeout、release、remote decision 等最终 authority 行为。
+- retrieval audit、promotion path、gateway consumption 虽已有默认路径与测试证据，但还没有扩展成全局 run-level full artifact authority cutover。
 
 ---
 

@@ -1,11 +1,10 @@
 {
   "schema_version": "orchestra.full.v1",
   "artifact_type": "runtime_domain_knowledge_config",
-  "enabled": false,
-  "disabled_reason": "Runtime Domain Knowledge Base target config is staged before implementation cutover.",
+  "enabled": true,
   "backend": {
     "id": "gbrain",
-    "enabled": false,
+    "enabled": true,
     "storage_authority": "gbrain",
     "default_engine": "pglite",
     "cli_command": "gbrain",

@@ -147,6 +147,38 @@ sys.exit(1)
     return env
 
 
+def malformed_query_env(home_dir):
+    bin_dir = home_dir / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    script = bin_dir / "gbrain"
+    script.write_text(
+        """#!/usr/bin/env python3
+import sys
+
+args = sys.argv[1:]
+if not args:
+    sys.exit(1)
+if args == ["--version"]:
+    print("gbrain malformed-query 0.0.0")
+    sys.exit(0)
+if args[0] == "query":
+    print("this output does not contain a query slug line")
+    sys.exit(0)
+if args[0] == "get":
+    print("unexpected get for malformed query output", file=sys.stderr)
+    sys.exit(1)
+if args[0] == "init":
+    sys.exit(0)
+sys.exit(1)
+""",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    env = runtime_env(home_dir)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    return env
+
+
 def runtime_request(question, allowed_types=None, evidence_scope="implementation"):
     return {
         "run_id": "run-runtime-knowledge",
@@ -160,24 +192,33 @@ def runtime_request(question, allowed_types=None, evidence_scope="implementation
     }
 
 
-blocked = KnowledgeIngestion(repo)
-exc = expect_error("module_disabled", lambda: blocked.ingest(runtime_entry()))
-assert "allow_staged=True" in exc.message, exc.message
+with tempfile.TemporaryDirectory() as tmp:
+    home_dir = pathlib.Path(tmp) / "home"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    env = fake_runtime_env(home_dir, "domain/wechat/routing/navigate-to")
+    direct_ingestor = KnowledgeIngestion(repo, gbrain_env=env)
+    direct_result = direct_ingestor.ingest(runtime_entry())
+    validate_artifact_definition(repo, "runtime_knowledge_entry", direct_result["entry"])
+    validate_artifact_definition(repo, "knowledge_ingestion_record", direct_result["ingestion_record"])
+    assert direct_result["degraded"] is False, direct_result
+    assert direct_result["storage_ref"] == "knowledge://gbrain/domain/wechat/routing/navigate-to", direct_result
 
-disabled = KnowledgeIngestion(repo, allow_staged=True, enabled=False)
+    direct_kb = RuntimeKnowledgeBase(repo, gbrain_env=env)
+    direct_query = direct_kb.query(
+        runtime_request(
+            "wx.navigateTo non-tabBar pages",
+            allowed_types=["candidate_knowledge"],
+            evidence_scope="debate",
+        )
+    )
+    validate_artifact_definition(repo, "runtime_knowledge_query", direct_query["query_artifact"])
+    validate_artifact_definition(repo, "runtime_knowledge_result", direct_query["result_artifact"])
+    assert direct_query["result_artifact"]["slugs"] == ["domain/wechat/routing/navigate-to"], direct_query["result_artifact"]
+
+disabled = KnowledgeIngestion(repo, enabled=False)
 expect_error("module_disabled", lambda: disabled.ingest(runtime_entry()))
 
-blocked_kb = RuntimeKnowledgeBase(repo)
-kb_exc = None
-try:
-    blocked_kb.query(runtime_request("navigateTo routing"))
-except RuntimeKnowledgeError as exc:
-    kb_exc = exc
-assert kb_exc is not None, "expected RuntimeKnowledgeError(module_disabled)"
-assert kb_exc.code == "module_disabled", kb_exc.code
-assert "allow_staged=True" in kb_exc.message, kb_exc.message
-
-disabled_kb = RuntimeKnowledgeBase(repo, allow_staged=True, enabled=False)
+disabled_kb = RuntimeKnowledgeBase(repo, enabled=False)
 try:
     disabled_kb.query(runtime_request("navigateTo routing"))
 except RuntimeKnowledgeError as exc:
@@ -292,6 +333,19 @@ with tempfile.TemporaryDirectory() as tmp:
     assert queried["result_artifact"]["freshness_status"] == "warning_context", queried["result_artifact"]
     assert queried["result_artifact"]["degradation_status"] == "degraded", queried["result_artifact"]
     assert "expired_entry_warning_context" in queried["result_artifact"]["warnings"], queried["result_artifact"]["warnings"]
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = pathlib.Path(tmp)
+    prepare_active_repo(tmp_repo)
+    home_dir = tmp_repo / "home"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    kb = RuntimeKnowledgeBase(tmp_repo, allow_staged=True, gbrain_env=malformed_query_env(home_dir))
+    queried = kb.query(runtime_request("wx.navigateTo malformed query output"))
+    validate_artifact_definition(tmp_repo, "runtime_knowledge_result", queried["result_artifact"])
+    assert queried["result_artifact"]["slugs"] == [], queried["result_artifact"]
+    assert queried["result_artifact"]["result_refs"] == [], queried["result_artifact"]
+    assert queried["result_artifact"]["warnings"] == [], queried["result_artifact"]
+    assert queried["result_artifact"]["degradation_status"] == "normal", queried["result_artifact"]
 
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = pathlib.Path(tmp)
