@@ -115,8 +115,8 @@
         "candidate_runtime_knowledge_result"
       ],
       "runtime_fake_adapters": [
-        "fake_gbrain_cli",
-        "fake_gbrain_mcp"
+        "fake_runtime_knowledge_adapter",
+        "fake_runtime_knowledge_store"
       ],
       "strong_evidence_allowed": false,
       "completion_evidence_allowed": false,

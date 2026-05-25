@@ -13,7 +13,7 @@
     },
     "artifact_reference": {
       "type": "string",
-      "pattern": "^(state://runs/[^/]+/.+|audit://.+|cache://sha256:[A-Fa-f0-9]+|repo://\\.workflow/knowledge/.+|knowledge://gbrain/.+|gbrain://.+)$"
+      "pattern": "^(state://runs/[^/]+/.+|state://knowledge/.+|audit://.+|cache://sha256:[A-Fa-f0-9]+|repo://\\.workflow/knowledge/.+)$"
     },
     "source_reference": {
       "type": "string",
@@ -1254,7 +1254,7 @@
         "schema_version": {"$ref": "#/$defs/schema_version"},
         "artifact_type": {"const": "knowledge_ingestion_record"},
         "record_id": {"type": "string"},
-        "backend": {"const": "gbrain"},
+        "backend": {"enum": ["state_store"]},
         "operation": {"enum": ["promotion", "overwrite", "supersession", "deprecation", "failed_reverification", "import"]},
         "affected_slugs": {"type": "array"},
         "source_refs": {"type": "array", "items": {"$ref": "#/$defs/source_reference"}},
@@ -1290,7 +1290,7 @@
         "schema_version": {"$ref": "#/$defs/schema_version"},
         "artifact_type": {"const": "runtime_knowledge_result"},
         "query_id": {"type": "string"},
-        "backend": {"const": "gbrain"},
+        "backend": {"enum": ["state_store"]},
         "result_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
         "slugs": {"type": "array"},
         "titles": {"type": "array"},
@@ -1315,15 +1315,13 @@
         "disabled_reason": {"type": "string"},
         "backend": {
           "type": "object",
-          "required": ["id", "enabled", "storage_authority", "default_engine", "no_separate_sqlite"],
+          "required": ["id", "enabled", "storage_authority", "default_engine", "adapter_required_before_enable"],
           "properties": {
-            "id": {"const": "gbrain"},
+            "id": {"enum": ["deferred", "state_store"]},
             "enabled": {"type": "boolean"},
-            "storage_authority": {"const": "gbrain"},
-            "default_engine": {"const": "pglite"},
-            "cli_command": {"type": "string"},
-            "mcp_command": {"type": "string"},
-            "no_separate_sqlite": {"const": true}
+            "storage_authority": {"enum": ["none", "state"]},
+            "default_engine": {"enum": ["none", "json_state_store"]},
+            "adapter_required_before_enable": {"type": "boolean"}
           },
           "additionalProperties": true
         },
@@ -1333,10 +1331,10 @@
         "freshness_policy": {"type": "object"},
         "evidence_boundary": {
           "type": "object",
-          "required": ["getnote_qnN4o510_runtime_backend", "gbrain_retrieval_final_authority", "human_approval_bypass_allowed"],
+          "required": ["getnote_qnN4o510_runtime_backend", "runtime_knowledge_retrieval_final_authority", "human_approval_bypass_allowed"],
           "properties": {
             "getnote_qnN4o510_runtime_backend": {"const": false},
-            "gbrain_retrieval_final_authority": {"const": false},
+            "runtime_knowledge_retrieval_final_authority": {"const": false},
             "human_approval_bypass_allowed": {"const": false}
           },
           "additionalProperties": true

@@ -1,18 +1,17 @@
 {
   "schema_version": "orchestra.full.v1",
   "artifact_type": "runtime_domain_knowledge_config",
-  "enabled": true,
+  "enabled": false,
+  "disabled_reason": "Runtime Domain Knowledge Base is deferred for the Sprint 14 supplement; gbrain is not connected in the active runtime.",
   "backend": {
-    "id": "gbrain",
-    "enabled": true,
-    "storage_authority": "gbrain",
-    "default_engine": "pglite",
-    "cli_command": "gbrain",
-    "mcp_command": "gbrain serve",
-    "no_separate_sqlite": true
+    "id": "deferred",
+    "enabled": false,
+    "storage_authority": "none",
+    "default_engine": "none",
+    "adapter_required_before_enable": true
   },
   "entry_contract": {
-    "format": "gbrain_markdown_page_with_yaml_frontmatter",
+    "format": "runtime_knowledge_entry_json_with_audit_record",
     "slug_pattern": "domain/<domain>/<topic>/<short-id>",
     "required_frontmatter": [
       "type",
@@ -48,7 +47,7 @@
       "stale_platform_rule"
     ],
     "required_audit_record": "knowledge_ingestion_record",
-    "gbrain_operations": ["put", "import", "sync", "link", "query", "report", "serve"]
+    "runtime_adapter_required_before_enable": true
   },
   "retrieval_policy": {
     "default_allowed_types": ["domain_knowledge"],
@@ -66,7 +65,7 @@
   },
   "evidence_boundary": {
     "getnote_qnN4o510_runtime_backend": false,
-    "gbrain_retrieval_final_authority": false,
+    "runtime_knowledge_retrieval_final_authority": false,
     "human_approval_bypass_allowed": false,
     "critical_claims_require_official_source_or_test_or_observation_or_human_approval": true
   },

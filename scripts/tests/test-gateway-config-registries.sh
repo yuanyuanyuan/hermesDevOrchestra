@@ -41,8 +41,10 @@ assert len(modes["modes"]) == 8, modes
 assert len({mode["id"] for mode in modes["modes"]}) == 8, modes
 assert any(team["id"] == "architecture" for team in teams["teams"]), teams
 assert any(mode["id"] == "red_team" for mode in modes["modes"]), modes
-assert knowledge["enabled"] is True, knowledge
-assert knowledge["backend"]["enabled"] is True, knowledge
+assert knowledge["enabled"] is False, knowledge
+assert knowledge["backend"]["id"] == "deferred", knowledge
+assert knowledge["backend"]["enabled"] is False, knowledge
+assert knowledge["backend"]["adapter_required_before_enable"] is True, knowledge
 PY
 
 TMP_DIR="$(mktemp -d)"

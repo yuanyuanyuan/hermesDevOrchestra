@@ -47,7 +47,7 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 
 - Full Schema 与 staged/disabled 配置之间的 **静态合约一致性** 是成立的。
 - debate / worker 的代表性 Gateway 流程现在可以在默认 runtime 分流下运行，不再依赖调用方显式传入 `allow_staged=True`。
-- Runtime knowledge 的合约、ingestion/query 代码与 gbrain 适配器测试现在可在默认 repo 配置下运行；gbrain 不可用时按 degraded state-store 边界继续工作。
+- Runtime knowledge 的合约、ingestion/query 代码与 state-store 测试现在可在默认 repo 配置下运行；gbrain 不再作为本轮 active runtime 接入目标。
 
 这些结果**没有**证明：
 
@@ -109,7 +109,7 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 | Six-Stage Evidence 与 Closeout | PRD: User Stories 15-19、63-66、75；SPEC: 4、6、10；SCHEMAS: 3.2 | Self evolution review queue policy，外加 current runtime 的 closeout / evaluation 链路 | 部分完成 | 部分完成 | full schema 已覆盖 `structured_prd`、`development_plan`、`test_plan`、`global_evaluation_report`、`iteration_closeout_report`、`system_improvement_proposals`；Sprint 12 让 `closeout_and_self_evolution` 模块默认激活，但 closeout route 仍未全量消费 full artifacts。 |
 | Full Debate Package | PRD: User Stories 20-37；SPEC: 5；SCHEMAS: 3.3 | Full debate team registry、mode registry、coverage policy、assembly policy、backend policy | 已完成 | 部分完成 | canonical teams/modes、assembly/coverage/backend policy、report/audit 代码与测试已就位；代表性 Gateway debate flow 已默认走 mixed-family full package，但 artifact-family authority 仍未完成 run-level cutover。 |
 | Worker Execution | PRD: User Stories 38-52；SPEC: 7；SCHEMAS: 3.4 | Full worker backend registry、role registry、capability negotiation report、worker session lifecycle、worker parallel integration | 部分完成 | 部分完成 | registry、default-path negotiation、session record persistence/sweeper、parallel plan/conflict artifact 覆盖已存在；但更深的 serial merge orchestration 与 full worker artifact authority 仍未完成 run-level cutover。 |
-| Runtime Domain Knowledge Base | PRD: User Stories 53-62；SPEC: 11.1；SCHEMAS: 3.5 | Runtime Domain Knowledge Base config、runtime knowledge entry contract、ingestion audit、retrieval audit | 部分完成 | 部分完成 | config 已启用，默认 repo 下的 ingestion/query 路径与 gbrain 降级边界均有测试覆盖；但它仍只是 warning-context / bounded evidence，不等于 full runtime authority cutover 完成。 |
+| Runtime Domain Knowledge Base | PRD: User Stories 53-62；SPEC: 11.1；SCHEMAS: 3.5 | Runtime Domain Knowledge Base config、runtime knowledge entry contract、ingestion audit、retrieval audit | 部分完成 | 未完成 | config 已显式 deferred，默认 runtime 不接入 gbrain；state-store 仅保留为测试/降级行为，不是 active runtime authority。 |
 | Kimi-Audited Self Evolution | PRD: User Stories 63-66；SPEC: 6；SCHEMAS: 3.2 中 `system_improvement_proposals` + queue policy | Self evolution review queue policy | 部分完成 | 部分完成 | queue policy 与 proposal 生成逻辑已存在；Sprint 12 让 self-evolution module endpoint 脱离 `allow_staged=True`，但 Stage 6 默认触发与 closeout 自动接线仍不完整。 |
 | Release Pipeline | PRD: User Stories 67-70；SPEC: 9；SCHEMAS: 3.6 | Release pipeline config、release command registry、release evidence | 部分完成 | 未完成 | pipeline/registry/executor 与 `deployment_report` 校验已存在，但 formal path 默认 disabled，不是当前发布 authority。 |
 | Remote Decision Channel | PRD: User Stories 71-74；SPEC: 8.1；SCHEMAS: 3.6 | Remote decision config、remote decision evidence | 部分完成 | 未完成 | request/response contract 与 disabled config 已定义，但 adapter 与默认运行时接线未实现。 |
@@ -209,7 +209,7 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 
 ### 结论
 
-**默认 repo 路径现已启用 runtime knowledge，但它仍只是 bounded evidence / warning context，不是 full runtime authority cutover。**
+**默认 repo 路径现已禁用 runtime knowledge active 接入；它仅保留为 deferred target，不是 full runtime authority cutover。**
 
 ### 已就位内容
 
@@ -219,16 +219,16 @@ Hermes Orchestra 的 **Full Target 产物层** 已经比较完整：完整 Schem
 
 ### 关键事实
 
-- `config/knowledge/runtime-kb.json` 当前默认 `enabled: true`。
-- `backend.gbrain.enabled` 当前默认 `true`。
-- 默认 repo 路径下的 ingestion / query 合约测试已可直接运行，不再要求 staged-only repo truth。
-- `enabled: false` 的显式禁用负例仍保留，确保关闭配置时继续返回 `module_disabled`。
-- gbrain 不可用时，Gateway 和运行库仍按 degraded state-store / warning-context 边界运行，而不是把检索结果提升为最终 authority。
+- `config/knowledge/runtime-kb.json` 当前默认 `enabled: false`。
+- `backend` 当前是 `deferred`，并要求显式 adapter 选择后再启用。
+- 默认 repo 路径下的 ingestion / query 只会返回 `module_disabled`，不再进入 active runtime。
+- `enabled: false` 的显式禁用负例保留，确保 deferred 配置不会被误当成 active capability。
+- state-store 仅作为测试和后续 adapter 候选，不是默认 runtime authority。
 
 ### 真实差距
 
-- runtime knowledge 当前仍是 bounded evidence，不会直接决定 closeout、release、remote decision 等最终 authority 行为。
-- retrieval audit、promotion path、gateway consumption 虽已有默认路径与测试证据，但还没有扩展成全局 run-level full artifact authority cutover。
+- runtime knowledge 当前是 deferred，不会直接决定 closeout、release、remote decision 等最终 authority 行为。
+- retrieval audit、promotion path、gateway consumption 还未成为 active runtime 路径。
 
 ---
 
