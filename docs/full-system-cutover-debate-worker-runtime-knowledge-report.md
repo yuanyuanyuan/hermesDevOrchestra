@@ -13,7 +13,7 @@ What changed in practical terms:
 - Debate representative flow still passes on the mixed-family default path.
 - Worker negotiation no longer needs caller-side `allow_staged`, and Gateway now persists run-scoped worker session records.
 - Worker output handling now emits mechanical parallel artifacts and blocks mechanical merge conflicts.
-- Runtime knowledge is enabled in repo truth, so default-path ingestion/query coverage no longer depends on a temporary enabled config.
+- Runtime knowledge is now explicitly deferred; default runtime no longer treats it as an active family.
 
 ## Debate Evidence
 
@@ -46,16 +46,16 @@ What changed in practical terms:
 ## Runtime-Knowledge Evidence
 
 - `config/knowledge/runtime-kb.json`
-  - Repo truth is now `enabled: true`.
-  - `backend.gbrain.enabled` is also `true`.
+  - Repo truth is now `enabled: false`.
+  - `backend.id` is `deferred`, so the runtime does not connect gbrain.
 - `scripts/tests/test-runtime-activation.sh`: PASS
-  - Confirms `runtime_domain_knowledge` is listed in `runtime_activation.active_family_ids`.
-  - Confirms `runtime_activation.module_defaults["runtime-knowledge"] == "runtime_domain_knowledge"`.
+  - Confirms `runtime_domain_knowledge` is not listed in `runtime_activation.active_family_ids`.
+  - Confirms `runtime_activation.module_defaults` does not include `runtime-knowledge`.
 - `scripts/tests/test-runtime-knowledge.sh`: PASS
-  - Confirms default-path runtime-knowledge ingestion and query behavior works under repo truth.
-  - Retains explicit `enabled=false` negative coverage for `module_disabled`.
+  - Confirms default-path runtime-knowledge ingestion/query return `module_disabled`.
+  - Confirms explicit state-store repo config still supports schema-valid ingest/query behavior for future adapter work.
 - `scripts/tests/test-gateway-config-registries.sh`: PASS
-  - Confirms the runtime-knowledge config registry is present and enabled.
+  - Confirms the runtime-knowledge config registry is present and deferred.
 
 ## Residual Risks
 
@@ -65,7 +65,7 @@ What changed in practical terms:
   - `conflict_scan`
   - `merge_conflict_report`
   - Deeper serial merge orchestration and semantic compatibility enforcement are still outside this sprint.
-- Runtime knowledge remains bounded evidence and warning context; it is not final authority for release, remote decision, or closeout actions.
+- Runtime knowledge remains deferred; it is not final authority for release, remote decision, or closeout actions.
 - Release pipeline and remote decision transport remain disabled / unimplemented on the active runtime.
 
 ## Conclusion

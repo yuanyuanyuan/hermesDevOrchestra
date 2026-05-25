@@ -123,7 +123,7 @@
       ],
       "activation_scope": "new_runtime_knowledge_queries_only",
       "required_checks": [
-        "gbrain_adapter_contract_report",
+        "runtime_knowledge_adapter_contract_report",
         "freshness_policy_fixture_report",
         "authority_boundary_fixture_report",
         "redaction_fixture_report",

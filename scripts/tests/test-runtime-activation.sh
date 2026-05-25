@@ -71,25 +71,21 @@ def invalid_activation_case(expected_code: str, mutator) -> None:
 
 activation = RuntimeActivation(repo)
 summary = activation.summary()
-knowledge_config = load_json(repo / "config/knowledge/runtime-kb.json")
 assert summary["active_family_ids"] == [
     "closeout_and_self_evolution",
     "full_debate_package",
     "gateway_authority",
-    "runtime_domain_knowledge",
     "worker_execution",
 ], summary
 assert summary["module_defaults"]["debate-engine"] == "full_debate_package", summary
 assert summary["module_defaults"]["worker-registry"] == "worker_execution", summary
-assert summary["module_defaults"]["runtime-knowledge"] == "runtime_domain_knowledge", summary
+assert "runtime-knowledge" not in summary["module_defaults"], summary
 assert activation.default_allow_staged("full-schema-cutover") is True
 assert activation.default_allow_staged("debate-engine") is True
 assert activation.default_allow_staged("worker-registry") is True
-assert activation.default_allow_staged("runtime-knowledge") is True
+assert activation.default_allow_staged("runtime-knowledge") is False
 assert activation.default_allow_staged("self-evolution") is True
 assert activation.default_allow_staged("release-pipeline") is False
-assert knowledge_config["enabled"] is True, knowledge_config
-assert knowledge_config["backend"]["enabled"] is True, knowledge_config
 
 activation_payload = load_json(repo / "config/cutover/runtime-family-activation.json")
 for entry in activation_payload["activated_families"]:
@@ -277,12 +273,11 @@ assert runtime_activation["active_family_ids"] == [
     "closeout_and_self_evolution",
     "full_debate_package",
     "gateway_authority",
-    "runtime_domain_knowledge",
     "worker_execution",
 ], runtime_activation
 assert runtime_activation["module_defaults"]["debate-engine"] == "full_debate_package", runtime_activation
 assert runtime_activation["module_defaults"]["worker-registry"] == "worker_execution", runtime_activation
-assert runtime_activation["module_defaults"]["runtime-knowledge"] == "runtime_domain_knowledge", runtime_activation
+assert "runtime-knowledge" not in runtime_activation["module_defaults"], runtime_activation
 assert runtime_activation["module_defaults"]["full-schema-cutover"] == "gateway_authority", runtime_activation
 assert runtime_activation["module_defaults"]["self-evolution"] == "closeout_and_self_evolution", runtime_activation
 

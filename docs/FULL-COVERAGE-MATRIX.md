@@ -38,8 +38,8 @@ Status vocabulary:
 | Release pipeline config | `config/release/pipeline.json` | disabled | not implemented | Formal path exists with `enabled: false`. |
 | Release command registry | `config/release/commands.json` | disabled | not implemented | Trusted deploy/rollback command refs, Gateway Release Executor, approval, timeout, kill, output capture, and redaction policy. |
 | Remote decision config | `config/decisions/remote-channel.json` | disabled | not implemented | Transport-only config; local CLI/SSH remains default. |
-| Runtime Domain Knowledge Base config | `config/knowledge/runtime-kb.json` | ready | mixed-family default path | gbrain-backed runtime config is now enabled on the default path and still forbids a separate Hermes SQLite KB. |
-| Runtime knowledge entry contract | Full schema + `config/knowledge/runtime-kb.json` | ready | partially implemented | gbrain markdown page with YAML frontmatter and required sections. |
+| Runtime Domain Knowledge Base config | `config/knowledge/runtime-kb.json` | ready | deferred / not runtime | Deferred during Sprint 14 supplement; active runtime does not connect gbrain. |
+| Runtime knowledge entry contract | Full schema + `config/knowledge/runtime-kb.json` | ready | partially implemented | State-store entry pages use YAML frontmatter and required sections. |
 | Runtime knowledge ingestion audit | Full schema `knowledge_ingestion_record` | ready | partially implemented | Promotion, overwrite, supersession, deprecation, and failed re-verification require records. |
 | Runtime knowledge retrieval audit | Full schema `runtime_knowledge_query/result` | ready | partially implemented | Retrieval results are context, not final authority. |
 | Full worker backend registry | `config/workers/full/backends.json` | staged | mixed-family default path | Explicit backend capabilities, checks, workspace/session support, risk ceiling, and fallback eligibility. |
@@ -70,5 +70,5 @@ Status vocabulary:
 
 - Expand mixed-family activation from module defaults to run-level full artifact consumption and validation.
 - Implement the remaining run-level full runtime consumption gaps: remote decisions, release execution, deeper closeout integration, and stronger parallel merge orchestration beyond mechanical conflict artifacts.
-- Add adapter implementation plans for gbrain CLI/MCP, release pipeline, and remote decision transport.
+- Add adapter implementation plans for runtime knowledge state-store adapter, release pipeline, and remote decision transport.
 - Keep `qnN4o510` as design-source traceability only; do not introduce it as runtime retrieval.

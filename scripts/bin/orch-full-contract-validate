@@ -263,10 +263,10 @@ def validate_cross_refs(repo: pathlib.Path) -> list[CheckResult]:
 
     knowledge = load_json(repo / "config/knowledge/runtime-kb.json")
     backend = knowledge.get("backend", {})
-    if backend.get("id") == "gbrain" and backend.get("no_separate_sqlite") is True:
-        results.append(pass_result("runtime knowledge backend", "gbrain target without separate Hermes SQLite"))
+    if knowledge.get("enabled") is False and backend.get("id") == "deferred" and backend.get("adapter_required_before_enable") is True:
+        results.append(pass_result("runtime knowledge deferred state", "runtime knowledge backend is deferred and disabled before adapter selection"))
     else:
-        results.append(fail_result("runtime knowledge backend", "runtime KB must target gbrain and forbid separate Hermes SQLite"))
+        results.append(fail_result("runtime knowledge deferred state", "runtime knowledge must remain disabled before an approved adapter is selected"))
 
     cutover = load_json(repo / "config/cutover/full-readiness-gates.json")
     families = {entry["family_id"] for entry in cutover["artifact_families"]}

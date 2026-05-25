@@ -32,6 +32,6 @@ grep -Fq "PASS fixture layer split: contract fixtures and runtime fake adapters 
 grep -Fq "PASS fixture evidence boundary: fixtures cannot satisfy completion or release evidence" <<<"$OUTPUT" || fail "fixture evidence boundary was not checked" "fixture evidence pass" "$OUTPUT"
 grep -Fq "PASS self evolution queue: proposals go through an explicit queue by default" <<<"$OUTPUT" || fail "self evolution queue was not checked" "evolution queue pass" "$OUTPUT"
 grep -Fq "PASS self evolution rejected retention: rejected proposals are retained with reasons" <<<"$OUTPUT" || fail "self evolution rejected retention was not checked" "evolution retention pass" "$OUTPUT"
-grep -Fq "PASS runtime knowledge backend: gbrain target without separate Hermes SQLite" <<<"$OUTPUT" || fail "runtime knowledge backend contract was not checked" "knowledge pass" "$OUTPUT"
+grep -Fq "PASS runtime knowledge deferred state: runtime knowledge backend is deferred and disabled before adapter selection" <<<"$OUTPUT" || fail "runtime knowledge deferred state was not checked" "knowledge pass" "$OUTPUT"
 
 test_done
