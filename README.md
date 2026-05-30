@@ -2,13 +2,49 @@
 
 # Hermes Dev Orchestra
 
-多项目 AI 开发编排系统 —— 通过 Hermes Agent 协调 Claude Code CLI（监督者）与 Codex CLI（执行者），实现单人多项目并行开发。
+English | [简体中文](README.zh-CN.md)
 
-<!-- VERIFY: 需要预装 Hermes Agent v0.11.0+、Claude Code CLI v2.1.110+、Codex CLI v0.122.0+ -->
+Multi-project AI development orchestration system — coordinating Claude Code CLI (supervisor) and Codex CLI (executor) through the Hermes Agent to enable single-developer, multi-project parallel development.
 
-## 安装
+<!-- VERIFY: Requires Hermes Agent v0.11.0+, Claude Code CLI v2.1.110+, Codex CLI v0.122.0+ -->
 
-前置依赖（需预先安装）：
+---
+
+## Problem → Solution → Result
+
+### Problem
+
+Developers managing multiple projects face fragmented workflows when working with AI coding assistants:
+
+- **Context loss**: Manually switching between Claude Code and Codex CLI means task context is constantly lost — you re-explain the same requirements in different sessions.
+- **No audit trail**: Without centralized logging, you cannot trace which AI made what change, when, and why.
+- **High-risk commands go unchecked**: Dangerous operations (e.g., `docker system prune`, `rm -rf`, schema migrations) run without review or approval.
+- **Manual coordination**: You open two terminals, log into Claude and Codex separately, copy-paste task descriptions, and manually review code — repeating this for every project.
+
+### Solution
+
+Hermes Dev Orchestra automates the entire Claude↔Codex collaboration pipeline with one-command project initialization and isolated session management:
+
+- **One-command setup**: `orch-init` scaffolds the project configuration, directory structure, and risk policies.
+- **Isolated tmux session pairs**: `orch-start` automatically creates paired tmux sessions (`hermes-{project}-claude` / `hermes-{project}-codex`) for each project.
+- **File-exchange task flow**: Structured files in `/tmp/hermes-orchestra/{project}/` automatically dispatch tasks, questions, decisions, and results between agents.
+- **L1–L4 risk interception**: `orch-risk-check` evaluates commands against `config/risk-policy.yaml`; L3/L4 operations block and await human approval via `orch-approve` / `orch-reject`.
+- **Built-in audit**: Every operation is written to `~/.local/share/hermes-orchestra/{project}/audit.jsonl` for full traceability.
+
+### Result
+
+Describe your task in natural language, and the orchestrator handles the rest:
+
+- **Before**: Open two terminals → log into Claude and Codex separately → copy-paste task descriptions → manually review every code change → no logs, no rollback, no oversight.
+- **After**: `orch-init my-app ~/projects/my-app` → `orch-start my-app ~/projects/my-app` → type `/dev-orchestra` in `hermes chat` and describe your task → the watcher auto-dispatches → Claude decides → Codex executes → results are auto-reviewed → `orch-audit my-app --limit 20` shows the complete audit chain.
+
+All projects are isolated, all actions are logged, and dangerous commands are blocked until you approve them.
+
+---
+
+## Installation
+
+Prerequisites (must be installed beforehand):
 
 ```bash
 git --version       # >= 2.30
@@ -20,133 +56,133 @@ claude --version    # >= 2.1.110
 codex --version     # >= 0.122.0
 ```
 
-一键安装（无需 sudo，全部安装在用户目录）：
+One-line installation (no sudo required, all user-local):
 
 ```bash
 bash scripts/setup.sh
 ```
 
-安装脚本会自动完成 SOUL.md、Skills、CLI helpers (`orch-*`)、目录结构及配置模板的安装。
+The installer automatically sets up SOUL.md, Skills, CLI helpers (`orch-*`), directory structure, and configuration templates.
 
-## 快速开始
+## Quick Start
 
-1. **安装**（见上）
+1. **Installation** (see above)
    ```bash
-   # 引导式安装/配置/启动/MVP 验收
+   # Guided installation / configuration / startup / MVP acceptance
    orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway
    ```
-   验收完成后会生成：
+   After acceptance, the following artifacts are generated:
    - `~/.local/state/hermes-orchestra/{project}/mvp-acceptance-report.json`
    - `~/.local/state/hermes-orchestra/{project}/mvp-demo-flow.json`
    - `~/.local/state/hermes-orchestra/{project}/mvp-demo-log.jsonl`
 
-   `mvp-demo-log.jsonl` 逐步记录 demo case 的参与方、输入、输出、API endpoint、artifact refs 和本地证据文件，可直接用于复盘完整 MVP 流程。
+   `mvp-demo-log.jsonl` incrementally records participants, inputs, outputs, API endpoints, artifact refs, and local evidence files for the demo case — ready for full MVP process retrospectives.
 
-   如果要把真实 Codex/Claude CLI 也纳入验收，运行：
+   To include real Codex / Claude CLI workers in the acceptance run:
    ```bash
    orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway --real-worker-demo
    ```
-   这会实际调用 `codex exec` 修改 `.workflow/knowledge/orchestra-real-worker-demo.md`，调用 `claude -p` 审查该低风险改动，并生成 `mvp-real-worker-flow.json` / `mvp-real-worker-log.jsonl`。
-2. **初始化项目**（项目目录必须是 git 仓库）：
+   This invokes `codex exec` to modify `.workflow/knowledge/orchestra-real-worker-demo.md`, invokes `claude -p` to review the low-risk change, and generates `mvp-real-worker-flow.json` / `mvp-real-worker-log.jsonl`.
+2. **Initialize project** (project directory must be a git repository):
    ```bash
    orch-init api-gateway ~/projects/api-gateway
    ```
-3. **启动编排会话**（自动创建 Claude + Codex tmux 进程对）：
+3. **Start orchestration sessions** (auto-creates Claude + Codex tmux process pair):
    ```bash
    orch-start api-gateway ~/projects/api-gateway
    ```
-4. **查看状态**：
+4. **Check status**:
    ```bash
    orch-status
    ```
 
-## 使用示例
+## Usage
 
-### 初始化并启动多项目
+### Initialize and Start Multiple Projects
 
 ```bash
-# 项目 A：后端 API
+# Project A: Backend API
 orch-init api-gateway ~/projects/api-gateway
 orch-start api-gateway ~/projects/api-gateway
 
-# 项目 B：前端
+# Project B: Frontend
 orch-init web-frontend ~/projects/web-frontend
 orch-start web-frontend ~/projects/web-frontend
 
-# 查看所有运行中项目
+# View all running projects
 orch-status
 ```
 
-### 日常管理命令
+### Daily Management Commands
 
 ```bash
-# 查看单个项目详细状态
+# View detailed status of a single project
 orch-status api-gateway
 
-# 停止项目编排会话
+# Stop project orchestration sessions
 orch-stop api-gateway
 
-# 查看待审批决策
+# View pending approval decisions
 orch-decisions
 
-# 审批或拒绝
+# Approve or reject
 orch-approve <approval_id>
 orch-reject <approval_id>
 
-# 风险预检
+# Risk pre-check
 orch-risk-check "docker system prune"
 
-# 查看审计日志
+# View audit log
 orch-audit api-gateway --limit 20
 
-# 验证安装
+# Verify installation
 orch-verify
 
-# 引导式配置、启动和 MVP 验收
+# Guided configuration, startup, and MVP acceptance
 orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway
 
-# 只做配置/启动，不跑测试和 demo run
+# Configuration / startup only, skip tests and demo run
 orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway --skip-tests
 
-# 额外验收真实 Codex/Claude CLI worker
+# Additional acceptance with real Codex / Claude CLI workers
 orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway --real-worker-demo
 ```
 
-### 运行测试
+### Run Tests
 
 ```bash
-# 全部测试（单元测试 + 风险测试 + JSON 校验 + Shell 校验 + 上游版本检查）
+# Full test suite (unit tests + risk tests + JSON validation + shell validation + upstream version check)
 make test
 
-# 仅单元测试
+# Unit tests only
 make test-unit
 
-# 仅风险相关测试
+# Risk-related tests only
 make test-risk
 ```
 
-## 项目结构
+## Project Structure
 
-| 目录 | 说明 |
-|------|------|
-| `scripts/bin/orch-*` | CLI 工具集：初始化、启动、停止、状态、审批、风控等 |
-| `scripts/lib/` | 公共 Bash 函数库 |
-| `scripts/tests/` | 自动化测试套件 |
-| `skills/` | 4 个 Hermes Skills：dev-orchestra、claude-supervisor、codex-executor、escalation-handler |
-| `hermes/` | SOUL.md、角色引擎协议、profile 分发目录 |
-| `config/` | risk-policy.yaml、rules.json |
-| `specs/` | 派生规范：命令集、任务交换协议、风险决策机制 |
+| Directory | Description |
+|-----------|-------------|
+| `scripts/bin/orch-*` | CLI toolkit: init, start, stop, status, approval, risk control, etc. |
+| `scripts/lib/` | Common Bash function library |
+| `scripts/tests/` | Automated test suite |
+| `skills/` | 4 Hermes Skills: dev-orchestra, claude-supervisor, codex-executor, escalation-handler |
+| `hermes/` | SOUL.md, role engine protocol, profile distribution directory |
+| `config/` | risk-policy.yaml, rules.json |
+| `specs/` | Derived specifications: command set, task exchange protocol, risk decision mechanism |
 
-## 核心概念
+## Core Concepts
 
-- **三层代理协作**：Hermes（编排者）→ Claude（监督/决策）→ Codex（执行/编码）
-- **文件交换机制**：每个项目在 `/tmp/hermes-orchestra/{project}/` 下通过结构化文件交换任务、问题、决策和结果
-- **审计日志**：每个项目的操作审计记录在 `~/.local/share/hermes-orchestra/{project}/audit.jsonl`
-- **三级决策流转**：技术决策（Claude 秒级自动）→ 风险升级（Hermes 评估 L1-L4）→ 危险操作（L3/L4 阻塞等待用户批准）
-- **多项目隔离**：每个项目拥有独立的 tmux 会话（`hermes-{project}-claude` / `hermes-{project}-codex`）及独立的任务目录
+- **Three-layer agent collaboration**: Hermes (orchestrator) → Claude (supervision / decision) → Codex (execution / coding)
+- **File-exchange mechanism**: Each project exchanges tasks, questions, decisions, and results through structured files under `/tmp/hermes-orchestra/{project}/`
+- **Audit logging**: Each project's operational audit is recorded in `~/.local/share/hermes-orchestra/{project}/audit.jsonl`
+- **Three-tier decision flow**: Technical decisions (Claude auto-approves in seconds) → Risk escalation (Hermes evaluates L1–L4) → Dangerous operations (L3/L4 block awaiting human approval)
+- **Multi-project isolation**: Each project has independent tmux sessions (`hermes-{project}-claude` / `hermes-{project}-codex`) and independent task directories
 
-## 相关文档
+## Related Docs
 
-- [`WORKFLOW.md`](docs/WORKFLOW.md) — 单人全周期工作流详细指南
-- [`specs/`](specs/) — 派生规范（命令集、任务交换协议、风险决策）
-- [`docs/COVERAGE-MATRIX.md`](docs/COVERAGE-MATRIX.md) — 功能覆盖矩阵
+- [`WORKFLOW.md`](docs/WORKFLOW.md) — Detailed guide for the single-developer full-cycle workflow
+- [`specs/`](specs/) — Derived specifications (command set, task exchange protocol, risk decisions)
+- [`docs/COVERAGE-MATRIX.md`](docs/COVERAGE-MATRIX.md) — Feature coverage matrix
