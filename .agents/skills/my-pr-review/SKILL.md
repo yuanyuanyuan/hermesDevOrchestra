@@ -14,23 +14,11 @@ description: >
 - "review PR #N" / "对 PR 做 code review" / "review this PR"
 - "复核 PR #N" / "re-review" / "二次 review"（触发复核流程）
 
-## 调用签名
-
-```
-my-pr-review <PR_NUMBER> [--re-review]
-```
-
 ## 环境要求
-
-- `gh` CLI 已认证
-- 当前目录为项目本地仓库
+- `gh` CLI 已认证，当前目录为项目本地仓库
 
 ## 核心约束
-
-1. **不修复代码** — 只提交 review 结果，不做任何代码修改
-2. **不自我 approve** — 用 `COMMENT` 事件提交（GitHub 不允许 approve 自己的 PR）
-3. **所有结果提交到 PR** — 每次 review 都必须有 PR comment 记录
-4. **复核范围裁剪** — 二次 review 只审查变更文件，避免资源浪费
+- 只 review 不修复，COMMENT 事件提交，每次 review 有 PR comment 记录
 
 ---
 
@@ -45,8 +33,9 @@ PR_INFO=$(bash scripts/collect-pr-info.sh ${PR_NUMBER})
 脚本输出 JSON，包含：PR 元数据、变更文件列表、已有 review/comments。
 
 **判断是否为复核：**
-- 如果 `--re-review` 标记或用户明确要求复核 → 进入 Phase 1b
-- 否则 → 进入 Phase 2
+- 用户显式说"复核/re-review/二次review"或带 `--re-review` → Phase 1b
+- 用户说"review PR #N"且该 PR 已有 stark-008 的 review → 提示用户"首次review或复核?"
+- 否则 → Phase 2
 
 ### Phase 1b: 复核范围检测
 
@@ -115,7 +104,11 @@ Phase 1b/3 后展示计划：
 
 ### Phase 4: 生成 Review 报告
 
-将 ce-code-review 的发现整理为结构化报告：
+将 ce-code-review 的 JSON 输出映射到报告模板：
+- `level` → `[P0/P1/P2/P3]` 前缀
+- `file`+`line` → `文件:行号`
+- `title`+`description`+`evidence`+`suggestion` → 对应段落
+- 统计 PASS/FAIL/N/A 生成摘要
 
 ```markdown
 # PR Review Report — PR #${PR_NUMBER}
