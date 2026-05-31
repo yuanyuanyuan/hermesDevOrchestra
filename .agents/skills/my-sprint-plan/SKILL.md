@@ -46,6 +46,16 @@ CONTENT_PATH → /ce-plan → PLAN_FILE → parse → JSON
                                     split → assigned → generate → 产物
 ```
 
+## 前置检查
+
+执行步骤前验证以下条件。任一条件失败，按对应路径处理：
+
+| 检查项 | 触发条件 | 一线修复 | 仍失败兜底 |
+|--------|---------|---------|-----------|
+| 输入文件存在性 | `${CONTENT_PATH}` 不存在或不可读 | 询问用户补充路径或基于对话内容直接生成 PRD | 终止执行，告知用户必须提供有效需求来源 |
+| 输出目录冲突 | `${OUTPUT_DIR}` 已存在同名 sprint 文件 | 询问用户「覆盖 / 增量更新 / 换目录」三选一 | 默认切至 `${OUTPUT_DIR}-v2` 并告知 |
+| 工具链就绪 | `jq` / `bash` 不可用 | 提示安装缺失工具；或 fallback 到纯 LLM 生成 JSON | 终止执行，输出手动步骤清单 |
+
 ## 步骤详情
 
 ### Step 1: 调用 /ce-plan
@@ -55,12 +65,22 @@ CONTENT_PATH → /ce-plan → PLAN_FILE → parse → JSON
 - `/ce-plan` 自动处理上下文收集、需求分析、U-ID 拆分
 - 等待完成后获取 `${PLAN_FILE}` 路径
 
+> **如果 /ce-plan 调用失败**（超时、报错、返回空）：
+> 1. 检查 `${CONTENT_PATH}` 是否在前置检查中已验证
+> 2. 重试 1 次
+> 3. 仍失败 → 跳过 /ce-plan，由 LLM 直接阅读 `${CONTENT_PATH}` 并手动拆分 implementation units，标记 `plan_source: manual`
+
 ### Step 2: 解析计划（脚本）
 
 ```bash
 PARSED=/tmp/sprint-plan-parsed.json
 bash scripts/parse-plan.sh "${PLAN_FILE}" > "${PARSED}"
 ```
+
+> **如果 parse-plan.sh 失败**（非 0 退出、输出非 JSON）：
+> 1. 检查脚本是否存在且可执行
+> 2. 尝试直接读取 `${PLAN_FILE}` 为文本，用 LLM 提取结构化信息
+> 3. 仍失败 → 终止，提示用户检查脚本或手动提供 JSON
 
 输出 JSON 结构：`frontmatter`, `requirements[]`, `implementation_units[]`
 
@@ -156,6 +176,11 @@ cat ${PARSED} | jq '
 bash scripts/split-sprints.sh /tmp/sprint-plan-enhanced.json > /tmp/sprint-plan-assigned.json
 ```
 
+> **如果 split-sprints.sh 失败**：
+> 1. 检查输入 JSON 是否包含 `implementation_units` 和 `sp` 字段
+> 2. 手动按依赖拓扑排序 + 贪心装箱（容量 7 SP）分配至 Sprint
+> 3. 输出 `/tmp/sprint-plan-assigned.json`
+
 算法：拓扑排序（依赖序）→ 贪心装箱（容量 7 SP/ Sprint）
 
 ### Step 6: 生成文件（脚本 — v2 增强模板）
@@ -163,6 +188,11 @@ bash scripts/split-sprints.sh /tmp/sprint-plan-enhanced.json > /tmp/sprint-plan-
 ```bash
 bash scripts/generate-sprint-files.sh /tmp/sprint-plan-assigned.json "${OUTPUT_DIR}"
 ```
+
+> **如果 generate-sprint-files.sh 失败**：
+> 1. 检查输入 JSON 格式
+> 2. Fallback 到 LLM 直接按模板生成各 Markdown 文件
+> 3. 标记 `generation_mode: manual_fallback`
 
 增强点：
 - **sprint-overview.md**：增加跨 Sprint 接口契约表 + 已知限制与债务表 + 容量利用率均一化警告

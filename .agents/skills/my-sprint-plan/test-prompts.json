@@ -1,0 +1,17 @@
+[
+  {
+    "id": 1,
+    "prompt": "根据 docs/prd_by_kimi.md 创建 sprint 计划，输出到 docs/sprints/prd-by-kimi/",
+    "expected": "生成完整的 sprint 产物包：spec.md、schema.md（如需要）、sprint-overview.md、plan-sprint-*.md、checklist-sprint-*.md。SP 估算应体现复杂度差异（非全部 5 SP），验收标准须量化且无模糊词。"
+  },
+  {
+    "id": 2,
+    "prompt": "我有一个新需求：给 Hermes 系统加一个 Agent 运行时监控面板，支持实时查看各 agent 的 CPU/内存/状态。帮我拆成 sprint。需求在这里：hermes/agent-monitoring-prd.md（文件不存在，模拟模糊输入场景）",
+    "expected": "Skill 应指导用户先提供/创建 PRD 文件，或尝试基于描述直接调用 /ce-plan。流程不应卡住，应有明确的 fallback 路径（如：文件不存在 → 建议用户先写 PRD 或提供详细描述 → 再执行）。"
+  },
+  {
+    "id": 3,
+    "prompt": "优化已有 sprint 计划：docs/sprints/prd-by-kimi-user-flow-strict/ 里的 plan-sprint-3.md 看起来 SP 估算全是 5，checklist 也很敷衍，帮我重新估算并补全 checklist。",
+    "expected": "Skill 应识别这是「重新估算/补全」场景而非从头创建，指导用户读取现有 plan、重新运行 SP 估算（应用 v2 因子）、补全 checklist 四级结构、输出更新后的文件。"
+  }
+]
