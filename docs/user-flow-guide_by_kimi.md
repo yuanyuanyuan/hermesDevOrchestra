@@ -224,6 +224,30 @@ intake:
   default_mode: compact  # compact / verbose
 ```
 
+### 0阶 Gateway 数据流与项目探测 SLA
+
+0 阶项目探测的数据流：
+
+```
+外部请求 → orch_gateway.py (路由层)
+         → gateway_intake.py (输入校验 + 标准化 → NormalizedIntent)
+         → gateway_projection.py (状态投影 + 映射追踪 → ProjectedState)
+         → gateway_evidence.py (证据收集 + 置信度标记 → EvidenceBundle)
+         → 返回结构化输出
+```
+
+任一 helper module 加载失败时，Gateway 在 500ms 内降级到 `FALLBACK_HEURISTIC` 模式，记录降级事件到 `logs/gateway-fallback.jsonl`。
+
+**项目探测 5 分钟 SLA**：
+
+| 场景 | 行为 |
+|------|------|
+| 标准项目（含 package.json / pyproject.toml / Makefile） | 在 300 秒内输出完整《项目探测报告》 |
+| 大型 monorepo（>1000 文件）或超时 | 输出 `status: partial` 的报告，至少包含技术栈，不阻塞后续流程 |
+| 空目录（无构建文件） | 30 秒内输出 `status: unknown`，进入人工确认流程 |
+
+降级路径保证：即使探测超时或失败，系统也能输出部分结果并继续工作，不会僵死或阻塞。
+
 ### 0阶中的用户错误纠正示例
 
 **用户**：给订单表加个 `cancel_reason` 字段，VARCHAR(255)，nullable，migration 用 Alembic，模型文件在 `models/order.py`。

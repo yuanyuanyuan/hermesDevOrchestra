@@ -152,4 +152,55 @@ For CI or ephemeral environments, you may also override `RUNTIME_ROOT` to a pers
 export RUNTIME_ROOT=/var/lib/hermes-orchestra/runtime
 ```
 
+## Gateway Helper Modules
+
+Sprint 1 introduced three helper modules that live alongside `orch_gateway.py` in `scripts/lib/`:
+
+| Module | Responsibility | Key Function |
+|--------|---------------|--------------|
+| `gateway_intake.py` | Input validation + normalization | `normalize(request) -> NormalizedIntent` |
+| `gateway_projection.py` | State projection + mapping tracking | `project(intent, context) -> ProjectedState` |
+| `gateway_evidence.py` | Evidence collection + confidence marking | `gather(projected) -> EvidenceBundle` |
+
+Gateway imports these helpers at startup with a soft-fail strategy: if any helper fails to import, Gateway sets `_HELPERS_OK = False` and continues in `FALLBACK_HEURISTIC` mode. Fallback events are logged to `logs/gateway-fallback.jsonl`.
+
+Helper modules have strict单向依赖: `intake -> projection -> evidence`. No circular imports are allowed.
+
+## Project Profile Format
+
+`.hermes/project-profile.yaml` is the **source of truth** for project metadata (Sprint 1). If `.hermes/project.json` exists, it is preserved as a read-only fallback with `deprecated: true` and `superseded_by: project-profile.yaml`.
+
+Example `project-profile.yaml`:
+
+```yaml
+name: my-project
+project_id: my-project
+project_dir: /home/user/projects/my-project
+profile_version: 2
+source_of_truth: yaml
+tech_stack:
+  - python
+test_command: pytest
+deploy_target: container/python
+risk_flags:
+  - protected_target:.env
+discovery_status: complete
+```
+
+Fields:
+- `name` — Human-readable project name.
+- `project_id` — Stable project slug.
+- `profile_version` — `2` for Sprint 1 format.
+- `source_of_truth` — Always `yaml`.
+- `tech_stack` — Detected languages/frameworks.
+- `test_command` — Primary test entrypoint.
+- `deploy_target` — Inferred deployment target.
+- `risk_flags` — Protected-target hits.
+- `discovery_status` — `complete` or `partial`.
+
+Migration from `project.json`:
+- Run `orch-profile-sync` to generate `project-profile.yaml`.
+- Existing `project.json` is automatically marked `deprecated`.
+- Downstream tools read yaml first and fall back to json only if yaml is absent.
+
 <!-- VERIFY: recommended CI/ephemeral paths are conventions, not enforced by the codebase -->
