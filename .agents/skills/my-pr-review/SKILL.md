@@ -50,16 +50,18 @@ PR_INFO=$(bash scripts/collect-pr-info.sh ${PR_NUMBER})
 
 ### Phase 1b: 复核范围检测
 
-读取上次 review 记录的 commit OID（从 PR comments 中查找 reviewer stark-008 的最近 review）。
+**获取上次 review commit：**
+```bash
+LAST_REVIEWED_OID=$(gh api "repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews" \
+  --jq '[.[] | select(.user.login == "stark-008")] | max_by(.submitted_at).commit_id')
+```
+- 无记录 → 视为首次 review
+- `LAST_REVIEWED_OID == HEAD_OID` → 止损（无新提交）
 
+**获取变更文件：**
 ```bash
 bash scripts/diff-since.sh ${PR_NUMBER} ${LAST_REVIEWED_OID}
 ```
-
-根据 `scope` 决定：
-- `none` → 无新提交，告知用户
-- `partial`（≤20 文件）→ 只对变更文件做 ce-code-review
-- `full`（>20 文件）→ 完整 ce-code-review
 
 ### ⏸ 检查点 1: PR 信息确认
 
@@ -79,36 +81,34 @@ PR #${PR_NUMBER}: ${TITLE} by ${AUTHOR}
 
 ### Phase 2: 执行 Code Review
 
-使用 ce-code-review 执行深度审查：
-
 ```
 /compound-engineering:ce-code-review ${PR_NUMBER}
 ```
 
-ce-code-review 会自动选择 reviewer personas、并行审查、合并结果。
+**引擎行为：** 自动选择 reviewer personas，并行多维度审查，输出结构化 JSON（含 `level`(P0-P3)、`file`、`line`、`title`、`description`、`evidence`、`suggestion`）。
 
-**前置条件检查：**
-- 若 `gh` CLI 未认证 → 进入止损流程，不调用 ce-code-review
-- 若 ce-code-review 返回非 0 → 进入降级路径（手动 checklist review）
+**前置检查：**
+- `gh` CLI 未认证 → 止损流程
+- ce-code-review 返回非 0 或格式异常 → 降级为手动 checklist review
 
-### Phase 3: 智能判断（仅复核时）
+### Phase 3: 复核策略决策（仅复核时）
 
-复核场景下，在调用 ce-code-review 前，先读取原 review 的 FAIL 项清单：
-- 如果变更文件完全覆盖原 FAIL 项涉及的文件 → 可以只做 partial review
-- 如果变更文件不相关或范围过大 → 执行 full review
+综合变更文件数 + 原 FAIL 项覆盖度决定范围：
 
-**判断依据：**
-- 变更文件列表 vs 原 FAIL 项文件列表的交集
-- 变更行数（小改动可只做针对性检查，大改动需完整 review）
+| 文件数 | FAIL 覆盖度 | 决策 | 执行 |
+|--------|------------|------|------|
+| 0 | — | none | 已在 1b 拦截 |
+| ≤20 | 完全/部分 | partial | `ce-code-review ${PR_NUMBER} --files ${DIFF_FILES}` |
+| >20 | 任意 | full | `ce-code-review ${PR_NUMBER}` |
 
-### ⏸ 检查点 2: 复核范围确认（仅复核场景）
+**覆盖度判定：** 变更文件列表 ∩ 原 FAIL 项文件列表
 
-Phase 1b/3 裁剪后展示计划：
+### ⏸ 检查点 2: 复核范围确认（仅复核）
 
+Phase 1b/3 后展示计划：
 ```
-复核范围: ${SCOPE}  变更文件: ${DIFF_FILE_COUNT}
-原 FAIL 项关联文件是否在变更中: [是/否/部分]
-按此范围执行? [确认/改完整review/取消]
+复核: ${SCOPE}  文件: ${DIFF_FILE_COUNT}  原FAIL覆盖: [是/否/部分]
+执行? [确认/改完整review/取消]
 ```
 
 ---
