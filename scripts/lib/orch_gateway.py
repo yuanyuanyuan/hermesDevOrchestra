@@ -22,6 +22,14 @@ from urllib.parse import parse_qs, urlparse
 from debate_report import validate_artifact_definition
 from runtime_activation import RuntimeActivation, RuntimeActivationError
 
+try:
+    from gateway_intake import normalize as _intake_normalize
+    from gateway_projection import project as _projection_project
+    from gateway_evidence import gather as _evidence_gather
+    _HELPERS_OK = True
+except Exception:
+    _HELPERS_OK = False
+
 
 SCHEMA_VERSION = "orchestra.v1"
 EVENT_SCHEMA_VERSION = "orchestra.event.v1"
@@ -206,6 +214,24 @@ class GatewayApp:
         self.runtime_activation = RuntimeActivation(self.repo_root)
         self.recover_in_progress_commands()
 
+    def _run_intake_pipeline(self, payload: dict[str, Any], request_type: str, run_id: str | None = None) -> None:
+        if not _HELPERS_OK:
+            return
+        try:
+            intent = _intake_normalize(payload)
+            ctx = {"project_id": self.store.project_id, "request_type": request_type, "run_id": run_id, "timestamp": utc_now()}
+            projected = _projection_project(intent, ctx)
+            _evidence_gather(projected)
+        except Exception:
+            self._record_fallback("FALLBACK_HEURISTIC", request_type)
+
+    def _record_fallback(self, reason: str, request_type: str) -> None:
+        log_path = self.repo_root / "logs" / "gateway-fallback.jsonl"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as f:
+            json.dump({"timestamp": utc_now(), "reason": reason, "request_type": request_type, "project": self.store.project_id}, f)
+            f.write("\n")
+
     def health(self) -> dict[str, Any]:
         return {
             "schema_version": SCHEMA_VERSION,
@@ -366,6 +392,7 @@ class GatewayApp:
         return items if isinstance(items, list) else []
 
     def module_endpoint(self, module: str, operation: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        self._run_intake_pipeline(payload, f"module:{module}:{operation}")
         spec = FULL_MODULE_ENDPOINT_INDEX.get((module, operation))
         if spec is None:
             return 404, self.error("not_found", "module endpoint not found")
@@ -1332,6 +1359,7 @@ class GatewayApp:
         )
 
     def create_run(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        self._run_intake_pipeline(payload, "create_run")
         idempotency_key = payload.get("idempotency_key")
         ticket = payload.get("ticket")
         intent = payload.get("intent")
@@ -2319,6 +2347,7 @@ class GatewayApp:
         return None
 
     def stop_run(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        self._run_intake_pipeline(payload, "stop_run", run_id)
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")
@@ -2492,6 +2521,7 @@ class GatewayApp:
         return 200, response
 
     def submit_verdict(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        self._run_intake_pipeline(payload, "submit_verdict", run_id)
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")
@@ -3202,6 +3232,7 @@ class GatewayApp:
         return 200, response
 
     def submit_global_evaluation(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        self._run_intake_pipeline(payload, "submit_global_evaluation", run_id)
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")
@@ -3660,6 +3691,7 @@ class GatewayApp:
         return 200, response
 
     def submit_closeout(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        self._run_intake_pipeline(payload, "submit_closeout", run_id)
         if not self.store.run_path(run_id).exists():
             return 404, self.error("not_found", "run not found")
 
@@ -3869,6 +3901,7 @@ class GatewayApp:
         return 200, response
 
     def submit_failure(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        self._run_intake_pipeline(payload, "submit_failure", run_id)
         if not self.store.run_path(run_id).exists():
             return 404, self.error("not_found", "run not found")
 
@@ -4064,6 +4097,7 @@ class GatewayApp:
         return 200, response
 
     def submit_worker_output(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        self._run_intake_pipeline(payload, "submit_worker_output", run_id)
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")
