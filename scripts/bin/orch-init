@@ -372,6 +372,9 @@ def run_discovery(project: Path) -> dict:
     status = "complete"
     if elapsed > MAX_DISCOVERY_SECONDS:
         status = "partial"
+    # Empty directory: no build files detected
+    if not stack["languages"] and deploy == "unknown" and not risks:
+        status = "unknown"
     return {
         "tech_stack": stack,
         "test_command": test_cmds[0] if test_cmds else "unknown",
