@@ -49,6 +49,9 @@ CONTEXT=$(bash scripts/collect-review-context.sh ${PR_NUMBER})
 bash scripts/checkout-branch.sh ${PR_NUMBER}
 ```
 
+> **如果 `collect-review-context.sh` 失败** → 手动运行 `gh pr view ${PR_NUMBER}` + `gh pr diff ${PR_NUMBER}` 收集上下文 → 仍失败则报告 `tool-unavailable` blocker。
+> **如果 `checkout-branch.sh` 失败** → 检查是否有未提交改动，`git stash` 后重试 → 仍失败则报告 blocker。
+
 ### Phase 2: 逐项审查（需要智力判断）
 
 对合并后的问题清单中的每个发现项：
@@ -70,6 +73,8 @@ bash scripts/checkout-branch.sh ${PR_NUMBER}
 
 > 🔴 **CHECKPOINT**：处理完所有 review 意见后，生成 AGREE/DISAGREE 决策清单，**向用户展示并确认**后再进入修复/反驳流水线。
 > 🛑 **STOP**：如有任何意见你无法判断，暂停并询问用户，不要自主猜测。
+
+> **如果 `/diagnose` 命令不可用** → 手动读取相关代码和测试文件，人工验证问题是否存在 → 仍无法判断则暂停询问用户。
 
 ### Phase 3: 修复流水线（需要智力判断）
 
@@ -107,6 +112,8 @@ git add . && git commit -m "fix(review): ${BRIEF_DESC}" && git push origin ${BRA
 
 > 🔴 **CHECKPOINT**：**提交并 push 前，向用户展示修改摘要**（修改了哪些文件、核心变更点），确认后再执行。
 
+> **如果 `/tdd` 修复后测试仍失败** → 检查失败是否与 review 意见相关 → 若无关则触发 `test-env-conflict` 止损。
+
 ### Phase 4: 反驳流水线（需要智力判断）
 
 对每条 DISAGREE 的意见，必须满足反驳门槛（见 `reference/decision-tree.md`）：
@@ -127,6 +134,8 @@ EOF
 
 bash scripts/post-comment.sh ${PR_NUMBER} /tmp/pr-counter-${PR_NUMBER}-${ITEM_ID}.md
 ```
+
+> **如果反驳证据不足**（不满足门槛任一条）→ 转 AGREE 处理，不可强行反驳。
 
 ### Phase 5: 最终交付
 
@@ -155,17 +164,22 @@ EOF
 bash scripts/post-comment.sh ${PR_NUMBER} /tmp/pr-summary-${PR_NUMBER}.md
 ```
 
+> **如果 `post-comment.sh` 失败** → 重试一次并检查 `gh auth status` → 仍失败则提示用户手动发送汇总评论。
+
 ---
 
 ## 约束与止损
 
 硬性约束和边界见 `reference/constraints.md`。
 
-**止损条件：**
-- `gh` CLI 不可用 → 报告 blocker
-- 修复后测试持续失败 3 次 → 报告 blocker
-- reviewer 意见自相矛盾 → 报告 blocker
-- 无法解析出明确问题清单 → 报告 blocker
+**止损条件（触发条件 / 一线修复 / 仍失败兜底）：**
+
+| 触发条件 | 一线修复 | 仍失败兜底 |
+|---------|---------|-----------|
+| `gh` CLI 不可用 | 检查 `gh auth status`，尝试重新认证 | 报告 `tool-unavailable` blocker，停止执行 |
+| 修复后测试持续失败 3 次 | 检查失败是否与 review 意见相关 | 报告 `test-env-conflict` blocker |
+| reviewer 意见自相矛盾 | 在 PR Comment 中请求澄清 | 报告 `contradictory-review` blocker |
+| 无法解析出明确问题清单 | 尝试手动读取 review body 和 comments | 报告 `unclear-review` blocker |
 
 ---
 
