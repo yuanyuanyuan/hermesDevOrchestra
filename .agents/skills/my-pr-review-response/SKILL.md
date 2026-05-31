@@ -68,6 +68,9 @@ bash scripts/checkout-branch.sh ${PR_NUMBER}
 - **AGREE** → Phase 3
 - **DISAGREE** → Phase 4
 
+> 🔴 **CHECKPOINT**：处理完所有 review 意见后，生成 AGREE/DISAGREE 决策清单，**向用户展示并确认**后再进入修复/反驳流水线。
+> 🛑 **STOP**：如有任何意见你无法判断，暂停并询问用户，不要自主猜测。
+
 ### Phase 3: 修复流水线（需要智力判断）
 
 对每条 AGREE 的意见：
@@ -102,6 +105,8 @@ bash scripts/post-comment.sh ${PR_NUMBER} /tmp/pr-fix-${PR_NUMBER}-${ITEM_ID}.md
 git add . && git commit -m "fix(review): ${BRIEF_DESC}" && git push origin ${BRANCH}
 ```
 
+> 🔴 **CHECKPOINT**：**提交并 push 前，向用户展示修改摘要**（修改了哪些文件、核心变更点），确认后再执行。
+
 ### Phase 4: 反驳流水线（需要智力判断）
 
 对每条 DISAGREE 的意见，必须满足反驳门槛（见 `reference/decision-tree.md`）：
@@ -125,7 +130,14 @@ bash scripts/post-comment.sh ${PR_NUMBER} /tmp/pr-counter-${PR_NUMBER}-${ITEM_ID
 
 ### Phase 5: 最终交付
 
-全部意见处理完毕后，生成汇总报告并发送：
+全部意见处理完毕后：
+
+**步骤 A — 生成汇总报告：**
+先向用户展示报告内容。
+
+🔴 **CHECKPOINT**：**发送 PR Comment 前，向用户展示完整响应清单**（每条意见的决策+状态），确认无误后再执行步骤 B。
+
+**步骤 B — 发送 PR Comment：**
 
 ```bash
 cat > /tmp/pr-summary-${PR_NUMBER}.md << 'EOF'
