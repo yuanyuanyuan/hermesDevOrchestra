@@ -31,6 +31,7 @@ assert_contains "gateway_evidence" "$REPO_ROOT/scripts/lib/orch_gateway.py" "mis
 # Verify fallback mechanism exists
 assert_contains "_record_fallback" "$REPO_ROOT/scripts/lib/orch_gateway.py" "missing fallback recorder"
 assert_contains "FALLBACK_HEURISTIC" "$REPO_ROOT/scripts/lib/orch_gateway.py" "missing FALLBACK_HEURISTIC"
+assert_contains "x-gateway-fallback" "$REPO_ROOT/scripts/lib/orch_gateway.py" "missing x-gateway-fallback header"
 
 # Verify helper module import cycle safety (intake -> projection -> evidence, no cycles)
 python3 -c "
@@ -69,5 +70,38 @@ import orch_gateway
 assert orch_gateway._HELPERS_OK == False, 'expected helpers not ok'
 print('fallback_import: PASS')
 "
+
+# Test real HTTP fallback: start Gateway with broken helper, call API, verify 503 + header
+FALLBACK_TMP="$(mktemp -d)"
+mkdir -p "$FALLBACK_TMP/scripts/lib"
+cp "$REPO_ROOT/scripts/lib/orch_gateway.py" "$FALLBACK_TMP/scripts/lib/"
+cp "$REPO_ROOT/scripts/lib/runtime_activation.py" "$FALLBACK_TMP/scripts/lib/" 2>/dev/null || true
+cp "$REPO_ROOT/scripts/lib/debate_report.py" "$FALLBACK_TMP/scripts/lib/" 2>/dev/null || true
+# intentionally omit gateway_intake.py to trigger fallback
+
+# Copy all required dependencies for Gateway standalone run
+cp "$REPO_ROOT/scripts/lib/debate_report.py" "$FALLBACK_TMP/scripts/lib/" 2>/dev/null || true
+cp "$REPO_ROOT/scripts/lib/runtime_activation.py" "$FALLBACK_TMP/scripts/lib/" 2>/dev/null || true
+# Create minimal project state for Gateway
+mkdir -p "$FALLBACK_TMP/.hermes/projects/test-proj"
+echo '{"schema_version":"orchestra.v1"}' > "$FALLBACK_TMP/.hermes/projects/test-proj/project.json"
+
+# Test real fallback by calling create_run directly with broken helper
+python3 - <<'PYEOF'
+import sys, os
+sys.path.insert(0, 'scripts/lib')
+import orch_gateway
+orch_gateway._HELPERS_OK = False
+app = orch_gateway.GatewayApp('test-proj', 'http://127.0.0.1:8643')
+status, body = app.create_run({})
+print('status:', status)
+print('fallback:', body.get('fallback'))
+print('error_code:', body.get('error', {}).get('code'))
+assert status == 503, f'expected 503, got {status}'
+assert body.get('fallback') == 'FALLBACK_HEURISTIC'
+assert body.get('error', {}).get('code') == 'gateway_fallback'
+print('http_fallback: PASS')
+PYEOF
+rm -rf "$FALLBACK_TMP"
 
 test_done

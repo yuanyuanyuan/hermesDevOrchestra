@@ -299,13 +299,51 @@ def detect_tech_stack(project: Path) -> dict:
                 stack["languages"].append(lang)
             if pm not in stack["package_managers"]:
                 stack["package_managers"].append(pm)
-    # Framework detection
+    # Framework detection across package managers
+    all_deps: dict[str, str] = {}
+    # Node.js
     pj = read_json(project / "package.json") or {}
-    deps = {**pj.get("dependencies", {}), **pj.get("devDependencies", {})}
+    all_deps.update(pj.get("dependencies", {}))
+    all_deps.update(pj.get("devDependencies", {}))
+    # Python (pyproject.toml)
+    ppt: dict[str, Any] = {}
+    if (project / "pyproject.toml").exists():
+        try:
+            import tomllib
+            with open(project / "pyproject.toml", "rb") as fh:
+                ppt = tomllib.load(fh)
+        except Exception:
+            pass
+    if ppt:
+        def _norm_pkg(name: str) -> str:
+            return name.split("[")[0].split("==")[0].split(">=")[0].split("<")[0].strip().lower()
+        for dep in ppt.get("project", {}).get("dependencies", []):
+            if isinstance(dep, str):
+                all_deps[_norm_pkg(dep)] = ""
+        for dep in ppt.get("project", {}).get("optional-dependencies", {}):
+            if isinstance(dep, str):
+                all_deps[_norm_pkg(dep)] = ""
+        for dep in ppt.get("tool", {}).get("poetry", {}).get("dependencies", {}):
+            if isinstance(dep, str):
+                all_deps[_norm_pkg(dep)] = ""
+    # Python (requirements.txt)
+    req_path = project / "requirements.txt"
+    if req_path.exists():
+        for line in req_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                pkg = line.split("==")[0].split(">=")[0].split("<")[0].strip()
+                if pkg:
+                    all_deps[pkg] = ""
     framework_map = {"next": "Next.js", "react": "React", "vue": "Vue", "express": "Express", "fastapi": "FastAPI", "django": "Django", "flask": "Flask", "rails": "Ruby on Rails", "spring-boot": "Spring Boot"}
     for dep_name, fw_name in framework_map.items():
-        if dep_name in deps:
+        if dep_name in all_deps:
             stack["frameworks"].append(fw_name)
+    # Version extraction
+    if pj.get("version"):
+        stack["versions"]["project"] = pj["version"]
+    if ppt.get("project", {}).get("version"):
+        stack["versions"]["project"] = ppt["project"]["version"]
     if (project / "Dockerfile").exists() or any(project.glob("**/Dockerfile")):
         stack["container_ready"] = True
     return stack
@@ -372,6 +410,9 @@ def run_discovery(project: Path) -> dict:
     status = "complete"
     if elapsed > MAX_DISCOVERY_SECONDS:
         status = "partial"
+    # Empty directory: no build files detected
+    if not stack["languages"] and deploy == "unknown" and not risks:
+        status = "unknown"
     return {
         "tech_stack": stack,
         "test_command": test_cmds[0] if test_cmds else "unknown",
@@ -409,14 +450,12 @@ with open(profile_yaml, "w", encoding="utf-8") as f:
     f.write(f"project_dir: {str(project)}\n")
     f.write("profile_version: 2\n")
     f.write("source_of_truth: yaml\n")
-    f.write("tech_stack:\n")
-    for lang in discovery_report["tech_stack"]["languages"]:
-        f.write(f"  - {lang}\n")
+    ts_list = ", ".join(discovery_report["tech_stack"]["languages"])
+    f.write(f"tech_stack: [{ts_list}]\n")
     f.write(f"test_command: {discovery_report['test_command']}\n")
     f.write(f"deploy_target: {discovery_report['deploy_target']}\n")
-    f.write("risk_flags:\n")
-    for flag in discovery_report["risk_flags"]:
-        f.write(f"  - {flag}\n")
+    rf_list = ", ".join(discovery_report["risk_flags"])
+    f.write(f"risk_flags: [{rf_list}]\n")
     f.write(f"discovery_status: {discovery_report['status']}\n")
 
 # Write detection report draft
