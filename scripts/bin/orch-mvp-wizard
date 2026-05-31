@@ -116,7 +116,9 @@ write_report() {
     mkdir -p "$(dirname "$REPORT_PATH")"
     python3 - "$REPORT_PATH" "$PROJECT_ID" "$PROJECT_DIR" "$status" "$STEP_FILE" "$(orch_now)" <<'PY'
 import json
+import os
 import sys
+from pathlib import Path
 
 path, project_id, project_dir, status, step_file, generated_at = sys.argv[1:]
 steps = []
@@ -124,6 +126,47 @@ with open(step_file, encoding="utf-8") as handle:
     for line in handle:
         name, step_status, detail = line.rstrip("\n").split("\t", 2)
         steps.append({"name": name, "status": step_status, "detail": detail})
+
+# Sprint 1: project config resolution — yaml is source of truth, json is read-only fallback
+project_config = {}
+project = Path(project_dir)
+profile_yaml = project / ".hermes" / "project-profile.yaml"
+profile_yaml2 = project / ".hermes" / "projects" / project_id / "project-profile.yaml"
+project_json = project / ".hermes" / "projects" / project_id / "project.json"
+project_json2 = project / ".hermes" / "project.json"
+
+def load_yaml(path):
+    data = {}
+    if not path.exists():
+        return data
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if ":" in line and not line.strip().startswith("#"):
+            key, val = line.split(":", 1)
+            key = key.strip()
+            val = val.strip()
+            if val.startswith("[") and val.endswith("]"):
+                items = [v.strip() for v in val[1:-1].split(",") if v.strip()]
+                data[key] = items
+            else:
+                data[key] = val
+    return data
+
+if profile_yaml.exists():
+    project_config = load_yaml(profile_yaml)
+elif profile_yaml2.exists():
+    project_config = load_yaml(profile_yaml2)
+elif project_json.exists():
+    try:
+        with open(project_json, encoding="utf-8") as f:
+            project_config = json.load(f)
+    except Exception:
+        pass
+elif project_json2.exists():
+    try:
+        with open(project_json2, encoding="utf-8") as f:
+            project_config = json.load(f)
+    except Exception:
+        pass
 
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(
@@ -134,6 +177,7 @@ with open(path, "w", encoding="utf-8") as handle:
             "project_dir": project_dir,
             "status": status,
             "steps": steps,
+            "project_config": project_config,
             "generated_at": generated_at,
         },
         handle,

@@ -267,7 +267,7 @@ for role in role_names:
     )
     write_soul(os.path.join(role_out, "SOUL.md"), role, global_text, project_text, role_text)
 
-project_json = {
+project_data = {
     "project_slug": project_id,
     "project_dir": project_dir,
     "board_slug": board_slug,
@@ -277,9 +277,41 @@ project_json = {
     "profile_catalog_version": catalog_version,
     "profiles_dir": profiles_out,
 }
-with open(os.path.join(workspace_root, "project.json"), "w", encoding="utf-8") as handle:
-    json.dump(project_json, handle, indent=2)
-    handle.write("\n")
+
+# Write project-profile.yaml as the source of truth (Sprint 1)
+project_profile_yaml = os.path.join(workspace_root, "project-profile.yaml")
+with open(project_profile_yaml, "w", encoding="utf-8") as handle:
+    handle.write(f"name: {project_id}\n")
+    handle.write(f"project_slug: {project_id}\n")
+    handle.write(f"project_dir: {project_dir}\n")
+    handle.write(f"board_slug: {board_slug}\n")
+    handle.write(f"workspace_root: {workspace_root}\n")
+    handle.write(f"override_dir: {override_dir}\n")
+    handle.write(f"memory_namespace: {memory_namespace}\n")
+    handle.write(f"profile_catalog_version: {catalog_version}\n")
+    handle.write(f"profiles_dir: {profiles_out}\n")
+    handle.write("profile_version: 2\n")
+    handle.write("source_of_truth: yaml\n")
+
+# Preserve existing project.json as read-only fallback with deprecated marker
+project_json_path = os.path.join(workspace_root, "project.json")
+if os.path.isfile(project_json_path):
+    try:
+        with open(project_json_path, encoding="utf-8") as handle:
+            existing = json.load(handle)
+    except Exception:
+        existing = {}
+    existing["deprecated"] = True
+    existing["superseded_by"] = "project-profile.yaml"
+    with open(project_json_path, "w", encoding="utf-8") as handle:
+        json.dump(existing, handle, indent=2)
+        handle.write("\n")
+else:
+    project_data["deprecated"] = True
+    project_data["superseded_by"] = "project-profile.yaml"
+    with open(project_json_path, "w", encoding="utf-8") as handle:
+        json.dump(project_data, handle, indent=2)
+        handle.write("\n")
 
 write_root_soul(os.path.join(workspace_root, "SOUL.md"), global_text)
 PY
