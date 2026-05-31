@@ -52,7 +52,7 @@ bash scripts/checkout-branch.sh ${PR_NUMBER}
 > **如果 `collect-review-context.sh` 失败** → 手动 `gh pr view` + `gh pr diff` 收集 → 仍失败报告 blocker。
 > **如果 `checkout-branch.sh` 失败** → `git stash` 后重试 → 仍失败报告 blocker。
 
-### Phase 2: 逐项审查（需要智力判断）
+### Phase 2: 逐项审查
 
 对合并后的问题清单中的每个发现项：
 
@@ -63,9 +63,9 @@ bash scripts/checkout-branch.sh ${PR_NUMBER}
 
 **2. 排查验证：**
 ```
-/diagnose
+/diagnose ${FILE_PATH}:${LINE_NUM} "${ISSUE_DESCRIPTION}"
 ```
-使用 /diagnose 命令逐项检查当前代码是否确实存在所述问题，运行相关测试验证，记录证据。
+传入文件路径、行号和问题描述，逐项检查代码是否确实存在所述问题，运行测试验证，记录证据。
 
 **3. 决策**（见 `reference/decision-tree.md`）：
 - **AGREE** → Phase 3
@@ -76,15 +76,15 @@ bash scripts/checkout-branch.sh ${PR_NUMBER}
 
 > **如果 `/diagnose` 命令不可用** → 手动读取相关代码和测试文件，人工验证问题是否存在 → 仍无法判断则暂停询问用户。
 
-### Phase 3: 修复流水线（需要智力判断）
+### Phase 3: 修复流水线
 
 对每条 AGREE 的意见：
 
 **步骤 A — TDD 修复：**
 ```
-/tdd
+/tdd --file ${FILE_PATH} --issue "${ISSUE_SUMMARY}"
 ```
-使用 /tdd 命令进行测试驱动修复：先写失败测试复现问题，再修复代码使测试通过。确保修复精确对应 review 意见，遵循最小改动原则。
+指定目标文件和问题摘要，先写失败测试复现问题，再修复代码使测试通过。确保精确对应 review 意见，遵循最小改动原则。
 
 **步骤 B — 验证：**
 - 运行完整测试套件确认无回归
@@ -114,7 +114,7 @@ git add . && git commit -m "fix(review): ${BRIEF_DESC}" && git push origin ${BRA
 
 > **如果 `/tdd` 修复后测试仍失败** → 检查失败是否与 review 意见相关 → 若无关则触发 `test-env-conflict` 止损。
 
-### Phase 4: 反驳流水线（需要智力判断）
+### Phase 4: 反驳流水线
 
 对每条 DISAGREE 的意见，必须满足反驳门槛（见 `reference/decision-tree.md`）：
 
