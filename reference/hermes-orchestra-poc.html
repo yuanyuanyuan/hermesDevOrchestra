@@ -1,0 +1,1975 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Dev Orchestra — POC 交互原型</title>
+<style>
+/* ═══════════════════════════════════════════
+   THEME: Dark Sci-Fi Dashboard
+   ═══════════════════════════════════════════ */
+:root {
+  --bg: #0b0c10;
+  --bg-panel: #11131a;
+  --bg-panel-hover: #181b25;
+  --border: #1f2230;
+  --text: #c5c6c7;
+  --text-dim: #6b7080;
+  --text-bright: #e0e1dd;
+  --accent: #45a29e;
+  --accent-glow: rgba(69,162,158,0.25);
+  --accent2: #66fcf1;
+  --danger: #ef476f;
+  --danger-glow: rgba(239,71,111,0.25);
+  --warn: #ffd166;
+  --warn-glow: rgba(255,209,102,0.2);
+  --success: #06d6a0;
+  --success-glow: rgba(6,214,160,0.25);
+  --info: #118ab2;
+  --info-glow: rgba(17,138,178,0.2);
+  --purple: #9d4edd;
+  --purple-glow: rgba(157,78,221,0.25);
+  --orange: #f77f00;
+  --font-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════
+   TOP BAR
+   ═══════════════════════════════════════════ */
+.topbar {
+  height: 44px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+.topbar .brand {
+  display: flex; align-items: center; gap: 10px;
+  font-weight: 600; font-size: 14px; color: var(--text-bright);
+}
+.topbar .brand .orb {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent2);
+  box-shadow: 0 0 8px var(--accent2);
+  animation: pulse-orb 2s infinite ease-in-out;
+}
+@keyframes pulse-orb {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.85); }
+}
+.topbar .status-pill {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 12px;
+  background: var(--bg); border: 1px solid var(--border);
+  font-size: 11px; color: var(--text-dim);
+}
+.topbar .status-pill .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-dim);
+}
+.topbar .status-pill.active .dot {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+.topbar .status-pill.blocked .dot {
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
+}
+.topbar .status-pill.paused .dot {
+  background: var(--warn);
+  box-shadow: 0 0 6px var(--warn);
+}
+.topbar .controls {
+  display: flex; gap: 8px; align-items: center;
+}
+.topbar button {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 4px 12px; border-radius: 4px;
+  cursor: pointer; font-size: 11px; transition: all 0.15s;
+}
+.topbar button:hover {
+  border-color: var(--accent); color: var(--accent2);
+}
+.topbar button.primary {
+  background: var(--accent); color: #000; border-color: var(--accent);
+  font-weight: 600;
+}
+.topbar button.primary:hover {
+  background: var(--accent2); border-color: var(--accent2);
+}
+
+/* ═══════════════════════════════════════════
+   MAIN LAYOUT: 3 columns
+   ═══════════════════════════════════════════ */
+.main-wrap {
+  display: flex; height: calc(100vh - 44px);
+}
+.col {
+  display: flex; flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+.col-left  { width: 340px; min-width: 280px; }
+.col-mid   { flex: 1; min-width: 420px; }
+.col-right { width: 380px; min-width: 320px; border-right: none; }
+
+.col-header {
+  height: 36px; background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 12px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+.col-body {
+  flex: 1; overflow-y: auto; padding: 12px;
+}
+
+/* ═══════════════════════════════════════════
+   SCENE SELECTOR (overlay when idle)
+   ═══════════════════════════════════════════ */
+.scene-selector {
+  position: absolute; inset: 44px 0 0 0;
+  background: rgba(11,12,16,0.92);
+  backdrop-filter: blur(6px);
+  z-index: 100;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-start;
+  padding-top: 60px; gap: 20px;
+}
+.scene-selector h2 {
+  font-size: 18px; color: var(--text-bright); margin-bottom: 8px;
+}
+.scene-selector .scene-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 280px);
+  gap: 16px;
+}
+.scene-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.scene-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 20px var(--accent-glow);
+  transform: translateY(-2px);
+}
+.scene-card .sc-icon {
+  font-size: 24px; margin-bottom: 10px;
+}
+.scene-card .sc-title {
+  font-size: 14px; font-weight: 600; color: var(--text-bright); margin-bottom: 6px;
+}
+.scene-card .sc-desc {
+  font-size: 12px; color: var(--text-dim); line-height: 1.5;
+}
+.scene-card .sc-tags {
+  display: flex; gap: 4px; margin-top: 10px; flex-wrap: wrap;
+}
+.tag {
+  font-size: 10px; padding: 2px 6px; border-radius: 3px;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.tag.tag-quick { border-color: var(--success); color: var(--success); }
+.tag.tag-std  { border-color: var(--accent); color: var(--accent); }
+.tag.tag-onboard { border-color: var(--purple); color: var(--purple); }
+
+/* ═══════════════════════════════════════════
+   CHAT / LEFT COLUMN
+   ═══════════════════════════════════════════ */
+.chat-list {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.chat-bubble {
+  max-width: 92%;
+  padding: 10px 12px; border-radius: 8px;
+  font-size: 12.5px; line-height: 1.6;
+  animation: fadeInUp 0.3s ease;
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.chat-bubble.user {
+  align-self: flex-end;
+  background: #1a2332;
+  border: 1px solid #2a3a52;
+  color: var(--text-bright);
+}
+.chat-bubble.system {
+  align-self: flex-start;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.chat-bubble .bb-header {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; color: var(--text-dim); margin-bottom: 4px;
+}
+.chat-bubble .bb-header .bb-avatar {
+  width: 16px; height: 16px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700;
+}
+.bb-avatar.kimi { background: var(--accent); color: #000; }
+.bb-avatar.gateway { background: var(--purple); color: #fff; }
+.bb-avatar.user { background: var(--info); color: #fff; }
+.bb-avatar.worker { background: var(--orange); color: #fff; }
+
+.chat-choices {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 10px;
+}
+.chat-choice-btn {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 8px 12px; border-radius: 6px;
+  cursor: pointer; text-align: left; font-size: 12px;
+  transition: all 0.15s;
+}
+.chat-choice-btn:hover {
+  border-color: var(--accent); color: var(--accent2);
+  background: rgba(69,162,158,0.08);
+}
+.chat-choice-btn.correct {
+  border-color: var(--success); color: var(--success);
+}
+.chat-choice-btn.danger {
+  border-color: var(--danger); color: var(--danger);
+}
+
+/* expand/collapse inside chat */
+.chat-expand {
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.chat-expand .ce-toggle {
+  font-size: 11px; color: var(--accent); cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+}
+.chat-expand .ce-body {
+  margin-top: 8px; padding: 8px;
+  background: rgba(0,0,0,0.25); border-radius: 4px;
+  font-size: 11.5px; color: var(--text-dim); line-height: 1.6;
+  display: none;
+}
+.chat-expand.open .ce-body { display: block; }
+
+/* ═══════════════════════════════════════════
+   MID COLUMN: Run State, DAG, Heartbeat
+   ═══════════════════════════════════════════ */
+.section-box {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.section-box .sb-title {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px;
+  background: rgba(0,0,0,0.2);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px; font-weight: 600; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.section-box .sb-body { padding: 10px; }
+
+/* State machine flow */
+.state-flow {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+}
+.state-node {
+  padding: 4px 8px; border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--border);
+  font-size: 10px; color: var(--text-dim); white-space: nowrap;
+  transition: all 0.3s;
+}
+.state-node.active {
+  background: rgba(69,162,158,0.15);
+  border-color: var(--accent);
+  color: var(--accent2);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.state-node.done {
+  border-color: var(--success); color: var(--success);
+  background: rgba(6,214,160,0.08);
+}
+.state-node.blocked-node {
+  border-color: var(--danger); color: var(--danger);
+  background: rgba(239,71,111,0.08);
+  animation: pulse-danger 1.5s infinite;
+}
+@keyframes pulse-danger {
+  0%,100% { box-shadow: 0 0 0 0 var(--danger-glow); }
+  50% { box-shadow: 0 0 8px 2px var(--danger-glow); }
+}
+.state-arrow {
+  font-size: 10px; color: var(--text-dim);
+}
+
+/* Heartbeat */
+.heartbeat-bar {
+  display: flex; align-items: center; gap: 10px;
+}
+.heartbeat-pulse {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--text-dim);
+  transition: all 0.3s;
+}
+.heartbeat-pulse.beating {
+  background: var(--success);
+  box-shadow: 0 0 10px var(--success);
+  animation: heartbeat 1s infinite;
+}
+.heartbeat-pulse.blocked-beat {
+  background: var(--danger);
+  box-shadow: 0 0 10px var(--danger);
+  animation: heartbeat 1.2s infinite;
+}
+@keyframes heartbeat {
+  0%,100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.6; }
+}
+.heartbeat-info {
+  font-size: 11px; color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+/* Task list in execution */
+.task-list {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.task-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--border);
+  font-size: 11px;
+}
+.task-item .ti-status {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.ti-status.done { background: var(--success); }
+.ti-status.running { background: var(--accent); animation: heartbeat 1s infinite; }
+.ti-status.queued { background: var(--text-dim); }
+.ti-status.blocked { background: var(--danger); }
+.ti-name { flex: 1; }
+.ti-worker {
+  font-size: 9px; padding: 1px 5px; border-radius: 3px;
+  background: rgba(0,0,0,0.3); color: var(--text-dim);
+}
+
+/* DAG visual */
+.dag-wrap { position: relative; min-height: 140px; }
+.dag-node {
+  position: absolute;
+  padding: 6px 10px; border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--border);
+  font-size: 10px; color: var(--text-dim);
+  white-space: nowrap;
+  transition: all 0.3s;
+}
+.dag-node.active {
+  border-color: var(--accent); color: var(--accent2);
+  background: rgba(69,162,158,0.12);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.dag-node.done {
+  border-color: var(--success); color: var(--success);
+  background: rgba(6,214,160,0.1);
+}
+.dag-edge {
+  position: absolute;
+  height: 1.5px; background: var(--border);
+  transform-origin: left center;
+  transition: all 0.3s;
+}
+.dag-edge.active { background: var(--accent); box-shadow: 0 0 4px var(--accent); }
+.dag-edge.done { background: var(--success); }
+
+/* ═══════════════════════════════════════════
+   RIGHT COLUMN: Audit, Ledger, Evaluation
+   ═══════════════════════════════════════════ */
+.audit-panel { display: flex; flex-direction: column; gap: 10px; }
+
+/* Conflict Ledger */
+.ledger-table {
+  width: 100%; border-collapse: collapse; font-size: 10.5px;
+}
+.ledger-table th, .ledger-table td {
+  padding: 5px 6px; text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.ledger-table th {
+  color: var(--text-dim); font-weight: 600;
+  background: rgba(0,0,0,0.15);
+}
+.sev-high { color: var(--danger); font-weight: 600; }
+.sev-med  { color: var(--warn); }
+.sev-low  { color: var(--text-dim); }
+.res-open { color: var(--warn); }
+.res-resolved { color: var(--success); }
+
+/* 8-dim evaluation */
+.eval-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+}
+.eval-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--border);
+  font-size: 10.5px;
+}
+.eval-item .ev-label { flex: 1; color: var(--text-dim); }
+.eval-item .ev-val {
+  padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 600;
+}
+.ev-pass { background: rgba(6,214,160,0.15); color: var(--success); }
+.ev-warn { background: rgba(255,209,102,0.15); color: var(--warn); }
+.ev-fail { background: rgba(239,71,111,0.15); color: var(--danger); }
+.ev-block { background: rgba(157,78,221,0.15); color: var(--purple); }
+
+/* override record */
+.override-card {
+  padding: 8px; border-radius: 4px;
+  background: rgba(239,71,111,0.06);
+  border: 1px solid rgba(239,71,111,0.2);
+  font-size: 11px;
+}
+
+/* Self-evolution queue */
+.se-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--border);
+  font-size: 10.5px; margin-bottom: 4px;
+}
+.se-status { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+.se-proposed { background: rgba(17,138,178,0.15); color: var(--info); }
+.se-kimi { background: rgba(157,78,221,0.15); color: var(--purple); }
+.se-human { background: rgba(255,209,102,0.15); color: var(--warn); }
+.se-applied { background: rgba(6,214,160,0.15); color: var(--success); }
+
+/* Channel badge */
+.channel-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 10px;
+  font-size: 10px; font-weight: 600;
+}
+.ch-quick { background: rgba(6,214,160,0.12); color: var(--success); border: 1px solid rgba(6,214,160,0.3); }
+.ch-light { background: rgba(255,209,102,0.12); color: var(--warn); border: 1px solid rgba(255,209,102,0.3); }
+.ch-std   { background: rgba(69,162,158,0.12); color: var(--accent); border: 1px solid rgba(69,162,158,0.3); }
+
+/* ═══════════════════════════════════════════
+   SCROLLBAR & UTILS
+   ═══════════════════════════════════════════ */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2d3a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3d4a; }
+
+.mono { font-family: var(--font-mono); }
+.small { font-size: 11px; }
+.tiny { font-size: 10px; }
+.muted { color: var(--text-dim); }
+.mt-8 { margin-top: 8px; }
+.mb-8 { margin-bottom: 8px; }
+.text-success { color: var(--success); }
+.text-danger { color: var(--danger); }
+.text-warn { color: var(--warn); }
+.text-accent { color: var(--accent2); }
+
+/* empty state */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 8px;
+  padding: 40px 20px; color: var(--text-dim); font-size: 12px;
+}
+
+/* progress bar */
+.progress-track {
+  height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden;
+}
+.progress-fill {
+  height: 100%; background: var(--accent); border-radius: 2px;
+  transition: width 0.5s ease;
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+/* toast / notification */
+.toast {
+  position: fixed; bottom: 16px; right: 16px;
+  padding: 10px 14px; border-radius: 6px;
+  background: var(--bg-panel); border: 1px solid var(--border);
+  color: var(--text); font-size: 12px; z-index: 200;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  animation: toastIn 0.3s ease;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════════════════════════════════════════
+   ONBOARDING FORM (scene A)
+   ═══════════════════════════════════════════ */
+.onboard-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 4px;
+  background: var(--bg); border: 1px solid var(--border);
+  margin-bottom: 6px; font-size: 11.5px;
+}
+.onboard-item .oi-field { flex: 1; }
+.onboard-item .oi-value { color: var(--text-bright); }
+.onboard-item .oi-confidence {
+  font-size: 9px; padding: 1px 5px; border-radius: 3px;
+}
+.oi-high { background: rgba(6,214,160,0.12); color: var(--success); }
+.oi-med  { background: rgba(255,209,102,0.12); color: var(--warn); }
+.oi-low  { background: rgba(239,71,111,0.12); color: var(--danger); }
+.oi-actions { display: flex; gap: 4px; }
+.oi-actions button {
+  font-size: 10px; padding: 2px 8px; border-radius: 3px;
+  border: 1px solid var(--border); background: var(--bg-panel);
+  color: var(--text); cursor: pointer;
+}
+.oi-actions button:hover { border-color: var(--accent); color: var(--accent2); }
+
+/* ═══════════════════════════════════════════
+   CORRECTION FLOW (scene D)
+   ═══════════════════════════════════════════ */
+.correction-box {
+  padding: 10px; border-radius: 6px;
+  background: rgba(255,209,102,0.06);
+  border: 1px solid rgba(255,209,102,0.2);
+  margin-top: 8px;
+}
+.correction-box.round2 {
+  background: rgba(239,71,111,0.06);
+  border-color: rgba(239,71,111,0.25);
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════
+     TOP BAR
+     ═══════════════════════════════════════════ -->
+<div class="topbar">
+  <div class="brand">
+    <div class="orb"></div>
+    <span>Hermes Dev Orchestra</span>
+    <span class="mono tiny muted">| POC v1.0</span>
+  </div>
+  <div class="status-pill" id="globalStatusPill">
+    <div class="dot"></div>
+    <span id="globalStatusText">待机中 — 请选择场景</span>
+  </div>
+  <div class="controls">
+    <button onclick="app.reset()">🔄 重置</button>
+    <button onclick="app.toggleAutoPlay()" id="btnAuto">▶ 自动播放</button>
+    <button class="primary" onclick="app.nextStep()" id="btnNext">下一步 ➜</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     SCENE SELECTOR OVERLAY
+     ═══════════════════════════════════════════ -->
+<div class="scene-selector" id="sceneSelector">
+  <h2>🎭 选择演示场景</h2>
+  <div class="scene-grid">
+    <div class="scene-card" onclick="app.startScene('A')">
+      <div class="sc-icon">🚀</div>
+      <div class="sc-title">场景 A：新项目首次接入</div>
+      <div class="sc-desc">全新 repo 提第一个需求。系统自动探测项目信息，生成项目画像，开发者确认后完成接入。</div>
+      <div class="sc-tags">
+        <span class="tag tag-onboard">0阶接入</span>
+        <span class="tag">项目探测</span>
+        <span class="tag">需求补全</span>
+      </div>
+    </div>
+    <div class="scene-card" onclick="app.startScene('B')">
+      <div class="sc-icon">⚡</div>
+      <div class="sc-title">场景 B：快速通道（成功）</div>
+      <div class="sc-desc">改一句文案。规则引擎初筛 → 极简辩论确认 → 自动执行 → 自动合并。全程无需人工确认。</div>
+      <div class="sc-tags">
+        <span class="tag tag-quick">快速通道</span>
+        <span class="tag">自动合并</span>
+        <span class="tag">执行心跳</span>
+      </div>
+    </div>
+    <div class="scene-card" onclick="app.startScene('C')">
+      <div class="sc-icon">⚠️</div>
+      <div class="sc-title">场景 C：快速通道（失败降级）</div>
+      <div class="sc-desc">文案修改走快速通道，但执行期间目标分支有新提交，自动合并失败，进入 blocked 状态等待用户决策。</div>
+      <div class="sc-tags">
+        <span class="tag tag-quick">快速通道</span>
+        <span class="tag tag-std">降级处理</span>
+        <span class="tag">blocked</span>
+      </div>
+    </div>
+    <div class="scene-card" onclick="app.startScene('D')">
+      <div class="sc-icon">🏗️</div>
+      <div class="sc-title">场景 D：标准通道完整六阶</div>
+      <div class="sc-desc">给支付网关加限流。覆盖 0阶→六阶完整闭环：需求补全、方向/方案辩论、执行、改进、全局评估、经验沉淀。含用户错误纠正示例。</div>
+      <div class="sc-tags">
+        <span class="tag tag-std">标准通道</span>
+        <span class="tag">六阶闭环</span>
+        <span class="tag">用户纠正</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     MAIN 3-COLUMN LAYOUT
+     ═══════════════════════════════════════════ -->
+<div class="main-wrap" id="mainWrap" style="display:none;">
+
+  <!-- ══════════════════════════════ LEFT: User Chat ══════════════════════════════ -->
+  <div class="col col-left">
+    <div class="col-header">
+      <span>💬 用户交互</span>
+      <span class="mono tiny muted" id="chatRunId"></span>
+    </div>
+    <div class="col-body" id="chatBody">
+      <div class="chat-list" id="chatList"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════ MID: System Runtime ══════════════════════════════ -->
+  <div class="col col-mid">
+    <div class="col-header">
+      <span>⚙️ 系统运行态</span>
+      <span class="channel-badge ch-std" id="channelBadge" style="display:none;">标准通道</span>
+    </div>
+    <div class="col-body" id="runtimeBody">
+
+      <!-- State Machine -->
+      <div class="section-box">
+        <div class="sb-title">
+          <span>Run 状态机</span>
+          <span class="mono tiny muted" id="runStateLabel">—</span>
+        </div>
+        <div class="sb-body">
+          <div class="state-flow" id="stateFlow"></div>
+        </div>
+      </div>
+
+      <!-- Channel / Stage Info -->
+      <div class="section-box">
+        <div class="sb-title">
+          <span>当前阶段</span>
+          <span class="mono tiny muted" id="stageTimer">00:00</span>
+        </div>
+        <div class="sb-body">
+          <div id="stageInfo" class="small muted">未开始</div>
+          <div class="progress-track mt-8" id="stageProgressTrack">
+            <div class="progress-fill" id="stageProgressFill" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Heartbeat -->
+      <div class="section-box">
+        <div class="sb-title">
+          <span>执行心跳 <span class="tiny muted">SSE / orchestra.heartbeat</span></span>
+        </div>
+        <div class="sb-body">
+          <div class="heartbeat-bar">
+            <div class="heartbeat-pulse" id="hbPulse"></div>
+            <div class="heartbeat-info" id="hbInfo">未连接</div>
+          </div>
+          <div class="task-list mt-8" id="taskList"></div>
+        </div>
+      </div>
+
+      <!-- DAG -->
+      <div class="section-box" id="dagBox" style="display:none;">
+        <div class="sb-title">
+          <span>任务 DAG</span>
+          <span class="mono tiny muted" id="dagMeta"></span>
+        </div>
+        <div class="sb-body">
+          <div class="dag-wrap" id="dagWrap"></div>
+        </div>
+      </div>
+
+      <!-- Debate teams -->
+      <div class="section-box" id="debateBox" style="display:none;">
+        <div class="sb-title">
+          <span>辩论团队</span>
+          <span class="mono tiny muted" id="debateMode"></span>
+        </div>
+        <div class="sb-body" id="debateBody"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════ RIGHT: Audit & Evidence ══════════════════════════════ -->
+  <div class="col col-right">
+    <div class="col-header">
+      <span>📋 审计与证据</span>
+      <span class="mono tiny muted" id="auditRunId"></span>
+    </div>
+    <div class="col-body" id="auditBody">
+
+      <!-- Conflict Ledger -->
+      <div class="section-box">
+        <div class="sb-title"><span>Conflict Ledger</span></div>
+        <div class="sb-body" style="padding:6px;">
+          <div id="conflictLedgerEmpty" class="empty-state" style="padding:16px;">暂无冲突记录</div>
+          <table class="ledger-table" id="conflictLedger" style="display:none;">
+            <thead><tr><th>ID</th><th>类型</th><th>等级</th><th>状态</th></tr></thead>
+            <tbody id="conflictLedgerBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 8-Dim Evaluation -->
+      <div class="section-box" id="evalBox" style="display:none;">
+        <div class="sb-title"><span>五阶 8维评估</span></div>
+        <div class="sb-body">
+          <div class="eval-grid" id="evalGrid"></div>
+          <div class="mt-8 small" id="evalVerdict"></div>
+        </div>
+      </div>
+
+      <!-- Override Records -->
+      <div class="section-box" id="overrideBox" style="display:none;">
+        <div class="sb-title"><span>Override 记录</span></div>
+        <div class="sb-body" id="overrideBody"></div>
+      </div>
+
+      <!-- Self-Evolution Queue -->
+      <div class="section-box" id="evolutionBox" style="display:none;">
+        <div class="sb-title"><span>Self-Evolution Queue</span></div>
+        <div class="sb-body" id="evolutionBody"></div>
+      </div>
+
+      <!-- Run Log -->
+      <div class="section-box">
+        <div class="sb-title"><span>Event Log</span></div>
+        <div class="sb-body">
+          <div id="eventLog" class="mono tiny" style="color:var(--text-dim); line-height:1.8;"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════
+     JAVASCRIPT
+     ═══════════════════════════════════════════ -->
+<script>
+// ═══════════════════════════════════════════
+// UTILITY
+// ═══════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const now = () => new Date().toISOString().slice(11,19);
+const randId = (prefix) => prefix + '_' + Math.random().toString(36).slice(2,10);
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+const STAGES = [
+  'created','intake_complete','direction_debate','solution_debate',
+  'implementation','improvement','global_evaluation','continuous_improvement','closed'
+];
+const STATE_FLOW = [
+  'created','→','intake_complete','→','direction_debate','→','solution_debate',
+  '→','implementation','→','improvement','→','global_evaluation','→',
+  'continuous_improvement','→','closed'
+];
+
+const app = {
+  scene: null,
+  step: 0,
+  runId: null,
+  autoPlay: false,
+  autoTimer: null,
+  state: 'created',
+  channel: 'standard',
+  conflicts: [],
+  overrides: [],
+  evaluations: {},
+  evolutionQueue: [],
+  tasks: [],
+  events: [],
+  dag: null,
+  debateTeams: [],
+  debateMode: '',
+  stageStartTime: 0,
+  timerInterval: null,
+
+  // ─── Start a scene ───
+  startScene(sceneId) {
+    this.scene = sceneId;
+    this.step = 0;
+    this.runId = randId('run');
+    this.state = 'created';
+    this.conflicts = [];
+    this.overrides = [];
+    this.evolutionQueue = [];
+    this.tasks = [];
+    this.events = [];
+    this.dag = null;
+    this.debateTeams = [];
+    this.debateMode = '';
+    this.channel = sceneId === 'B' || sceneId === 'C' ? 'quick' : (sceneId === 'A' ? 'onboard' : 'standard');
+    this.autoPlay = false;
+    this.stageStartTime = Date.now();
+
+    $('sceneSelector').style.display = 'none';
+    $('mainWrap').style.display = 'flex';
+    $('channelBadge').style.display = 'inline-flex';
+    $('channelBadge').className = 'channel-badge ch-' + (this.channel==='quick'?'quick':(this.channel==='onboard'?'std':'std'));
+    $('channelBadge').textContent = this.channel==='quick'?'快速通道':(this.channel==='onboard'?'项目接入':'标准通道');
+    $('chatRunId').textContent = this.runId;
+    $('auditRunId').textContent = this.runId;
+    $('globalStatusPill').className = 'status-pill active';
+    $('globalStatusText').textContent = '运行中 — 场景 ' + sceneId;
+    $('btnAuto').textContent = '▶ 自动播放';
+    $('btnNext').disabled = false;
+
+    this.clearUI();
+    this.startTimer();
+    this.logEvent('Run created', { scene: sceneId, run_id: this.runId, channel: this.channel });
+    this.renderStateFlow();
+
+    // Load scene-specific initial state
+    const initFn = SCENE_INIT[sceneId];
+    if (initFn) initFn.call(this);
+  },
+
+  // ─── Reset ───
+  reset() {
+    this.stopAutoPlay();
+    this.stopTimer();
+    $('sceneSelector').style.display = 'flex';
+    $('mainWrap').style.display = 'none';
+    $('globalStatusPill').className = 'status-pill';
+    $('globalStatusText').textContent = '待机中 — 请选择场景';
+    this.scene = null;
+    this.step = 0;
+  },
+
+  // ─── Timer ───
+  startTimer() {
+    this.stopTimer();
+    this.stageStartTime = Date.now();
+    this.timerInterval = setInterval(() => {
+      const sec = Math.floor((Date.now() - this.stageStartTime) / 1000);
+      const m = String(Math.floor(sec/60)).padStart(2,'0');
+      const s = String(sec%60).padStart(2,'0');
+      $('stageTimer').textContent = `${m}:${s}`;
+    }, 1000);
+  },
+  stopTimer() {
+    if (this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
+  },
+
+  // ─── Auto Play ───
+  toggleAutoPlay() {
+    this.autoPlay = !this.autoPlay;
+    $('btnAuto').textContent = this.autoPlay ? '⏸ 暂停' : '▶ 自动播放';
+    if (this.autoPlay) this.runAutoStep();
+  },
+  runAutoStep() {
+    if (!this.autoPlay || !this.scene) return;
+    const handler = SCENE_HANDLERS[this.scene];
+    if (!handler || this.step >= handler.length) {
+      this.stopAutoPlay(); return;
+    }
+    this.nextStep();
+    setTimeout(() => this.runAutoStep(), 1800);
+  },
+  stopAutoPlay() {
+    this.autoPlay = false;
+    $('btnAuto').textContent = '▶ 自动播放';
+  },
+
+  // ─── Next step ───
+  nextStep() {
+    if (!this.scene) return;
+    const handler = SCENE_HANDLERS[this.scene];
+    if (!handler || this.step >= handler.length) {
+      this.showToast('场景已结束');
+      this.stopAutoPlay();
+      $('btnNext').disabled = true;
+      return;
+    }
+    const fn = handler[this.step];
+    this.step++;
+    fn.call(this);
+    this.updateProgress();
+  },
+
+  updateProgress() {
+    const handler = SCENE_HANDLERS[this.scene];
+    if (!handler) return;
+    const pct = Math.round((this.step / handler.length) * 100);
+    $('stageProgressFill').style.width = pct + '%';
+  },
+
+  // ─── UI helpers ───
+  clearUI() {
+    $('chatList').innerHTML = '';
+    $('stateFlow').innerHTML = '';
+    $('stageInfo').innerHTML = '未开始';
+    $('stageProgressFill').style.width = '0%';
+    $('hbPulse').className = 'heartbeat-pulse';
+    $('hbInfo').textContent = '未连接';
+    $('taskList').innerHTML = '';
+    $('dagBox').style.display = 'none';
+    $('dagWrap').innerHTML = '';
+    $('debateBox').style.display = 'none';
+    $('debateBody').innerHTML = '';
+    $('evalBox').style.display = 'none';
+    $('overrideBox').style.display = 'none';
+    $('evolutionBox').style.display = 'none';
+    $('conflictLedger').style.display = 'none';
+    $('conflictLedgerEmpty').style.display = 'flex';
+    $('conflictLedgerBody').innerHTML = '';
+    $('eventLog').innerHTML = '';
+    $('evalGrid').innerHTML = '';
+    $('evalVerdict').innerHTML = '';
+    $('overrideBody').innerHTML = '';
+    $('evolutionBody').innerHTML = '';
+  },
+
+  setState(s) {
+    this.state = s;
+    this.renderStateFlow();
+    this.logEvent('State transition', { to: s });
+  },
+
+  renderStateFlow() {
+    const el = $('stateFlow');
+    el.innerHTML = STATE_FLOW.map(node => {
+      if (node === '→') return `<span class="state-arrow">→</span>`;
+      const isActive = node === this.state;
+      const isDone = STAGES.indexOf(node) < STAGES.indexOf(this.state);
+      let cls = 'state-node';
+      if (isActive) cls += ' active';
+      else if (isDone) cls += ' done';
+      if (isActive && (this.state==='blocked' || this.state==='rollback_requested')) cls += ' blocked-node';
+      return `<span class="${cls}">${node}</span>`;
+    }).join('');
+  },
+
+  addChat(who, html, choices) {
+    const list = $('chatList');
+    const div = document.createElement('div');
+    div.className = 'chat-bubble ' + who;
+    const avatarMap = { user:'U', kimi:'K', gateway:'G', worker:'W' };
+    const avatarCls = { user:'user', kimi:'kimi', gateway:'gateway', worker:'worker' };
+    const nameMap = { user:'用户', kimi:'Kimi', gateway:'Gateway', worker:'Worker' };
+    div.innerHTML = `
+      <div class="bb-header">
+        <span class="bb-avatar ${avatarCls[who]||'kimi'}">${avatarMap[who]||'?'}</span>
+        <span>${nameMap[who]||who}</span>
+        <span class="muted">${now()}</span>
+      </div>
+      <div>${html}</div>
+    `;
+    if (choices) {
+      const cdiv = document.createElement('div');
+      cdiv.className = 'chat-choices';
+      choices.forEach(c => {
+        const btn = document.createElement('button');
+        btn.className = 'chat-choice-btn' + (c.cls ? ' ' + c.cls : '');
+        btn.textContent = c.label;
+        btn.onclick = () => {
+          cdiv.querySelectorAll('button').forEach(b => b.disabled = true);
+          c.action();
+        };
+        cdiv.appendChild(btn);
+      });
+      div.appendChild(cdiv);
+    }
+    list.appendChild(div);
+    $('chatBody').scrollTop = $('chatBody').scrollHeight;
+  },
+
+  addChatExpandable(title, html) {
+    const list = $('chatList');
+    const div = document.createElement('div');
+    div.className = 'chat-bubble system';
+    const uid = 'exp_' + Math.random().toString(36).slice(2,8);
+    div.innerHTML = `
+      <div class="bb-header">
+        <span class="bb-avatar kimi">K</span>
+        <span>Kimi</span>
+        <span class="muted">${now()}</span>
+      </div>
+      <div class="chat-expand" id="${uid}">
+        <div class="ce-toggle" onclick="document.getElementById('${uid}').classList.toggle('open')">
+          <span>▶</span> ${title}
+        </div>
+        <div class="ce-body">${html}</div>
+      </div>
+    `;
+    list.appendChild(div);
+    $('chatBody').scrollTop = $('chatBody').scrollHeight;
+  },
+
+  setHeartbeat(active, info, blocked=false) {
+    const pulse = $('hbPulse');
+    pulse.className = 'heartbeat-pulse' + (active ? (blocked?' blocked-beat':' beating') : '');
+    $('hbInfo').textContent = info || (active ? 'connected' : 'disconnected');
+  },
+
+  setTasks(tasks) {
+    this.tasks = tasks;
+    const el = $('taskList');
+    if (!tasks.length) { el.innerHTML = '<div class="muted tiny">暂无任务</div>'; return; }
+    el.innerHTML = tasks.map(t => `
+      <div class="task-item">
+        <div class="ti-status ${t.status}"></div>
+        <div class="ti-name">${t.name}</div>
+        <div class="ti-worker">${t.worker||''}</div>
+      </div>
+    `).join('');
+  },
+
+  showDAG(nodes, edges) {
+    $('dagBox').style.display = 'block';
+    const wrap = $('dagWrap');
+    wrap.innerHTML = '';
+    // Simple grid layout
+    const cols = 4, gapX = 100, gapY = 50, startX = 20, startY = 20;
+    const pos = {};
+    nodes.forEach((n,i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = startX + col * gapX;
+      const y = startY + row * gapY;
+      pos[n.id] = {x,y};
+      const el = document.createElement('div');
+      el.className = 'dag-node' + (n.active?' active':'') + (n.done?' done':'');
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+      el.textContent = n.label;
+      wrap.appendChild(el);
+    });
+    edges.forEach(e => {
+      const p1 = pos[e.from], p2 = pos[e.to];
+      if (!p1 || !p2) return;
+      const dx = p2.x - p1.x, dy = p2.y - p1.y;
+      const len = Math.sqrt(dx*dx + dy*dy);
+      const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+      const edge = document.createElement('div');
+      edge.className = 'dag-edge' + (e.active?' active':'') + (e.done?' done':'');
+      edge.style.left = (p1.x + 30) + 'px';
+      edge.style.top = (p1.y + 12) + 'px';
+      edge.style.width = (len - 30) + 'px';
+      edge.style.transform = `rotate(${angle}deg)`;
+      wrap.appendChild(edge);
+    });
+    $('dagMeta').textContent = `${nodes.length} nodes, ${edges.length} edges`;
+  },
+
+  showDebate(teams, mode) {
+    $('debateBox').style.display = 'block';
+    $('debateMode').textContent = mode || '';
+    const el = $('debateBody');
+    el.innerHTML = teams.map(t => `
+      <div class="task-item" style="margin-bottom:4px;">
+        <div class="ti-status ${t.verdict==='pass'?'done':(t.verdict==='warn'?'blocked':'running')}"></div>
+        <div class="ti-name">${t.name}</div>
+        <div class="ti-worker">${t.verdict||'评审中'}</div>
+      </div>
+    `).join('');
+  },
+
+  addConflict(c) {
+    this.conflicts.push(c);
+    $('conflictLedger').style.display = 'table';
+    $('conflictLedgerEmpty').style.display = 'none';
+    const tbody = $('conflictLedgerBody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono tiny">${c.id.slice(0,12)}</td>
+      <td>${c.type}</td>
+      <td class="sev-${c.severity}">${c.severity}</td>
+      <td class="res-${c.resolution==='open'?'open':'resolved'}">${c.resolution}</td>
+    `;
+    tbody.appendChild(tr);
+  },
+
+  showEvaluation(evalObj, verdict) {
+    $('evalBox').style.display = 'block';
+    const dims = [
+      {k:'business',l:'业务目标',w:'一票否决'},
+      {k:'correctness',l:'补全正确性',w:'一票否决'},
+      {k:'security',l:'安全合规',w:'一票否决'},
+      {k:'quality',l:'质量',w:'1.0'},
+      {k:'performance',l:'性能',w:'1.0'},
+      {k:'maintainability',l:'可维护性',w:'0.8'},
+      {k:'docs',l:'文档',w:'0.8'},
+      {k:'observability',l:'可观测性',w:'0.8'},
+    ];
+    $('evalGrid').innerHTML = dims.map(d => {
+      const v = evalObj[d.k] || 'pass';
+      return `
+        <div class="eval-item">
+          <span class="ev-label">${d.l}</span>
+          <span class="ev-val ev-${v}">${v.toUpperCase()}</span>
+        </div>
+      `;
+    }).join('');
+    const vMap = {
+      pass: {cls:'text-success', text:'✅ 通过 (pass)'},
+      pass_with_warnings: {cls:'text-warn', text:'⚠️ 通过但有警告 (pass_with_warnings)'},
+      fail: {cls:'text-danger', text:'❌ 失败 (fail)'},
+      block: {cls:'text-accent', text:'⛔ 阻塞 (block)'}
+    };
+    const v = vMap[verdict] || vMap.pass;
+    $('evalVerdict').innerHTML = `<span class="${v.cls}" style="font-weight:600;">${v.text}</span>`;
+  },
+
+  addOverride(o) {
+    this.overrides.push(o);
+    $('overrideBox').style.display = 'block';
+    const div = document.createElement('div');
+    div.className = 'override-card';
+    div.innerHTML = `
+      <div class="mono tiny muted">${o.id}</div>
+      <div class="mt-8"><strong>类别:</strong> ${o.category} | <strong>风险:</strong> ${o.risk_level}</div>
+      <div class="mt-8 tiny">${o.summary}</div>
+      <div class="mt-8 tiny muted">状态: ${o.status}</div>
+    `;
+    $('overrideBody').appendChild(div);
+  },
+
+  addEvolutionItem(item) {
+    this.evolutionQueue.push(item);
+    $('evolutionBox').style.display = 'block';
+    const div = document.createElement('div');
+    div.className = 'se-item';
+    div.innerHTML = `
+      <span class="se-status se-${item.status}">${item.status}</span>
+      <span class="tiny">${item.title}</span>
+    `;
+    $('evolutionBody').appendChild(div);
+  },
+
+  logEvent(msg, meta) {
+    const line = `[${now()}] ${msg}` + (meta ? ' ' + JSON.stringify(meta) : '');
+    this.events.push(line);
+    const el = $('eventLog');
+    const p = document.createElement('div');
+    p.textContent = line;
+    el.appendChild(p);
+    $('auditBody').scrollTop = $('auditBody').scrollHeight;
+  },
+
+  showToast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2500);
+  },
+
+  setStageInfo(html) {
+    $('stageInfo').innerHTML = html;
+  }
+};
+
+// ═══════════════════════════════════════════
+// SCENE A: New Project Onboarding
+// ═══════════════════════════════════════════
+const SCENE_INIT = {
+  A() {
+    this.setState('created');
+    this.addChat('user', '给支付网关加限流。');
+    this.setStageInfo('检测到新项目首次使用，启动项目探测……');
+    this.setHeartbeat(true, '探测中', false);
+  },
+  B() {
+    this.setState('created');
+    this.addChat('user', '登录页"欢迎使用"改成"欢迎回来"。');
+    this.setStageInfo('规则引擎初筛中……');
+    this.setHeartbeat(true, '初筛中');
+  },
+  C() {
+    this.setState('created');
+    this.addChat('user', '登录页"欢迎使用"改成"欢迎回来"。');
+    this.setStageInfo('规则引擎初筛中……');
+    this.setHeartbeat(true, '初筛中');
+  },
+  D() {
+    this.setState('created');
+    // Scene D will trigger user error correction first
+    this.addChat('user', '给支付网关加限流，直接上线，不用测了。');
+    this.setStageInfo('需求接收中，启动错误纠正机制……');
+    this.setHeartbeat(true, 'intake');
+  }
+};
+
+// ═══════════════════════════════════════════
+// SCENE A HANDLER STEPS
+// ═══════════════════════════════════════════
+const SCENE_A = [
+  // Step 1
+  function() {
+    this.setState('created');
+    this.addChat('kimi', '检测到这是新项目首次使用。正在自动探测项目信息……<br><br><span class="muted">⏳ 读取文件树、依赖文件、CI/CD 配置、测试目录结构……</span>');
+    this.setHeartbeat(true, '项目探测中');
+    this.setTasks([
+      {name:'扫描文件树',status:'done',worker:'Kimi'},
+      {name:'解析依赖文件',status:'running',worker:'Kimi'},
+      {name:'识别 CI/CD 配置',status:'queued',worker:'Kimi'},
+      {name:'探测风险标志',status:'queued',worker:'Kimi'},
+    ]);
+    this.setStageInfo('0阶：项目探测中');
+  },
+  // Step 2
+  function() {
+    this.addChat('kimi', `<b>📋 项目探测报告（草稿）</b><br>
+    <div class="onboard-item"><div class="oi-field">编程语言</div><div class="oi-value">Python 3.12</div><span class="oi-confidence oi-high">高</span></div>
+    <div class="onboard-item"><div class="oi-field">Web 框架</div><div class="oi-value">FastAPI</div><span class="oi-confidence oi-high">高</span></div>
+    <div class="onboard-item"><div class="oi-field">测试框架</div><div class="oi-value">pytest</div><span class="oi-confidence oi-med">中</span></div>
+    <div class="onboard-item"><div class="oi-field">数据库</div><div class="oi-value">PostgreSQL（推测）</div><span class="oi-confidence oi-med">中</span></div>
+    <div class="onboard-item"><div class="oi-field">部署目标</div><div class="oi-value">Kubernetes</div><span class="oi-confidence oi-med">中</span></div>
+    <div class="onboard-item"><div class="oi-field">风险标志</div><div class="oi-value">⚠️ 含支付流 (stripe)</div><span class="oi-confidence oi-high">高</span></div>
+    <br><span class="muted">以上探测结果是否正确？请修正错误项（约 3-5 分钟）。</span>`, [
+      { label:'✅ 全部正确', action:()=>app.nextStep() },
+      { label:'✏️ 修正数据库为 MySQL', action:()=>{ app.showToast('已修正：数据库 → MySQL'); app.nextStep(); } }
+    ]);
+    this.setTasks([
+      {name:'扫描文件树',status:'done',worker:'Kimi'},
+      {name:'解析依赖文件',status:'done',worker:'Kimi'},
+      {name:'识别 CI/CD 配置',status:'done',worker:'Kimi'},
+      {name:'探测风险标志',status:'done',worker:'Kimi'},
+    ]);
+    this.setHeartbeat(false, '等待用户确认');
+  },
+  // Step 3
+  function() {
+    this.addChat('user', '✅ 全部正确');
+    this.addChat('kimi', '✅ 项目画像已生成，初始 AGENTS.md 和 SOUL.md 已创建。现在进入需求补全阶段。');
+    this.setState('intake_complete');
+    this.setStageInfo('0阶：需求补全中');
+    this.setHeartbeat(true, '补全中');
+    this.logEvent('Project profile generated', { files: ['.hermes/project-profile.yaml','AGENTS.md','SOUL.md'] });
+  },
+  // Step 4
+  function() {
+    this.addChat('kimi', `<b>📦 需求补全包（摘要模式）</b><br><br>
+    <b>原始意图：</b>给支付网关加限流<br><br>
+    <b>系统补全：</b><br>
+    • 推测修改文件：<code>src/gateway/rate_limiter.py</code>（置信度：高）<br>
+    • 上游依赖：Stripe SDK、Redis（缓存令牌桶状态）<br>
+    • 下游影响：支付回调接口、订单状态机、监控告警<br>
+    • 隐性约束：PCI-DSS 合规、幂等性保持、超时降级<br>
+    • 验收矩阵：6 条标准已自动生成<br><br>
+    <b>风险边界：</b>max_acceptable_risk = L3（支付流变更）<br><br>
+    <span class="text-success">✓ 无高风险冲突</span><br><br>
+    <span class="muted">推测是否有误？</span>`, [
+      { label:'✅ 正确，继续', action:()=>app.nextStep() },
+      { label:'📋 查看详细模式', action:()=>{ app.addChatExpandable('完整补全包', '依赖图：...<br>验收矩阵：...<br>执行 prompt envelope：...'); } }
+    ]);
+    this.setHeartbeat(false, '等待用户确认');
+  },
+  // Step 5
+  function() {
+    this.addChat('user', '✅ 正确，继续');
+    this.setState('direction_debate');
+    this.setStageInfo('一阶：方向辩论中 — 评估业务可行性与方向风险');
+    this.setHeartbeat(true, '方向辩论中');
+    this.debateMode = 'dynamic_assembly + adversarial_debate';
+    this.debateTeams = [
+      {name:'business', verdict:'pass'},
+      {name:'security', verdict:'running'},
+      {name:'scalability_arch', verdict:'running'},
+      {name:'devops_sre', verdict:'queued'},
+    ];
+    this.showDebate(this.debateTeams, this.debateMode);
+    this.logEvent('Direction debate started', { mode: this.debateMode, teams: this.debateTeams.map(t=>t.name) });
+  },
+  // Step 6
+  function() {
+    this.debateTeams = [
+      {name:'business', verdict:'pass'},
+      {name:'security', verdict:'pass'},
+      {name:'scalability_arch', verdict:'pass'},
+      {name:'devops_sre', verdict:'pass'},
+    ];
+    this.showDebate(this.debateTeams, this.debateMode);
+    this.addChat('kimi', `<b>📊 《最佳选择报告》</b><br><br>
+    <span class="text-success">✅ 方向可行，建议继续</span><br><br>
+    • 业务价值：支付限流可防止突发流量导致网关雪崩，价值明确<br>
+    • 机会成本：约 2 人日，不影响当前 sprint 关键路径<br>
+    • 最大风险：Redis 单点故障时限流失效（建议降级到本地 LRU）<br>
+    • 调整建议：非目标中应明确"不改数据库 schema"<br><br>
+    <span class="muted">高置信度、低风险、无冲突 → 自动进入二阶</span>`);
+    this.setState('solution_debate');
+    this.setStageInfo('二阶：方案辩论中 — 锁定技术实现路径');
+    this.logEvent('Direction debate complete', { verdict: 'proceed' });
+  },
+  // Step 7
+  function() {
+    this.debateMode = 'adversarial_debate + risk_priority_matrix';
+    this.debateTeams = [
+      {name:'security', verdict:'running'},
+      {name:'scalability_arch', verdict:'running'},
+      {name:'api_design', verdict:'running'},
+      {name:'observability', verdict:'queued'},
+      {name:'devops_sre', verdict:'queued'},
+    ];
+    this.showDebate(this.debateTeams, this.debateMode);
+    this.setHeartbeat(true, '方案辩论中');
+    this.logEvent('Solution debate started', { mode: this.debateMode });
+  },
+  // Step 8
+  function() {
+    this.debateTeams = [
+      {name:'security', verdict:'pass'},
+      {name:'scalability_arch', verdict:'pass'},
+      {name:'api_design', verdict:'pass'},
+      {name:'observability', verdict:'pass'},
+      {name:'devops_sre', verdict:'pass'},
+    ];
+    this.showDebate(this.debateTeams, this.debateMode);
+    this.addChat('kimi', `<b>📐 《具体实现报告》</b><br><br>
+    <b>推荐方案：</b>令牌桶限流（Redis + 本地降级）<br>
+    <b>备选方案：</b>固定窗口计数（更简单，但突发处理差）<br><br>
+    <b>任务 DAG 已生成</b>（见系统运行区）<br>
+    <b>需上浮风险：</b>Redis 超时 0.5s 在极端网络抖动时可能误判<br><br>
+    <span class="muted">低风险、可逆、证据完整 → 自动进入三阶</span>`);
+    this.setState('implementation');
+    this.setStageInfo('三阶：具体执行中 — 编码、测试、审查');
+    this.showDAG([
+      {id:'t1', label:'rate_limiter.py', active:false, done:true},
+      {id:'t2', label:'tests/test_rate_limit.py', active:true, done:false},
+      {id:'t3', label:'review #1 (Claude)', active:false, done:false},
+      {id:'t4', label:'docs update', active:false, done:false},
+    ], [
+      {from:'t1',to:'t2',active:true},
+      {from:'t2',to:'t3'},
+      {from:'t1',to:'t4'},
+    ]);
+    this.setTasks([
+      {name:'rate_limiter.py 编码', status:'done', worker:'Codex'},
+      {name:'test_rate_limit.py', status:'running', worker:'Codex'},
+      {name:'代码审查', status:'queued', worker:'Claude'},
+      {name:'文档更新', status:'queued', worker:'Codex'},
+    ]);
+    this.setHeartbeat(true, '执行中');
+    this.logEvent('Solution debate complete', { verdict: 'proceed', dag_generated: true });
+  },
+  // Step 9
+  function() {
+    this.setTasks([
+      {name:'rate_limiter.py 编码', status:'done', worker:'Codex'},
+      {name:'test_rate_limit.py', status:'done', worker:'Codex'},
+      {name:'代码审查', status:'running', worker:'Claude'},
+      {name:'文档更新', status:'queued', worker:'Codex'},
+    ]);
+    this.showDAG([
+      {id:'t1', label:'rate_limiter.py', done:true},
+      {id:'t2', label:'tests/test_rate_limit.py', done:true},
+      {id:'t3', label:'review #1 (Claude)', active:true},
+      {id:'t4', label:'docs update', active:false},
+    ], [
+      {from:'t1',to:'t2',done:true},
+      {from:'t2',to:'t3',active:true},
+      {from:'t1',to:'t4'},
+    ]);
+    this.addChat('kimi', `[三阶执行中] 已完成 2/4 项任务<br>
+    ✅ rate_limiter.py 编码完成<br>
+    ✅ test_rate_limit.py 完成（覆盖率 87%）<br>
+    🔄 代码审查中（预计 20 秒）<br>
+    ⏳ 文档更新（排队中）`);
+    this.logEvent('Heartbeat', { completed:2, total:4, in_progress:['review_payment.py'] });
+  },
+  // Step 10
+  function() {
+    this.setTasks([
+      {name:'rate_limiter.py 编码', status:'done', worker:'Codex'},
+      {name:'test_rate_limit.py', status:'done', worker:'Codex'},
+      {name:'代码审查', status:'done', worker:'Claude'},
+      {name:'文档更新', status:'running', worker:'Codex'},
+    ]);
+    this.showDAG([
+      {id:'t1', label:'rate_limiter.py', done:true},
+      {id:'t2', label:'tests/test_rate_limit.py', done:true},
+      {id:'t3', label:'review #1 (Claude)', done:true},
+      {id:'t4', label:'docs update', active:true},
+    ], [
+      {from:'t1',to:'t2',done:true},
+      {from:'t2',to:'t3',done:true},
+      {from:'t1',to:'t4',active:true},
+    ]);
+    this.addChat('worker', `<b>📋 《任务反馈文档》</b><br><br>
+    审查结论：发现 2 个待改进项<br>
+    • <b>A类</b>：日志格式不统一（2处）→ 可自动修复<br>
+    • <b>C类</b>：建议增加 Redis 超时降级监控 → 超出当前 Run 范围`);
+    this.setState('improvement');
+    this.setStageInfo('四阶：改进实现中 — 分类修复评审问题');
+    this.logEvent('Implementation complete', { issues_found: 2, a:1, c:1 });
+  },
+  // Step 11
+  function() {
+    this.addChat('kimi', `进入四阶改进：<br>
+    • A类（日志格式）→ 已调度 Codex 自动修复 ✅<br>
+    • C类（监控告警）→ Gateway 阻塞，已生成子任务，进入待审批队列<br><br>
+    复测通过，覆盖率保持 87%。`);
+    this.setTasks([
+      {name:'A类修复：日志格式', status:'done', worker:'Codex'},
+      {name:'复测', status:'done', worker:'Codex'},
+      {name:'C类：监控告警子任务', status:'blocked', worker:'Gateway'},
+    ]);
+    this.setHeartbeat(true, '改进中');
+    this.logEvent('Improvement complete', { auto_fixed:1, blocked:1 });
+  },
+  // Step 12
+  function() {
+    this.setState('global_evaluation');
+    this.setStageInfo('五阶：全局评估中 — 8维验收');
+    this.setHeartbeat(true, '全局评估中');
+    this.addChat('kimi', '五阶全局评估启动，调度 8 支评审团队并行评估……');
+    this.debateMode = 'jury_panel + meta_review';
+    this.debateTeams = [
+      {name:'business', verdict:'running'},
+      {name:'security', verdict:'running'},
+      {name:'quality', verdict:'running'},
+      {name:'performance', verdict:'running'},
+      {name:'observability', verdict:'running'},
+      {name:'docs', verdict:'running'},
+    ];
+    this.showDebate(this.debateTeams, this.debateMode);
+  },
+  // Step 13
+  function() {
+    this.debateTeams = [
+      {name:'business', verdict:'pass'},
+      {name:'security', verdict:'pass'},
+      {name:'quality', verdict:'warn'},
+      {name:'performance', verdict:'pass'},
+      {name:'observability', verdict:'warn'},
+      {name:'docs', verdict:'pass'},
+    ];
+    this.showDebate(this.debateTeams, this.debateMode);
+    this.showEvaluation({
+      business:'pass', correctness:'pass', security:'pass',
+      quality:'warn', performance:'pass', maintainability:'pass',
+      docs:'pass', observability:'warn'
+    }, 'pass_with_warnings');
+    this.addChat('kimi', `<b>📊 五阶评估结果：pass_with_warnings</b><br><br>
+    ✅ 整体通过，系统自动推进至六阶<br><br>
+    <b>残余风险（低）：</b><br>
+    • Redis 超时 0.5s，极端网络抖动时可能误判<br>
+    • 建议关注：黑五期间留意 payment_rate_limited_total 指标<br><br>
+    <span class="muted">通知级别：summary</span>`);
+    this.logEvent('Global evaluation complete', { verdict:'pass_with_warnings', warn_count:2 });
+  },
+  // Step 14
+  function() {
+    this.setState('continuous_improvement');
+    this.setStageInfo('六阶：持续改进 — 审计日志并沉淀经验');
+    this.setHeartbeat(true, '审计中');
+    this.addChat('kimi', 'Kimi 正在执行六阶独立审计……<br><br>读取完整审计输入（7 类文件）……完整性校验通过。');
+  },
+  // Step 15
+  function() {
+    this.addChat('kimi', `<b>📋 《工作流优化建议》</b><br><br>
+    1. <b>支付相关项目默认启用 payment_compliance 扩展团队</b><br>
+    &nbsp;&nbsp;&nbsp;适用边界：含 stripe/braintree/paddle 依赖的项目<br><br>
+    2. <b>Redis 超时场景增加自动 retry 模板</b><br>
+    &nbsp;&nbsp;&nbsp;适用边界：所有使用 Redis 作为限流后端的 Run<br><br>
+    3. <b>建议在 project-profile 中预设 SLO 阈值</b><br>
+    &nbsp;&nbsp;&nbsp;适用边界：本项目的性能评估维度<br><br>
+    <span class="muted">建议进入 Self-evolution Queue 待审</span>`);
+    this.addEvolutionItem({ status:'proposed', title:'支付项目默认启用 payment_compliance 团队' });
+    this.addEvolutionItem({ status:'proposed', title:'Redis 超时 retry 模板' });
+    this.addEvolutionItem({ status:'proposed', title:'预设 SLO 阈值' });
+  },
+  // Step 16
+  function() {
+    this.setState('closed');
+    this.setStageInfo('Run 已关闭');
+    this.setHeartbeat(false, '已关闭');
+    this.addChat('kimi', `✅ <b>任务已完成并归档</b><br><br>
+    分支：<code>feature/rate-limit-run-${this.runId.slice(-6)}</code><br>
+    合并策略：squash_then_merge<br>
+    残余风险已记入审计日志<br><br>
+    <span class="muted">本任务无需要人工确认的 protected target 变更。</span>`);
+    this.logEvent('Run closed', { status:'success' });
+    this.stopTimer();
+    $('globalStatusPill').className = 'status-pill';
+    $('globalStatusText').textContent = '已完成 — 场景 A';
+  }
+];
+
+// ═══════════════════════════════════════════
+// SCENE B: Quick Channel (Success)
+// ═══════════════════════════════════════════
+const SCENE_B = [
+  function() {
+    this.setState('created');
+    this.addChat('kimi', '检测到 P3 级变更（单文案修改）。规则引擎初筛中……');
+    this.setStageInfo('规则引擎初筛（Q1规则）');
+    this.setHeartbeat(true, '初筛中');
+  },
+  function() {
+    this.addChat('kimi', `<b>⚡ 快速通道已确认</b><br><br>
+    规则命中：Q1 — diff ≤ 5 行，纯文案，无交互代码<br>
+    通道：<span class="text-success">快速通道</span><br>
+    合并策略：fast_forward<br>
+    自动合并：enabled<br><br>
+    启动极简辩论确认（1-2 支团队，1 轮，30 秒内）……`);
+    this.setStageInfo('极简辩论确认中');
+    this.debateMode = 'parallel_debate (light)';
+    this.debateTeams = [
+      {name:'frontend', verdict:'running'},
+      {name:'i18n_l10n', verdict:'running'},
+    ];
+    this.showDebate(this.debateTeams, this.debateMode);
+  },
+  function() {
+    this.debateTeams = [
+      {name:'frontend', verdict:'pass'},
+      {name:'i18n_l10n', verdict:'pass'},
+    ];
+    this.showDebate(this.debateTeams, this.debateMode);
+    this.setState('implementation');
+    this.setStageInfo('三阶执行中（快速通道跳过一/二阶）');
+    this.setTasks([
+      {name:'修改 Login.tsx 文案', status:'running', worker:'Codex'},
+      {name:'i18n key 检查', status:'running', worker:'Codex'},
+    ]);
+    this.setHeartbeat(true, '执行中');
+    this.logEvent('Quick channel confirmed', { rule:'Q1', teams:['frontend','i18n_l10n'] });
+  },
+  function() {
+    this.setTasks([
+      {name:'修改 Login.tsx 文案', status:'done', worker:'Codex'},
+      {name:'i18n key 检查', status:'done', worker:'Codex'},
+    ]);
+    this.addChat('kimi', `[执行心跳] 2/2 完成 — 预计剩余 0 秒<br>
+    ✅ Login.tsx 文案已修改<br>
+    ✅ i18n key 存在，无需新增<br>`);
+    this.logEvent('Quick tasks done', { elapsed:'12s' });
+  },
+  function() {
+    this.addChat('kimi', `✅ 已完成，变更在分支 <code>quickfix/copy-${Math.floor(Math.random()*9000+1000)}</code>，已自动合并至主干。`);
+    this.setState('closed');
+    this.setStageInfo('Run 已关闭 — 快速通道自动归档');
+    this.setHeartbeat(false, '已关闭');
+    this.logEvent('Auto-merge success', { branch:'quickfix/copy-1855' });
+    this.stopTimer();
+    $('globalStatusPill').className = 'status-pill';
+    $('globalStatusText').textContent = '已完成 — 场景 B';
+  }
+];
+
+// ═══════════════════════════════════════════
+// SCENE C: Quick Channel (Fail → Degrade)
+// ═══════════════════════════════════════════
+const SCENE_C = [
+  function() {
+    this.setState('created');
+    this.addChat('kimi', '检测到 P3 级变更（单文案修改）。规则引擎初筛中……');
+    this.setStageInfo('规则引擎初筛');
+    this.setHeartbeat(true, '初筛中');
+  },
+  function() {
+    this.addChat('kimi', `⚡ 快速通道已确认。启动极简辩论确认……`);
+    this.setStageInfo('极简辩论确认');
+    this.debateMode = 'parallel_debate (light)';
+    this.debateTeams = [
+      {name:'frontend', verdict:'pass'},
+      {name:'i18n_l10n', verdict:'pass'},
+    ];
+    this.showDebate(this.debateTeams, this.debateMode);
+    this.setState('implementation');
+    this.setTasks([
+      {name:'修改 Login.tsx 文案', status:'done', worker:'Codex'},
+      {name:'i18n key 检查', status:'done', worker:'Codex'},
+    ]);
+  },
+  function() {
+    this.addChat('kimi', `执行完成，尝试自动合并……`);
+    this.setStageInfo('尝试自动合并');
+    this.setHeartbeat(true, '合并中');
+  },
+  function() {
+    this.setState('blocked');
+    this.renderStateFlow();
+    this.setHeartbeat(true, 'blocked', true);
+    $('globalStatusPill').className = 'status-pill blocked';
+    $('globalStatusText').textContent = '已阻塞 — 自动合并失败';
+    this.addChat('gateway', `<b>⚠️ 快速通道任务自动合并失败</b><br><br>
+    原因：目标分支 <code>main</code> 在您执行期间已有新提交，产生合并冲突。<br>
+    分支：<code>quickfix/copy-${Math.floor(Math.random()*9000+1000)}</code><br><br>
+    <b>可选操作：</b>`, [
+      { label:'[1] 查看冲突并手动修复', action:()=>{ app.showToast('选择：手动修复'); app.nextStep(); } },
+      { label:'[2] 升级到标准通道重审', action:()=>{ app.showToast('选择：升级标准通道'); app.nextStep(); } },
+      { label:'[3] 放弃本次变更', action:()=>{ app.showToast('选择：放弃'); app.nextStep(); } }
+    ]);
+    this.setStageInfo('blocked — 等待用户决策');
+    this.logEvent('Auto-merge failed', { reason:'merge_conflict', branch:'quickfix/copy-1855' });
+  },
+  function() {
+    // User chose option 1 in our simulated flow
+    this.addChat('user', '[1] 查看冲突并手动修复');
+    this.addChat('kimi', '冲突已解决，重新尝试合并……');
+    this.setTasks([
+      {name:'解决合并冲突', status:'done', worker:'Codex'},
+      {name:'重新合并', status:'running', worker:'Gateway'},
+    ]);
+    this.setHeartbeat(true, '合并中');
+    this.setState('implementation');
+    this.renderStateFlow();
+    $('globalStatusPill').className = 'status-pill active';
+    $('globalStatusText').textContent = '运行中 — 场景 C';
+  },
+  function() {
+    this.addChat('kimi', `✅ 已合并并归档。`);
+    this.setTasks([
+      {name:'解决合并冲突', status:'done', worker:'Codex'},
+      {name:'重新合并', status:'done', worker:'Gateway'},
+    ]);
+    this.setState('closed');
+    this.setStageInfo('Run 已关闭');
+    this.setHeartbeat(false, '已关闭');
+    this.logEvent('Merge resolved', { result:'success' });
+    this.stopTimer();
+    $('globalStatusPill').className = 'status-pill';
+    $('globalStatusText').textContent = '已完成 — 场景 C';
+  }
+];
+
+// ═══════════════════════════════════════════
+// SCENE D: Standard Channel Full 6-Stage + User Correction
+// ═══════════════════════════════════════════
+const SCENE_D = [
+  // Step 0: User error detected
+  function() {
+    this.setState('created');
+    this.addChat('kimi', '✅ 收到目标：给支付网关增加限流机制。');
+    this.setStageInfo('0阶：需求接收中 — 检测到潜在错误');
+    this.setHeartbeat(true, '分析中');
+  },
+  // Step 1: Round 1 correction
+  function() {
+    this.addChat('kimi', `<div class="correction-box">
+      <b>⚠️ 跳过测试直接部署支付代码存在高风险。</b><br><br>
+      建议：走紧急通道（3 分钟最小测试集）。<br><br>
+      <div class="chat-expand open">
+        <div class="ce-toggle" onclick="this.parentElement.classList.toggle('open')">
+          <span>▼</span> 查看详细原因
+        </div>
+        <div class="ce-body">
+          风险等级：L3<br>
+          相关规范：AGENTS.md 安全红线 SR-3：生产代码必须通过最小测试集<br>
+          支付流变更的测试豁免仅由 CTO 审批。
+        </div>
+      </div>
+    </div>`, [
+      { label:'接受建议（走紧急测试通道）', cls:'correct', action:()=>{ app.showToast('已接受建议'); app.corrected = true; app.nextStep(); } },
+      { label:'坚持原方案（跳过测试）', cls:'danger', action:()=>{ app.corrected = false; app.nextStep(); } }
+    ]);
+    this.setHeartbeat(false, '等待用户决策');
+  },
+  // Step 2: User insists → Round 2
+  function() {
+    if (this.corrected) {
+      // User accepted correction, skip to normal flow
+      this.addChat('user', '接受建议（走紧急测试通道）');
+      this.addChat('kimi', '✅ 已调整为紧急测试通道。继续需求补全……');
+      this.skipToDStep(3);
+      return;
+    }
+    this.addChat('user', '坚持原方案（跳过测试）');
+    this.addChat('kimi', `<div class="correction-box round2">
+      <b>⚠️ 您仍坚持跳过测试。以下是完整风险证据：</b><br>
+      ━━━━━━━━━━━━━━━━━━━━<br>
+      <b>同类历史事故：</b><br>
+      • 2025-11 未测试限流导致黑五误拦截 12% 订单（P0 事故）<br>
+      • 2024-06 支付回调未覆盖空指针，导致重复扣款 37 笔<br><br>
+      <b>规范原文：</b><br>
+      • AGENTS.md 安全红线 SR-3：生产代码必须通过最小测试集<br>
+      • SRE 手册 5.2：支付流变更的测试豁免仅由 CTO 审批<br><br>
+      <b>建议替代方案：</b><br>
+      • 方案 A：走紧急通道（3 分钟最小测试集）<br>
+      • 方案 B：标记为热修复，先灰度 1% 流量并自动回滚<br>
+      ━━━━━━━━━━━━━━━━━━━━
+    </div>`, [
+      { label:'接受方案 A', cls:'correct', action:()=>{ app.showToast('接受方案A'); app.corrected = true; app.override = null; app.nextStep(); } },
+      { label:'接受方案 B', cls:'correct', action:()=>{ app.showToast('接受方案B'); app.corrected = true; app.override = null; app.nextStep(); } },
+      { label:'仍坚持原方案', cls:'danger', action:()=>{ app.override = {id:randId('ovr'), category:'security_violation', risk_level:'L3', summary:'用户坚持跳过支付限流测试', status:'recorded'}; app.corrected = false; app.nextStep(); } }
+    ]);
+  },
+  // Step 3: After round 2
+  function() {
+    if (this.override) {
+      this.addChat('user', '仍坚持原方案');
+      this.addChat('gateway', `⛔ <b>Gateway 阻塞</b><br><br>
+      风险等级 L3，需要审批人确认。Override 已记录：<code>${this.override.id}</code><br><br>
+      状态：等待 CTO 审批……`);
+      this.setState('blocked');
+      this.renderStateFlow();
+      this.addOverride(this.override);
+      $('globalStatusPill').className = 'status-pill blocked';
+      $('globalStatusText').textContent = '已阻塞 — 等待 L3 审批';
+      this.setHeartbeat(true, 'blocked', true);
+      this.setStageInfo('blocked — 等待审批人确认 Override');
+      this.logEvent('Override recorded', this.override);
+      // Simulate approval after a step
+    } else {
+      this.addChat('user', '接受方案 A');
+      this.addChat('kimi', '✅ 已记录为紧急测试通道。继续正常流程……');
+      this.skipToDStep(4);
+    }
+  },
+  // Step 4: Override approved (simulated)
+  function() {
+    if (this.override) {
+      this.override.status = 'approved';
+      this.addChat('gateway', `✅ <b>Override 已获审批</b><br><br>
+      审批人：CTO<br>
+      决定：附条件批准 — 必须灰度 1% 并配置自动回滚<br><br>
+      Run 继续执行。`);
+      this.setState('created');
+      this.renderStateFlow();
+      $('globalStatusPill').className = 'status-pill active';
+      $('globalStatusText').textContent = '运行中 — 场景 D';
+    }
+    this.setStageInfo('0阶：需求补全中');
+    this.setHeartbeat(true, '补全中');
+  },
+  // Step 5: Intake complete
+  function() {
+    this.setState('intake_complete');
+    this.addChat('kimi', `<b>📦 需求补全包</b><br><br>
+    <b>原始意图：</b>给支付网关加限流<br>
+    <b>修正记录：</b>紧急测试通道（用户最初要求跳过测试，已纠正）<br>
+    <b>依赖图：</b>Redis、Stripe SDK、Prometheus 监控<br>
+    <b>验收矩阵：</b>6 条已生成<br>
+    <b>风险边界：</b>L3（含 Override 记录）<br><br>
+    <span class="text-success">✓ 完整性校验通过</span>`);
+    this.logEvent('Intake complete', { override: !!this.override });
+  },
+  // Step 6: Direction debate
+  function() {
+    this.setState('direction_debate');
+    this.setStageInfo('一阶：方向辩论');
+    this.setHeartbeat(true, '方向辩论中');
+    this.debateMode = 'dynamic_assembly + jury_panel';
+    this.debateTeams = [
+      {name:'business', verdict:'pass'},
+      {name:'security', verdict:'pass'},
+      {name:'compliance', verdict:'pass'},
+      {name:'scalability_arch', verdict:'pass'},
+    ];
+    this.showDebate(this.debateTeams, this.debateMode);
+    this.addChat('kimi', `<b>📊 《最佳选择报告》</b><br><br>
+    <span class="text-success">✅ 方向可行</span><br><br>
+    注意：本 Run 含已审批 Override（跳过完整测试）。<br>
+    合规团队 verdict = pass_with_notes：必须灰度 + 自动回滚。`);
+  },
+  // Step 7: Solution debate
+  function() {
+    this.setState('solution_debate');
+    this.setStageInfo('二阶：方案辩论');
+    this.setHeartbeat(true, '方案辩论中');
+    this.debateMode = 'adversarial_debate';
+    this.debateTeams = [
+      {name:'security', verdict:'pass'},
+      {name:'scalability_arch', verdict:'pass'},
+      {name:'api_design', verdict:'pass'},
+      {name:'chaos_engineering', verdict:'pass'},
+    ];
+    this.showDebate(this.debateTeams, this.debateMode);
+    this.showDAG([
+      {id:'t1', label:'rate_limiter.py', done:true},
+      {id:'t2', label:'fallback_local.py', active:true},
+      {id:'t3', label:'tests/', active:false},
+      {id:'t4', label:'monitoring/', active:false},
+      {id:'t5', label:'review (Claude)', active:false},
+    ], [
+      {from:'t1',to:'t2',active:true},
+      {from:'t2',to:'t3'},
+      {from:'t1',to:'t4'},
+      {from:'t3',to:'t5'},
+      {from:'t4',to:'t5'},
+    ]);
+    this.addChat('kimi', `<b>📐 《具体实现报告》</b><br><br>
+    方案：令牌桶 + 本地 LRU 降级 + Prometheus 指标<br>
+    DAG 已生成（含灰度部署节点）<br>
+    合并策略：sequential_rebase（接口依赖调用方）`);
+  },
+  // Step 8: Implementation
+  function() {
+    this.setState('implementation');
+    this.setStageInfo('三阶：执行中');
+    this.setHeartbeat(true, '执行中');
+    this.setTasks([
+      {name:'rate_limiter.py', status:'done', worker:'Codex'},
+      {name:'fallback_local.py', status:'done', worker:'Codex'},
+      {name:'最小测试集（紧急）', status:'running', worker:'Codex'},
+      {name:'灰度配置', status:'queued', worker:'DevOps'},
+      {name:'代码审查', status:'queued', worker:'Claude'},
+    ]);
+    this.addChat('kimi', `[三阶执行中] 2/5 完成<br>
+    ✅ rate_limiter.py<br>
+    ✅ fallback_local.py<br>
+    🔄 最小测试集（紧急通道，预计 3 分钟）<br>
+    ⏳ 灰度配置（排队）<br>
+    ⏳ 审查（排队）`);
+  },
+  // Step 9: Tests done
+  function() {
+    this.setTasks([
+      {name:'rate_limiter.py', status:'done', worker:'Codex'},
+      {name:'fallback_local.py', status:'done', worker:'Codex'},
+      {name:'最小测试集（紧急）', status:'done', worker:'Codex'},
+      {name:'灰度配置', status:'done', worker:'DevOps'},
+      {name:'代码审查', status:'running', worker:'Claude'},
+    ]);
+    this.addChat('kimi', `4/5 完成 — 测试通过（覆盖率 72%，紧急通道阈值 ≥ 60%）<br>
+    🔄 代码审查中……`);
+  },
+  // Step 10: Review done → improvement
+  function() {
+    this.setState('improvement');
+    this.setStageInfo('四阶：改进实现');
+    this.setTasks([
+      {name:'A类：边界条件修复', status:'done', worker:'Codex'},
+      {name:'A类：日志字段补全', status:'done', worker:'Codex'},
+      {name:'D类：回归测试', status:'running', worker:'Codex'},
+    ]);
+    this.addChat('worker', `<b>📋 《任务反馈文档》</b><br><br>
+    审查发现 3 个问题：<br>
+    • A类 ×2：边界条件 + 日志字段 → 已自动修复 ✅<br>
+    • B类 ×1：灰度流量比例需产品确认 → Gateway blocked，已上浮<br>
+    • D类：回归测试执行中……`);
+    this.logEvent('Improvement', { a:2, b:1, d:'in_progress' });
+  },
+  // Step 11: Regression ok
+  function() {
+    this.setTasks([
+      {name:'A类：边界条件修复', status:'done', worker:'Codex'},
+      {name:'A类：日志字段补全', status:'done', worker:'Codex'},
+      {name:'D类：回归测试', status:'done', worker:'Codex'},
+    ]);
+    this.addChat('kimi', `✅ 回归测试通过（第 1 轮）。所有 A 类已闭环。B 类已 blocked 并记录。`);
+  },
+  // Step 12: Global evaluation
+  function() {
+    this.setState('global_evaluation');
+    this.setStageInfo('五阶：全局评估');
+    this.setHeartbeat(true, '全局评估中');
+    this.addChat('kimi', '五阶全局评估启动……');
+  },
+  // Step 13: Evaluation result with warnings + override impact
+  function() {
+    this.showEvaluation({
+      business:'pass', correctness:'pass', security:'warn',
+      quality:'warn', performance:'pass', maintainability:'pass',
+      docs:'pass', observability:'pass'
+    }, 'pass_with_warnings');
+    this.debateTeams = [
+      {name:'business', verdict:'pass'},
+      {name:'security', verdict:'warn'},
+      {name:'quality', verdict:'warn'},
+      {name:'performance', verdict:'pass'},
+      {name:'observability', verdict:'pass'},
+    ];
+    this.showDebate(this.debateTeams, 'jury_panel');
+    this.addChat('kimi', `<b>📊 五阶评估：pass_with_warnings</b><br><br>
+    ⚠️ <b>残余风险（中）：</b><br>
+    • 覆盖率 72%（低于项目阈值 80%）— Override 影响<br>
+    • 安全：灰度配置正确，但完整渗透测试未执行 — Override 影响<br><br>
+    <span class="muted"> verdict = pass_with_warnings，残余风险未超阈值（中风险 ≤ 1）<br>
+    系统自动通过，进入六阶。</span>`);
+    this.logEvent('Global evaluation', { verdict:'pass_with_warnings', override_impact:true });
+  },
+  // Step 14: Continuous improvement
+  function() {
+    this.setState('continuous_improvement');
+    this.setStageInfo('六阶：持续改进 — 审计与沉淀');
+    this.setHeartbeat(true, '审计中');
+    this.addChat('kimi', 'Kimi 审计中……读取完整审计输入……');
+  },
+  // Step 15: Audit findings
+  function() {
+    this.addChat('kimi', `<b>📋 《工作流优化建议》</b><br><br>
+    <b>关键发现：</b><br>
+    1. 同类 Override（跳过测试）在本项目已出现 2 次 → 建议在 AGENTS.md 中增加"支付流测试豁免"的显性审批规则<br>
+    2. 紧急通道覆盖率阈值 60% 可能过低 → 建议上调至 70%<br><br>
+    <span class="muted">建议进入 Self-evolution Queue</span>`);
+    this.addEvolutionItem({ status:'proposed', title:'支付流测试豁免显性审批规则' });
+    this.addEvolutionItem({ status:'proposed', title:'紧急通道覆盖率阈值上调至 70%' });
+  },
+  // Step 16: Close
+  function() {
+    this.setState('closed');
+    this.setStageInfo('Run 已关闭');
+    this.setHeartbeat(false, '已关闭');
+    this.addChat('kimi', `✅ <b>任务已完成</b><br><br>
+    分支已合并。Override 记录已归档。<br>
+    灰度部署已启动（1% 流量，自动回滚已配置）。<br><br>
+    <span class="muted">本任务含 1 条已审批 Override，六阶已建议流程优化。</span>`);
+    this.logEvent('Run closed', { override_count:1, gray_deploy:true });
+    this.stopTimer();
+    $('globalStatusPill').className = 'status-pill';
+    $('globalStatusText').textContent = '已完成 — 场景 D';
+  }
+];
+
+// Helper for scene D to skip steps after correction
+SCENE_D.skipToDStep = function(targetStep) {
+  while (app.step < targetStep) app.step++;
+  app.nextStep();
+};
+
+const SCENE_HANDLERS = {
+  A: SCENE_A,
+  B: SCENE_B,
+  C: SCENE_C,
+  D: SCENE_D
+};
+
+// Bind Enter key to next step
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    // Don't trigger if typing in an input
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if ($('sceneSelector').style.display === 'none') {
+      app.nextStep();
+    }
+  }
+});
+</script>
+</body>
+</html>
