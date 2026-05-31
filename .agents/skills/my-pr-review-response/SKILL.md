@@ -49,8 +49,8 @@ CONTEXT=$(bash scripts/collect-review-context.sh ${PR_NUMBER})
 bash scripts/checkout-branch.sh ${PR_NUMBER}
 ```
 
-> **如果 `collect-review-context.sh` 失败** → 手动运行 `gh pr view ${PR_NUMBER}` + `gh pr diff ${PR_NUMBER}` 收集上下文 → 仍失败则报告 `tool-unavailable` blocker。
-> **如果 `checkout-branch.sh` 失败** → 检查是否有未提交改动，`git stash` 后重试 → 仍失败则报告 blocker。
+> **如果 `collect-review-context.sh` 失败** → 手动 `gh pr view` + `gh pr diff` 收集 → 仍失败报告 blocker。
+> **如果 `checkout-branch.sh` 失败** → `git stash` 后重试 → 仍失败报告 blocker。
 
 ### Phase 2: 逐项审查（需要智力判断）
 
@@ -180,6 +180,19 @@ bash scripts/post-comment.sh ${PR_NUMBER} /tmp/pr-summary-${PR_NUMBER}.md
 | 修复后测试持续失败 3 次 | 检查失败是否与 review 意见相关 | 报告 `test-env-conflict` blocker |
 | reviewer 意见自相矛盾 | 在 PR Comment 中请求澄清 | 报告 `contradictory-review` blocker |
 | 无法解析出明确问题清单 | 尝试手动读取 review body 和 comments | 报告 `unclear-review` blocker |
+
+---
+
+## 反例与黑名单
+
+| 不要做 | 正确做法 |
+|--------|---------|
+| 未验证直接改代码 | 先用 `/diagnose` 验证问题确实存在 |
+| 强行反驳无证据 | 证据不足时转 AGREE 处理 |
+| 修改 PR 范围外文件 | 严格只修改 PR diff 中的文件 |
+| 跳过测试直接 push | 必须运行测试验证后再提交 |
+| 自动合并 PR | 只请求 reviewer 重新 review |
+| 主观感受式反驳 | 反驳必须有代码/文档/架构证据 |
 
 ---
 
