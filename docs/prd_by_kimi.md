@@ -306,10 +306,11 @@ continuous_improvement
     },
     "acceptance_criteria": [{ "criterion": "string", "test_method": "string", "evidence_type": "string" }],
     "risk_boundary": { "max_acceptable_risk": "L2|L3|L4", "rollback_plan": "string", "failure_strategy": "string" },
-    "derived_from_intake_package": "intake_xxx"
+    "derived_from_intake_package": "requirement-completion-bundle.json"
   }
   ```
 - 工单应包含项目背景、目标、非目标、约束、验收标准、风险边界、失败策略。
+- 本节的 `intake_package` 在实现上对应 `requirement-completion-bundle.json`；保留旧名仅用于历史兼容。
 - Hermes 必须按任务类型和 `project-profile.yaml` 中的 `debate` 配置选择辩论团队（核心 16 支 + 项目自定义扩展团队）。
 - 常规方向决策应优先使用 `dynamic_assembly` + `adversarial_debate`，需要结论时使用 `jury_panel`。
 - 若方向结论高置信度、低风险、无冲突，则自动进入二阶；仅在低置信度、冲突或高风险时上浮给用户。
@@ -502,7 +503,7 @@ continuous_improvement
 
 | 输入类别 | 必须包含的文件/记录 | 完整性校验规则 |
 |----------|---------------------|---------------|
-| 原始需求与补全 | `intake_package.json`、原始用户输入文本 | 6 类信息齐全，依赖图四维覆盖 |
+| 原始需求与补全 | `requirement-completion-bundle.json`、原始用户输入文本 | 6 类信息齐全，依赖图四维覆盖，且每个顶层区块保留 `source_input_hash` / `projection_timestamp` |
 | 执行日志 | `events.jsonl` 中本 Run 的全部事件 | 事件时间戳连续，无 > 60 秒的空洞（除非人工暂停） |
 | 工具调用 | 所有 worker session 的 `tool_calls.json` | 每个 tool_call 必须有 `request` + `response` + `status` |
 | 错误栈 | `errors.jsonl` 中本 Run 的全部错误记录 | 含错误类型、堆栈、影响范围、是否已修复 |
