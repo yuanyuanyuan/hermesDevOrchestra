@@ -55,8 +55,8 @@ REPORT="$TMP_DIR/report.json"
   --report "$REPORT" \
   >"$TMP_DIR/wizard.out" 2>"$TMP_DIR/wizard.err"
 
-assert_contains "MVP 引导验收完成" "$TMP_DIR/wizard.out" "wizard should complete without env API keys"
-assert_contains "API key 缺失" "$TMP_DIR/wizard.err" "missing keys should be visible as warning"
+assert_contains "MVP guided acceptance complete" "$TMP_DIR/wizard.out" "wizard should complete without env API keys"
+assert_contains "Missing API keys" "$TMP_DIR/wizard.err" "missing keys should be visible as warning"
 assert_file_exists "$REPORT" "acceptance report missing"
 
 python3 - "$REPORT" <<'PY'

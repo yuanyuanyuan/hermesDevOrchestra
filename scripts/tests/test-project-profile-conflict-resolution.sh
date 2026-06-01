@@ -57,9 +57,9 @@ cat > "$PROJECT_DIR/.hermes/project.json" <<'EOF'
 {"name": "old", "project_slug": "test-proj"}
 EOF
 
-# Update .hermes/project-profile.yaml with name: new
+# Update .hermes/project-profile.yaml with a quoted scalar that the old hand parser mangled
 cat > "$PROJECT_DIR/.hermes/project-profile.yaml" <<'EOF'
-name: new
+name: "new: app"
 project_id: test-proj
 profile_version: 2
 source_of_truth: yaml
@@ -97,7 +97,7 @@ REPORT="$TMP_DIR/report.json"
 python3 - "$REPORT" <<'PY'
 import json, sys
 report = json.load(open(sys.argv[1], encoding="utf-8"))
-assert report.get("project_config", {}).get("name") == "new", f"expected project.name='new', got {report.get('project_config', {})}"
+assert report.get("project_config", {}).get("name") == "new: app", f"expected project.name='new: app', got {report.get('project_config', {})}"
 print("yaml_source_of_truth: PASS")
 PY
 

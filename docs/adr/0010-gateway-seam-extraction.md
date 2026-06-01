@@ -8,6 +8,8 @@ Accepted — Sprint 1
 
 `scripts/lib/orch_gateway.py` grew to 6109 lines and handles request routing, input validation, state projection, evidence collection, and audit logging all within a single file. This violates the seam-extraction principle and makes the Gateway difficult to test, extend, and reason about.
 
+This sprint introduces the first standardized intake/projection/evidence seam and keeps the existing gateway routing path intact; it is not a full migration of every historical gateway responsibility.
+
 Sprint 1 needed to:
 1. Extract intake/projection/evidence logic into independent helpers.
 2. Ensure Gateway remains an orchestration/routing layer.
@@ -24,10 +26,10 @@ We extracted three helper modules with a strict单向依赖 chain:
 
 Gateway imports these helpers with a soft-fail try/except block. If import fails, `_HELPERS_OK = False` and Gateway continues in `FALLBACK_HEURISTIC` mode. Fallback events are written to `logs/gateway-fallback.jsonl`.
 
-Gateway integration adds exactly **34 lines** to `orch_gateway.py`:
-- 8 lines for import + availability flag.
-- 18 lines for `_run_intake_pipeline()` and `_record_fallback()`.
-- 8 one-line calls in entry methods (`create_run`, `module_endpoint`, `submit_worker_output`, `submit_verdict`, `submit_global_evaluation`, `submit_closeout`, `submit_failure`, `stop_run`).
+Gateway integration keeps `orch_gateway.py` growth within the Sprint 1 guardrail:
+- import + helper availability wiring
+- intake pipeline fallback recording
+- one-line helper calls in the affected entry methods (`create_run`, `module_endpoint`, `submit_worker_output`, `submit_verdict`, `submit_global_evaluation`, `submit_closeout`, `submit_failure`, `stop_run`)
 
 ## Consequences
 
@@ -44,5 +46,5 @@ Gateway integration adds exactly **34 lines** to `orch_gateway.py`:
 ## Compliance
 
 - Verified by `scripts/tests/test-gateway-seam-extraction.sh`.
-- Architecture guardrail: single-file growth ≤ 50 lines (actual: 34).
+- Architecture guardrail: single-file growth ≤ 50 lines (verified by `scripts/tests/test-gateway-seam-extraction.sh`).
 - Import cycle check: `intake → projection → evidence` only.

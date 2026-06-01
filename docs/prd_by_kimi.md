@@ -7,6 +7,8 @@
 **项目根目录**：`/data/hermes`
 **核心依据**：Get 知识库 `qnN4o510`、`docs/knowledge/qnN4o510-synthesis.md`、`docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md`、`config/debate/full/*`、`scripts/lib/orch_gateway.py`
 
+> 说明：本文同时包含目标态需求与 Sprint 分解，当前仓库只实现其中已落地的子集；实现边界以对应 Sprint 计划、ADR 和测试为准。
+
 ---
 
 ## 1. 产品定位

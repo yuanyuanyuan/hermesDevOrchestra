@@ -21,19 +21,20 @@ class NormalizedIntent(TypedDict, total=False):
     validation_errors: list[str]
 
 
-def normalize(request: dict[str, Any]) -> NormalizedIntent:
+def normalize(request: dict[str, Any], expected_intent_type: str | None = None) -> NormalizedIntent:
     """Normalize an incoming request into a structured intent.
 
     Args:
         request: Raw incoming request payload.
+        expected_intent_type: Optional request type from the Gateway route.
 
     Returns:
         NormalizedIntent with detected type, confidence, trace, and any
         validation errors.
     """
-    intent_type = _detect_intent_type(request)
-    confidence = _compute_confidence(request, intent_type)
-    source_trace = _build_source_trace(request)
+    intent_type = _detect_intent_type(request, expected_intent_type)
+    confidence = _compute_confidence(request, intent_type, expected_intent_type)
+    source_trace = _build_source_trace(request, expected_intent_type)
     normalized_payload = _normalize_payload(request)
     validation_errors = _validate_payload(request, intent_type)
     return {
@@ -45,49 +46,44 @@ def normalize(request: dict[str, Any]) -> NormalizedIntent:
     }
 
 
-def _detect_intent_type(request: dict[str, Any]) -> str:
+def _detect_intent_type(request: dict[str, Any], expected_intent_type: str | None = None) -> str:
     """Detect the high-level intent type from the request shape."""
-    if "ticket" in request or "intent" in request:
-        return "create_run"
-    if "worker_output" in request or "artifacts" in request:
-        return "submit_worker_output"
-    if "verdict" in request:
-        return "submit_verdict"
-    if "global_evaluation" in request:
-        return "submit_global_evaluation"
-    if "closeout" in request:
-        return "submit_closeout"
-    if "failure" in request or "failure_reason" in request:
-        return "submit_failure"
-    if "stop_reason" in request or "resolution" in request:
-        return "stop_run"
-    if "module" in request and "operation" in request:
-        return "module_endpoint"
+    candidate = _canonical_intent_type(expected_intent_type)
+    if candidate is not None:
+        return candidate
+    for intent_type in (
+        "create_run",
+        "submit_worker_output",
+        "submit_verdict",
+        "submit_global_evaluation",
+        "submit_closeout",
+        "submit_failure",
+        "stop_run",
+        "module_endpoint",
+    ):
+        if _matches_request_shape(request, intent_type):
+            return intent_type
     return "unknown"
 
 
-def _compute_confidence(request: dict[str, Any], intent_type: str) -> float:
+def _compute_confidence(request: dict[str, Any], intent_type: str, expected_intent_type: str | None = None) -> float:
     """Compute a simple confidence score for the intent classification."""
-    score = 0.5
-    if intent_type == "create_run":
-        if isinstance(request.get("idempotency_key"), str) and request["idempotency_key"]:
-            score += 0.3
-        if isinstance(request.get("ticket"), dict):
-            score += 0.2
-        elif isinstance(request.get("intent"), str):
-            score += 0.15
-    elif intent_type == "submit_worker_output":
-        if isinstance(request.get("worker_output"), dict):
-            score += 0.4
-    elif intent_type == "module_endpoint":
-        if isinstance(request.get("authority"), str):
-            score += 0.3
-    return min(score, 1.0)
+    canonical_expected = _canonical_intent_type(expected_intent_type)
+    if canonical_expected == intent_type and _matches_request_shape(request, intent_type):
+        return 0.95
+    if intent_type != "unknown" and _matches_request_shape(request, intent_type):
+        return 0.85
+    if canonical_expected == intent_type:
+        return 0.6
+    return 0.2
 
 
-def _build_source_trace(request: dict[str, Any]) -> list[str]:
+def _build_source_trace(request: dict[str, Any], expected_intent_type: str | None = None) -> list[str]:
     """Build a source trace for debugging and audit."""
     trace: list[str] = ["gateway_intake"]
+    canonical_expected = _canonical_intent_type(expected_intent_type)
+    if canonical_expected is not None:
+        trace.append(f"expected_intent_type={canonical_expected}")
     if "idempotency_key" in request:
         trace.append(f"idempotency_key={request['idempotency_key']}")
     if "run_id" in request:
@@ -120,3 +116,64 @@ def _validate_payload(request: dict[str, Any], intent_type: str) -> list[str]:
     elif intent_type == "unknown":
         errors.append("unable to determine intent type from payload")
     return errors
+
+
+def _canonical_intent_type(expected_intent_type: str | None) -> str | None:
+    if not isinstance(expected_intent_type, str) or not expected_intent_type:
+        return None
+    if expected_intent_type.startswith("module:"):
+        return "module_endpoint"
+    if expected_intent_type in {
+        "create_run",
+        "submit_worker_output",
+        "submit_verdict",
+        "submit_global_evaluation",
+        "submit_closeout",
+        "submit_failure",
+        "stop_run",
+        "module_endpoint",
+    }:
+        return expected_intent_type
+    return None
+
+
+def _matches_request_shape(request: dict[str, Any], intent_type: str) -> bool:
+    if intent_type == "create_run":
+        return _non_empty_string(request.get("idempotency_key")) and (
+            isinstance(request.get("ticket"), dict) or _non_empty_string(request.get("intent"))
+        )
+    if intent_type == "submit_worker_output":
+        return (
+            _non_empty_string(request.get("idempotency_key"))
+            and _non_empty_string(request.get("task_id"))
+            and isinstance(request.get("worker_response"), dict)
+        )
+    if intent_type == "submit_verdict":
+        return (
+            _non_empty_string(request.get("idempotency_key"))
+            and _non_empty_string(request.get("task_id"))
+            and isinstance(request.get("verdict"), dict)
+        )
+    if intent_type == "submit_global_evaluation":
+        return _non_empty_string(request.get("idempotency_key")) and isinstance(request.get("report"), dict)
+    if intent_type == "submit_closeout":
+        return (
+            _non_empty_string(request.get("idempotency_key"))
+            and isinstance(request.get("iteration_closeout_report"), dict)
+            and isinstance(request.get("system_improvement_proposals"), dict)
+        )
+    if intent_type == "submit_failure":
+        return _non_empty_string(request.get("idempotency_key")) and isinstance(request.get("failure_report"), dict)
+    if intent_type == "stop_run":
+        return _non_empty_string(request.get("idempotency_key")) and _non_empty_string(request.get("reason"))
+    if intent_type == "module_endpoint":
+        return (
+            _non_empty_string(request.get("authority"))
+            and _non_empty_string(request.get("module"))
+            and _non_empty_string(request.get("operation"))
+        )
+    return False
+
+
+def _non_empty_string(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())

@@ -148,6 +148,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 project_dir, project_id, package_dir, generated_at = sys.argv[1:]
 project = Path(project_dir)
 package = Path(package_dir)
@@ -159,6 +161,34 @@ def read_json(path):
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def read_yaml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def read_toml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        try:
+            import tomli as tomllib
+        except ModuleNotFoundError:
+            return {}
+    try:
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 def file_digest(path):
     try:
@@ -306,31 +336,38 @@ def detect_tech_stack(project: Path) -> dict:
     all_deps.update({k.lower(): v for k, v in pj.get("dependencies", {}).items()})
     all_deps.update({k.lower(): v for k, v in pj.get("devDependencies", {}).items()})
     # Python (pyproject.toml)
-    ppt: dict[str, Any] = {}
-    if (project / "pyproject.toml").exists():
-        try:
-            import tomllib
-            with open(project / "pyproject.toml", "rb") as fh:
-                ppt = tomllib.load(fh)
-        except Exception:
-            pass
+    ppt = read_toml(project / "pyproject.toml")
     if ppt:
         def _norm_pkg(name: str) -> str:
             return name.split("[")[0].strip().lower()
+
         def _extract_ver(name: str) -> str:
             for sep in ("==", ">=", "<=", ">", "<", "~="):
                 if sep in name:
                     return name.split(sep, 1)[1].strip()
             return ""
+
+        def _dependency_version(spec: Any) -> str:
+            if isinstance(spec, str):
+                return _extract_ver(spec)
+            if isinstance(spec, dict):
+                version = spec.get("version")
+                if isinstance(version, str):
+                    return _extract_ver(version) or version.strip()
+            return ""
+
         for dep in ppt.get("project", {}).get("dependencies", []):
             if isinstance(dep, str):
                 all_deps[_norm_pkg(dep)] = _extract_ver(dep)
-        for dep in ppt.get("project", {}).get("optional-dependencies", {}):
-            if isinstance(dep, str):
-                all_deps[_norm_pkg(dep)] = _extract_ver(dep)
-        for dep in ppt.get("tool", {}).get("poetry", {}).get("dependencies", {}):
-            if isinstance(dep, str):
-                all_deps[_norm_pkg(dep)] = _extract_ver(dep)
+        for deps in ppt.get("project", {}).get("optional-dependencies", {}).values():
+            if isinstance(deps, list):
+                for dep in deps:
+                    if isinstance(dep, str):
+                        all_deps[_norm_pkg(dep)] = _extract_ver(dep)
+        for name, spec in ppt.get("tool", {}).get("poetry", {}).get("dependencies", {}).items():
+            if str(name).lower() == "python":
+                continue
+            all_deps[_norm_pkg(str(name))] = _dependency_version(spec)
     # Python (requirements.txt)
     req_path = project / "requirements.txt"
     if req_path.exists():
@@ -356,6 +393,8 @@ def detect_tech_stack(project: Path) -> dict:
         stack["versions"]["project"] = pj["version"]
     if ppt.get("project", {}).get("version"):
         stack["versions"]["project"] = ppt["project"]["version"]
+    elif isinstance(ppt.get("tool", {}).get("poetry", {}).get("version"), str):
+        stack["versions"]["project"] = ppt["tool"]["poetry"]["version"]
     if (project / "Dockerfile").exists() or any(project.glob("**/Dockerfile")):
         stack["container_ready"] = True
     return stack
@@ -443,32 +482,23 @@ hermes_dir = project / ".hermes"
 hermes_dir.mkdir(parents=True, exist_ok=True)
 profile_yaml = hermes_dir / "project-profile.yaml"
 
-existing_profile: dict[str, Any] = {}
-if profile_yaml.exists():
-    for line in profile_yaml.read_text(encoding="utf-8").splitlines():
-        if ":" in line and not line.strip().startswith("#"):
-            key, val = line.split(":", 1)
-            key = key.strip()
-            val = val.strip()
-            if val.startswith("[") and val.endswith("]"):
-                items = [v.strip() for v in val[1:-1].split(",") if v.strip()]
-                existing_profile[key] = items
-            else:
-                existing_profile[key] = val
-
-with open(profile_yaml, "w", encoding="utf-8") as f:
-    f.write(f"name: {existing_profile.get('name', project_id)}\n")
-    f.write(f"project_id: {project_id}\n")
-    f.write(f"project_dir: {str(project)}\n")
-    f.write("profile_version: 2\n")
-    f.write("source_of_truth: yaml\n")
-    ts_list = ", ".join(discovery_report["tech_stack"]["languages"])
-    f.write(f"tech_stack: [{ts_list}]\n")
-    f.write(f"test_command: {discovery_report['test_command']}\n")
-    f.write(f"deploy_target: {discovery_report['deploy_target']}\n")
-    rf_list = ", ".join(discovery_report["risk_flags"])
-    f.write(f"risk_flags: [{rf_list}]\n")
-    f.write(f"discovery_status: {discovery_report['status']}\n")
+existing_profile = read_yaml(profile_yaml)
+profile_payload = {
+    "name": existing_profile.get("name", project_id),
+    "project_id": project_id,
+    "project_dir": str(project),
+    "profile_version": 2,
+    "source_of_truth": "yaml",
+    "tech_stack": discovery_report["tech_stack"]["languages"],
+    "test_command": discovery_report["test_command"],
+    "deploy_target": discovery_report["deploy_target"],
+    "risk_flags": discovery_report["risk_flags"],
+    "discovery_status": discovery_report["status"],
+}
+profile_yaml.write_text(
+    yaml.safe_dump(profile_payload, sort_keys=False, allow_unicode=True),
+    encoding="utf-8",
+)
 
 # Write detection report draft
 detection_report_path = knowledge / "detection-report.json"

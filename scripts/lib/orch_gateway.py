@@ -27,8 +27,10 @@ try:
     from gateway_projection import project as _projection_project
     from gateway_evidence import gather as _evidence_gather
     _HELPERS_OK = True
-except Exception:
+    _HELPERS_IMPORT_ERROR: str | None = None
+except Exception as exc:
     _HELPERS_OK = False
+    _HELPERS_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
 
 SCHEMA_VERSION = "orchestra.v1"
@@ -214,26 +216,32 @@ class GatewayApp:
         self.runtime_activation = RuntimeActivation(self.repo_root)
         self.recover_in_progress_commands()
 
-    def _run_intake_pipeline(self, payload: dict[str, Any], request_type: str, run_id: str | None = None) -> bool:
+    def _intake_pipeline_fallback_reason(self, payload: dict[str, Any], request_type: str, run_id: str | None = None) -> str | None:
         if not _HELPERS_OK:
-            self._record_fallback("FALLBACK_HEURISTIC", request_type)
-            return True
+            detail = _HELPERS_IMPORT_ERROR or "helper imports unavailable"
+            self._record_fallback("FALLBACK_HEURISTIC", request_type, detail)
+            return detail
         try:
-            intent = _intake_normalize(payload)
+            intent = _intake_normalize(payload, expected_intent_type=request_type)
             ctx = {"project_id": self.store.project_id, "request_type": request_type, "run_id": run_id, "timestamp": utc_now()}
             projected = _projection_project(intent, ctx)
             _evidence_gather(projected)
-            return False
-        except Exception:
-            self._record_fallback("FALLBACK_HEURISTIC", request_type)
-            return True
+            return None
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            self._record_fallback("FALLBACK_HEURISTIC", request_type, detail)
+            return detail
 
-    def _record_fallback(self, reason: str, request_type: str) -> None:
-        log_path = self.repo_root / "logs" / "gateway-fallback.jsonl"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("a", encoding="utf-8") as f:
-            json.dump({"timestamp": utc_now(), "reason": reason, "request_type": request_type, "project": self.store.project_id}, f)
-            f.write("\n")
+    def _record_fallback(self, reason: str, request_type: str, detail: str | None = None) -> None:
+        record = {"timestamp": utc_now(), "reason": reason, "request_type": request_type, "project": self.store.project_id}
+        if detail:
+            record["detail"] = detail
+        append_jsonl(self.repo_root / "logs" / "gateway-fallback.jsonl", record)
+
+    def _gateway_fallback_body(self, detail: str) -> dict[str, Any]:
+        body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
+        body.update({"fallback": "FALLBACK_HEURISTIC", "fallback_reason": detail})
+        return body
 
     def health(self) -> dict[str, Any]:
         return {
@@ -395,10 +403,8 @@ class GatewayApp:
         return items if isinstance(items, list) else []
 
     def module_endpoint(self, module: str, operation: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        if self._run_intake_pipeline(payload, f"module:{module}:{operation}"):
-            body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
-            body["fallback"] = "FALLBACK_HEURISTIC"
-            return 503, body
+        if fallback_reason := self._intake_pipeline_fallback_reason(payload, f"module:{module}:{operation}"):
+            return 503, self._gateway_fallback_body(fallback_reason)
         spec = FULL_MODULE_ENDPOINT_INDEX.get((module, operation))
         if spec is None:
             return 404, self.error("not_found", "module endpoint not found")
@@ -1365,10 +1371,8 @@ class GatewayApp:
         )
 
     def create_run(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        if self._run_intake_pipeline(payload, "create_run"):
-            body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
-            body["fallback"] = "FALLBACK_HEURISTIC"
-            return 503, body
+        if fallback_reason := self._intake_pipeline_fallback_reason(payload, "create_run"):
+            return 503, self._gateway_fallback_body(fallback_reason)
         idempotency_key = payload.get("idempotency_key")
         ticket = payload.get("ticket")
         intent = payload.get("intent")
@@ -2356,7 +2360,7 @@ class GatewayApp:
         return None
 
     def stop_run(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        self._run_intake_pipeline(payload, "stop_run", run_id)
+        self._intake_pipeline_fallback_reason(payload, "stop_run", run_id)
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")
@@ -2530,7 +2534,7 @@ class GatewayApp:
         return 200, response
 
     def submit_verdict(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        self._run_intake_pipeline(payload, "submit_verdict", run_id)
+        self._intake_pipeline_fallback_reason(payload, "submit_verdict", run_id)
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")
@@ -3241,7 +3245,7 @@ class GatewayApp:
         return 200, response
 
     def submit_global_evaluation(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        self._run_intake_pipeline(payload, "submit_global_evaluation", run_id)
+        self._intake_pipeline_fallback_reason(payload, "submit_global_evaluation", run_id)
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")
@@ -3700,7 +3704,7 @@ class GatewayApp:
         return 200, response
 
     def submit_closeout(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        self._run_intake_pipeline(payload, "submit_closeout", run_id)
+        self._intake_pipeline_fallback_reason(payload, "submit_closeout", run_id)
         if not self.store.run_path(run_id).exists():
             return 404, self.error("not_found", "run not found")
 
@@ -3910,7 +3914,7 @@ class GatewayApp:
         return 200, response
 
     def submit_failure(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        self._run_intake_pipeline(payload, "submit_failure", run_id)
+        self._intake_pipeline_fallback_reason(payload, "submit_failure", run_id)
         if not self.store.run_path(run_id).exists():
             return 404, self.error("not_found", "run not found")
 
@@ -4106,10 +4110,8 @@ class GatewayApp:
         return 200, response
 
     def submit_worker_output(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        if self._run_intake_pipeline(payload, "submit_worker_output", run_id):
-            body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
-            body["fallback"] = "FALLBACK_HEURISTIC"
-            return 503, body
+        if fallback_reason := self._intake_pipeline_fallback_reason(payload, "submit_worker_output", run_id):
+            return 503, self._gateway_fallback_body(fallback_reason)
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")

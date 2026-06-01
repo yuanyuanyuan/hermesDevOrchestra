@@ -52,6 +52,8 @@ result = normalize({'repo_url': 'https://github.com/x/y'})
 required = ['intent_type', 'confidence', 'source_trace']
 for field in required:
     assert field in result, f'missing {field}'
+false_positive = normalize({'resolution': 'done'})
+assert false_positive['intent_type'] == 'unknown', false_positive
 print('normalized_intent_schema: PASS')
 "
 
