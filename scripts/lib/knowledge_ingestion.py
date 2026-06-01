@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,18 +28,16 @@ class KnowledgeIngestion:
         allow_staged: bool = False,
         enabled: bool = True,
         state_root: Path | str | None = None,
-        runtime_env: dict[str, str] | None = None,
-        runtime_cwd: Path | str | None = None,
+        gbrain_env: dict[str, str] | None = None,
+        gbrain_cwd: Path | str | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
         self.package_root = package_root
         self.allow_staged = allow_staged
         self.enabled = enabled
-        env = runtime_env or os.environ
-        cwd = runtime_cwd
-        self.runtime_env = dict(env)
-        self.runtime_cwd = Path(cwd) if cwd is not None else Path(self.runtime_env.get("HOME", str(Path.home())))
-        default_state_root = Path(self.runtime_env.get("XDG_STATE_HOME", str(Path(self.runtime_cwd) / ".local" / "state")))
+        self.gbrain_env = dict(gbrain_env or os.environ)
+        self.gbrain_cwd = Path(gbrain_cwd) if gbrain_cwd is not None else Path(self.gbrain_env.get("HOME", str(Path.home())))
+        default_state_root = Path(self.gbrain_env.get("XDG_STATE_HOME", str(Path(self.gbrain_cwd) / ".local" / "state")))
         self.state_root = Path(state_root) if state_root is not None else default_state_root / "hermes-orchestra"
         self._config: dict[str, Any] | None = None
 
@@ -48,16 +48,32 @@ class KnowledgeIngestion:
         record = self._build_ingestion_record(normalized_entry)
         state_refs = self._write_state_copy(normalized_entry, record)
 
+        if self._gbrain_available(config):
+            self._run_gbrain_command([config["backend"]["cli_command"], "init"])
+            put_result = self._put_entry(config, normalized_entry["slug"], page_markdown)
+            report_ref = self._write_report(config, normalized_entry, record)
+            return {
+                "entry": normalized_entry,
+                "page_markdown": page_markdown,
+                "storage_ref": f"knowledge://gbrain/{normalized_entry['slug']}",
+                "gbrain_put_result": put_result,
+                "ingestion_record": record,
+                "gbrain_report_ref": report_ref,
+                "state_storage_ref": state_refs["entry_ref"],
+                "state_record_ref": state_refs["record_ref"],
+                "degraded": False,
+            }
+
         return {
             "entry": normalized_entry,
             "page_markdown": page_markdown,
             "storage_ref": state_refs["entry_ref"],
-            "runtime_put_result": {"status": "stored_in_state"},
+            "gbrain_put_result": {"status": "degraded_state_store"},
             "ingestion_record": record,
-            "runtime_report_ref": state_refs["record_ref"],
+            "gbrain_report_ref": state_refs["record_ref"],
             "state_storage_ref": state_refs["entry_ref"],
             "state_record_ref": state_refs["record_ref"],
-            "degraded": False,
+            "degraded": True,
         }
 
     def _load_config(self) -> dict[str, Any]:
@@ -158,7 +174,7 @@ class KnowledgeIngestion:
             "schema_version": "orchestra.full.v1",
             "artifact_type": "knowledge_ingestion_record",
             "record_id": f"knowledge-ingestion-{uuid.uuid4().hex}",
-            "backend": "state_store",
+            "backend": "gbrain",
             "operation": operation,
             "affected_slugs": [entry["slug"]],
             "source_refs": list(entry["source_refs"]),
@@ -169,6 +185,60 @@ class KnowledgeIngestion:
         }
         self._validate_definition("knowledge_ingestion_record", record)
         return record
+
+    def _gbrain_available(self, config: dict[str, Any]) -> bool:
+        executable = config["backend"]["cli_command"]
+        if shutil.which(executable, path=self.gbrain_env.get("PATH")) is None:
+            return False
+        completed = subprocess.run(
+            [executable, "--version"],
+            cwd=str(self.gbrain_cwd),
+            env=self.gbrain_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        return completed.returncode == 0
+
+    def _put_entry(self, config: dict[str, Any], slug: str, page_markdown: str) -> dict[str, Any]:
+        completed = self._run_gbrain_command(
+            [config["backend"]["cli_command"], "put", slug, "--content", page_markdown]
+        )
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise KnowledgeIngestionError("backend_invalid", "gbrain put did not return JSON") from exc
+        if not isinstance(payload, dict):
+            raise KnowledgeIngestionError("backend_invalid", "gbrain put response must be a JSON object")
+        return payload
+
+    def _write_report(self, config: dict[str, Any], entry: dict[str, Any], record: dict[str, Any]) -> str:
+        report_body = json.dumps(
+            {
+                "record_id": record["record_id"],
+                "operation": record["operation"],
+                "affected_slugs": record["affected_slugs"],
+                "resulting_status": record["resulting_status"],
+            },
+            ensure_ascii=False,
+        )
+        completed = self._run_gbrain_command(
+            [
+                config["backend"]["cli_command"],
+                "report",
+                "--type",
+                "knowledge-ingestion",
+                "--title",
+                entry["slug"],
+                "--content",
+                report_body,
+            ]
+        )
+        report_path = completed.stdout.strip().splitlines()[-1]
+        if not report_path:
+            raise KnowledgeIngestionError("backend_invalid", "gbrain report did not return a report path")
+        return f"gbrain://{report_path.lstrip('./')}"
 
     def _write_state_copy(self, entry: dict[str, Any], record: dict[str, Any]) -> dict[str, str]:
         entry_dir = self.state_root / "knowledge" / "entries" / entry["domain"] / entry["topic"]
@@ -186,6 +256,21 @@ class KnowledgeIngestion:
             "entry_ref": f"state://knowledge/entries/{slug_tail}.json",
             "record_ref": f"state://knowledge/ingestion/{record['record_id']}.json",
         }
+
+    def _run_gbrain_command(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
+        completed = subprocess.run(
+            argv,
+            cwd=str(self.gbrain_cwd),
+            env=self.gbrain_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            stderr = completed.stderr.strip() or completed.stdout.strip()
+            raise KnowledgeIngestionError("backend_unavailable", stderr or "gbrain command failed")
+        return completed
 
     def _require_enabled(self) -> None:
         if not self.enabled:
