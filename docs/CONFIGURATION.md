@@ -217,6 +217,29 @@ Migration from `project.json`:
 - Downstream tools read yaml first and fall back to json only if yaml is absent.
 - `scripts/lib/project_config_loader.py` is the unified loader used by Sprint 3 CLI intake paths. It logs source selection and yaml/json conflicts to `logs/config-resolution.jsonl`.
 
+## Channel Routing And Rollout Gate
+
+`config/performance/slo-policy.json` defines the Sprint 4 channel policy under `channels`:
+
+- `quick` — bounded low-risk tasks: lint, syntax, i18n, hardcoded scan, plus staged refactor expansion by project age.
+- `light` — medium complexity work such as multi-file refactors and configuration updates; requires one compact debate round.
+- `standard` — full workflow with complete evidence and three debate rounds.
+
+Every channel entry must include:
+
+- `enabled` — Boolean kill switch.
+- `max_files` — Upper bound for files in that channel.
+- `required_evidence` — Evidence names required before routing or merge decisions.
+
+The `rollout_gate` section controls staged Quick rollout:
+
+- Week 1-2 from `.hermes/project-profile.yaml:first_intake_date`: Quick is limited to lint, syntax, i18n, and hardcoded scans with one file.
+- Week 3: Quick can include single-file refactors.
+- Week 4+: Quick can include refactors up to `channels.quick.max_files`.
+- If `calibration_evidence.confidence < 0.7` or `calibration_evidence.coverage < 0.5`, `RolloutGate.allow()` forces `standard` with `forced_standard: true`.
+
+Set `channels.quick.enabled: false` to activate the global Quick kill switch. Quick candidates are downgraded to Light when available, otherwise Standard, and the reason is appended to `logs/channel-routing.jsonl` as `downgrade_reason: "kill_switch_enabled"`.
+
 ## Sprint 3 CLI Intake
 
 `orch-mvp-wizard` now has two lightweight confirmation paths before the full guided acceptance workflow:

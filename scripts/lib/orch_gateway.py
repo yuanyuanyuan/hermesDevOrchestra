@@ -118,6 +118,8 @@ FULL_MODULE_ENDPOINTS = [
     module_endpoint("self-evolution", "transition", "SelfEvolutionQueue", "gateway_local_review", ["queue_item", "next_status"], ["decision_ref", "rejection_reason", "kimi_review_ref", "human_approval_ref", "allow_staged", "enabled"], ["queue_item_id", "status", "decision_ref", "rejection_reason"]),
     module_endpoint("self-evolution", "list-pending", "SelfEvolutionQueue", "gateway_local_review", [], ["queue_items", "allow_staged", "enabled"], ["items"]),
     module_endpoint("performance-slo", "evaluate", "PerformanceBudgetPolicy", "gateway_local_runtime", ["component_id", "observed"], ["allow_staged", "enabled"], ["component_id", "budget_status", "budget_misses", "degradation_status"]),
+    module_endpoint("channel-router", "classify", "ChannelRouter", "gateway_local_runtime", ["intent", "project_age_weeks"], ["profile"], ["channel", "reason", "project_age_weeks"]),
+    module_endpoint("rollout-gate", "allow", "RolloutGate", "gateway_local_runtime", ["channel", "project_age_weeks", "calibration_evidence"], [], ["allowed", "channel", "forced_standard", "reason"]),
     module_endpoint("fixture-policy", "validate-contract-fixture", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "completion_evidence_allowed"]),
     module_endpoint("fixture-policy", "validate-runtime-fake-adapter", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "degraded", "required_degradation_class"]),
     module_endpoint("degradation-policy", "transition", "DegradationPolicy", "gateway_local_runtime", ["current_status", "next_status"], ["allow_staged", "enabled"], ["next_status"]),
@@ -190,6 +192,8 @@ FULL_MODULE_ENDPOINTS = [
     module_endpoint("self-evolution", "transition", "SelfEvolutionQueue", "gateway_local_review", ["queue_item", "next_status"], ["decision_ref", "rejection_reason", "kimi_review_ref", "human_approval_ref", "allow_staged", "enabled"], ["queue_item_id", "status", "decision_ref", "rejection_reason"]),
     module_endpoint("self-evolution", "list-pending", "SelfEvolutionQueue", "gateway_local_review", [], ["queue_items", "allow_staged", "enabled"], ["items"]),
     module_endpoint("performance-slo", "evaluate", "PerformanceBudgetPolicy", "gateway_local_runtime", ["component_id", "observed"], ["allow_staged", "enabled"], ["component_id", "budget_status", "budget_misses", "degradation_status"]),
+    module_endpoint("channel-router", "classify", "ChannelRouter", "gateway_local_runtime", ["intent", "project_age_weeks"], ["profile"], ["channel", "reason", "project_age_weeks"]),
+    module_endpoint("rollout-gate", "allow", "RolloutGate", "gateway_local_runtime", ["channel", "project_age_weeks", "calibration_evidence"], [], ["allowed", "channel", "forced_standard", "reason"]),
     module_endpoint("fixture-policy", "validate-contract-fixture", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "completion_evidence_allowed"]),
     module_endpoint("fixture-policy", "validate-runtime-fake-adapter", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "degraded", "required_degradation_class"]),
     module_endpoint("degradation-policy", "transition", "DegradationPolicy", "gateway_local_runtime", ["current_status", "next_status"], ["allow_staged", "enabled"], ["next_status"]),
@@ -767,6 +771,28 @@ class GatewayApp:
                 return slo.evaluate(
                     component_id=self.require_string(payload, "component_id"),
                     observed=self.require_dict(payload, "observed"),
+                )
+
+        if module == "channel-router":
+            from channel_router import ChannelRouter
+
+            router = ChannelRouter(self.repo_root)
+            if operation == "classify":
+                return router.classify(
+                    intent=self.require_dict(payload, "intent"),
+                    project_age_weeks=self.require_int(payload, "project_age_weeks"),
+                    profile=self.dict_value(payload, "profile", {}),
+                )
+
+        if module == "rollout-gate":
+            from rollout_gate import RolloutGate
+
+            gate = RolloutGate(self.repo_root)
+            if operation == "allow":
+                return gate.allow(
+                    channel=self.require_string(payload, "channel"),
+                    project_age_weeks=self.require_int(payload, "project_age_weeks"),
+                    calibration_evidence=self.require_dict(payload, "calibration_evidence"),
                 )
 
         if module == "fixture-policy":

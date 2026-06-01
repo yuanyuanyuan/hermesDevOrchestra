@@ -724,6 +724,18 @@ profile:
 - `enabled`：完全启用快速通道，满足条件时自动合并。
 - 切换条件由系统自动判定（基于误判率），但用户可手动申请提前切换，需 L3 审批。
 
+### Sprint 4 通道分级
+
+Gateway 在 1 阶意图确认后执行 `ChannelRouter.classify(intent, project_age_weeks, profile)`：
+
+- `quick`：仅承接低风险、证据可机械验证的任务。Week 1-2 限制为 lint/语法/i18n/硬编码扫描且单文件；Week 3 扩展到单文件重构；Week 4+ 扩展到不超过 3 个文件的重构。
+- `light`：承接中等复杂度任务，例如多文件重构、配置更新。Light 通道需要 1 轮极简辩论，避免把明显不需要完整三轮辩论的任务拖入 Standard。
+- `standard`：承接复杂任务、高风险任务、校准证据不足任务，执行完整三轮辩论和完整证据检查。
+
+随后 `RolloutGate.allow(channel, project_age_weeks, calibration_evidence)` 校验校准质量。若置信度低于 `0.7` 或覆盖率低于 `0.5`，即使分级器认为可走 Quick/Light，也强制返回 Standard，并记录 `forced_standard: true`。
+
+运维可在 `config/performance/slo-policy.json` 设置 `channels.quick.enabled: false` 启用全局 kill switch。此时 Quick 候选会降级到 Light 或 Standard，并在 `logs/channel-routing.jsonl` 记录 `downgrade_reason: "kill_switch_enabled"`。
+
 ---
 
 ## 17. 与当前仓库实现的对应关系

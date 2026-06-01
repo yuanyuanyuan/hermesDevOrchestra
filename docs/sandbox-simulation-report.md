@@ -501,6 +501,17 @@ Sprint 3 CLI 模拟补充：
 > 
 > 完整报告：[链接]
 
+### 6. Sprint 4 Quick → Light → Standard 渐进模拟
+
+| 场景 | 输入 | 预期通道 | 依据 |
+|------|------|----------|------|
+| Week 1 单文件 i18n key 修正 | `task_type=i18n`, `files_count=1` | Quick | 低风险、单文件、机械证据可验证 |
+| Week 1 多文件重构 | `task_type=refactor`, `files_count=5` | Standard | Week 1-2 禁止 Quick 多文件修改 |
+| Week 3 单文件重构 | `task_type=single_file_refactor`, `files_count=1` | Quick | Week 3 校准节奏允许单文件重构 |
+| Week 4 三文件重构 | `task_type=refactor`, `files_count=3` | Quick | Week 4+ 允许不超过 `channels.quick.max_files` 的重构 |
+| Quick kill switch 打开 | `channels.quick.enabled=false` | Light 或 Standard | 原 Quick 候选降级并写入 `logs/channel-routing.jsonl` |
+| 校准证据不足 | `confidence=0.5`, `coverage=0.3` | Standard | Rollout Gate 返回 `forced_standard: true` |
+
 ---
 
 ## 附录：推演假设与限制

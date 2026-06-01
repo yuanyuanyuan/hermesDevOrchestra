@@ -33,6 +33,37 @@
       "slo_claim_allowed": false
     }
   ],
+  "channels": {
+    "quick": {
+      "enabled": true,
+      "max_files": 3,
+      "required_evidence": ["lint", "syntax", "i18n", "hardcoded_scan"],
+      "debate_rounds": 0,
+      "week_1_2_allowed_tasks": ["lint", "syntax", "i18n", "hardcoded_scan"],
+      "week_3_allowed_tasks": ["lint", "syntax", "i18n", "hardcoded_scan", "single_file_refactor"],
+      "week_4_plus_allowed_tasks": ["lint", "syntax", "i18n", "hardcoded_scan", "single_file_refactor", "refactor"]
+    },
+    "light": {
+      "enabled": true,
+      "max_files": 10,
+      "required_evidence": ["lint", "syntax", "evidence_scan"],
+      "debate_rounds": 1,
+      "allowed_tasks": ["multi_file_refactor", "configuration_update", "medium_complexity_change"]
+    },
+    "standard": {
+      "enabled": true,
+      "max_files": 999,
+      "required_evidence": ["full_test_evidence", "debate_report", "review_verdict"],
+      "debate_rounds": 3
+    }
+  },
+  "rollout_gate": {
+    "first_intake_date_source": "project-profile.yaml:first_intake_date",
+    "week_numbering": "natural_week_from_first_intake_date",
+    "min_confidence": 0.7,
+    "min_coverage": 0.5,
+    "insufficient_evidence_action": "force_standard"
+  },
   "component_budgets": {
     "gateway_api": {
       "health_p95_ms": 250,
