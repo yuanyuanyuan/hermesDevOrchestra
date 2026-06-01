@@ -225,7 +225,8 @@ class GatewayApp:
             intent = _intake_normalize(payload, expected_intent_type=request_type)
             ctx = {"project_id": self.store.project_id, "request_type": request_type, "run_id": run_id, "timestamp": utc_now()}
             projected = _projection_project(intent, ctx)
-            _evidence_gather(projected)
+            evidence = _evidence_gather(projected)
+            self._record_intake_trace(request_type, projected, evidence)
             return None
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"
@@ -236,7 +237,32 @@ class GatewayApp:
         record = {"timestamp": utc_now(), "reason": reason, "request_type": request_type, "project": self.store.project_id}
         if detail:
             record["detail"] = detail
-        append_jsonl(self.repo_root / "logs" / "gateway-fallback.jsonl", record)
+        try:
+            append_jsonl(self.repo_root / "logs" / "gateway-fallback.jsonl", record)
+        except Exception as exc:
+            try:
+                sys.stderr.write(f"[orch_gateway] fallback log failed: {type(exc).__name__}: {exc}\n")
+            except Exception:
+                pass
+
+    def _record_intake_trace(self, request_type: str, projected: dict[str, Any], evidence: dict[str, Any]) -> None:
+        record = {
+            "timestamp": utc_now(),
+            "request_type": request_type,
+            "project": self.store.project_id,
+            "intent_type": projected.get("intent_type"),
+            "confidence": projected.get("confidence"),
+            "projection_status": projected.get("projection_status"),
+            "projection_issues": projected.get("projection_issues", []),
+            "state_refs": projected.get("state_refs", []),
+            "evidence_refs": evidence.get("evidence_refs", []),
+            "degraded": bool(evidence.get("degraded")),
+            "degradation_reason": evidence.get("degradation_reason"),
+        }
+        try:
+            append_jsonl(self.repo_root / "logs" / "gateway-intake.jsonl", record)
+        except Exception:
+            pass
 
     def _gateway_fallback_body(self, detail: str) -> dict[str, Any]:
         body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
@@ -2360,7 +2386,8 @@ class GatewayApp:
         return None
 
     def stop_run(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        self._intake_pipeline_fallback_reason(payload, "stop_run", run_id)
+        if fallback_reason := self._intake_pipeline_fallback_reason(payload, "stop_run", run_id):
+            return 503, self._gateway_fallback_body(fallback_reason)
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")
@@ -2534,7 +2561,8 @@ class GatewayApp:
         return 200, response
 
     def submit_verdict(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        self._intake_pipeline_fallback_reason(payload, "submit_verdict", run_id)
+        if fallback_reason := self._intake_pipeline_fallback_reason(payload, "submit_verdict", run_id):
+            return 503, self._gateway_fallback_body(fallback_reason)
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")
@@ -3245,7 +3273,8 @@ class GatewayApp:
         return 200, response
 
     def submit_global_evaluation(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        self._intake_pipeline_fallback_reason(payload, "submit_global_evaluation", run_id)
+        if fallback_reason := self._intake_pipeline_fallback_reason(payload, "submit_global_evaluation", run_id):
+            return 503, self._gateway_fallback_body(fallback_reason)
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")
@@ -3704,7 +3733,8 @@ class GatewayApp:
         return 200, response
 
     def submit_closeout(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        self._intake_pipeline_fallback_reason(payload, "submit_closeout", run_id)
+        if fallback_reason := self._intake_pipeline_fallback_reason(payload, "submit_closeout", run_id):
+            return 503, self._gateway_fallback_body(fallback_reason)
         if not self.store.run_path(run_id).exists():
             return 404, self.error("not_found", "run not found")
 
@@ -3914,7 +3944,8 @@ class GatewayApp:
         return 200, response
 
     def submit_failure(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        self._intake_pipeline_fallback_reason(payload, "submit_failure", run_id)
+        if fallback_reason := self._intake_pipeline_fallback_reason(payload, "submit_failure", run_id):
+            return 503, self._gateway_fallback_body(fallback_reason)
         if not self.store.run_path(run_id).exists():
             return 404, self.error("not_found", "run not found")
 

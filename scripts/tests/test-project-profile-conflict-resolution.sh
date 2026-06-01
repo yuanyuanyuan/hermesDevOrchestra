@@ -66,7 +66,7 @@ source_of_truth: yaml
 EOF
 
 # Run orch-profile-sync to trigger conflict resolution
-"$REPO_ROOT/scripts/bin/orch-profile-sync" test-proj "$PROJECT_DIR" >/dev/null || true
+"$REPO_ROOT/scripts/bin/orch-profile-sync" test-proj "$PROJECT_DIR" >/dev/null
 
 # Verify project.json in workspace has deprecated marker
 WORKSPACE_JSON="$PROJECT_DIR/.hermes/projects/test-proj/project.json"
