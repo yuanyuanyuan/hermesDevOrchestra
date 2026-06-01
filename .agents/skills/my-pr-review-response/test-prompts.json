@@ -1,0 +1,17 @@
+[
+  {
+    "id": 1,
+    "prompt": "帮我处理 PR #42 的 review 意见",
+    "expected": "收集 PR 上下文 → 提取 review 问题清单 → 逐项判断 AGREE/DISAGREE → 修复或反驳 → 发 PR Comment → 生成汇总报告 → 请求重新 review"
+  },
+  {
+    "id": 2,
+    "prompt": "PR #123 的 reviewer 提了很多 style 问题，但有些我不认同，帮我看看怎么处理",
+    "expected": "区分 style 类意见 → 用决策树判断（有证据/有架构理由/有替代方案才能反驳）→ 对不认同的逐项论证 → 发反驳 comment → 对认同的修复 → 汇总"
+  },
+  {
+    "id": 3,
+    "prompt": "我收到一个 review 意见说代码有架构问题，但描述很模糊，我没看懂他在说什么",
+    "expected": "尝试用 /diagnose 排查验证 → 如果仍然无法解析 → 触发止损（unclear-review blocker）→ 报告给用户而不是瞎改"
+  }
+]

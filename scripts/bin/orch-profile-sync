@@ -49,6 +49,8 @@ import re
 import shutil
 import sys
 
+import yaml
+
 catalog_dir, project_dir, project_id, workspace_root, override_dir, board_slug, memory_namespace = sys.argv[1:]
 profiles_root = os.path.join(catalog_dir, "profiles")
 global_soul_path = os.path.join(catalog_dir, "global", "SOUL.md")
@@ -56,23 +58,6 @@ distribution_path = os.path.join(catalog_dir, "distribution.yaml")
 
 if not os.path.isfile(global_soul_path):
     raise SystemExit(f"Global SOUL source missing: {global_soul_path}")
-
-
-def parse_inline_list(text: str):
-    text = text.strip()
-    if not text.startswith("[") or not text.endswith("]"):
-        return []
-    body = text[1:-1].strip()
-    if not body:
-        return []
-    return [item.strip() for item in body.split(",") if item.strip()]
-
-
-def parse_scalar(text: str):
-    value = text.split(":", 1)[1].strip()
-    if value == "null":
-        return None
-    return value
 
 
 def parse_config(path: str):
@@ -86,36 +71,31 @@ def parse_config(path: str):
     }
     if not os.path.isfile(path):
         return data
-    with open(path, encoding="utf-8") as handle:
-        section = None
-        for raw_line in handle:
-            line = raw_line.split("#", 1)[0].rstrip()
-            if not line.strip():
-                continue
-            indent = len(line) - len(line.lstrip())
-            stripped = line.strip()
-            if indent == 0:
-                section = None
-                if stripped.startswith("model:"):
-                    data["model"] = parse_scalar(stripped) or ""
-                elif stripped.startswith("status:"):
-                    data["status"] = parse_scalar(stripped) or ""
-                elif stripped == "toolsets:":
-                    section = "toolsets"
-                elif stripped == "engine:":
-                    section = "engine"
-            elif section == "toolsets":
-                if stripped.startswith("enabled:"):
-                    data["enabled"] = parse_inline_list(stripped.split(":", 1)[1].strip())
-                elif stripped.startswith("disabled:"):
-                    data["disabled"] = parse_inline_list(stripped.split(":", 1)[1].strip())
-            elif section == "engine":
-                key, _, value = stripped.partition(":")
-                key = key.strip()
-                if key in data["engine"]:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            raw = yaml.safe_load(handle) or {}
+    except Exception:
+        return data
+    if not isinstance(raw, dict):
+        return data
+    data["model"] = raw.get("model") if isinstance(raw.get("model"), str) else ""
+    data["status"] = raw.get("status") if isinstance(raw.get("status"), str) else ""
+    toolsets = raw.get("toolsets")
+    if isinstance(toolsets, dict):
+        enabled = toolsets.get("enabled")
+        if isinstance(enabled, list):
+            data["enabled"] = [item for item in enabled if isinstance(item, str) and item]
+        disabled = toolsets.get("disabled")
+        if isinstance(disabled, list):
+            data["disabled"] = [item for item in disabled if isinstance(item, str) and item]
+    engine = raw.get("engine")
+    if isinstance(engine, dict):
+        for key in data["engine"]:
+            if key in engine:
+                value = engine[key]
+                if value is None or isinstance(value, str):
+                    data["engine"][key] = value
                     data["engine_fields"].add(key)
-                    value = value.strip()
-                    data["engine"][key] = None if value == "null" else value
     return data
 
 
@@ -174,30 +154,29 @@ def parse_distribution_version(path: str):
 
 def write_config(path: str, status: str, model: str, enabled, disabled, engine, engine_fields):
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    payload = {
+        "status": status,
+        "model": model,
+        "toolsets": {
+            "enabled": enabled,
+            "disabled": disabled,
+        },
+    }
+    ordered_engine = {}
+    for key in ("cli", "mode", "flags", "fallback"):
+        if key not in engine_fields:
+            continue
+        value = engine.get(key)
+        if value is None:
+            if key == "fallback":
+                ordered_engine[key] = None
+            continue
+        if value:
+            ordered_engine[key] = value
+    if ordered_engine:
+        payload["engine"] = ordered_engine
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(f"status: {status}\n")
-        handle.write(f"model: {model}\n")
-        ordered_engine = []
-        for key in ("cli", "mode", "flags", "fallback"):
-            if key not in engine_fields:
-                continue
-            value = engine.get(key)
-            if value is None:
-                if key == "fallback":
-                    ordered_engine.append((key, None))
-                continue
-            if value:
-                ordered_engine.append((key, value))
-        if ordered_engine:
-            handle.write("engine:\n")
-            for key, value in ordered_engine:
-                if value is None:
-                    handle.write(f"  {key}: null\n")
-                else:
-                    handle.write(f"  {key}: {value}\n")
-        handle.write("toolsets:\n")
-        handle.write(f"  enabled: [{', '.join(enabled)}]\n")
-        handle.write(f"  disabled: [{', '.join(disabled)}]\n")
+        yaml.safe_dump(payload, handle, sort_keys=False, allow_unicode=True)
 
 
 def write_soul(path: str, role: str, global_text: str, project_text: str, role_text: str):
@@ -267,7 +246,7 @@ for role in role_names:
     )
     write_soul(os.path.join(role_out, "SOUL.md"), role, global_text, project_text, role_text)
 
-project_json = {
+project_data = {
     "project_slug": project_id,
     "project_dir": project_dir,
     "board_slug": board_slug,
@@ -277,9 +256,48 @@ project_json = {
     "profile_catalog_version": catalog_version,
     "profiles_dir": profiles_out,
 }
-with open(os.path.join(workspace_root, "project.json"), "w", encoding="utf-8") as handle:
-    json.dump(project_json, handle, indent=2)
-    handle.write("\n")
+
+# Write project-profile.yaml as the source of truth (Sprint 1)
+project_profile_yaml = os.path.join(workspace_root, "project-profile.yaml")
+with open(project_profile_yaml, "w", encoding="utf-8") as handle:
+    yaml.safe_dump(
+        {
+            "name": project_id,
+            "project_slug": project_id,
+            "project_dir": project_dir,
+            "board_slug": board_slug,
+            "workspace_root": workspace_root,
+            "override_dir": override_dir,
+            "memory_namespace": memory_namespace,
+            "profile_catalog_version": catalog_version,
+            "profiles_dir": profiles_out,
+            "profile_version": 2,
+            "source_of_truth": "yaml",
+        },
+        handle,
+        sort_keys=False,
+        allow_unicode=True,
+    )
+
+# Preserve existing project.json as read-only fallback with deprecated marker
+project_json_path = os.path.join(workspace_root, "project.json")
+if os.path.isfile(project_json_path):
+    try:
+        with open(project_json_path, encoding="utf-8") as handle:
+            existing = json.load(handle)
+    except Exception:
+        existing = {}
+    existing["deprecated"] = True
+    existing["superseded_by"] = "project-profile.yaml"
+    with open(project_json_path, "w", encoding="utf-8") as handle:
+        json.dump(existing, handle, indent=2)
+        handle.write("\n")
+else:
+    project_data["deprecated"] = True
+    project_data["superseded_by"] = "project-profile.yaml"
+    with open(project_json_path, "w", encoding="utf-8") as handle:
+        json.dump(project_data, handle, indent=2)
+        handle.write("\n")
 
 write_root_soul(os.path.join(workspace_root, "SOUL.md"), global_text)
 PY

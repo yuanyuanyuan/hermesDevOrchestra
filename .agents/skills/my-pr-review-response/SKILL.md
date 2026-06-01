@@ -49,7 +49,10 @@ CONTEXT=$(bash scripts/collect-review-context.sh ${PR_NUMBER})
 bash scripts/checkout-branch.sh ${PR_NUMBER}
 ```
 
-### Phase 2: 逐项审查（需要智力判断）
+> **如果 `collect-review-context.sh` 失败** → 手动 `gh pr view` + `gh pr diff` 收集 → 仍失败报告 blocker。
+> **如果 `checkout-branch.sh` 失败** → `git stash` 后重试 → 仍失败报告 blocker。
+
+### Phase 2: 逐项审查
 
 对合并后的问题清单中的每个发现项：
 
@@ -60,23 +63,28 @@ bash scripts/checkout-branch.sh ${PR_NUMBER}
 
 **2. 排查验证：**
 ```
-/diagnose
+/diagnose ${FILE_PATH}:${LINE_NUM} "${ISSUE_DESCRIPTION}"
 ```
-使用 /diagnose 命令逐项检查当前代码是否确实存在所述问题，运行相关测试验证，记录证据。
+传入文件路径、行号和问题描述，逐项检查代码是否确实存在所述问题，运行测试验证，记录证据。
 
 **3. 决策**（见 `reference/decision-tree.md`）：
 - **AGREE** → Phase 3
 - **DISAGREE** → Phase 4
 
-### Phase 3: 修复流水线（需要智力判断）
+> 🔴 **CHECKPOINT**：处理完所有 review 意见后，生成 AGREE/DISAGREE 决策清单，**向用户展示并确认**后再进入修复/反驳流水线。
+> 🛑 **STOP**：如有任何意见你无法判断，暂停并询问用户，不要自主猜测。
+
+> **如果 `/diagnose` 命令不可用** → 手动读取相关代码和测试文件，人工验证问题是否存在 → 仍无法判断则暂停询问用户。
+
+### Phase 3: 修复流水线
 
 对每条 AGREE 的意见：
 
 **步骤 A — TDD 修复：**
 ```
-/tdd
+/tdd --file ${FILE_PATH} --issue "${ISSUE_SUMMARY}"
 ```
-使用 /tdd 命令进行测试驱动修复：先写失败测试复现问题，再修复代码使测试通过。确保修复精确对应 review 意见，遵循最小改动原则。
+指定目标文件和问题摘要，先写失败测试复现问题，再修复代码使测试通过。确保精确对应 review 意见，遵循最小改动原则。
 
 **步骤 B — 验证：**
 - 运行完整测试套件确认无回归
@@ -102,7 +110,11 @@ bash scripts/post-comment.sh ${PR_NUMBER} /tmp/pr-fix-${PR_NUMBER}-${ITEM_ID}.md
 git add . && git commit -m "fix(review): ${BRIEF_DESC}" && git push origin ${BRANCH}
 ```
 
-### Phase 4: 反驳流水线（需要智力判断）
+> 🔴 **CHECKPOINT**：**提交并 push 前，向用户展示修改摘要**（修改了哪些文件、核心变更点），确认后再执行。
+
+> **如果 `/tdd` 修复后测试仍失败** → 检查失败是否与 review 意见相关 → 若无关则触发 `test-env-conflict` 止损。
+
+### Phase 4: 反驳流水线
 
 对每条 DISAGREE 的意见，必须满足反驳门槛（见 `reference/decision-tree.md`）：
 
@@ -123,9 +135,18 @@ EOF
 bash scripts/post-comment.sh ${PR_NUMBER} /tmp/pr-counter-${PR_NUMBER}-${ITEM_ID}.md
 ```
 
+> **如果反驳证据不足**（不满足门槛任一条）→ 转 AGREE 处理，不可强行反驳。
+
 ### Phase 5: 最终交付
 
-全部意见处理完毕后，生成汇总报告并发送：
+全部意见处理完毕后：
+
+**步骤 A — 生成汇总报告：**
+先向用户展示报告内容。
+
+🔴 **CHECKPOINT**：**发送 PR Comment 前，向用户展示完整响应清单**（每条意见的决策+状态），确认无误后再执行步骤 B。
+
+**步骤 B — 发送 PR Comment：**
 
 ```bash
 cat > /tmp/pr-summary-${PR_NUMBER}.md << 'EOF'
@@ -143,17 +164,35 @@ EOF
 bash scripts/post-comment.sh ${PR_NUMBER} /tmp/pr-summary-${PR_NUMBER}.md
 ```
 
+> **如果 `post-comment.sh` 失败** → 重试一次并检查 `gh auth status` → 仍失败则提示用户手动发送汇总评论。
+
 ---
 
 ## 约束与止损
 
 硬性约束和边界见 `reference/constraints.md`。
 
-**止损条件：**
-- `gh` CLI 不可用 → 报告 blocker
-- 修复后测试持续失败 3 次 → 报告 blocker
-- reviewer 意见自相矛盾 → 报告 blocker
-- 无法解析出明确问题清单 → 报告 blocker
+**止损条件（触发条件 / 一线修复 / 仍失败兜底）：**
+
+| 触发条件 | 一线修复 | 仍失败兜底 |
+|---------|---------|-----------|
+| `gh` CLI 不可用 | 检查 `gh auth status`，尝试重新认证 | 报告 `tool-unavailable` blocker，停止执行 |
+| 修复后测试持续失败 3 次 | 检查失败是否与 review 意见相关 | 报告 `test-env-conflict` blocker |
+| reviewer 意见自相矛盾 | 在 PR Comment 中请求澄清 | 报告 `contradictory-review` blocker |
+| 无法解析出明确问题清单 | 尝试手动读取 review body 和 comments | 报告 `unclear-review` blocker |
+
+---
+
+## 反例与黑名单
+
+| 不要做 | 正确做法 |
+|--------|---------|
+| 未验证直接改代码 | 先用 `/diagnose` 验证问题确实存在 |
+| 强行反驳无证据 | 证据不足时转 AGREE 处理 |
+| 修改 PR 范围外文件 | 严格只修改 PR diff 中的文件 |
+| 跳过测试直接 push | 必须运行测试验证后再提交 |
+| 自动合并 PR | 只请求 reviewer 重新 review |
+| 主观感受式反驳 | 反驳必须有代码/文档/架构证据 |
 
 ---
 

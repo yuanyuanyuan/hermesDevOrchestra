@@ -1,0 +1,20 @@
+[
+  {
+    "id": 1,
+    "scenario": "happy_path",
+    "prompt": "帮我 review 一下 PR #15",
+    "expected": "触发完整 Phase 1-5 流程：收集PR元数据→执行ce-code-review→生成结构化报告→以COMMENT事件提交到PR"
+  },
+  {
+    "id": 2,
+    "scenario": "re_review",
+    "prompt": "我修复了之前 review 指出的问题，请重新 review PR #15",
+    "expected": "检测为复核场景：读取上次review的commit OID→运行diff-since.sh裁剪范围→重点检查原FAIL项修复状态→生成含'原问题修复状态'和'新发现'的复核报告"
+  },
+  {
+    "id": 3,
+    "scenario": "large_diff",
+    "prompt": "帮我 review PR #15，这个PR加了6000多行代码",
+    "expected": "Phase 1收集信息时发现diff超过5000行→触发止损条件→报告超出范围并建议人工介入，不执行ce-code-review"
+  }
+]

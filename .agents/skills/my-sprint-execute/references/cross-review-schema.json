@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "cross-review-schema",
+  "title": "Sprint Execute Cross-Review Findings Schema",
+  "description": "轻量级 findings schema，用于 Team 内交叉 Review。兼容 ce-code-review findings schema 的核心字段，但精简了 detail-tier 字段。",
+  "type": "object",
+  "required": ["reviewer", "task_id", "findings"],
+  "properties": {
+    "reviewer": {
+      "type": "string",
+      "enum": ["navigator", "guardian"],
+      "description": "执行交叉 Review 的角色"
+    },
+    "task_id": {
+      "type": "string",
+      "description": "被审查的 Task ID（如 U3）"
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/finding" }
+    },
+    "summary": {
+      "type": "string",
+      "description": "Review 整体摘要"
+    }
+  },
+  "definitions": {
+    "finding": {
+      "type": "object",
+      "required": ["title", "severity", "file", "line", "category"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "发现的标题，必须具体可执行"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["P0", "P1", "P2", "P3"],
+          "description": "严重级别。P0=关键断裂/漏洞，P1=高影响缺陷，P2=中等影响，P3=低影响"
+        },
+        "file": {
+          "type": "string",
+          "description": "涉及文件路径"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "涉及行号"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "architecture-guardrail",
+            "logic-error",
+            "testing-gap",
+            "schema-sync",
+            "interface-contract",
+            "security",
+            "performance",
+            "maintainability",
+            "documentation"
+          ],
+          "description": "发现类别"
+        },
+        "description": {
+          "type": "string",
+          "description": "发现的详细描述"
+        },
+        "resolution": {
+          "type": "string",
+          "description": "建议的修正方案（必须具体可执行）"
+        },
+        "confidence": {
+          "type": "integer",
+          "enum": [0, 25, 50, 75, 100],
+          "description": "置信度锚点"
+        }
+      }
+    }
+  }
+}

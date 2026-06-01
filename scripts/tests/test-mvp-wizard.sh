@@ -65,7 +65,7 @@ REPORT="$TMP_DIR/report.json"
   --report "$REPORT" \
   >"$TMP_DIR/wizard.out"
 
-assert_contains "MVP 引导验收完成" "$TMP_DIR/wizard.out" "wizard should complete"
+assert_contains "MVP guided acceptance complete" "$TMP_DIR/wizard.out" "wizard should complete"
 assert_file_exists "$PROJECT_DIR/.workflow/knowledge/project-summary.json" "orch-init should generate workflow knowledge"
 assert_file_exists "$STATE_ROOT/wizard-demo/paths.json" "project should be registered"
 assert_file_exists "$REPORT" "acceptance report missing"
