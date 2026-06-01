@@ -4,7 +4,7 @@ Source plan: `/home/stark/.claude/plans/plan-sprint-sprint-1-curried-scone.md`
 
 This checklist is derived from the full Hermes Orchestra plan dated 2026-05-18. It is an execution and verification guide only; it does not contain implementation code.
 
-Last updated: 2026-05-19 — Closed host binding, debate input length, and negative-test coverage gaps; refreshed completion evidence checks.
+Last updated: 2026-05-20 — Added Sprint 12 runtime activation substrate, validator coverage, and mixed-family gateway cutover checks.
 
 ## Global Gates
 
@@ -458,6 +458,53 @@ Blocked stop conditions:
 - [x] Stop if Gateway rejects requests to new endpoints.
 
 [2026-05-18] Verified by Codex — all tests passed
+
+## Sprint 12: Gateway Runtime Activation Substrate
+
+Dependencies on previous sprints:
+
+- [x] Sprint 0 must be complete and verified.
+- [x] Sprint 10 and Sprint 11 must be complete and verified.
+
+Exact files to create:
+
+- [x] `.planning/goals/full-system-cutover/sprint-12-gateway-runtime-activation.md`
+- [x] `config/cutover/runtime-family-activation.json`
+- [x] `.workflow/knowledge/decisions/2026-05-20-gateway-authority-cutover.md`
+- [x] `.workflow/knowledge/decisions/2026-05-20-closeout-self-evolution-cutover.md`
+- [x] `scripts/lib/runtime_activation.py`
+- [x] `scripts/tests/test-runtime-activation.sh`
+
+Files to modify:
+
+- [x] `scripts/lib/orch_gateway.py`
+- [x] `scripts/bin/orch-full-contract-validate`
+- [x] `scripts/tests/test-full-contract-validation.sh`
+- [x] `docs/gateway-integration-architecture.md`
+- [x] `docs/FULL-COVERAGE-MATRIX.md`
+- [x] `IMPLEMENTATION-GAP-ANALYSIS.md`
+
+Objective:
+
+Add a mixed-family runtime activation substrate so Gateway can default-activate `gateway_authority` and `closeout_and_self_evolution` module paths without requiring caller-side `allow_staged=True`, while preserving blocked behavior for inactive families.
+
+Verification commands:
+
+- [x] `bash scripts/tests/test-runtime-activation.sh`
+- [x] `bash scripts/tests/test-full-contract-validation.sh`
+- [x] `bash scripts/tests/test-gateway-integration-points.sh`
+- [x] `bash scripts/tests/test-staged-cutover.sh`
+- [x] `bash scripts/tests/test-gateway-ai-integration.sh`
+
+Blocked stop conditions:
+
+- [x] Stop if `config/cutover/runtime-family-activation.json` allows a family without all required gate evidence.
+- [x] Stop if an inactive family becomes default-runnable without explicit `allow_staged`.
+- [x] Stop if Gateway startup or capabilities reporting breaks because runtime activation config is unreadable.
+- [x] Stop if `scripts/tests/test-runtime-activation.sh` fails.
+- [x] Stop if `scripts/tests/test-full-contract-validation.sh` fails.
+
+- [2026-05-20] Verified by Codex — runtime activation, validator, gateway integration, staged cutover, and AI integration tests passed
 
 ## Plan Validation Checklist
 

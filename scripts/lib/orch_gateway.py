@@ -20,18 +20,7 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
-from debate_report import validate_artifact_definition
 from runtime_activation import RuntimeActivation, RuntimeActivationError
-
-try:
-    from gateway_intake import normalize as _intake_normalize
-    from gateway_projection import project as _projection_project
-    from gateway_evidence import gather as _evidence_gather
-    _HELPERS_OK = True
-    _HELPERS_IMPORT_ERROR: str | None = None
-except ImportError as exc:
-    _HELPERS_OK = False
-    _HELPERS_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
 
 SCHEMA_VERSION = "orchestra.v1"
@@ -390,6 +379,13 @@ class GatewayApp:
         cache_root = os.environ.get("CACHE_ROOT", str(Path(os.environ.get("HOME", str(Path.home()))) / ".cache/hermes-orchestra"))
         debate_teams = self.config_items("config/debate/teams.json", "teams")
         debate_modes = self.config_items("config/debate/modes.json", "modes")
+        try:
+            runtime_activation = self.runtime_activation.summary()
+        except RuntimeActivationError as exc:
+            runtime_activation = {
+                "config_ref": self.runtime_activation.config_path,
+                "error": getattr(exc, "message", str(exc) or "runtime activation unavailable"),
+            }
         routes = [
             "GET /health",
             "GET /orchestra/capabilities",
@@ -522,7 +518,7 @@ class GatewayApp:
         return 403, self.error("authority_required", f"authority must be {expected_authority}")
 
     def dispatch_module_operation(self, module: str, operation: str, payload: dict[str, Any]) -> Any:
-        allow_staged = self.bool_payload(payload, "allow_staged", False)
+        allow_staged = self.module_allow_staged(module, payload)
         enabled = self.bool_payload(payload, "enabled", True)
 
         if module == "debate-engine":
@@ -816,6 +812,14 @@ class GatewayApp:
                 )
 
         raise ValueError(f"unsupported module operation: {module}/{operation}")
+
+    def module_allow_staged(self, module: str, payload: dict[str, Any]) -> bool:
+        if "allow_staged" in payload:
+            return self.bool_payload(payload, "allow_staged", False)
+        try:
+            return self.runtime_activation.default_allow_staged(module)
+        except RuntimeActivationError:
+            return False
 
     def bool_payload(self, payload: dict[str, Any], key: str, default: bool) -> bool:
         value = payload.get(key, default)
