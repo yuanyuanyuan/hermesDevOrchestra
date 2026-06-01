@@ -90,7 +90,7 @@ class ProjectConfigLoader:
             return {}
         try:
             data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except Exception:
+        except (OSError, UnicodeDecodeError, yaml.YAMLError):
             return {}
         return data if isinstance(data, dict) else {}
 
@@ -100,7 +100,7 @@ class ProjectConfigLoader:
             return {}
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return {}
         return data if isinstance(data, dict) else {}
 

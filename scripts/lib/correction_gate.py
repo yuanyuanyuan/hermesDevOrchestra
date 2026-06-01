@@ -11,7 +11,6 @@ from pathlib import Path
 from time import time_ns
 from typing import Any
 
-from atomic_writer import AtomicWriter
 from project_config_loader import ProjectConfigLoader
 
 
@@ -110,22 +109,15 @@ def run_interactive(intent: dict[str, Any], profile: dict[str, Any], project_dir
         print("round_2: fallback -> clarify if the original goal still stands")
         final = _read_choice()
         override = final == "N"
-        result = {
-            "status": "blocked" if override else "approved",
-            "mode": "cli_interactive",
-            "rounds_completed": 2,
-            "override": override,
-            "confirmation_nodes": [node["id"] for node in nodes],
-        }
-        if override:
-            result["writer_receipt"] = append_override_record(project_dir, intent, result)
-        return result
+        rounds_completed = 2
+    else:
+        override = second == "N"
+        rounds_completed = 1
 
-    override = second == "N"
     result = {
         "status": "blocked" if override else "approved",
         "mode": "cli_interactive",
-        "rounds_completed": 1,
+        "rounds_completed": rounds_completed,
         "override": override,
         "confirmation_nodes": [node["id"] for node in nodes],
     }
@@ -152,7 +144,7 @@ def append_override_record(project_dir: Path, intent: dict[str, Any], result: di
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(temp_path, log_path)
-    AtomicWriter._fsync_parent(log_path.parent)
+    _fsync_parent(log_path.parent)
     return {
         "status": "written",
         "path": str(log_path),
@@ -177,6 +169,17 @@ def _utc_now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _fsync_parent(parent: Path) -> None:
+    try:
+        fd = os.open(parent, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-dir", default=".")
@@ -194,7 +197,7 @@ def main(argv: list[str]) -> int:
 
     loader = ProjectConfigLoader()
     profile = loader.load(args.project_dir, args.project_id)
-    intent = make_mock_intent() if args.mock or args.interactive or args.batch else make_mock_intent()
+    intent = make_mock_intent()
     project_dir = Path(args.project_dir).resolve()
 
     if args.batch:
