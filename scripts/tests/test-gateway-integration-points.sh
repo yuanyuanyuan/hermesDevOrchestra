@@ -173,12 +173,6 @@ printf 'release command stub\n'
 SH
 chmod +x "$FAKE_BIN/project-release"
 
-cat > "$FAKE_BIN/gbrain" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
-chmod +x "$FAKE_BIN/gbrain"
-
 export HOME="$TMP_DIR/home"
 export RUNTIME_ROOT="$TMP_DIR/runtime"
 export STATE_ROOT="$TMP_DIR/state"
@@ -238,7 +232,7 @@ repo_root = pathlib.Path(sys.argv[2])
 tmp_dir = pathlib.Path(sys.argv[3])
 
 
-def post(path, body):
+def post(path, body, *, expect_status=200):
     request = urllib.request.Request(
         f"{base_url}{path}",
         data=json.dumps(body).encode("utf-8"),
@@ -247,9 +241,13 @@ def post(path, body):
     )
     try:
         with urllib.request.urlopen(request, timeout=5) as response:
-            return response.status, json.loads(response.read().decode("utf-8"))
+            body = json.loads(response.read().decode("utf-8"))
+            assert response.status == expect_status, (response.status, expect_status, body)
+            return response.status, body
     except urllib.error.HTTPError as exc:
-        return exc.code, json.loads(exc.read().decode("utf-8"))
+        body = json.loads(exc.read().decode("utf-8"))
+        assert exc.code == expect_status, (exc.code, expect_status, body)
+        return exc.code, body
 
 
 with urllib.request.urlopen(f"{base_url}/orchestra/capabilities", timeout=5) as response:
@@ -491,8 +489,7 @@ for path, body in (
         },
     ),
 ):
-    status, error_body = post(path, body)
-    assert status == 400, (path, status, error_body)
+    status, error_body = post(path, body, expect_status=400)
     assert error_body["error"]["code"] == "command_disabled", (path, error_body)
 
 knowledge_entry = {
@@ -527,9 +524,9 @@ status, ingest_response = post(
         "authority": authority("knowledge-ingestion", "ingest"),
         "entry": knowledge_entry,
     },
+    expect_status=400,
 )
-assert status == 200, ingest_response
-assert ingest_response["result"]["degraded"] is True, ingest_response
+assert ingest_response["error"]["code"] == "module_disabled", ingest_response
 
 status, query_response = post(
     "/orchestra/modules/runtime-knowledge/query",
@@ -546,9 +543,9 @@ status, query_response = post(
             "evidence_scope": "debate",
         },
     },
+    expect_status=400,
 )
-assert status == 200, query_response
-assert query_response["result"]["result_artifact"]["slugs"] == ["domain/wechat/routing/navigate-to"], query_response
+assert query_response["error"]["code"] == "module_disabled", query_response
 
 non_protected_proposal = {
     "proposal_id": "P-knowledge-001",

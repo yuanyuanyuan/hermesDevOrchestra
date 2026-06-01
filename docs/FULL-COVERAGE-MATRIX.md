@@ -69,6 +69,6 @@ Status vocabulary:
 ## Gaps Before Full Implementation Planning
 
 - Expand mixed-family activation from module defaults to run-level full artifact consumption and validation.
-- Implement Gateway full runtime consumption of full schema artifacts, full target configs, capability negotiation, release execution, runtime knowledge, remote decisions, and closeout gates.
-- Add adapter implementation plans for gbrain CLI/MCP, release pipeline, and remote decision transport.
+- Implement the remaining run-level full runtime consumption gaps: remote decisions, release execution, deeper closeout integration, and stronger parallel merge orchestration beyond mechanical conflict artifacts.
+- Add adapter implementation plans for runtime knowledge state-store adapter, release pipeline, and remote decision transport.
 - Keep `qnN4o510` as design-source traceability only; do not introduce it as runtime retrieval.
