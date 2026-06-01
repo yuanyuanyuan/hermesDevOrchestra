@@ -3,8 +3,9 @@ name: my-pr-review
 description: >
   对指定 GitHub PR 执行完整的结构化 Code Review。
   收集情报、按维度逐项检查、以 PR Review Body 方式发送结构化 review 结果，
-  提交 REQUEST_CHANGES 或 APPROVE，并基于证据做出合并/拒绝决策。
+  提交 REQUEST_CHANGES 或 review approved comment，并基于证据做出合并/拒绝建议。
   Reviewer 身份：stark-008。
+  注意：GitHub 不允许 PR 作者对自己的 PR 提交 APPROVE review，因此即使检查全部通过，也使用 COMMENT 事件附带 approved 说明，而非 APPROVE 事件。合并由用户手动执行。
 ---
 
 # PR Review Skill
@@ -174,7 +175,7 @@ gh pr view ${PR_NUMBER} --json body | grep -oE '(docs/adr/[^ ]+|\.planning/specs
 ## 摘要
 - 检查项总计: N | PASS: X | FAIL: Y | N/A: Z
 - 发现项数量: Y（每个 FAIL 对应一条）
-- 建议决策: [APPROVE / REQUEST_CHANGES]
+- 建议决策: [review approved / REQUEST_CHANGES]（均以 COMMENT 事件提交，见阶段 4）
 
 ## 发现项清单
 [列出每个 FAIL 的文件:行号 + 问题摘要]
@@ -190,17 +191,19 @@ gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
   --field body="$(cat ${REVIEW_DRAFT})"
 ```
 
-如果全部 PASS（直接 APPROVE）：
+如果全部 PASS（review approved comment）：
 ```bash
 gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
   --method POST \
-  --field event=APPROVE \
-  --field body="Review passed. All ${N} criteria checked, 0 blockers. Evidence verified."
+  --field event=COMMENT \
+  --field body="✅ Review approved. All ${N} criteria checked, 0 blockers. Evidence verified. Ready for merge."
 ```
 
 ---
 
 ### 阶段 5：合并门控（MERGE GATE）
+
+> ⚠️ 本 Skill 不执行实际合并操作。合并由用户手动完成。
 
 **必要条件（缺一不可）：**
 - [ ] 本次 review 所有检查项 PASS 或 N/A（无 FAIL）
@@ -210,6 +213,8 @@ gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
 - [ ] 本次 review 的 commit 与 PR head 一致
 
 **如果允许合并：**
+在 review comment 中明确告知用户："✅ Review approved. 满足所有合并条件，请手动执行合并。"
+用户自行执行：
 ```bash
 gh pr merge ${PR_NUMBER} --squash --delete-branch=false
 ```
