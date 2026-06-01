@@ -306,10 +306,29 @@ print('status:', status)
 print('fallback:', body.get('fallback'))
 print('error_code:', body.get('error', {}).get('code'))
 assert status == 503, f'expected 503, got {status}'
-assert body.get('fallback') == 'FALLBACK_HEURISTIC'
+assert body.get('fallback') == 'heuristic'
 assert body.get('error', {}).get('code') == 'gateway_fallback'
 print('http_fallback: PASS')
 PYEOF
 rm -rf "$FALLBACK_TMP"
+
+assert_contains 'self.send_header("x-gateway-fallback", "heuristic" if body["fallback"] == "FALLBACK_HEURISTIC" else body["fallback"])' "$REPO_ROOT/scripts/lib/orch_gateway.py" "fallback header must use contract value"
+
+PY_TMP="$(mktemp -d)"
+mkdir -p "$PY_TMP/project"
+git -C "$PY_TMP/project" init -q >/dev/null
+cat > "$PY_TMP/project/requirements.txt" <<'EOF'
+fastapi==0.115.0
+uvicorn==0.30.0
+EOF
+"$REPO_ROOT/scripts/bin/orch-init" demo-py "$PY_TMP/project" >/dev/null
+python3 - "$PY_TMP/project/.workflow/knowledge/detection-report.json" <<'PYEOF'
+import json, sys
+report = json.load(open(sys.argv[1], encoding="utf-8"))["detection_report"]
+assert report["tech_stack"]["frameworks"] == ["FastAPI"], report["tech_stack"]
+assert report["tech_stack"]["versions"].get("FastAPI") == "0.115.0", report["tech_stack"]
+print("python_version_detection: PASS")
+PYEOF
+rm -rf "$PY_TMP"
 
 test_done
