@@ -64,6 +64,18 @@
     "min_coverage": 0.5,
     "insufficient_evidence_action": "force_standard"
   },
+  "auto_merge": {
+    "enabled": true,
+    "allowed_target_branches": ["staging"],
+    "protected_branches": ["main"],
+    "required_reviews": 1,
+    "require_ci_pass": true,
+    "audit_log": "logs/auto-merge-audit.jsonl",
+    "sensitive_keywords": ["password=", "secret=", "api_key"],
+    "pii_patterns": ["email", "phone_cn", "identity_card_cn"],
+    "compliance_keywords": ["TODO: remove before prod"],
+    "notification_levels": ["silent", "compact", "verbose"]
+  },
   "component_budgets": {
     "gateway_api": {
       "health_p95_ms": 250,

@@ -736,6 +736,19 @@ Gateway 在 1 阶意图确认后执行 `ChannelRouter.classify(intent, project_a
 
 运维可在 `config/performance/slo-policy.json` 设置 `channels.quick.enabled: false` 启用全局 kill switch。此时 Quick 候选会降级到 Light 或 Standard，并在 `logs/channel-routing.jsonl` 记录 `downgrade_reason: "kill_switch_enabled"`。
 
+### Sprint 4 auto_merge 安全流程
+
+Quick/Light 通道完成后进入 `EvidenceScanner.scan(diff, files)`：
+
+1. 扫描 lint/语法/i18n 证据状态。
+2. 扫描安全红线关键词：`password=`、`secret=`、`api_key`。
+3. 扫描 PII：邮箱、手机号、身份证号。
+4. 扫描合规标记：`TODO: remove before prod`。
+
+`SecurityGate.evaluate(scan)` 只在扫描结果全部通过时允许 auto_merge。若命中 PII，`AutoMergeController.merge(...)` 会自动把 `auto_merge=true` 降级为拒绝合并，记录 `action: auto_merge_blocked` 与 `reason: pii_detected` 到审计日志，并通知责任人。
+
+auto_merge 禁止目标分支为 `main`；默认仅允许合并到 `staging`，且必须满足至少 1 个 review 与 CI pass。通知级别按用户配置执行：`silent` 只写日志，`compact` 发送不超过 200 字符摘要，`verbose` 发送完整扫描报告。
+
 ---
 
 ## 17. 与当前仓库实现的对应关系

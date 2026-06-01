@@ -240,6 +240,27 @@ The `rollout_gate` section controls staged Quick rollout:
 
 Set `channels.quick.enabled: false` to activate the global Quick kill switch. Quick candidates are downgraded to Light when available, otherwise Standard, and the reason is appended to `logs/channel-routing.jsonl` as `downgrade_reason: "kill_switch_enabled"`.
 
+## Auto Merge Security
+
+`config/performance/slo-policy.json` defines Sprint 4 auto merge controls under `auto_merge`:
+
+- `allowed_target_branches` — Branch allowlist for automatic merges. The default is `["staging"]`.
+- `protected_branches` — Branches that must never be auto-merged. `main` is protected.
+- `required_reviews` — Minimum review count before auto merge can proceed.
+- `require_ci_pass` — CI must pass before auto merge can proceed.
+- `sensitive_keywords` — Security redline tokens scanned in diffs, currently `password=`, `secret=`, and `api_key`.
+- `pii_patterns` — PII detector classes: email, CN phone number, and CN identity card.
+- `compliance_keywords` — Compliance-blocking markers such as `TODO: remove before prod`.
+- `notification_levels` — `silent`, `compact`, and `verbose`.
+
+`EvidenceScanner.scan(diff, files)` returns `lint_pass`, `syntax_pass`, `i18n_pass`, `hardcode_flags`, `sensitive_keywords`, `compliance_keywords`, and `pii_detected`. `SecurityGate.evaluate(scan)` blocks on PII or sensitive/hardcoded findings. `AutoMergeController.merge(target_branch, pr_number, audit_context)` rejects `main`, enforces the branch allowlist, checks review and CI evidence, and appends rejected merge decisions to `logs/auto-merge-audit.jsonl`.
+
+Notification behavior is intentionally small and testable:
+
+- `silent` writes a notification audit record only.
+- `compact` sends a short summary capped at 200 characters.
+- `verbose` sends the full `ScanResult` JSON.
+
 ## Sprint 3 CLI Intake
 
 `orch-mvp-wizard` now has two lightweight confirmation paths before the full guided acceptance workflow:
