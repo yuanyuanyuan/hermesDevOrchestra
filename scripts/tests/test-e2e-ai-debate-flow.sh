@@ -81,6 +81,7 @@ run_response = post(
     "/orchestra/modules/debate-engine/create-run",
     {
         "authority": "gateway_local_operator",
+        "allow_staged": True,
         "question": "Should Hermes keep the local HTTP gateway contract or replace it?",
         "mode_id": "parallel_debate",
         "metadata": {"stage": "direction_debate"},
@@ -94,6 +95,7 @@ assembly_response = post(
     "/orchestra/modules/debate-assembly/select-for-stage",
     {
         "authority": "gateway_local_operator",
+        "allow_staged": True,
         "stage": "direction_debate",
         "task_type": "api_contract",
         "risk_level": "L2",
@@ -108,6 +110,7 @@ backend_response = post(
     "/orchestra/modules/debate-backend-adapter/select-backend",
     {
         "authority": "gateway_local_runtime",
+        "allow_staged": True,
         "stage": "direction_debate",
     },
 )
@@ -119,6 +122,7 @@ execution_response = post(
     "/orchestra/modules/debate-member-invocation/execute",
     {
         "authority": "gateway_local_operator",
+        "allow_staged": True,
         "run": run,
         "assembly": assembly,
         "input_refs": [f"state://runs/{run['debate_id']}/run.json"],

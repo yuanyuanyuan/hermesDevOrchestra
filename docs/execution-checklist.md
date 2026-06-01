@@ -4,7 +4,7 @@ Source plan: `/home/stark/.claude/plans/plan-sprint-sprint-1-curried-scone.md`
 
 This checklist is derived from the full Hermes Orchestra plan dated 2026-05-18. It is an execution and verification guide only; it does not contain implementation code.
 
-Last updated: 2026-05-20 — Added Sprint 12 runtime activation substrate, validator coverage, and mixed-family gateway cutover checks.
+Last updated: 2026-05-19 — Closed host binding, debate input length, and negative-test coverage gaps; refreshed completion evidence checks.
 
 ## Global Gates
 
