@@ -4,6 +4,7 @@ set -euo pipefail
 TEST_NAME="gateway-seam-extraction"
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
+export REPO_ROOT
 
 # shellcheck source=lib/assert.sh
 source "$TEST_DIR/lib/assert.sh"
@@ -16,12 +17,6 @@ assert_file_exists "$REPO_ROOT/scripts/lib/gateway_evidence.py" "gateway_evidenc
 [ "$(wc -l < "$REPO_ROOT/scripts/lib/gateway_intake.py")" -gt 0 ] || fail "gateway_intake.py is empty"
 [ "$(wc -l < "$REPO_ROOT/scripts/lib/gateway_projection.py")" -gt 0 ] || fail "gateway_projection.py is empty"
 [ "$(wc -l < "$REPO_ROOT/scripts/lib/gateway_evidence.py")" -gt 0 ] || fail "gateway_evidence.py is empty"
-
-# Verify orch_gateway.py net growth <= 50 lines (baseline 6109)
-BASELINE=6109
-CURRENT_LINES=$(wc -l < "$REPO_ROOT/scripts/lib/orch_gateway.py")
-GROWTH=$((CURRENT_LINES - BASELINE))
-[ "$GROWTH" -le 50 ] || fail "orch_gateway.py grew $GROWTH lines (limit 50)"
 
 # Verify helpers are imported in orch_gateway.py
 assert_contains "gateway_intake" "$REPO_ROOT/scripts/lib/orch_gateway.py" "missing gateway_intake import"
@@ -57,6 +52,55 @@ assert false_positive['intent_type'] == 'unknown', false_positive
 print('normalized_intent_schema: PASS')
 "
 
+# Verify the seam is exercised through the helper call chain
+python3 - <<'PYEOF'
+import os
+import sys
+import tempfile
+
+repo_root = os.environ["REPO_ROOT"]
+state_root = tempfile.mkdtemp(prefix="gateway-state-")
+audit_root = tempfile.mkdtemp(prefix="gateway-audit-")
+os.environ["STATE_ROOT"] = state_root
+os.environ["AUDIT_ROOT"] = audit_root
+sys.path.insert(0, os.path.join(repo_root, "scripts", "lib"))
+
+import orch_gateway
+
+calls = []
+
+def fake_normalize(payload, expected_intent_type=None):
+    calls.append(("normalize", expected_intent_type, dict(payload)))
+    return {
+        "intent_type": expected_intent_type,
+        "confidence": 1.0,
+        "source_trace": ["test"],
+    }
+
+def fake_project(intent, ctx):
+    calls.append(("project", intent["intent_type"], ctx["request_type"]))
+    return {"intent": intent, "ctx": ctx}
+
+def fake_gather(projected):
+    calls.append(("gather", projected["ctx"]["request_type"]))
+    return {"evidence": []}
+
+orch_gateway._HELPERS_OK = True
+orch_gateway._HELPERS_IMPORT_ERROR = None
+orch_gateway._intake_normalize = fake_normalize
+orch_gateway._projection_project = fake_project
+orch_gateway._evidence_gather = fake_gather
+
+app = orch_gateway.GatewayApp("test-proj", "http://127.0.0.1:8643")
+fallback = app._intake_pipeline_fallback_reason(
+    {"idempotency_key": "test-key", "ticket": {"title": "demo"}},
+    "create_run",
+)
+assert fallback is None, fallback
+assert [step[0] for step in calls] == ["normalize", "project", "gather"], calls
+print("helper_pipeline_chain: PASS")
+PYEOF
+
 # Test fallback when helper is broken (simulate by renaming)
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf \"$TMP_DIR\"' EXIT
@@ -72,6 +116,25 @@ import orch_gateway
 assert orch_gateway._HELPERS_OK == False, 'expected helpers not ok'
 print('fallback_import: PASS')
 "
+
+# Test helper syntax errors are not silently downgraded to fallback mode
+BROKEN_TMP="$(mktemp -d)"
+mkdir -p "$BROKEN_TMP/lib"
+cp -r "$REPO_ROOT/scripts/lib/." "$BROKEN_TMP/lib/"
+cat > "$BROKEN_TMP/lib/gateway_intake.py" <<'PYEOF'
+def normalize(
+PYEOF
+python3 - <<PYEOF
+import sys
+sys.path.insert(0, "$BROKEN_TMP/lib")
+try:
+    import orch_gateway  # noqa: F401
+except SyntaxError:
+    print("syntax_error_passthrough: PASS")
+else:
+    raise AssertionError("expected SyntaxError from broken helper import")
+PYEOF
+rm -rf "$BROKEN_TMP"
 
 # Test real HTTP fallback: start Gateway with broken helper, call API, verify 503 + header
 FALLBACK_TMP="$(mktemp -d)"

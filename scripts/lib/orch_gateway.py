@@ -28,7 +28,7 @@ try:
     from gateway_evidence import gather as _evidence_gather
     _HELPERS_OK = True
     _HELPERS_IMPORT_ERROR: str | None = None
-except Exception as exc:
+except ImportError as exc:
     _HELPERS_OK = False
     _HELPERS_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 

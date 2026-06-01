@@ -8,6 +8,11 @@
 **核心依据**：Get 知识库 `qnN4o510`、`docs/knowledge/qnN4o510-synthesis.md`、`docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md`、`config/debate/full/*`、`scripts/lib/orch_gateway.py`
 
 > 说明：本文同时包含目标态需求与 Sprint 分解，当前仓库只实现其中已落地的子集；实现边界以对应 Sprint 计划、ADR 和测试为准。
+>
+> 当前边界（截至 PR #17 / 2026-06-01）：
+> - 已落地并可直接在仓库中验证的内容，以 `scripts/lib/orch_gateway.py`、相关 CLI 脚本、对应 ADR 和测试脚本覆盖的子集为准。
+> - 下文中如 Conflict Ledger 持久化/仲裁全流程、完整 rollback API、快速通道自动合并、Low-Risk Override 等描述，除非有对应代码与测试支撑，否则一律视为目标态设计，不代表仓库已经完整实现。
+> - 因此，本文任何单个章节都不能单独作为“功能已可用”的证据；是否已落地必须同时回看代码、ADR 和测试。
 
 ---
 
