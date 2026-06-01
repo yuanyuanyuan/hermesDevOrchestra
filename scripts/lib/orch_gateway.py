@@ -235,6 +235,11 @@ class GatewayApp:
             json.dump({"timestamp": utc_now(), "reason": reason, "request_type": request_type, "project": self.store.project_id}, f)
             f.write("\n")
 
+    def _fallback_response(self) -> tuple[int, dict[str, Any]]:
+        body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
+        body["fallback"] = "heuristic"
+        return 503, body
+
     def health(self) -> dict[str, Any]:
         return {
             "schema_version": SCHEMA_VERSION,
@@ -396,9 +401,7 @@ class GatewayApp:
 
     def module_endpoint(self, module: str, operation: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         if self._run_intake_pipeline(payload, f"module:{module}:{operation}"):
-            body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
-            body["fallback"] = "FALLBACK_HEURISTIC"
-            return 503, body
+            return self._fallback_response()
         spec = FULL_MODULE_ENDPOINT_INDEX.get((module, operation))
         if spec is None:
             return 404, self.error("not_found", "module endpoint not found")
@@ -1366,9 +1369,7 @@ class GatewayApp:
 
     def create_run(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         if self._run_intake_pipeline(payload, "create_run"):
-            body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
-            body["fallback"] = "FALLBACK_HEURISTIC"
-            return 503, body
+            return self._fallback_response()
         idempotency_key = payload.get("idempotency_key")
         ticket = payload.get("ticket")
         intent = payload.get("intent")
@@ -4107,9 +4108,7 @@ class GatewayApp:
 
     def submit_worker_output(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         if self._run_intake_pipeline(payload, "submit_worker_output", run_id):
-            body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
-            body["fallback"] = "FALLBACK_HEURISTIC"
-            return 503, body
+            return self._fallback_response()
         run_path = self.store.run_path(run_id)
         if not run_path.exists():
             return 404, self.error("not_found", "run not found")
@@ -6103,7 +6102,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         if body.get("fallback"):
-            self.send_header("x-gateway-fallback", body["fallback"].lower())
+            self.send_header("x-gateway-fallback", "heuristic" if body["fallback"] == "FALLBACK_HEURISTIC" else body["fallback"])
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)

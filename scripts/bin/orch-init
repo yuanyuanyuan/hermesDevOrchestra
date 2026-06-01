@@ -279,6 +279,39 @@ discovery_start = time.monotonic()
 MAX_DISCOVERY_SECONDS = 300
 
 
+def _extract_python_version(pyproject: dict[str, Any]) -> str | None:
+    if not isinstance(pyproject, dict):
+        return None
+    project_meta = pyproject.get("project", {})
+    if isinstance(project_meta, dict):
+        version = project_meta.get("version")
+        if isinstance(version, str) and version.strip():
+            return version.strip()
+    tool_meta = pyproject.get("tool", {})
+    if isinstance(tool_meta, dict):
+        poetry_meta = tool_meta.get("poetry", {})
+        if isinstance(poetry_meta, dict):
+            version = poetry_meta.get("version")
+            if isinstance(version, str) and version.strip():
+                return version.strip()
+    return None
+
+
+def _extract_dep_spec(spec: str) -> tuple[str, str | None]:
+    name = spec.strip()
+    version = None
+    for marker in ("==", ">=", "<=", "~=", ">", "<", "="):
+        if marker in name:
+            pkg, ver = name.split(marker, 1)
+            name = pkg.strip()
+            version = ver.strip()
+            break
+    name = name.split("[", 1)[0].strip().lower()
+    if version:
+        version = version.split(";", 1)[0].strip()
+    return name, version
+
+
 def detect_tech_stack(project: Path) -> dict:
     stack = {"languages": [], "frameworks": [], "package_managers": [], "versions": {}}
     files_checked = {
@@ -299,13 +332,12 @@ def detect_tech_stack(project: Path) -> dict:
                 stack["languages"].append(lang)
             if pm not in stack["package_managers"]:
                 stack["package_managers"].append(pm)
-    # Framework detection across package managers
+
     all_deps: dict[str, str] = {}
-    # Node.js
     pj = read_json(project / "package.json") or {}
     all_deps.update(pj.get("dependencies", {}))
     all_deps.update(pj.get("devDependencies", {}))
-    # Python (pyproject.toml)
+
     ppt: dict[str, Any] = {}
     if (project / "pyproject.toml").exists():
         try:
@@ -314,36 +346,48 @@ def detect_tech_stack(project: Path) -> dict:
                 ppt = tomllib.load(fh)
         except Exception:
             pass
-    if ppt:
-        def _norm_pkg(name: str) -> str:
-            return name.split("[")[0].split("==")[0].split(">=")[0].split("<")[0].strip().lower()
-        for dep in ppt.get("project", {}).get("dependencies", []):
-            if isinstance(dep, str):
-                all_deps[_norm_pkg(dep)] = ""
-        for dep in ppt.get("project", {}).get("optional-dependencies", {}):
-            if isinstance(dep, str):
-                all_deps[_norm_pkg(dep)] = ""
-        for dep in ppt.get("tool", {}).get("poetry", {}).get("dependencies", {}):
-            if isinstance(dep, str):
-                all_deps[_norm_pkg(dep)] = ""
-    # Python (requirements.txt)
+
+    for dep in ppt.get("project", {}).get("dependencies", []):
+        if isinstance(dep, str):
+            dep_name, dep_version = _extract_dep_spec(dep)
+            all_deps[dep_name] = dep_version or ""
+
+    for dep_group in ppt.get("project", {}).get("optional-dependencies", {}).values():
+        if isinstance(dep_group, list):
+            for dep in dep_group:
+                if isinstance(dep, str):
+                    dep_name, dep_version = _extract_dep_spec(dep)
+                    all_deps[dep_name] = dep_version or ""
+
+    for dep_name, dep in ppt.get("tool", {}).get("poetry", {}).get("dependencies", {}).items():
+        if isinstance(dep, str):
+            all_deps[dep_name.strip().lower()] = dep.strip()
+        elif isinstance(dep, dict):
+            dep_version = dep.get("version")
+            if isinstance(dep_version, str):
+                all_deps[dep_name.strip().lower()] = dep_version.strip()
+
     req_path = project / "requirements.txt"
     if req_path.exists():
         for line in req_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
-                pkg = line.split("==")[0].split(">=")[0].split("<")[0].strip()
-                if pkg:
-                    all_deps[pkg] = ""
+                dep_name, dep_version = _extract_dep_spec(line)
+                if dep_name:
+                    all_deps[dep_name] = dep_version or ""
+
     framework_map = {"next": "Next.js", "react": "React", "vue": "Vue", "express": "Express", "fastapi": "FastAPI", "django": "Django", "flask": "Flask", "rails": "Ruby on Rails", "spring-boot": "Spring Boot"}
     for dep_name, fw_name in framework_map.items():
         if dep_name in all_deps:
             stack["frameworks"].append(fw_name)
-    # Version extraction
+            if all_deps[dep_name]:
+                stack["versions"][fw_name] = all_deps[dep_name]
+
     if pj.get("version"):
         stack["versions"]["project"] = pj["version"]
-    if ppt.get("project", {}).get("version"):
-        stack["versions"]["project"] = ppt["project"]["version"]
+    project_version = _extract_python_version(ppt)
+    if project_version:
+        stack["versions"]["project"] = project_version
     if (project / "Dockerfile").exists() or any(project.glob("**/Dockerfile")):
         stack["container_ready"] = True
     return stack
