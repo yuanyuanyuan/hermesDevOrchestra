@@ -130,6 +130,78 @@ FULL_MODULE_ENDPOINTS = [
 FULL_MODULE_ENDPOINT_INDEX = {(spec["module"], spec["operation"]): spec for spec in FULL_MODULE_ENDPOINTS}
 
 
+def module_endpoint(
+    module: str,
+    operation: str,
+    class_name: str,
+    authority: str,
+    required_fields: list[str],
+    optional_fields: list[str],
+    response_keys: list[str],
+) -> dict[str, Any]:
+    path = f"/orchestra/modules/{module}/{operation}"
+    return {
+        "module": module,
+        "operation": operation,
+        "class_name": class_name,
+        "method": "POST",
+        "path": path,
+        "route": f"POST {path}",
+        "authority": authority,
+        "request_shape": {
+            "type": "object",
+            "required_fields": ["authority", *required_fields],
+            "optional_fields": optional_fields,
+        },
+        "response_shape": {
+            "type": "object",
+            "top_level_keys": ["schema_version", "module", "operation", "authority", "result"],
+            "result_keys": response_keys,
+        },
+    }
+
+
+FULL_MODULE_ENDPOINTS = [
+    module_endpoint("debate-engine", "load-registries", "DebateEngine", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["teams", "modes", "team_ids", "mode_ids"]),
+    module_endpoint("debate-engine", "create-run", "DebateEngine", "gateway_local_operator", ["question", "mode_id"], ["selected_member_ids", "metadata", "allow_staged", "enabled"], ["debate_id", "status", "mode_id", "question"]),
+    module_endpoint("debate-assembly", "select-for-stage", "DebateAssembly", "gateway_local_operator", ["stage", "task_type", "risk_level"], ["project_overrides", "allow_staged", "enabled"], ["audit_id", "stage", "selected_team_ids", "selected_member_ids", "required_modes"]),
+    module_endpoint("debate-backend-adapter", "select-backend", "DebateBackendAdapterRegistry", "gateway_local_runtime", ["stage"], ["preferred_backend_id", "allow_staged", "enabled"], ["id", "family", "degraded_fixture_only", "allowed_stages"]),
+    module_endpoint("debate-member-invocation", "build-invocation", "DebateMemberInvocationService", "gateway_local_operator", ["run", "assembly", "member_id", "input_refs"], ["context_refs", "option_refs", "affected_scopes", "preferred_backend_id", "allow_staged", "enabled"], ["invocation_id", "member_id", "backend_id", "artifact_refs"]),
+    module_endpoint("debate-member-invocation", "execute", "DebateMemberInvocationService", "gateway_local_operator", ["run", "assembly", "input_refs"], ["context_refs", "option_refs", "affected_scopes", "preferred_backend_id", "allow_staged", "enabled"], ["invocations", "opinions", "report", "audit_trail"]),
+    module_endpoint("debate-report", "build", "DebateReportBuilder", "gateway_local_operator", ["run", "assembly", "backend_policy", "invocations", "opinions", "invocation_receipts", "input_refs", "affected_scopes"], [], ["report", "report_ref", "audit_trail", "audit_ref"]),
+    module_endpoint("worker-registry", "load-backends", "WorkerRegistry", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["backends", "package_status"]),
+    module_endpoint("worker-registry", "load-roles", "WorkerRegistry", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["roles", "package_status"]),
+    module_endpoint("capability-negotiation", "negotiate", "CapabilityNegotiator", "gateway_local_operator", ["role"], ["requested_backend", "required_capabilities", "negotiation_context", "allow_staged", "enabled"], ["role", "selected_backend", "selection_record", "negotiation_report"]),
+    module_endpoint("worker-session", "create-session", "WorkerSessionManager", "gateway_local_operator", ["run_id", "task_id", "role", "backend_id", "workspace_root", "write_scope_ref", "context_bundle_ref", "timeout_seconds"], ["transcript_ref", "output_envelope_ref"], ["session_id", "status", "workspace_path", "tmux_session_name"]),
+    module_endpoint("worker-session", "transition", "WorkerSessionManager", "gateway_local_operator", ["record", "next_status"], ["exit_signal", "output_envelope_ref", "cleanup_status", "termination_reason"], ["session_id", "status", "cleanup_status", "termination_reason"]),
+    module_endpoint("worker-session-sweeper", "sweep-directory", "WorkerSessionSweeper", "gateway_local_operator", ["records_root"], [], ["updated_records", "timed_out_records", "missing_records", "invalid_records"]),
+    module_endpoint("release-pipeline", "load-pipeline", "ReleasePipeline", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["command_registry_ref", "environments", "gates"]),
+    module_endpoint("release-pipeline", "load-registry", "ReleasePipeline", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["commands", "package_status", "command_index"]),
+    module_endpoint("release-pipeline", "validate-command-refs", "ReleasePipeline", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["command_registry_ref", "validated_command_refs", "environment_ids"]),
+    module_endpoint("release-pipeline", "plan", "ReleasePipeline", "gateway_local_runtime", ["environment"], ["allow_staged", "enabled"], ["environment", "deploy_command", "rollback_command", "gates"]),
+    module_endpoint("release-executor", "execute", "ReleaseExecutor", "gateway_local_release_operator", ["command_ref"], ["approval_ref", "run_id", "environment", "test_execution_report_refs", "health_check_refs", "rollback_or_recovery_refs", "gate_results", "allow_staged", "enabled"], ["deployment_report", "stdout_path", "stderr_path", "allowed_env"]),
+    module_endpoint("runtime-knowledge", "query", "RuntimeKnowledgeBase", "gateway_local_operator", ["request"], ["allow_staged", "enabled"], ["query_artifact", "result_artifact", "degraded_storage_refs"]),
+    module_endpoint("knowledge-ingestion", "ingest", "KnowledgeIngestion", "gateway_local_operator", ["entry"], ["allow_staged", "enabled"], ["entry", "storage_ref", "ingestion_record", "degraded"]),
+    module_endpoint("self-evolution", "generate-stage6-sweep", "SelfEvolutionQueue", "gateway_local_review", ["run_id", "source_refs", "proposals", "trigger_matches"], ["allow_staged", "enabled"], ["schema_version", "artifact_type", "run_id", "proposals", "queued_item_refs"]),
+    module_endpoint("self-evolution", "enqueue", "SelfEvolutionQueue", "gateway_local_review", ["proposal"], ["allow_staged", "enabled"], ["proposals_artifact", "queue_items"]),
+    module_endpoint("self-evolution", "transition", "SelfEvolutionQueue", "gateway_local_review", ["queue_item", "next_status"], ["decision_ref", "rejection_reason", "kimi_review_ref", "human_approval_ref", "allow_staged", "enabled"], ["queue_item_id", "status", "decision_ref", "rejection_reason"]),
+    module_endpoint("self-evolution", "list-pending", "SelfEvolutionQueue", "gateway_local_review", [], ["queue_items", "allow_staged", "enabled"], ["items"]),
+    module_endpoint("performance-slo", "evaluate", "PerformanceBudgetPolicy", "gateway_local_runtime", ["component_id", "observed"], ["allow_staged", "enabled"], ["component_id", "budget_status", "budget_misses", "degradation_status"]),
+    module_endpoint("fixture-policy", "validate-contract-fixture", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "completion_evidence_allowed"]),
+    module_endpoint("fixture-policy", "validate-runtime-fake-adapter", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "degraded", "required_degradation_class"]),
+    module_endpoint("degradation-policy", "transition", "DegradationPolicy", "gateway_local_runtime", ["current_status", "next_status"], ["allow_staged", "enabled"], ["next_status"]),
+    module_endpoint("degradation-policy", "build-record", "DegradationPolicy", "gateway_local_runtime", ["degradation_status", "degradation_class", "cause", "affected_evidence_refs", "recovery_options"], ["policy_key", "decision_required", "accepted_by_ref", "completion_evidence_allowed", "replacement_evidence_ref", "policy_ref", "allow_staged", "enabled"], ["degradation_status", "degradation_class", "decision_required", "completion_evidence_allowed"]),
+    module_endpoint("degradation-policy", "allows-completion-evidence", "DegradationPolicy", "gateway_local_runtime", ["record"], ["allow_staged", "enabled"], ["allowed"]),
+    module_endpoint("full-schema-validation", "validate-schema", "FullSchemaValidation", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["ok", "path", "draft"]),
+    module_endpoint("full-schema-validation", "validate-contract", "FullSchemaValidation", "gateway_local_runtime", ["rel_path", "definition_name"], ["allow_staged", "enabled"], ["ok", "path", "definition", "artifact_type"]),
+    module_endpoint("full-schema-validation", "validate-all", "FullSchemaValidation", "gateway_local_runtime", [], ["allow_staged", "enabled"], ["ok", "schema", "contracts"]),
+    module_endpoint("full-schema-cutover", "evaluate-family", "FullSchemaCutover", "gateway_local_runtime", ["family_id"], ["allow_staged", "enabled"], ["family_id", "gate_ready", "required_gate_evidence", "required_checks"]),
+    module_endpoint("full-schema-cutover", "can-activate", "FullSchemaCutover", "gateway_local_runtime", ["family_id"], ["evidence", "completed_checks", "allow_staged", "enabled"], ["family_id", "allowed", "missing_evidence", "missing_checks"]),
+    module_endpoint("full-schema-cutover", "plan-artifact-write", "FullSchemaCutover", "gateway_local_runtime", ["family_id", "family_activated"], ["historical_run", "existing_schema_version", "allow_staged", "enabled"], ["family_id", "historical_run", "schema_ref", "write_full_artifacts"]),
+]
+FULL_MODULE_ENDPOINT_INDEX = {(spec["module"], spec["operation"]): spec for spec in FULL_MODULE_ENDPOINTS}
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -318,13 +390,6 @@ class GatewayApp:
         cache_root = os.environ.get("CACHE_ROOT", str(Path(os.environ.get("HOME", str(Path.home()))) / ".cache/hermes-orchestra"))
         debate_teams = self.config_items("config/debate/teams.json", "teams")
         debate_modes = self.config_items("config/debate/modes.json", "modes")
-        try:
-            runtime_activation = self.runtime_activation.summary()
-        except RuntimeActivationError as exc:
-            runtime_activation = {
-                "config_ref": self.runtime_activation.config_path,
-                "error": getattr(exc, "message", str(exc) or "runtime activation unavailable"),
-            }
         routes = [
             "GET /health",
             "GET /orchestra/capabilities",
@@ -430,8 +495,6 @@ class GatewayApp:
         return items if isinstance(items, list) else []
 
     def module_endpoint(self, module: str, operation: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        if fallback_reason := self._intake_pipeline_fallback_reason(payload, f"module:{module}:{operation}"):
-            return 503, self._gateway_fallback_body(fallback_reason)
         spec = FULL_MODULE_ENDPOINT_INDEX.get((module, operation))
         if spec is None:
             return 404, self.error("not_found", "module endpoint not found")
@@ -440,8 +503,6 @@ class GatewayApp:
             return authority_error
         try:
             result = self.dispatch_module_operation(module, operation, payload)
-        except ValueError as exc:
-            return 400, self.error("validation_error", str(exc) or f"{module}/{operation} validation failed")
         except Exception as exc:  # noqa: BLE001
             code = getattr(exc, "code", "module_execution_failed")
             message = getattr(exc, "message", str(exc) or f"{module}/{operation} failed")
@@ -461,7 +522,7 @@ class GatewayApp:
         return 403, self.error("authority_required", f"authority must be {expected_authority}")
 
     def dispatch_module_operation(self, module: str, operation: str, payload: dict[str, Any]) -> Any:
-        allow_staged = self.module_allow_staged(module, payload)
+        allow_staged = self.bool_payload(payload, "allow_staged", False)
         enabled = self.bool_payload(payload, "enabled", True)
 
         if module == "debate-engine":
@@ -570,7 +631,7 @@ class GatewayApp:
 
             manager = WorkerSessionManager(self.repo_root)
             if operation == "create-session":
-                record = manager.create_session(
+                return manager.create_session(
                     run_id=self.require_string(payload, "run_id"),
                     task_id=self.require_string(payload, "task_id"),
                     role=self.require_string(payload, "role"),
@@ -582,25 +643,15 @@ class GatewayApp:
                     transcript_ref=self.optional_string(payload, "transcript_ref"),
                     output_envelope_ref=self.optional_string(payload, "output_envelope_ref"),
                 )
-                return {
-                    **record,
-                    "session_record_ref": self.persist_worker_session_record(record, manager=manager),
-                }
             if operation == "transition":
-                current_record = dict(self.require_dict(payload, "record"))
-                current_record.pop("session_record_ref", None)
-                record = manager.transition(
-                    record=current_record,
+                return manager.transition(
+                    record=self.require_dict(payload, "record"),
                     next_status=self.require_string(payload, "next_status"),
                     exit_signal=self.optional_string(payload, "exit_signal"),
                     output_envelope_ref=self.optional_string(payload, "output_envelope_ref"),
                     cleanup_status=self.optional_string(payload, "cleanup_status"),
                     termination_reason=self.optional_string(payload, "termination_reason"),
                 )
-                return {
-                    **record,
-                    "session_record_ref": self.persist_worker_session_record(record, manager=manager),
-                }
 
         if module == "worker-session-sweeper":
             from worker_session_sweeper import WorkerSessionSweeper
@@ -766,247 +817,11 @@ class GatewayApp:
 
         raise ValueError(f"unsupported module operation: {module}/{operation}")
 
-    def module_allow_staged(self, module: str, payload: dict[str, Any]) -> bool:
-        if "allow_staged" in payload:
-            return self.bool_payload(payload, "allow_staged", False)
-        try:
-            return self.runtime_activation.default_allow_staged(module)
-        except RuntimeActivationError:
-            return False
-
     def bool_payload(self, payload: dict[str, Any], key: str, default: bool) -> bool:
         value = payload.get(key, default)
         if not isinstance(value, bool):
             raise ValueError(f"{key} must be a boolean")
         return value
-
-    def persist_worker_session_record(
-        self,
-        record: dict[str, Any],
-        *,
-        manager: Any | None = None,
-    ) -> str:
-        """Persist a worker session record under the run-scoped Gateway state tree."""
-        from worker_session import WorkerSessionManager
-
-        session_manager = manager or WorkerSessionManager(self.repo_root)
-        run_id = record.get("run_id")
-        session_id = record.get("session_id")
-        if not isinstance(run_id, str) or not run_id:
-            raise ValueError("worker session record is missing run_id")
-        if not isinstance(session_id, str) or not session_id:
-            raise ValueError("worker session record is missing session_id")
-        run_id = self._require_safe_path_component(run_id, "worker session record run_id")
-        session_id = self._require_safe_path_component(session_id, "worker session record session_id")
-        path = self.store.worker_session_path(run_id, session_id)
-        clean_record = dict(record)
-        clean_record.pop("session_record_ref", None)
-        session_manager.write_record(path, clean_record)
-        return self.store.state_ref(run_id, f"worker-sessions/{session_id}.json")
-
-    def build_parallel_worker_artifacts(
-        self,
-        run_id: str,
-        task_id: str,
-        role_payload: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Build run-scoped parallel merge artifacts from worker output payload metadata."""
-        run_id = self._require_safe_path_component(run_id, "run_id")
-        parallel_config = role_payload.get("parallel_execution")
-        if parallel_config is None:
-            return None
-        if not isinstance(parallel_config, dict):
-            raise ValueError("parallel_execution must be an object when provided")
-
-        expected_prefix = f"state://runs/{run_id}/"
-        raw_group_id = parallel_config.get("parallel_group_id")
-        if raw_group_id is None:
-            raw_group_id = f"parallel-{task_id}"
-        if not isinstance(raw_group_id, str) or not raw_group_id:
-            raise ValueError("parallel_execution.parallel_group_id must be a non-empty string when provided")
-        group_id = self._normalize_parallel_group_id(raw_group_id, task_id)
-        group_dir = self.store.run_dir(run_id) / "parallel-groups" / group_id
-        plan_ref = self.store.state_ref(run_id, f"parallel-groups/{group_id}/plan.json")
-        scan_ref = self.store.state_ref(run_id, f"parallel-groups/{group_id}/conflict-scan.json")
-        report_ref = self.store.state_ref(run_id, f"parallel-groups/{group_id}/merge-conflict-report.json")
-
-        task_ids = self._normalize_string_list(parallel_config.get("task_ids") or [task_id], "parallel_execution.task_ids")
-        if task_id not in task_ids:
-            task_ids.insert(0, task_id)
-        workspace_refs = self._normalize_scoped_state_refs(
-            parallel_config.get("workspace_refs") or [f"state://runs/{run_id}/worker-workspaces/{task_id}.json"],
-            expected_prefix,
-            "parallel_execution.workspace_refs",
-        )
-        write_scope_refs = self._normalize_scoped_state_refs(
-            parallel_config.get("write_scope_refs") or [f"state://runs/{run_id}/write-scopes/{task_id}.json"],
-            expected_prefix,
-            "parallel_execution.write_scope_refs",
-        )
-        declared_conflict_locks = self._normalize_string_list(
-            parallel_config.get("declared_conflict_locks") or [],
-            "parallel_execution.declared_conflict_locks",
-        )
-        merge_order = self._normalize_string_list(parallel_config.get("merge_order") or list(task_ids), "parallel_execution.merge_order")
-        raw_review_gate = parallel_config.get("review_gate")
-        if raw_review_gate is None:
-            raw_review_gate = {
-                "required": True,
-                "owner": "gateway_serial_integrator",
-                "serial_integration": True,
-            }
-        review_gate = self._normalize_parallel_review_gate(raw_review_gate)
-
-        actual_changed_files = self._normalize_string_list(
-            parallel_config.get("actual_changed_files") or role_payload.get("changed_files") or [],
-            "parallel_execution.actual_changed_files",
-        )
-        out_of_scope_writes = self._normalize_string_list(
-            parallel_config.get("out_of_scope_writes") or [],
-            "parallel_execution.out_of_scope_writes",
-        )
-        overlapping_writes = self._normalize_string_list(
-            parallel_config.get("overlapping_writes") or [],
-            "parallel_execution.overlapping_writes",
-        )
-        declared_lock_conflicts = self._normalize_string_list(
-            parallel_config.get("declared_lock_conflicts") or [],
-            "parallel_execution.declared_lock_conflicts",
-        )
-        authority_file_writes = self._normalize_string_list(
-            parallel_config.get("authority_file_writes") or [],
-            "parallel_execution.authority_file_writes",
-        )
-
-        merge_allowed = not any((out_of_scope_writes, overlapping_writes, declared_lock_conflicts, authority_file_writes))
-        scan_status = "passed" if merge_allowed else "failed"
-        conflicts = self._build_parallel_conflicts(
-            overlapping_writes=overlapping_writes,
-            declared_lock_conflicts=declared_lock_conflicts,
-            authority_file_writes=authority_file_writes,
-            out_of_scope_writes=out_of_scope_writes,
-        )
-
-        plan = {
-            "schema_version": "orchestra.full.v1",
-            "artifact_type": "parallel_group_plan",
-            "parallel_group_id": group_id,
-            "task_ids": task_ids,
-            "workspace_refs": workspace_refs,
-            "write_scope_refs": write_scope_refs,
-            "declared_conflict_locks": declared_conflict_locks,
-            "merge_order": merge_order,
-            "review_gate": review_gate,
-        }
-        scan = {
-            "schema_version": "orchestra.full.v1",
-            "artifact_type": "conflict_scan",
-            "parallel_group_id": group_id,
-            "scan_status": scan_status,
-            "actual_changed_files": actual_changed_files,
-            "out_of_scope_writes": out_of_scope_writes,
-            "overlapping_writes": overlapping_writes,
-            "declared_lock_conflicts": declared_lock_conflicts,
-            "authority_file_writes": authority_file_writes,
-            "merge_allowed": merge_allowed,
-            "semantic_conflict_detection": "not_claimed",
-        }
-        report = None
-        if conflicts:
-            report = {
-                "schema_version": "orchestra.full.v1",
-                "artifact_type": "merge_conflict_report",
-                "parallel_group_id": group_id,
-                "conflicts": conflicts,
-                "affected_task_ids": task_ids,
-                "semantic_conflict_detection": "not_claimed",
-                "kimi_decision_required": True,
-                "recommended_next_actions": [
-                    "Resolve mechanical write-scope or overlap conflicts before merge.",
-                    "Ask Kimi to arbitrate the conflicting write set if the merge order needs to change.",
-                ],
-            }
-
-        validate_artifact_definition(self.repo_root, "parallel_group_plan", plan)
-        validate_artifact_definition(self.repo_root, "conflict_scan", scan)
-        if report is not None:
-            validate_artifact_definition(self.repo_root, "merge_conflict_report", report)
-
-        return {
-            "parallel_group_id": group_id,
-            "group_dir": group_dir,
-            "plan": plan,
-            "scan": scan,
-            "report": report,
-            "plan_ref": plan_ref,
-            "scan_ref": scan_ref,
-            "report_ref": report_ref if report is not None else None,
-            "artifact_refs": [ref for ref in [plan_ref, scan_ref, report_ref if report is not None else None] if ref is not None],
-            "blocked": report is not None,
-        }
-
-    def persist_parallel_worker_artifacts(self, artifacts: dict[str, Any]) -> None:
-        """Write parallel worker artifacts into the run-scoped state tree."""
-        group_dir = artifacts["group_dir"]
-        write_json(group_dir / "plan.json", artifacts["plan"])
-        write_json(group_dir / "conflict-scan.json", artifacts["scan"])
-        if artifacts.get("report") is not None:
-            write_json(group_dir / "merge-conflict-report.json", artifacts["report"])
-
-    def _normalize_string_list(self, value: Any, label: str) -> list[str]:
-        if not isinstance(value, list) or not all(isinstance(item, str) and item for item in value):
-            raise ValueError(f"{label} must be a list of non-empty strings")
-        return list(value)
-
-    def _require_safe_path_component(self, value: str, label: str) -> str:
-        if value in {".", ".."} or "/" in value or "\\" in value or ".." in value or SAFE_PATH_COMPONENT_RE.fullmatch(value) is None:
-            raise ValueError(f"{label} must be a safe path component")
-        return value
-
-    def _normalize_parallel_group_id(self, raw_group_id: str, task_id: str) -> str:
-        fallback_group_id = re.sub(r"[^A-Za-z0-9._-]+", "-", f"parallel-{task_id}").strip("-") or "parallel-group"
-        group_id = re.sub(r"[^A-Za-z0-9._-]+", "-", raw_group_id).strip("-") or fallback_group_id
-        return self._require_safe_path_component(group_id, "parallel_execution.parallel_group_id")
-
-    def _normalize_parallel_review_gate(self, value: Any) -> dict[str, Any]:
-        if not isinstance(value, dict):
-            raise ValueError("parallel_execution.review_gate must be an object when provided")
-        required = value.get("required")
-        owner = value.get("owner")
-        serial_integration = value.get("serial_integration")
-        if not isinstance(required, bool):
-            raise ValueError("parallel_execution.review_gate.required must be a boolean")
-        if not isinstance(owner, str) or not owner:
-            raise ValueError("parallel_execution.review_gate.owner must be a non-empty string")
-        if not isinstance(serial_integration, bool):
-            raise ValueError("parallel_execution.review_gate.serial_integration must be a boolean")
-        return {
-            **value,
-            "required": required,
-            "owner": owner,
-            "serial_integration": serial_integration,
-        }
-
-    def _build_parallel_conflicts(
-        self,
-        *,
-        overlapping_writes: list[str],
-        declared_lock_conflicts: list[str],
-        authority_file_writes: list[str],
-        out_of_scope_writes: list[str],
-    ) -> list[dict[str, str]]:
-        return (
-            [{"kind": "overlapping_write", "path": path} for path in overlapping_writes]
-            + [{"kind": "declared_lock_conflict", "lock": lock} for lock in declared_lock_conflicts]
-            + [{"kind": "authority_file_write", "path": path} for path in authority_file_writes]
-            + [{"kind": "out_of_scope_write", "path": path} for path in out_of_scope_writes]
-        )
-
-    def _normalize_scoped_state_refs(self, value: Any, expected_prefix: str, label: str) -> list[str]:
-        refs = self._normalize_string_list(value, label)
-        if not all(self.valid_scoped_state_ref(ref, expected_prefix) for ref in refs):
-            raise ValueError(f"{label} must contain only {expected_prefix} scoped refs")
-        return refs
 
     def string_value(self, payload: dict[str, Any], key: str, default: str) -> str:
         value = payload.get(key, default)
@@ -6169,18 +5984,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--allow-network-binding", action="store_true")
     parser.add_argument("--upstream-api-url", default="http://127.0.0.1:8643")
     args = parser.parse_args(argv)
-    if not _is_loopback_host(args.host) and not args.allow_network_binding:
-        parser.error("non-loopback --host requires --allow-network-binding")
+    if args.host not in {"127.0.0.1", "localhost"} and not args.allow_network_binding:
+        parser.error("non-loopback --host requires explicit --allow-network-binding")
     return args
-
-
-def _is_loopback_host(host: str) -> bool:
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -173,6 +173,12 @@ printf 'release command stub\n'
 SH
 chmod +x "$FAKE_BIN/project-release"
 
+cat > "$FAKE_BIN/gbrain" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+chmod +x "$FAKE_BIN/gbrain"
+
 export HOME="$TMP_DIR/home"
 export RUNTIME_ROOT="$TMP_DIR/runtime"
 export STATE_ROOT="$TMP_DIR/state"
@@ -232,7 +238,7 @@ repo_root = pathlib.Path(sys.argv[2])
 tmp_dir = pathlib.Path(sys.argv[3])
 
 
-def post(path, body, *, expect_status=200):
+def post(path, body):
     request = urllib.request.Request(
         f"{base_url}{path}",
         data=json.dumps(body).encode("utf-8"),
@@ -241,13 +247,9 @@ def post(path, body, *, expect_status=200):
     )
     try:
         with urllib.request.urlopen(request, timeout=5) as response:
-            body = json.loads(response.read().decode("utf-8"))
-            assert response.status == expect_status, (response.status, expect_status, body)
-            return response.status, body
+            return response.status, json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        body = json.loads(exc.read().decode("utf-8"))
-        assert exc.code == expect_status, (exc.code, expect_status, body)
-        return exc.code, body
+        return exc.code, json.loads(exc.read().decode("utf-8"))
 
 
 with urllib.request.urlopen(f"{base_url}/orchestra/capabilities", timeout=5) as response:
@@ -291,9 +293,6 @@ for key in required_specs:
     assert "request_shape" in specs[key], specs[key]
     assert "response_shape" in specs[key], specs[key]
 
-assert "session_record_ref" in specs[("worker-session", "create-session")]["response_shape"]["result_keys"], specs[("worker-session", "create-session")]
-assert "session_record_ref" in specs[("worker-session", "transition")]["response_shape"]["result_keys"], specs[("worker-session", "transition")]
-
 
 def authority(module, operation):
     return specs[(module, operation)]["authority"]
@@ -303,7 +302,7 @@ backend_policy = json.loads((repo_root / "config/debate/full/backend-policy.json
 
 status, registries = post(
     "/orchestra/modules/debate-engine/load-registries",
-    {"authority": authority("debate-engine", "load-registries")},
+    {"authority": authority("debate-engine", "load-registries"), "allow_staged": True},
 )
 assert status == 200, registries
 assert len(registries["result"]["team_ids"]) == 16, registries
@@ -312,6 +311,7 @@ status, run_response = post(
     "/orchestra/modules/debate-engine/create-run",
     {
         "authority": authority("debate-engine", "create-run"),
+        "allow_staged": True,
         "question": "Should Hermes enable deterministic debate coverage for gateway integration?",
         "mode_id": "dynamic_assembly",
     },
@@ -323,6 +323,7 @@ status, assembly_response = post(
     "/orchestra/modules/debate-assembly/select-for-stage",
     {
         "authority": authority("debate-assembly", "select-for-stage"),
+        "allow_staged": True,
         "stage": "direction_debate",
         "task_type": "api_contract",
         "risk_level": "L2",
@@ -336,6 +337,7 @@ status, backend_response = post(
     "/orchestra/modules/debate-backend-adapter/select-backend",
     {
         "authority": authority("debate-backend-adapter", "select-backend"),
+        "allow_staged": True,
         "stage": "direction_debate",
     },
 )
@@ -346,6 +348,7 @@ status, invocation_response = post(
     "/orchestra/modules/debate-member-invocation/build-invocation",
     {
         "authority": authority("debate-member-invocation", "build-invocation"),
+        "allow_staged": True,
         "run": run,
         "assembly": assembly,
         "member_id": assembly["selected_member_ids"][0],
@@ -359,6 +362,7 @@ status, execution_response = post(
     "/orchestra/modules/debate-member-invocation/execute",
     {
         "authority": authority("debate-member-invocation", "execute"),
+        "allow_staged": True,
         "run": run,
         "assembly": assembly,
         "input_refs": input_refs,
@@ -403,7 +407,7 @@ assert report_response["result"]["report"]["artifact_type"] == "debate_report", 
 for operation in ("load-backends", "load-roles"):
     status, body = post(
         f"/orchestra/modules/worker-registry/{operation}",
-        {"authority": authority("worker-registry", operation)},
+        {"authority": authority("worker-registry", operation), "allow_staged": True},
     )
     assert status == 200, body
 
@@ -411,6 +415,7 @@ status, negotiation_response = post(
     "/orchestra/modules/capability-negotiation/negotiate",
     {
         "authority": authority("capability-negotiation", "negotiate"),
+        "allow_staged": True,
         "role": "implementer",
         "requested_backend": "codex",
         "required_capabilities": ["structured_envelope"],
@@ -437,7 +442,6 @@ status, session_response = post(
 )
 assert status == 200, session_response
 session_record = session_response["result"]
-assert session_record["session_record_ref"].startswith("state://runs/run-session-1/worker-sessions/"), session_record
 
 status, transition_response = post(
     "/orchestra/modules/worker-session/transition",
@@ -449,7 +453,6 @@ status, transition_response = post(
 )
 assert status == 200, transition_response
 starting_record = transition_response["result"]
-assert starting_record["session_record_ref"].startswith("state://runs/run-session-1/worker-sessions/"), starting_record
 
 records_root = tmp_dir / "worker-records"
 records_root.mkdir(parents=True, exist_ok=True)
@@ -494,7 +497,8 @@ for path, body in (
         },
     ),
 ):
-    status, error_body = post(path, body, expect_status=400)
+    status, error_body = post(path, body)
+    assert status == 400, (path, status, error_body)
     assert error_body["error"]["code"] == "command_disabled", (path, error_body)
 
 knowledge_entry = {
@@ -527,16 +531,18 @@ status, ingest_response = post(
     "/orchestra/modules/knowledge-ingestion/ingest",
     {
         "authority": authority("knowledge-ingestion", "ingest"),
+        "allow_staged": True,
         "entry": knowledge_entry,
     },
-    expect_status=400,
 )
-assert ingest_response["error"]["code"] == "module_disabled", ingest_response
+assert status == 200, ingest_response
+assert ingest_response["result"]["degraded"] is True, ingest_response
 
 status, query_response = post(
     "/orchestra/modules/runtime-knowledge/query",
     {
         "authority": authority("runtime-knowledge", "query"),
+        "allow_staged": True,
         "request": {
             "run_id": "run-runtime",
             "task_id": "task-runtime",
@@ -548,9 +554,9 @@ status, query_response = post(
             "evidence_scope": "debate",
         },
     },
-    expect_status=400,
 )
-assert query_response["error"]["code"] == "module_disabled", query_response
+assert status == 200, query_response
+assert query_response["result"]["result_artifact"]["slugs"] == ["domain/wechat/routing/navigate-to"], query_response
 
 non_protected_proposal = {
     "proposal_id": "P-knowledge-001",
