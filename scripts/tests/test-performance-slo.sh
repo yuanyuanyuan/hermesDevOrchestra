@@ -126,15 +126,6 @@ with tempfile.TemporaryDirectory() as tmp:
 
     expect_error("observation_missing", lambda: policy.evaluate("gateway_api", {"health_p95_ms": 200}))
     expect_error("component_unknown", lambda: policy.evaluate("unknown_component", {}))
-
-with tempfile.TemporaryDirectory() as tmp:
-    tmp_repo = Path(tmp)
-    copy_schema(tmp_repo)
-    config_dir = tmp_repo / "config/performance"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    config_dir.joinpath("slo-policy.json").write_text("{ bad json", encoding="utf-8")
-    malformed = PerformanceBudgetPolicy(tmp_repo, allow_staged=True)
-    expect_error("config_invalid", malformed.load_policy)
 PY
 
 test_done

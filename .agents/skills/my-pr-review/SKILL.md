@@ -1,332 +1,268 @@
 ---
 name: my-pr-review
 description: >
-  对指定 GitHub PR 执行结构化 Code Review。
-  使用 ce-code-review 执行审查，以 COMMENT 事件提交结果到 PR。
-  支持首次 review 和智能复核（仅审查变更范围）。
-  Reviewer 身份：stark-008。只做 review，不做修复。
+  对指定 GitHub PR 执行完整的结构化 Code Review。
+  收集情报、按维度逐项检查、在失败项所在具体行号挂 Review Thread、
+  提交 REQUEST_CHANGES 或 APPROVE，并基于证据做出合并/拒绝决策。
+  Reviewer 身份：stark-008。
 ---
 
 # PR Review Skill
 
 ## 触发条件
 
-- "review PR #N" / "对 PR 做 code review" / "review this PR"
-- "复核 PR #N" / "re-review" / "二次 review"（触发复核流程）
+当用户要求以下任一操作时激活本 Skill：
+- "review this PR"
+- "review PR #N"
+- "对 PR 做 code review"
+- 任何包含 PR number 的 review 请求
+
+## 调用签名
+
+```
+my-pr-review <PR_NUMBER>
+```
+
+- `PR_NUMBER`: GitHub PR 编号（如 `8`）
+- 当前目录必须是项目本地仓库，`gh` 会自动识别所属仓库
 
 ## 环境要求
-- **优先：GitHub MCP 工具可用** — 当前环境已注册 `mcp__github__*` 系列工具（`get_pull_request`、`get_pull_request_reviews`、`get_pull_request_comments`、`get_pull_request_files`、`create_pull_request_review` 等）
-- **降级：`gh` CLI 已认证** — 当 MCP 不可用时降级使用
-- 当前目录为项目本地仓库
-- **隔离机制：Feature Branch 模式** — 所有操作均在当前仓库的当前分支上完成，不创建 git worktree
 
-## 核心约束
-- 只 review 不修复，COMMENT 事件提交，每次 review 有 PR comment 记录
+- `gh` CLI 已安装且已认证（`gh auth status` 通过）
+- 当前目录 `${REPO_DIR}` 为项目本地仓库
+- 具有 `repo` 或 `pull_requests:write` 权限的 GitHub Token
 
----
+## 变量定义（每次执行时解析）
+
+执行前将以下占位符替换为实际值：
+
+| 变量 | 来源 |
+|------|------|
+| `${PR_NUMBER}` | 调用参数 `<PR_NUMBER>` |
+| `${OWNER}` | `gh repo view --json owner --jq '.owner.login'` |
+| `${REPO}` | `gh repo view --json name --jq '.name'` |
+| `${REPO_DIR}` | 当前工作目录（`$(pwd)`） |
+| `${PR_URL}` | `gh pr view ${PR_NUMBER} --json url --jq '.url'` |
+| `${REVIEW_DRAFT}` | `/tmp/pr-review-draft-${PR_NUMBER}.md` |
+| `${THREADS_JSON}` | `/tmp/pr-threads-${PR_NUMBER}.json` |
 
 ## 执行流程
 
-### Phase 1: 情报收集
+### 阶段 1：情报收集（INTELLIGENCE GATHERING）
 
-**优先路径 — GitHub MCP（推荐）：**
+**步骤 A — 加载技能并读取 PR 元数据**
 
-1. 获取 PR 元数据：
+收集 PR 基本信息：
+   ```bash
+   cd ${REPO_DIR}
+   OWNER=$(gh repo view --json owner --jq '.owner.login')
+   REPO=$(gh repo view --json name --jq '.name')
+   PR_URL=$(gh pr view ${PR_NUMBER} --json url --jq '.url')
+   gh pr view ${PR_NUMBER} --json number,title,body,author,headRefName,baseRefName,createdAt,updatedAt,mergeable,mergeStateStatus,changedFiles,additions,deletions
    ```
-   mcp__github__get_pull_request(owner, repo, pull_number)
-   ```
-   提取：`number`, `title`, `user.login`, `head.ref`, `head.sha`, `base.ref`, `base.sha`, `changed_files`, `additions`, `deletions`, `mergeable`, `html_url`
 
-2. 获取已有 reviews：
-   ```
-   mcp__github__get_pull_request_reviews(owner, repo, pull_number)
-   ```
-   提取：`id`, `state`, `user.login`, `body`, `submitted_at`, `commit_id`
+**步骤 B — 读取 PR 完整 diff**
 
-3. 获取 review inline comments（代码行级）：
-   ```
-   mcp__github__get_pull_request_comments(owner, repo, pull_number)
-   ```
-   提取：`id`, `user.login`, `path`, `line`, `body`, `diff_hunk`
-
-4. 获取变更文件列表：
-   ```
-   mcp__github__get_pull_request_files(owner, repo, pull_number)
-   ```
-   提取：`filename`, `status`, `additions`, `deletions`
-
-> **MCP 降级判断：** 如果以上任一 MCP 调用返回错误、超时或环境未注册 MCP 工具，自动降级到 gh CLI 路径。
-
-**降级路径 — gh CLI：**
 ```bash
-PR_INFO=$(bash scripts/collect-pr-info.sh ${PR_NUMBER})
+gh pr diff ${PR_NUMBER} > /tmp/pr-${PR_NUMBER}-diff.patch
+grep -E "^\+\+\+ b/" /tmp/pr-${PR_NUMBER}-diff.patch | sed 's/+++ b\///' > /tmp/pr-${PR_NUMBER}-files.txt
 ```
 
-脚本输出 JSON，包含：PR 元数据、变更文件列表、已有 review/comments。
+**步骤 C — 读取已有 Review Threads（避免重复评论）**
 
-**判断是否为复核：**
-- 用户显式说"复核/re-review/二次review"或带 `--re-review` → Phase 1b
-- 用户说"review PR #N"且该 PR 已有 stark-008 的 review → 提示用户"首次review或复核?"
-- 否则 → Phase 2
-
-### Phase 1b: 复核范围检测
-
-**获取上次 review commit（优先 MCP）：**
-若 Phase 1 使用 MCP 路径，从已获取的 reviews 结果中提取：
 ```bash
-LAST_REVIEWED_OID=$(echo "$REVIEWS" | jq -r '[.[] | select(.user.login == "stark-008")] | max_by(.submitted_at).commit_id')
+gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/comments \
+  --jq '.[] | {id: .id, path: .path, line: .line, body: .body, user: .user.login}' \
+  > /tmp/pr-${PR_NUMBER}-existing-threads.json
+
+gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
+  --jq '.[] | {id: .id, state: .state, user: .user.login}' \
+  > /tmp/pr-${PR_NUMBER}-existing-reviews.json
 ```
-- 无记录 → 视为首次 review
-- `LAST_REVIEWED_OID == HEAD_OID` → 止损（无新提交）
 
-> 若 Phase 1 已降级到 gh CLI，继续使用：
-> ```bash
-> LAST_REVIEWED_OID=$(gh api "repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews" \
->   --jq '[.[] | select(.user.login == "stark-008")] | max_by(.submitted_at).commit_id')
-> ```
+**步骤 D — 读取相关上下文**
 
-**获取当前 HEAD（优先 MCP）：**
-若 Phase 1 使用 MCP，从 PR 结果中提取 `head.sha`。
-> 降级：`HEAD_OID=$(gh pr view "$PR_NUMBER" --json headRefOid --jq '.headRefOid')`
-
-**获取变更文件：**
 ```bash
-bash scripts/diff-since.sh ${PR_NUMBER} ${LAST_REVIEWED_OID}
-```
-（diff-since.sh 只使用 git diff，不依赖 gh 或 MCP）
-
-### ⏸ 检查点 1: PR 信息确认
-
-Phase 1 完成后展示摘要并请求确认：
-
-```
-PR #${PR_NUMBER}: ${TITLE} by ${AUTHOR}
-变更: ${CHANGED_FILES} 文件 (+${ADDITIONS}/-${DELETIONS})  类型: [首次/复核]
-是否继续? [确认/取消/调整范围]
-```
-
-- **取消** → 终止，记录原因
-- **调整范围** → 回到 Phase 1，按用户指定文件重收集
-- **确认** → 进入 Phase 2
-
----
-
-### Phase 2: 执行 Code Review
-
-```
-/compound-engineering:ce-code-review ${PR_NUMBER}
-```
-
-**引擎行为：** 自动选择 reviewer personas，并行多维度审查，输出结构化 JSON（含 `level`(P0-P3)、`file`、`line`、`title`、`description`、`evidence`、`suggestion`）。
-
-**前置检查：**
-- GitHub MCP 不可用且 `gh` CLI 未认证 → 止损流程
-- ce-code-review 返回非 0 或格式异常 → 降级为手动 checklist review
-
-### Phase 3: 复核策略决策（仅复核时）
-
-综合变更文件数 + 原 FAIL 项覆盖度决定范围：
-
-| 文件数 | FAIL 覆盖度 | 决策 | 执行 |
-|--------|------------|------|------|
-| 0 | — | none | 已在 1b 拦截 |
-| ≤20 | 完全/部分 | partial | `ce-code-review ${PR_NUMBER} --files ${DIFF_FILES}` |
-| >20 | 任意 | full | `ce-code-review ${PR_NUMBER}` |
-
-**覆盖度判定：** 变更文件列表 ∩ 原 FAIL 项文件列表
-
-### ⏸ 检查点 2: 复核范围确认（仅复核）
-
-Phase 1b/3 后展示计划：
-```
-复核: ${SCOPE}  文件: ${DIFF_FILE_COUNT}  原FAIL覆盖: [是/否/部分]
-执行? [确认/改完整review/取消]
+gh pr view ${PR_NUMBER} --json body | grep -oE '(docs/adr/[^ ]+|\.planning/specs/[^ ]+|#\d+)' | sort -u > /tmp/pr-${PR_NUMBER}-refs.txt
 ```
 
 ---
 
-### Phase 4: 生成 Review 报告
+### 阶段 2：REVIEW 执行标准（REVIEW CRITERIA）
 
-将 ce-code-review 的 JSON 输出映射到**双层格式**报告模板：
-- **外层（可视化层）**：Markdown — emoji、表格、折叠区域、代码块
-- **内层（元数据层）**：HTML Comment — `AGENT_META` / `AGENT_FINDING` JSON，供后续 agent 解析
+遍历每个变更文件，逐项检查：
 
-映射规则：
-- `level` → `[P0/P1/P2/P3]` 前缀 + emoji（❌/⚠️/💡/📝）
-- `file`+`line` → `<code>文件:行号</code>`
-- `title`+`description`+`evidence`+`suggestion` → 折叠区域内段落
-- 统计 PASS/FAIL/N/A 生成摘要表格
+#### A. 代码质量（Code Quality）
+- [ ] **命名规范**：函数/类/变量名符合项目约定
+- [ ] **复杂度**：无过度嵌套，无超长函数（>50行）
+- [ ] **重复代码**：DRY 原则，无 copy-paste 块
+- [ ] **错误处理**：异常路径有处理，不裸 `except`
+- [ ] **类型安全**：Python 有类型注解，JSON 有 schema 验证
 
-**完整 Review Body 模板：**
+#### B. 架构合规（Architecture Compliance）
+- [ ] **ADR 引用**：实现与引用的 ADR 一致
+- [ ] **边界遵守**：未修改 PR 范围外的文件
+- [ ] **依赖控制**：未引入不必要的新依赖
+- [ ] **接口契约**：新增 API 有明确输入/输出/异常定义
 
-```markdown
-<!--AGENT_META:{"type":"pr_review","version":"1.0","pr_number":${PR_NUMBER},"reviewer":"stark-008","commit":"${HEAD_OID}","review_type":"${REVIEW_TYPE}","check_items":${CHECK_ITEMS},"pass_count":${PASS},"fail_count":${FAIL},"na_count":${NA},"conclusion":"${CONCLUSION}","findings":[${FINDINGS_JSON_ARRAY}]}-->
+#### C. 测试覆盖（Test Coverage）
+- [ ] **测试存在**：新增代码有对应测试
+- [ ] **测试通过**：运行对应 `test-*.sh` exit 0
+- [ ] **负向测试**：有错误路径/边界条件测试
+- [ ] **无回归**：完整测试套件通过
 
-# 🔍 PR Review Report — PR #${PR_NUMBER}
+#### D. 安全与合规（Security & Compliance）
+- [ ] **无注入风险**：无 `shell=True`、无字符串拼接命令
+- [ ] **无密钥硬编码**：无 API key/password 明文
+- [ ] **权限正确**：文件权限 0600/0700，无过度授权
+- [ ] **输入验证**：外部输入有校验/转义
 
-**Reviewer:** stark-008 | **Commit:** \`${HEAD_OID}\` | **Type:** ${REVIEW_TYPE_LABEL}
-
-## 📊 Summary
-
-| Metric | Value |
-|--------|-------|
-| Check Items | ${CHECK_ITEMS} |
-| ✅ PASS | ${PASS} |
-| ❌ FAIL | ${FAIL} |
-| ⏸️ N/A | ${NA} |
-| **Conclusion** | **${CONCLUSION_EMOJI} ${CONCLUSION}** |
-
----
-
-${FINDINGS_SECTION}
-
----
-
-> _This review was generated by ce-code-review. For questions, tag @stark-008._
-```
-
-**Findings 按级别分组渲染（每个 FAIL 项）：**
-
-```markdown
-## ❌ P0 — Critical Issues
-
-<details open>
-<summary><b>[P0] ${TITLE} — <code>${FILE}:${LINE}</code></b></summary>
-
-**Description:** ${DESCRIPTION}
-
-**Evidence:**
-\`\`\`
-${EVIDENCE_CODE}
-\`\`\`
-
-**Suggestion:** ${SUGGESTION}
-</details>
-
-<!--AGENT_FINDING:{"id":"${ID}","level":"P0","file":"${FILE}","line":${LINE},"title":"${TITLE}","category":"${CATEGORY}"}-->
-```
-
-- P1 → `## ⚠️ P1 — Important Issues`
-- P2 → `## 💡 P2 — Suggestions`
-- P3 → `## 📝 P3 — Nits`
-
-**复核场景额外区块：**
-
-```markdown
-## 🔄 Re-review Status
-
-### Original Issues
-
-| # | Original Issue | File | Status |
-|---|----------------|------|--------|
-| 1 | ${ORIG_TITLE} | \`${FILE}:${LINE}\` | ✅ Fixed / ❌ Not Fixed |
-
-### New Findings
-（格式同首次 review）
-```
-
-**Emoji 规范：** P0=❌ P1=⚠️ P2=💡 P3=📝 PASS=✅ N/A=⏸️ Summary=📊 Review=🔍 Re-review=🔄
-
-### ⏸ 检查点 3: 提交前确认
-
-调用 submit-review.sh 前展示摘要：
-
-```
-PR #${PR_NUMBER}: 检查项 N | PASS X | FAIL Y | 结论 [PASS/HAS_BLOCKERS]
-提交方式: COMMENT (stark-008)
-是否提交? [提交/修改/取消]
-```
-
-- **修改** → 展示完整报告，按反馈调整后重新确认
-- **取消** → 保存到本地，不提交
-- **确认** → 进入 Phase 5
+#### E. 文档完整（Documentation）
+- [ ] **代码注释**：复杂逻辑有注释，公共函数有 docstring
+- [ ] **ADR 更新**：架构变更有对应 ADR 记录
+- [ ] **PR Body**：需求来源、背景、测试证据齐全
+- [ ] **配置文档**：新增配置项有说明和示例
 
 ---
 
-### Phase 5: 提交到 PR
+### 阶段 3：THREAD 构建（THREAD CONSTRUCTION）
 
-**Step A — 构建 Inline Comments（可选）：**
+对每一个 **FAIL** 项，构建一个 Review Thread。
 
-将每个 FAIL 项映射为 Review API `comments[]` 数组元素：
-
+**Thread JSON 格式：**
 ```json
-[
-  {
-    "path": "${FILE}",
-    "position": ${DIFF_POSITION},
-    "body": "<!--AGENT_INLINE:{\"id\":\"${ID}\",\"level\":\"${LEVEL}\",\"file\":\"${FILE}\",\"line\":${LINE}}-->\n\n${LEVEL_EMOJI} **[${LEVEL}] ${BRIEF_TITLE}**\n\nSee review body for full details."
-  }
-]
+{
+  "path": "文件相对路径（如 scripts/lib/release_pipeline.py）",
+  "line": 120,
+  "side": "RIGHT",
+  "body": "结构化评论正文"
+}
 ```
 
-- `path` — 文件相对路径（从 PR files API 获取）
-- `position` — diff 中的 0-indexed 位置（从 diff hunk header 后第一行计数）
-- `body` — 精简摘要 + `AGENT_INLINE` 元数据，指向 Review Body 中的详细说明
+**评论正文模板：**
+```
+[维度-序号] 检查项名称 — 结果：FAIL
 
-> **设计原则：** Inline comment 保持极简，避免 diff 中评论过长。人类点击行内评论后可跳转到 Review Body 查看完整上下文。
+问题描述：具体说明发现了什么问题
 
-**Step B — 提交 Review（优先 MCP）：**
+证据：
+- 代码片段：[粘贴相关代码]
+- 命令输出：[如果有测试/lint失败，粘贴输出]
+- 规范引用：[引用 ADR/SPEC 相关段落]
 
-```bash
-BODY=$(cat /tmp/pr-review-${PR_NUMBER}.md)
-
-mcp__github__create_pull_request_review(
-  owner=${OWNER},
-  repo=${REPO},
-  pull_number=${PR_NUMBER},
-  commit_id="${HEAD_OID}",
-  event="COMMENT",
-  body="${BODY}",
-  comments=${INLINE_COMMENTS_JSON}
-)
+建议修复：给出具体修改建议或替代方案
 ```
 
-> **注意：**
-> - `commit_id` 指定被 review 的 commit，确保 review 绑定到正确版本
-> - `event="COMMENT"` 符合 stark-008 只做 review 不 approve/change 的约束
-> - 若 `comments[]` API 报错（如 position 计算错误），降级为 body-only（`comments=[]`）重新提交
-
-**Body-Only Fallback：**
-当 inline comments 不可用时，将所有 findings **完整展开**在 body 中（保留双层格式），不丢失任何信息。
-
-**降级路径 — gh CLI：**
-```bash
-bash scripts/submit-review.sh ${PR_NUMBER} /tmp/pr-review-${PR_NUMBER}.md
+**示例：**
+```json
+{
+  "path": "scripts/lib/release_executor.py",
+  "line": 120,
+  "side": "RIGHT",
+  "body": "[D-03] Security — 命令注入风险\n\n问题描述：此处使用 `subprocess.run(cmd, shell=True)`，存在命令注入风险。\n\n证据：\n- 代码：`subprocess.run(command_str, shell=True)`（line 120）\n- 规范：ADR-0013 要求 `arbitrary_shell_allowed: false`\n\n建议修复：改用 `subprocess.run(command_list, shell=False)`，并将输入解析为列表。"
+}
 ```
 
-**提交失败 fallback：**
-| 错误类型 | 处理 |
-|---------|------|
-| MCP 权限错误 | 检查 GitHub Token 是否有 `pull_requests:write` 权限 |
-| 网络超时 | 重试 1 次 |
-| PR 已关闭/合并 | 报告状态变化，不提交 |
-| 行内评论格式错误 | 降级为 body-only（`comments=[]`）重新提交 |
-| body 超出 65536 字符 | 截断 findings 列表，末尾添加 "_... and N more findings truncated_" |
+**去重规则：**
+- 如果已有 threads 中同文件同行有相似评论，跳过
+- 同一问题跨多行，选最核心的一行挂 thread，其余在 body 中引用行范围
 
 ---
 
-## 止损与异常处理
+### 阶段 4：REVIEW 提交（REVIEW SUBMISSION）
 
-触发时**不自主停止**，报告用户并请求决策：
+**步骤 A — 生成本地 Review Draft**
 
-| 场景 | 用户提示 | 操作选项 |
-|------|---------|---------|
-| GitHub MCP 不可用且 gh CLI 未认证 | 无可用工具获取 PR 信息 | 检查 MCP 注册 / 修复 gh 认证后重试 / 取消 |
-| PR 404/无权限 | PR #N 不存在或无权限访问 | 修正编号 / 取消 |
-| PR diff > 5000 行 | 变更 ${TOTAL_LINES} 行，超出建议范围 | 继续 / 指定文件 / 取消 |
-| API 超时 | 请求超时 (${RETRY}/3) | 重试 / 稍后手动 / 取消 |
-| ce-code-review 失败 | 深度审查工具异常 | 降级 checklist / 重试 / 取消 |
-| 敏感信息泄露 | ⚠️ 检测到疑似敏感信息 | 继续(标注风险) / 停止 / 通知作者 |
-| 当前分支有未提交更改 | 工作区不干净，可能影响本地文件读取 | 先处理或 stash 后重试 / 取消 |
-| 提交失败 | Review 提交失败: ${ERROR} | 保存本地 / 重试 / 取消 |
+写入 `${REVIEW_DRAFT}`：
+```markdown
+# PR Review: ${PR_URL}
+- Reviewer: stark-008
+- Timestamp: $(date -Iseconds)
+- Commit Reviewed: $(gh pr view ${PR_NUMBER} --json headRefOid --jq .headRefOid)
+
+## 摘要
+- 检查项总计: N | PASS: X | FAIL: Y | N/A: Z
+- Thread 数量: Y（每个 FAIL 对应一个 thread）
+- 建议决策: [APPROVE / REQUEST_CHANGES]
+
+## Thread 清单
+[列出每个 thread 的文件:行号 + 问题摘要]
+```
+
+**步骤 B — 构建 Threads JSON**
+
+将阶段 3 的所有 thread 对象写入 `${THREADS_JSON}`：
+```json
+{"comments": [ {thread1}, {thread2}, ... ] }
+```
+
+**步骤 C — 提交 Review**
+
+如果有 FAIL 项（挂 threads + REQUEST_CHANGES）：
+```bash
+gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
+  --method POST \
+  --field event=REQUEST_CHANGES \
+  --field body="$(cat ${REVIEW_DRAFT})" \
+  --input ${THREADS_JSON}
+```
+
+如果全部 PASS（无 threads，直接 APPROVE）：
+```bash
+gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
+  --method POST \
+  --field event=APPROVE \
+  --field body="Review passed. All ${N} criteria checked, 0 blockers. Evidence verified."
+```
 
 ---
 
-## 参考文档
+### 阶段 5：合并门控（MERGE GATE）
 
-- `reference/comment-format-guide.md` — Review Comment 双层格式模板规范（Review Body / Inline Comment）
-- `reference/github-review-api.md` — GitHub Review API 格式要求、inline comments 最佳实践、常见错误
-- `reference/re-review-strategy.md` — 复核策略决策树
-- `scripts/collect-pr-info.sh` — PR 信息收集
-- `scripts/diff-since.sh` — 变更范围检测
-- `scripts/submit-review.sh` — Review 提交（COMMENT 事件）
+**必要条件（缺一不可）：**
+- [ ] 本次 review 所有检查项 PASS 或 N/A（无 FAIL，即无 threads）
+- [ ] 测试套件全部通过（有命令输出证据）
+- [ ] Security & Compliance 全 PASS
+- [ ] PR `mergeable == true`
+- [ ] 本次 review 的 commit 与 PR head 一致
+
+**如果允许合并：**
+```bash
+gh pr merge ${PR_NUMBER} --squash --delete-branch=false
+```
+
+**如果拒绝合并：**
+已通过 REQUEST_CHANGES + threads 表达拒绝原因。
+在 review body 中说明：阻塞问题数量、修复后重新请求 review 的方式。
+
+---
+
+### 阶段 6：约束与边界（CONSTRAINTS）
+
+**硬性约束：**
+- 不修改 PR 中的任何代码（纯 reviewer 角色）
+- 每个 FAIL 必须对应一个具体行号的 thread，禁止泛泛而谈
+- 不基于主观偏好挂 thread（必须有规范或 ADR 支撑）
+- 不跳过 Security & Compliance（即使其他项全 PASS）
+- 如果已有其他 reviewer 的 unresolved threads，在 review body 中引用并纳入评估
+
+**只读边界：**
+- PR diff 涉及的所有文件
+- 项目测试脚本、配置、ADR 文档
+- 已有 review threads（只读参考，不修改）
+
+---
+
+### 阶段 7：止损条件（BLOCKED STOP）
+
+**立即停止并报告的情况：**
+- `gh` CLI 无法读取 PR 或提交 review（权限不足、token 过期）
+- PR diff 超过 5000 行（超出合理 review 范围）
+- 测试脚本因环境问题持续失败 3 次
+- 发现敏感信息泄露 → 立即提交 REJECT review（不带 threads，body 直接说明）
+- 无法定位 FAIL 项到具体行号 → 转为 general review comment，不强行挂 thread
+
+**报告格式：**
+- Blocker 类型：`tool-unavailable` / `pr-too-large` / `env-failure` / `security-leak` / `cannot-locate-line`
+- 已收集的证据摘要
+- 建议的人类介入方式

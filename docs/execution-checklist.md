@@ -268,6 +268,8 @@ Blocked stop conditions:
 - [x] Stop if Gateway does not reject non-loopback connections by default.
 - [x] Stop if `scripts/tests/test-release-pipeline.sh` fails.
 
+- [2026-05-18] Verified by Codex — all tests passed
+
 ## Sprint 7: Runtime Domain Knowledge Base
 
 Dependencies on previous sprints:

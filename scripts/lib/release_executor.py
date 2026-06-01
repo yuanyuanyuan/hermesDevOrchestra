@@ -5,8 +5,8 @@ import json
 import os
 import re
 import signal
-import stat
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +14,16 @@ from typing import Any
 
 from debate_report import DebateReportError, validate_artifact_definition
 from release_pipeline import ReleasePipeline, ReleasePipelineError
+
+
+_SECRET_PATTERNS = [
+    re.compile(r"(?i)\b(secret|token|password|api[_-]?key)(\s*[:=]\s*|\s+)([^\s]+)"),
+]
+_ABSOLUTE_PATH_PATTERN = re.compile(r"(^|[\s=])(/[A-Za-z0-9._~/-]+)")
+_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+_CAPTURE_LIMIT_BYTES = 1024 * 1024
+_CAPTURE_CHUNK_BYTES = 8192
+_TRUNCATED_MARKER = "[OUTPUT_TRUNCATED]"
 
 
 class ReleaseExecutorError(Exception):
@@ -30,309 +40,327 @@ class ReleaseExecutor:
         package_root: str = "config/release",
         allow_staged: bool = False,
         enabled: bool = True,
-        project_root: Path | str | None = None,
-        env: dict[str, str] | None = None,
+        runtime_env: dict[str, str] | None = None,
+        artifact_root: Path | str | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
-        self.project_root = Path(project_root) if project_root is not None else self.repo_root
-        self.base_env = dict(env or os.environ)
+        self.package_root = package_root
+        self.allow_staged = allow_staged
+        self.enabled = enabled
+        self.runtime_env = dict(runtime_env or os.environ)
+        self.artifact_root = Path(artifact_root) if artifact_root is not None else self.repo_root / ".release-artifacts"
         self.pipeline = ReleasePipeline(
-            self.repo_root,
-            package_root=package_root,
-            allow_staged=allow_staged,
-            enabled=enabled,
+            repo_root=self.repo_root,
+            package_root=self.package_root,
+            allow_staged=self.allow_staged,
+            enabled=self.enabled,
         )
 
-    def execute(self, command_ref: str, approval_ref: str | None = None) -> dict[str, Any]:
-        self._validate_command_ref(command_ref)
+    def execute(
+        self,
+        command_ref: str,
+        approval_ref: str | None = None,
+        *,
+        run_id: str = "release-executor-run",
+        environment: str | None = None,
+        test_execution_report_refs: list[str] | None = None,
+        health_check_refs: list[str] | None = None,
+        rollback_or_recovery_refs: list[str] | None = None,
+        gate_results: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if not self.enabled:
+            raise ReleaseExecutorError("module_disabled", "release executor is disabled")
+        if not isinstance(run_id, str) or not run_id:
+            raise ReleaseExecutorError("validation_error", "run_id must be a non-empty string")
+        if _RUN_ID_PATTERN.fullmatch(run_id) is None:
+            raise ReleaseExecutorError("validation_error", "run_id contains invalid path characters")
+
+        if test_execution_report_refs is None:
+            test_execution_report_refs = []
+        if health_check_refs is None:
+            health_check_refs = []
+        if rollback_or_recovery_refs is None:
+            rollback_or_recovery_refs = []
+        if gate_results is None:
+            gate_results = {}
+
         try:
-            context = self.pipeline.resolve_command(command_ref)
+            validation = self.pipeline.validate_command_refs()
+            command = self.pipeline.get_command(command_ref)
+            resolved_environment = environment or self.pipeline.resolve_environment(command_ref) or "unmapped"
         except ReleasePipelineError as exc:
             raise ReleaseExecutorError(exc.code, exc.message) from exc
 
-        pipeline = context["pipeline"]
-        registry = context["registry"]
-        command = context["command"]
-        environment_entry = context["environment"]
-        normalized_approval_ref = self._normalize_approval_ref(approval_ref)
-        if self._approval_required(command, environment_entry) and normalized_approval_ref is None:
-            raise ReleaseExecutorError("approval_required", f"{command_ref} requires approval_ref before execution")
+        approval_checked = self._approval_required(command) or approval_ref is not None
+        self._validate_approval(command, approval_ref)
 
-        filtered_env = self._filtered_env(command["env_allowlist"])
         cwd = self._resolve_cwd(command["cwd_ref"])
-        started_at = self._timestamp()
-        started_monotonic = time.monotonic()
-        timeout_seconds = int(command["timeout_seconds"])
-        kill_policy = dict(command["kill_policy"])
-        process = self._start_process(command, cwd, filtered_env)
-        stdout_text, stderr_text, timed_out, termination_sequence = self._run_process(
-            process,
-            timeout_seconds=timeout_seconds,
-            kill_policy=kill_policy,
+        allowed_env = self._build_allowed_env(command["env_allowlist"])
+        execution = self._run_process(
+            argv=list(command["argv"]),
+            cwd=cwd,
+            env=allowed_env,
+            timeout_seconds=int(command["timeout_seconds"]),
+            kill_policy=dict(command["kill_policy"]),
         )
-        finished_at = self._timestamp()
-        duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
 
-        stdout_redacted, stdout_findings = self._redact_output(stdout_text, command["env_allowlist"])
-        stderr_redacted, stderr_findings = self._redact_output(stderr_text, command["env_allowlist"])
-        secret_scan_status = "findings_redacted" if stdout_findings or stderr_findings else "clear"
+        stdout_text = self._redact_output(execution["stdout"], dict(command["redaction_policy"]), allowed_env)
+        stderr_text = self._redact_output(execution["stderr"], dict(command["redaction_policy"]), allowed_env)
+        stdout_ref, stdout_path = self._store_output(run_id, "stdout", stdout_text, command["output_capture_policy"]["store"])
+        stderr_ref, stderr_path = self._store_output(run_id, "stderr", stderr_text, command["output_capture_policy"]["store"])
 
-        stdout_ref = self._cache_ref(stdout_redacted)
-        stderr_ref = self._cache_ref(stderr_redacted)
-        deployment_status = "timed_out" if timed_out else ("succeeded" if process.returncode == 0 else "failed")
-        approval_refs = [normalized_approval_ref] if normalized_approval_ref is not None else []
-
-        report = {
-            "schema_version": "orchestra.full.v1",
-            "artifact_type": "deployment_report",
-            "run_id": f"release-{environment_entry['id']}",
-            "environment": environment_entry["id"],
-            "deployment_status": deployment_status,
-            "command_ref": command_ref,
-            "command_registry_ref": pipeline["command_registry_ref"],
-            "executor": "gateway_release_executor",
-            "approval_checked_before_execution": True,
-            "argv_hash": self._argv_hash(command["argv"]),
-            "stdout_ref": stdout_ref,
-            "stderr_ref": stderr_ref,
-            "exit_code": process.returncode,
-            "started_at": started_at,
-            "finished_at": finished_at,
-            "duration_ms": duration_ms,
-            "timeout_seconds": timeout_seconds,
-            "timed_out": timed_out,
-            "kill_policy": kill_policy,
-            "health_check_refs": list(environment_entry.get("health_check_refs", [])),
-            "gate_results": self._gate_results(pipeline),
-            "test_execution_report_refs": [],
-            "approval_refs": approval_refs,
-            "rollback_or_recovery_refs": [],
-            "created_at": finished_at,
-        }
+        report = self._build_report(
+            run_id=run_id,
+            environment=resolved_environment,
+            command_ref=command_ref,
+            command_registry_ref=str(validation["command_registry_ref"]),
+            command=command,
+            execution=execution,
+            stdout_ref=stdout_ref,
+            stderr_ref=stderr_ref,
+            approval_checked=approval_checked,
+            approval_ref=approval_ref,
+            test_execution_report_refs=test_execution_report_refs,
+            health_check_refs=health_check_refs,
+            rollback_or_recovery_refs=rollback_or_recovery_refs,
+            gate_results=gate_results,
+        )
 
         self._validate_definition("deployment_report", report)
-
         return {
             "deployment_report": report,
-            "stored_outputs": {
-                stdout_ref: stdout_redacted,
-                stderr_ref: stderr_redacted,
-            },
-            "secret_scan_status": secret_scan_status,
-            "shell_used": False,
-            "termination_sequence": termination_sequence,
-            "registry_authority": registry["registry_authority"],
+            "stdout_path": str(stdout_path),
+            "stderr_path": str(stderr_path),
+            "allowed_env": allowed_env,
         }
 
-    def _validate_command_ref(self, command_ref: str) -> None:
-        if not isinstance(command_ref, str) or not re.fullmatch(r"command://release/[A-Za-z0-9._-]+", command_ref):
-            raise ReleaseExecutorError("command_ref_invalid", "command_ref must match command://release/<id>")
-        if ".." in command_ref or ";" in command_ref:
-            raise ReleaseExecutorError("command_ref_invalid", "command_ref must not contain traversal or shell metacharacters")
+    def _approval_required(self, command: dict[str, Any]) -> bool:
+        policy = command["approval_policy"]
+        return bool(policy.get("approval_refs_required_before_execution")) or policy.get("authority_required") != "none"
 
-    def _normalize_approval_ref(self, approval_ref: str | None) -> str | None:
-        if approval_ref is None:
-            return None
-        if not isinstance(approval_ref, str):
-            raise ReleaseExecutorError("validation_error", "approval_ref must be a string when provided")
-        normalized = approval_ref.strip()
-        return normalized or None
-
-    def _approval_required(self, command: dict[str, Any], environment_entry: dict[str, Any]) -> bool:
-        approval_policy = command.get("approval_policy", {})
-        return bool(
-            environment_entry.get("requires_approval")
-            or approval_policy.get("approval_refs_required_before_execution")
-        )
-
-    def _filtered_env(self, allowlist: list[str]) -> dict[str, str]:
-        if not isinstance(allowlist, list) or not all(isinstance(item, str) and item for item in allowlist):
-            raise ReleaseExecutorError("config_invalid", "env_allowlist must be a list of non-empty strings")
-        filtered: dict[str, str] = {}
-        for key in allowlist:
-            if key in self.base_env:
-                value = self.base_env[key]
-                if key == "PATH":
-                    value = self._sanitize_path(value)
-                filtered[key] = value
-        return filtered
-
-    def _sanitize_path(self, raw_path: str) -> str:
-        safe_entries: list[str] = []
-        for entry in raw_path.split(os.pathsep):
-            if not entry:
-                continue
-            path = Path(entry)
-            if not path.is_absolute() or not path.exists() or not path.is_dir():
-                continue
-            mode = path.stat().st_mode
-            if mode & stat.S_IWOTH:
-                continue
-            safe_entries.append(str(path))
-        return os.pathsep.join(safe_entries)
+    def _validate_approval(self, command: dict[str, Any], approval_ref: str | None) -> None:
+        policy = command["approval_policy"]
+        approval_required = self._approval_required(command)
+        if approval_required and (not isinstance(approval_ref, str) or not approval_ref):
+            raise ReleaseExecutorError("approval_required", "approval_ref is required before execution")
+        if approval_ref is not None and (not isinstance(approval_ref, str) or not approval_ref):
+            raise ReleaseExecutorError("validation_error", "approval_ref must be a non-empty string")
+        if policy.get("fixed_phrase_required"):
+            if not isinstance(approval_ref, str) or not approval_ref or "fixed-phrase:" not in approval_ref:
+                raise ReleaseExecutorError("approval_required", "approval_ref must include a fixed-phrase confirmation")
 
     def _resolve_cwd(self, cwd_ref: str) -> Path:
-        project_root = self.project_root.resolve()
         if cwd_ref == "project://root":
-            return project_root
-        if not isinstance(cwd_ref, str) or not cwd_ref.startswith("project://root/"):
-            raise ReleaseExecutorError("cwd_ref_invalid", "cwd_ref must stay under project://root")
-        relative = cwd_ref.removeprefix("project://root/")
-        parts = Path(relative).parts
-        if any(part in ("..", "") for part in parts):
-            raise ReleaseExecutorError("cwd_ref_invalid", "cwd_ref must not contain path traversal")
-        candidate = (self.project_root / relative).resolve(strict=False)
-        if not candidate.is_relative_to(project_root):
-            raise ReleaseExecutorError("cwd_ref_invalid", "cwd_ref resolved outside project root")
-        return candidate
+            return self.repo_root
+        raise ReleaseExecutorError("cwd_not_supported", f"unsupported cwd_ref: {cwd_ref}")
 
-    def _start_process(
-        self,
-        command: dict[str, Any],
-        cwd: Path,
-        filtered_env: dict[str, str],
-    ) -> subprocess.Popen[str]:
-        try:
-            return subprocess.Popen(
-                list(command["argv"]),
-                cwd=str(cwd),
-                env=filtered_env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                shell=False,
-            )
-        except OSError as exc:
-            raise ReleaseExecutorError(
-                "execution_failed",
-                f"{command['command_ref']} failed to start: {exc.strerror or exc}",
-            ) from exc
+    def _build_allowed_env(self, allowlist: list[str]) -> dict[str, str]:
+        return {key: self.runtime_env[key] for key in allowlist if key in self.runtime_env}
 
     def _run_process(
         self,
-        process: subprocess.Popen[str],
+        *,
+        argv: list[str],
+        cwd: Path,
+        env: dict[str, str],
         timeout_seconds: int,
         kill_policy: dict[str, Any],
-    ) -> tuple[str, str, bool, list[str]]:
+    ) -> dict[str, Any]:
+        started_at = self._timestamp()
+        started_monotonic = time.monotonic()
         try:
-            stdout_text, stderr_text = process.communicate(timeout=timeout_seconds)
-            return stdout_text, stderr_text, False, []
-        except subprocess.TimeoutExpired as exc:
-            termination_sequence: list[str] = []
-            stdout_prefix = exc.stdout or ""
-            stderr_prefix = exc.stderr or ""
-            self._terminate_process(process, kill_policy, termination_sequence)
-            stdout_text, stderr_text = self._collect_output(process, stdout_prefix, stderr_prefix)
-            return stdout_text, stderr_text, True, termination_sequence
+            process = subprocess.Popen(
+                argv,
+                cwd=str(cwd),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=False,
+                shell=False,
+            )
+        except FileNotFoundError as exc:
+            raise ReleaseExecutorError("execution_failed", f"command executable not found: {argv[0]}") from exc
+        except OSError as exc:
+            raise ReleaseExecutorError("execution_failed", f"command failed to start: {exc}") from exc
 
-    def _terminate_process(
-        self,
-        process: subprocess.Popen[str],
-        kill_policy: dict[str, Any],
-        termination_sequence: list[str],
-    ) -> None:
-        graceful_signal = str(kill_policy["graceful_signal"])
-        termination_sequence.append(graceful_signal)
-        self._send_signal(process, graceful_signal)
-        if self._wait_for_exit(process, int(kill_policy["graceful_timeout_seconds"])):
-            return
-
-        force_signal = str(kill_policy["force_signal"])
-        termination_sequence.append(force_signal)
-        self._send_signal(process, force_signal)
-        self._wait_for_exit(process, int(kill_policy["force_timeout_seconds"]))
-
-    def _wait_for_exit(self, process: subprocess.Popen[str], timeout_seconds: int) -> bool:
-        if timeout_seconds == 0:
-            return process.poll() is not None
+        timed_out = False
+        stdout_capture = {"buffer": bytearray(), "truncated": False}
+        stderr_capture = {"buffer": bytearray(), "truncated": False}
+        stdout_thread = threading.Thread(
+            target=self._capture_stream,
+            args=(process.stdout, stdout_capture),
+            daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=self._capture_stream,
+            args=(process.stderr, stderr_capture),
+            daemon=True,
+        )
+        stdout_thread.start()
+        stderr_thread.start()
         try:
             process.wait(timeout=timeout_seconds)
-            return True
         except subprocess.TimeoutExpired:
-            return False
+            timed_out = True
+            self._send_signal(process, str(kill_policy["graceful_signal"]))
+            try:
+                process.wait(timeout=int(kill_policy["graceful_timeout_seconds"]))
+            except subprocess.TimeoutExpired:
+                self._send_signal(process, str(kill_policy.get("force_signal", "KILL")))
+                try:
+                    process.wait(timeout=max(1, int(kill_policy["force_timeout_seconds"])))
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
 
-    def _collect_output(
-        self,
-        process: subprocess.Popen[str],
-        stdout_prefix: str,
-        stderr_prefix: str,
-    ) -> tuple[str, str]:
-        try:
-            stdout_tail, stderr_tail = process.communicate(timeout=1)
-            return stdout_prefix + (stdout_tail or ""), stderr_prefix + (stderr_tail or "")
-        except subprocess.TimeoutExpired as exc:
-            self._send_signal(process, "KILL")
-            return stdout_prefix + (exc.stdout or ""), stderr_prefix + (exc.stderr or "")
+        stdout_thread.join()
+        stderr_thread.join()
+        stdout = self._decode_captured_output(stdout_capture)
+        stderr = self._decode_captured_output(stderr_capture)
+
+        finished_at = self._timestamp()
+        duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
+        return {
+            "stdout": stdout,
+            "stderr": stderr,
+            "exit_code": None if timed_out else process.returncode,
+            "timed_out": timed_out,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "duration_ms": duration_ms,
+        }
 
     def _send_signal(self, process: subprocess.Popen[str], signal_name: str) -> None:
-        if signal_name == "KILL":
-            process.kill()
+        signal_value = getattr(signal, f"SIG{signal_name}", None)
+        if signal_value is None:
+            process.terminate()
             return
-        mapped_signal = getattr(signal, f"SIG{signal_name}", None)
-        if mapped_signal is None:
-            raise ReleaseExecutorError("config_invalid", f"unsupported signal: {signal_name}")
-        process.send_signal(mapped_signal)
+        try:
+            process.send_signal(signal_value)
+        except ProcessLookupError:
+            return
+
+    def _redact_output(self, text: str, redaction_policy: dict[str, Any], allowed_env: dict[str, str]) -> str:
+        if not text or redaction_policy.get("enabled") is not True:
+            return text
+
+        redacted = text
+        if redaction_policy.get("redact_env_not_in_allowlist"):
+            secret_values = sorted(
+                {
+                    value
+                    for key, value in self.runtime_env.items()
+                    if key not in allowed_env and value
+                },
+                key=len,
+                reverse=True,
+            )
+            for value in secret_values:
+                redacted = redacted.replace(value, "[REDACTED_SECRET]")
+        if redaction_policy.get("redact_secrets"):
+            for pattern in _SECRET_PATTERNS:
+                redacted = pattern.sub(lambda match: f"{match.group(1)}{match.group(2)}[REDACTED_SECRET]", redacted)
+        if redaction_policy.get("redact_absolute_paths"):
+            redacted = _ABSOLUTE_PATH_PATTERN.sub(lambda match: f"{match.group(1)}[REDACTED_PATH]", redacted)
+        return redacted
+
+    def _capture_stream(self, stream: Any, capture: dict[str, Any]) -> None:
+        if stream is None:
+            return
+        try:
+            while True:
+                chunk = stream.read(_CAPTURE_CHUNK_BYTES)
+                if not chunk:
+                    break
+                remaining = _CAPTURE_LIMIT_BYTES - len(capture["buffer"])
+                if remaining > 0:
+                    capture["buffer"].extend(chunk[:remaining])
+                if remaining < len(chunk):
+                    capture["truncated"] = True
+        finally:
+            stream.close()
+
+    def _decode_captured_output(self, capture: dict[str, Any]) -> str:
+        text = bytes(capture["buffer"]).decode("utf-8", errors="replace")
+        if capture["truncated"]:
+            separator = "" if not text or text.endswith("\n") else "\n"
+            return f"{text}{separator}{_TRUNCATED_MARKER}"
+        return text
+
+    def _store_output(self, run_id: str, stream_name: str, text: str, store: str) -> tuple[str, Path]:
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if store == "state_artifact":
+            path = self.artifact_root / "state" / run_id / f"{stream_name}-{digest}.log"
+            ref = f"state://runs/{run_id}/release/{stream_name}-{digest}.log"
+        else:
+            path = self.artifact_root / "cache" / digest / f"{stream_name}.log"
+            ref = f"cache://sha256:{digest}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return ref, path
+
+    def _build_report(
+        self,
+        *,
+        run_id: str,
+        environment: str,
+        command_ref: str,
+        command_registry_ref: str,
+        command: dict[str, Any],
+        execution: dict[str, Any],
+        stdout_ref: str,
+        stderr_ref: str,
+        approval_checked: bool,
+        approval_ref: str | None,
+        test_execution_report_refs: list[str],
+        health_check_refs: list[str],
+        rollback_or_recovery_refs: list[str],
+        gate_results: dict[str, Any],
+    ) -> dict[str, Any]:
+        deployment_status = "timed_out"
+        if not execution["timed_out"]:
+            deployment_status = "succeeded" if execution["exit_code"] == 0 else "failed"
+
+        argv_hash = hashlib.sha256(
+            json.dumps(command["argv"], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        return {
+            "schema_version": "orchestra.full.v1",
+            "artifact_type": "deployment_report",
+            "run_id": run_id,
+            "environment": environment,
+            "deployment_status": deployment_status,
+            "command_ref": command_ref,
+            "command_registry_ref": command_registry_ref,
+            "executor": "gateway_release_executor",
+            "approval_checked_before_execution": approval_checked,
+            "argv_hash": f"sha256:{argv_hash}",
+            "stdout_ref": stdout_ref,
+            "stderr_ref": stderr_ref,
+            "exit_code": execution["exit_code"],
+            "started_at": execution["started_at"],
+            "finished_at": execution["finished_at"],
+            "duration_ms": execution["duration_ms"],
+            "timeout_seconds": int(command["timeout_seconds"]),
+            "timed_out": execution["timed_out"],
+            "kill_policy": dict(command["kill_policy"]),
+            "health_check_refs": list(health_check_refs),
+            "gate_results": {
+                **gate_results,
+                "approval_checked": approval_checked,
+                "approval_ref_present": approval_ref is not None,
+            },
+            "test_execution_report_refs": list(test_execution_report_refs),
+            "approval_refs": [approval_ref] if approval_ref is not None else [],
+            "rollback_or_recovery_refs": list(rollback_or_recovery_refs),
+            "created_at": self._timestamp(),
+        }
 
     def _timestamp(self) -> str:
         return datetime.now(timezone.utc).isoformat()
-
-    def _argv_hash(self, argv: list[str]) -> str:
-        payload = json.dumps(list(argv), separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        return f"sha256:{hashlib.sha256(payload).hexdigest()}"
-
-    def _cache_ref(self, text: str) -> str:
-        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        return f"cache://sha256:{digest}"
-
-    def _gate_results(self, pipeline: dict[str, Any]) -> dict[str, Any]:
-        results: dict[str, Any] = {}
-        gates = pipeline.get("gates", {})
-        if isinstance(gates, dict):
-            for gate_name, gate in gates.items():
-                required = bool(gate.get("required")) if isinstance(gate, dict) else False
-                results[gate_name] = {"required": required, "status": "not_run"}
-        return results
-
-    def _redact_output(self, text: str, allowlist: list[str]) -> tuple[str, bool]:
-        redacted = text
-        findings = False
-
-        for key, value in self.base_env.items():
-            if key in allowlist:
-                continue
-            if value and value in redacted:
-                redacted = redacted.replace(value, f"[REDACTED_ENV:{key}]")
-                findings = True
-
-        secret_patterns = [
-            re.compile(r"(?im)\b((?:api[_-]?token|token|password|secret|api[_-]?key)\s*=\s*)([^\s]+)"),
-            re.compile(r'(?im)("?(?:api[_-]?token|token|password|secret|api[_-]?key)"?\s*:\s*")([^"]+)(")'),
-            re.compile(r"(?im)\b(authorization\s*:\s*bearer\s+)([^\s]+)"),
-        ]
-
-        def replace_secret(match: re.Match[str]) -> str:
-            nonlocal findings
-            findings = True
-            if len(match.groups()) >= 3:
-                return f"{match.group(1)}[REDACTED_SECRET]{match.group(3)}"
-            return f"{match.group(1)}[REDACTED_SECRET]"
-
-        for pattern in secret_patterns:
-            redacted = pattern.sub(replace_secret, redacted)
-
-        project_root_text = str(self.project_root)
-        if project_root_text and project_root_text in redacted:
-            redacted = redacted.replace(project_root_text, "[REDACTED_PATH]")
-            findings = True
-
-        home_path = self.base_env.get("HOME", "")
-        if home_path and home_path in redacted:
-            redacted = redacted.replace(home_path, "[REDACTED_PATH]")
-            findings = True
-        return redacted, findings
 
     def _validate_definition(self, definition_name: str, artifact: dict[str, Any]) -> None:
         try:
             validate_artifact_definition(self.repo_root, definition_name, artifact)
         except DebateReportError as exc:
-            raise ReleaseExecutorError("schema_invalid", exc.message) from exc
+            raise ReleaseExecutorError("report_invalid", exc.message) from exc
