@@ -42,10 +42,10 @@ from runtime_knowledge import RuntimeKnowledgeBase, RuntimeKnowledgeError
 def expect_error(code, func):
     try:
         func()
-    except KnowledgeIngestionError as exc:
+    except (KnowledgeIngestionError, RuntimeKnowledgeError) as exc:
         assert exc.code == code, (exc.code, code, exc.message)
         return exc
-    raise AssertionError(f"expected KnowledgeIngestionError({code})")
+    raise AssertionError(f"expected error({code})")
 
 
 def copy_schema(target_repo):
