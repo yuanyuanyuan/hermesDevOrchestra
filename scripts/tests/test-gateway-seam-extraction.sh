@@ -306,7 +306,7 @@ print('status:', status)
 print('fallback:', body.get('fallback'))
 print('error_code:', body.get('error', {}).get('code'))
 assert status == 503, f'expected 503, got {status}'
-assert body.get('fallback') == 'heuristic'
+assert body.get('fallback') == 'FALLBACK_HEURISTIC'
 assert body.get('error', {}).get('code') == 'gateway_fallback'
 print('http_fallback: PASS')
 PYEOF

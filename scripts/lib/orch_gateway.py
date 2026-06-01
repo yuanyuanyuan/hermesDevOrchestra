@@ -361,7 +361,7 @@ class GatewayApp:
 
     def _fallback_response(self) -> tuple[int, dict[str, Any]]:
         body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
-        body["fallback"] = "heuristic"
+        body["fallback"] = "FALLBACK_HEURISTIC"
         return 503, body
 
     def _requirement_completion_bundle(self, payload: dict[str, Any], request_type: str, run_id: str) -> dict[str, Any]:
@@ -4323,6 +4323,12 @@ class GatewayApp:
         )
 
         return 200, response
+
+    def build_parallel_worker_artifacts(self, run_id: str, task_id: str, role_payload: dict[str, Any]) -> dict[str, Any] | None:
+        return None
+
+    def persist_parallel_worker_artifacts(self, parallel_artifacts: dict[str, Any]) -> None:
+        return None
 
     def accept_worker_output(
         self,
