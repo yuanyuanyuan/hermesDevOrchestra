@@ -146,6 +146,7 @@ assert status["blocked_reason"] == "structured_prd_required", status
 assert status["pending_decision_id"]
 assert status["pending_decision_refs"], status
 assert status["artifact_refs"]["structured_prd"].startswith("state://")
+assert status["artifact_refs"]["requirement_completion_bundle"].startswith("state://")
 
 event_types = [event["type"] for event in events["events"]]
 assert event_types == ["run_created", "ticket_normalized", "decision_required"]
@@ -163,6 +164,11 @@ assert structured_prd["artifact_type"] == "structured_prd"
 assert structured_prd["status"] == "incomplete"
 assert structured_prd["source"] == "intent"
 assert structured_prd["missing_fields"] == ["acceptance_criteria", "constraints", "failure_strategy"]
+
+bundle = json.loads((run_dir / "requirement-completion-bundle.json").read_text(encoding="utf-8"))
+assert bundle["artifact_type"] == "requirement_completion_bundle"
+assert bundle["intent_summary"]["conclusions"][0]["confidence"] < 0.3, bundle
+assert any(item["flag"] == "manual_confirmation_required" for item in bundle["risk_flags"]["items"]), bundle
 
 audit_records = [
     json.loads(line)

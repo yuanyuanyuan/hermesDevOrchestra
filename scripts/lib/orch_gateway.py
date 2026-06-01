@@ -19,6 +19,8 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
+from atomic_writer import AtomicWriter
+from blocker_validator import validate as _completion_bundle_validate
 from debate_report import validate_artifact_definition
 from runtime_activation import RuntimeActivation, RuntimeActivationError
 
@@ -55,6 +57,7 @@ WORKER_BACKENDS = {
     "claude": {"roles": ["reviewer"], "enabled": True, "available": True, "kind": "cli"},
 }
 SAFE_PATH_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_ATOMIC_WRITER = AtomicWriter()
 
 
 def module_endpoint(
@@ -138,10 +141,9 @@ def json_bytes(data: dict[str, Any]) -> bytes:
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".tmp.{path.name}.{uuid.uuid4().hex}")
-    tmp.write_bytes(json_bytes(data))
-    os.replace(tmp, path)
+    receipt = _ATOMIC_WRITER.write(path, data)
+    if receipt.get("status") == "conflict":
+        raise RuntimeError(f"atomic write conflict: {path}")
 
 
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:
@@ -268,6 +270,15 @@ class GatewayApp:
         body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
         body.update({"fallback": "FALLBACK_HEURISTIC", "fallback_reason": detail})
         return body
+
+    def _requirement_completion_bundle(self, payload: dict[str, Any], request_type: str, run_id: str) -> dict[str, Any]:
+        intent = _intake_normalize(payload, expected_intent_type=request_type)
+        ctx = {"project_id": self.store.project_id, "request_type": request_type, "run_id": run_id, "timestamp": utc_now()}
+        projected = _projection_project(intent, ctx)
+        bundle = projected.get("requirement_completion_bundle")
+        if not isinstance(bundle, dict):
+            raise RuntimeError("requirement completion bundle missing")
+        return bundle
 
     def health(self) -> dict[str, Any]:
         return {
@@ -1443,6 +1454,13 @@ class GatewayApp:
         command_path = self.store.command_path(run_id, command_id)
         lineage_ref = self.store.state_ref(run_id, "lineage.json") if lineage_input else None
         source_run_id = lineage_input.get("source_run_id") if lineage_input else None
+        completion_bundle_ref = self.store.state_ref(run_id, "requirement-completion-bundle.json")
+        completion_bundle = self._requirement_completion_bundle(payload, "create_run", run_id)
+        bundle_validation = _completion_bundle_validate(completion_bundle)
+        if bundle_validation.get("status") == "blocked":
+            body = self.error("completion_bundle_blocked", "requirement completion bundle is incomplete")
+            body.update(bundle_validation)
+            return 409, body
 
         command_record = {
             "schema_version": SCHEMA_VERSION,
@@ -1456,6 +1474,7 @@ class GatewayApp:
             "payload_hash": payload_hash,
             "intent": "create_run",
             "planned_side_effects": [
+                "write_requirement_completion_bundle",
                 "write_run_state",
                 "create_kanban_stage_tasks",
                 "write_task_projection",
@@ -1471,14 +1490,15 @@ class GatewayApp:
         command_record["planned_side_effects"] = [step for step in command_record["planned_side_effects"] if step]
         write_json(command_path, command_record)
 
+        write_json(self.store.run_dir(run_id) / "requirement-completion-bundle.json", completion_bundle)
         stage_tasks = self.create_kanban_stage_tasks(run_id)
-        mvp_artifact_refs = self.write_initial_mvp_artifacts(run_id, ticket, stage_tasks, command_id, now)
+        mvp_artifact_refs = self.write_initial_mvp_artifacts(run_id, ticket, stage_tasks, command_id, now, completion_bundle_ref)
         tasks = {
             "schema_version": SCHEMA_VERSION,
             "run_id": run_id,
             "project": self.store.project_id,
             "projection_status": "consistent",
-            "authority_refs_checked": [self.store.state_ref(run_id, "run.json")],
+            "authority_refs_checked": [self.store.state_ref(run_id, "run.json"), completion_bundle_ref],
             "tasks": stage_tasks,
             "updated_at": now,
         }
@@ -1728,6 +1748,7 @@ class GatewayApp:
         command_record["status"] = "completed"
         command_record["updated_at"] = utc_now()
         command_record["steps"] = [
+            {"step_id": "write_requirement_completion_bundle", "target_authority": "state", "operation": "write", "status": "completed", "refs": [completion_bundle_ref]},
             {"step_id": "write_run_state", "target_authority": "state", "operation": "write", "status": "completed", "refs": [self.store.state_ref(run_id, "run.json")]},
             {"step_id": "write_task_projection", "target_authority": "state", "operation": "write", "status": "completed", "refs": [self.store.state_ref(run_id, "tasks.json")]},
             {"step_id": "write_mvp_acceptance_artifacts", "target_authority": "state", "operation": "write", "status": "completed", "refs": list(mvp_artifact_refs.values())},
@@ -1773,6 +1794,7 @@ class GatewayApp:
         stage_tasks: list[dict[str, Any]],
         command_id: str,
         now: str,
+        completion_bundle_ref: str | None = None,
     ) -> dict[str, str]:
         run_dir = self.store.run_dir(run_id)
         run_ref = self.store.state_ref(run_id, "run.json")
@@ -1800,7 +1822,7 @@ class GatewayApp:
             "constraints": {"hard": hard_constraints, "soft": soft_constraints},
             "risks": [],
             "failure_strategy": failure_strategy,
-            "input_artifact_refs": [run_ref],
+            "input_artifact_refs": [ref for ref in [run_ref, completion_bundle_ref] if ref],
             "status": "ready",
             "source": "ticket",
             "created_at": now,
@@ -1914,6 +1936,8 @@ class GatewayApp:
             "test_execution_report": test_execution_ref,
             "worker_selection_record": worker_selection_ref,
         }
+        if completion_bundle_ref:
+            artifact_refs["requirement_completion_bundle"] = completion_bundle_ref
         for stage in ("direction_debate", "solution_debate"):
             report_ref = self.store.state_ref(run_id, f"debate-reports/{stage}.json")
             debate_report = {
@@ -2212,6 +2236,7 @@ class GatewayApp:
             "payload_hash": payload_hash,
             "intent": "create_run_intake",
             "planned_side_effects": [
+                "write_requirement_completion_bundle",
                 "write_structured_prd",
                 "write_run_state",
                 "write_empty_task_projection",
@@ -2224,6 +2249,9 @@ class GatewayApp:
         }
         write_json(command_path, command_record)
 
+        completion_bundle_ref = self.store.state_ref(run_id, "requirement-completion-bundle.json")
+        completion_bundle = self._requirement_completion_bundle(payload, "create_run", run_id)
+        write_json(self.store.run_dir(run_id) / "requirement-completion-bundle.json", completion_bundle)
         structured_prd = {
             "schema_version": SCHEMA_VERSION,
             "artifact_type": "structured_prd",
@@ -2268,6 +2296,7 @@ class GatewayApp:
             "stop_audit_ref": None,
             "artifact_refs": {
                 "command_record": self.store.state_ref(run_id, f"commands/{command_id}.json"),
+                "requirement_completion_bundle": completion_bundle_ref,
                 "structured_prd": pending_decision_ref,
             },
         }
@@ -2279,7 +2308,7 @@ class GatewayApp:
             "run_id": run_id,
             "project": self.store.project_id,
             "projection_status": "consistent",
-            "authority_refs_checked": [self.store.state_ref(run_id, "run.json"), pending_decision_ref],
+            "authority_refs_checked": [self.store.state_ref(run_id, "run.json"), pending_decision_ref, completion_bundle_ref],
             "tasks": [],
             "updated_at": now,
         }
@@ -2342,6 +2371,7 @@ class GatewayApp:
         command_record["status"] = "completed"
         command_record["updated_at"] = utc_now()
         command_record["steps"] = [
+            {"step_id": "write_requirement_completion_bundle", "target_authority": "state", "operation": "write", "status": "completed", "refs": [completion_bundle_ref]},
             {"step_id": "write_structured_prd", "target_authority": "state", "operation": "write", "status": "completed", "refs": [pending_decision_ref]},
             {"step_id": "write_run_state", "target_authority": "state", "operation": "write", "status": "completed", "refs": [self.store.state_ref(run_id, "run.json")]},
             {"step_id": "write_empty_task_projection", "target_authority": "state", "operation": "write", "status": "completed", "refs": [self.store.state_ref(run_id, "tasks.json")]},
@@ -5306,6 +5336,7 @@ class GatewayApp:
         command_id = f"cmd-{uuid.uuid4().hex[:16]}"
         now = utc_now()
         command_path = self.store.command_path(run_id, command_id)
+        completion_bundle_ref = self.store.state_ref(run_id, "requirement-completion-bundle.json")
         structured_prd_ref = self.store.state_ref(run_id, "structured_prd.json")
 
         command_record = {
@@ -5320,6 +5351,7 @@ class GatewayApp:
             "payload_hash": payload_hash,
             "intent": "resolve_decision",
             "planned_side_effects": [
+                "write_requirement_completion_bundle",
                 "write_structured_prd",
                 "create_kanban_stage_tasks",
                 "write_task_projection",
@@ -5331,8 +5363,15 @@ class GatewayApp:
             "created_at": now,
             "updated_at": now,
         }
+        completion_bundle = self._requirement_completion_bundle({"idempotency_key": idempotency_key, "ticket": ticket}, "create_run", run_id)
+        bundle_validation = _completion_bundle_validate(completion_bundle)
+        if bundle_validation.get("status") == "blocked":
+            body = self.error("completion_bundle_blocked", "requirement completion bundle is incomplete")
+            body.update(bundle_validation)
+            return 409, body
         write_json(command_path, command_record)
 
+        write_json(self.store.run_dir(run_id) / "requirement-completion-bundle.json", completion_bundle)
         structured_prd = {
             "schema_version": SCHEMA_VERSION,
             "artifact_type": "structured_prd",
@@ -5357,7 +5396,7 @@ class GatewayApp:
             "run_id": run_id,
             "project": self.store.project_id,
             "projection_status": "consistent",
-            "authority_refs_checked": [self.store.state_ref(run_id, "run.json"), structured_prd_ref],
+            "authority_refs_checked": [self.store.state_ref(run_id, "run.json"), structured_prd_ref, completion_bundle_ref],
             "tasks": stage_tasks,
             "updated_at": now,
         }
@@ -5367,6 +5406,7 @@ class GatewayApp:
         artifact_refs.update(
             {
                 "command_record": self.store.state_ref(run_id, f"commands/{command_id}.json"),
+                "requirement_completion_bundle": completion_bundle_ref,
                 "structured_prd": structured_prd_ref,
                 "task_projection": self.store.state_ref(run_id, "tasks.json"),
             }
@@ -5446,6 +5486,7 @@ class GatewayApp:
         command_record["status"] = "completed"
         command_record["updated_at"] = utc_now()
         command_record["steps"] = [
+            {"step_id": "write_requirement_completion_bundle", "target_authority": "state", "operation": "write", "status": "completed", "refs": [completion_bundle_ref]},
             {"step_id": "write_structured_prd", "target_authority": "state", "operation": "write", "status": "completed", "refs": [structured_prd_ref]},
             {"step_id": "create_kanban_stage_tasks", "target_authority": "kanban", "operation": "create", "status": "completed", "refs": [task.get("kanban_ref") for task in stage_tasks]},
             {"step_id": "write_task_projection", "target_authority": "state", "operation": "write", "status": "completed", "refs": [self.store.state_ref(run_id, "tasks.json")]},
