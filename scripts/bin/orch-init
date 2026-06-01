@@ -299,12 +299,12 @@ def detect_tech_stack(project: Path) -> dict:
                 stack["languages"].append(lang)
             if pm not in stack["package_managers"]:
                 stack["package_managers"].append(pm)
-    # Framework detection across package managers
+    # Framework detection across package managers (with version capture)
     all_deps: dict[str, str] = {}
     # Node.js
     pj = read_json(project / "package.json") or {}
-    all_deps.update(pj.get("dependencies", {}))
-    all_deps.update(pj.get("devDependencies", {}))
+    all_deps.update({k.lower(): v for k, v in pj.get("dependencies", {}).items()})
+    all_deps.update({k.lower(): v for k, v in pj.get("devDependencies", {}).items()})
     # Python (pyproject.toml)
     ppt: dict[str, Any] = {}
     if (project / "pyproject.toml").exists():
@@ -316,29 +316,41 @@ def detect_tech_stack(project: Path) -> dict:
             pass
     if ppt:
         def _norm_pkg(name: str) -> str:
-            return name.split("[")[0].split("==")[0].split(">=")[0].split("<")[0].strip().lower()
+            return name.split("[")[0].strip().lower()
+        def _extract_ver(name: str) -> str:
+            for sep in ("==", ">=", "<=", ">", "<", "~="):
+                if sep in name:
+                    return name.split(sep, 1)[1].strip()
+            return ""
         for dep in ppt.get("project", {}).get("dependencies", []):
             if isinstance(dep, str):
-                all_deps[_norm_pkg(dep)] = ""
+                all_deps[_norm_pkg(dep)] = _extract_ver(dep)
         for dep in ppt.get("project", {}).get("optional-dependencies", {}):
             if isinstance(dep, str):
-                all_deps[_norm_pkg(dep)] = ""
+                all_deps[_norm_pkg(dep)] = _extract_ver(dep)
         for dep in ppt.get("tool", {}).get("poetry", {}).get("dependencies", {}):
             if isinstance(dep, str):
-                all_deps[_norm_pkg(dep)] = ""
+                all_deps[_norm_pkg(dep)] = _extract_ver(dep)
     # Python (requirements.txt)
     req_path = project / "requirements.txt"
     if req_path.exists():
         for line in req_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
-                pkg = line.split("==")[0].split(">=")[0].split("<")[0].strip()
-                if pkg:
-                    all_deps[pkg] = ""
+                for sep in ("==", ">=", "<=", ">", "<", "~="):
+                    if sep in line:
+                        pkg, ver = line.split(sep, 1)
+                        all_deps[pkg.strip().lower()] = ver.strip()
+                        break
+                else:
+                    all_deps[line.strip().lower()] = ""
     framework_map = {"next": "Next.js", "react": "React", "vue": "Vue", "express": "Express", "fastapi": "FastAPI", "django": "Django", "flask": "Flask", "rails": "Ruby on Rails", "spring-boot": "Spring Boot"}
     for dep_name, fw_name in framework_map.items():
         if dep_name in all_deps:
             stack["frameworks"].append(fw_name)
+            ver = all_deps[dep_name]
+            if ver:
+                stack["versions"][fw_name.lower().replace(" ", "_").replace(".", "_")] = ver
     # Version extraction
     if pj.get("version"):
         stack["versions"]["project"] = pj["version"]

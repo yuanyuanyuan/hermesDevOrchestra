@@ -6103,7 +6103,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         if body.get("fallback"):
-            self.send_header("x-gateway-fallback", body["fallback"].lower())
+            self.send_header("x-gateway-fallback", "heuristic")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
