@@ -413,6 +413,168 @@
       },
       "additionalProperties": true
     },
+    "bundle_schema_version": {
+      "anyOf": [
+        {"const": "orchestra.v1"},
+        {"const": "orchestra.full.v1"}
+      ]
+    },
+    "evidence_triad": {
+      "type": "object",
+      "required": ["source", "confidence", "verification_method"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "verification_method": {"enum": ["manual", "auto", "inferred"]}
+      },
+      "additionalProperties": true
+    },
+    "bundle_conclusion": {
+      "allOf": [
+        {"$ref": "#/$defs/evidence_triad"},
+        {
+          "type": "object",
+          "required": ["text"],
+          "properties": {
+            "text": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "bundle_dependency_item": {
+      "allOf": [
+        {"$ref": "#/$defs/evidence_triad"},
+        {
+          "type": "object",
+          "required": ["label"],
+          "properties": {
+            "label": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "bundle_conflict_item": {
+      "allOf": [
+        {"$ref": "#/$defs/evidence_triad"},
+        {
+          "type": "object",
+          "required": ["conflict_type", "severity", "item", "resolution_strategy"],
+          "properties": {
+            "conflict_type": {"enum": ["semantic", "version", "resource", "permission"]},
+            "severity": {"enum": ["blocking", "warning", "info"]},
+            "item": {"type": "string", "minLength": 1},
+            "resolution_strategy": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "bundle_acceptance_item": {
+      "allOf": [
+        {"$ref": "#/$defs/evidence_triad"},
+        {
+          "type": "object",
+          "required": ["ac_id", "criterion", "test_script", "evidence_type"],
+          "properties": {
+            "ac_id": {"type": "string", "minLength": 1},
+            "criterion": {"type": "string", "minLength": 1},
+            "test_script": {"type": "string", "minLength": 1},
+            "evidence_type": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "bundle_risk_item": {
+      "allOf": [
+        {"$ref": "#/$defs/evidence_triad"},
+        {
+          "type": "object",
+          "required": ["flag", "severity", "resolution"],
+          "properties": {
+            "flag": {"type": "string", "minLength": 1},
+            "severity": {"enum": ["blocking", "warning", "info"]},
+            "resolution": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    },
+    "requirement_completion_bundle": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "intent_summary", "dependency_graph", "conflict_list", "acceptance_matrix", "prompt_envelope", "risk_flags"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/bundle_schema_version"},
+        "artifact_type": {"const": "requirement_completion_bundle"},
+        "run_id": {"type": "string"},
+        "intent_summary": {
+          "type": "object",
+          "required": ["source_input_hash", "projection_timestamp", "conclusions"],
+          "properties": {
+            "source_input_hash": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+            "projection_timestamp": {"$ref": "#/$defs/timestamp"},
+            "conclusions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/bundle_conclusion"}}
+          }
+        },
+        "dependency_graph": {
+          "type": "object",
+          "required": ["source_input_hash", "projection_timestamp", "format", "dimensions"],
+          "properties": {
+            "source_input_hash": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+            "projection_timestamp": {"$ref": "#/$defs/timestamp"},
+            "format": {"enum": ["adjacency_list", "mermaid"]},
+            "dimensions": {
+              "type": "object",
+              "required": ["environment", "upstream", "downstream", "code"],
+              "properties": {
+                "environment": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/bundle_dependency_item"}},
+                "upstream": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/bundle_dependency_item"}},
+                "downstream": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/bundle_dependency_item"}},
+                "code": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/bundle_dependency_item"}}
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "conflict_list": {
+          "type": "object",
+          "required": ["source_input_hash", "projection_timestamp", "items"],
+          "properties": {
+            "source_input_hash": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+            "projection_timestamp": {"$ref": "#/$defs/timestamp"},
+            "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/bundle_conflict_item"}}
+          }
+        },
+        "acceptance_matrix": {
+          "type": "object",
+          "required": ["source_input_hash", "projection_timestamp", "items"],
+          "properties": {
+            "source_input_hash": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+            "projection_timestamp": {"$ref": "#/$defs/timestamp"},
+            "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/bundle_acceptance_item"}}
+          }
+        },
+        "prompt_envelope": {
+          "type": "object",
+          "required": ["source_input_hash", "projection_timestamp", "system_prompt", "user_prompt", "context_window_budget", "output_schema_ref"],
+          "properties": {
+            "source_input_hash": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+            "projection_timestamp": {"$ref": "#/$defs/timestamp"},
+            "system_prompt": {"type": "string", "minLength": 1},
+            "user_prompt": {"type": "string", "minLength": 1},
+            "context_window_budget": {"type": "integer", "minimum": 1},
+            "output_schema_ref": {"type": "string", "minLength": 1}
+          }
+        },
+        "risk_flags": {
+          "type": "object",
+          "required": ["source_input_hash", "projection_timestamp", "items"],
+          "properties": {
+            "source_input_hash": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+            "projection_timestamp": {"$ref": "#/$defs/timestamp"},
+            "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/bundle_risk_item"}}
+          }
+        }
+      },
+      "additionalProperties": true
+    },
     "structured_prd": {
       "type": "object",
       "required": ["schema_version", "artifact_type", "run_id", "requirement_summary", "acceptance_criteria", "constraints", "risks", "failure_strategy"],

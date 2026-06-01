@@ -31,7 +31,7 @@ Kimi and Human are decision actors. Gateway is the state and execution authority
 | Approve L3/L4 risk | no | approve | validate/enforce | no | Human Approval is mandatory. |
 | Approve destructive or publishing work | no | approve | validate/enforce | no | Includes production deploy, secrets, permissions, CI/CD, and policy changes. |
 | Approve root rule changes | no | approve | validate/enforce | output only after approval | System proposals do not self-apply. |
-| Create Structured Ticket / PRD | request/provide | request/provide | validate schema | no | Short intent is intake only. |
+| Create Structured Ticket / PRD | request/provide | request/provide | validate schema | no | Short intent is intake only; Gateway must preserve `requirement-completion-bundle.json` with six classes, provenance triads, and four-way dependency coverage before stage advance. |
 | Start implementation | decide below human gates | approve when required | validate/enforce, dispatch | execute scoped task | Requires approved plan and evidence gates. |
 | Dynamic Debate Assembly | request debate / review output | request/review | validate/enforce deterministic policy | debate backend output only | Selection is policy-driven, not free-form model choice. |
 | Produce Debate Member Opinion | possible backend with self-review risk | no | dispatch/record | output only | Kimi-as-backend needs independent non-Kimi evidence. |

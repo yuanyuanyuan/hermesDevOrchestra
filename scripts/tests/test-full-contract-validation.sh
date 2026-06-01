@@ -34,4 +34,44 @@ grep -Fq "PASS self evolution queue: proposals go through an explicit queue by d
 grep -Fq "PASS self evolution rejected retention: rejected proposals are retained with reasons" <<<"$OUTPUT" || fail "self evolution rejected retention was not checked" "evolution retention pass" "$OUTPUT"
 grep -Fq "PASS runtime knowledge deferred state: runtime knowledge backend is deferred and disabled before adapter selection" <<<"$OUTPUT" || fail "runtime knowledge deferred state was not checked" "knowledge pass" "$OUTPUT"
 
+python3 - "$REPO_ROOT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1])
+schema = json.loads((repo_root / "config" / "schemas" / "orchestra.full.schema.json").read_text(encoding="utf-8"))
+assert "requirement_completion_bundle" in schema["$defs"], schema["$defs"].keys()
+
+sys.path.insert(0, str(repo_root / "scripts" / "lib"))
+from blocker_validator import validate
+from gateway_intake import normalize
+from gateway_projection import project
+
+payload = {
+    "idempotency_key": "full-contract-bundle",
+    "ticket": {
+        "title": "Fix flaky login",
+        "goal": "Stabilize login retries",
+        "acceptance_criteria": ["Login retry test passes"],
+        "hard_constraints": ["Stay within auth module"],
+        "failure_strategy": "Block if tests fail",
+    },
+}
+bundle = project(
+    normalize(payload, expected_intent_type="create_run"),
+    {
+        "project_id": "full-contract-bundle",
+        "request_type": "create_run",
+        "run_id": "run-full-contract-bundle",
+        "timestamp": "2026-06-01T00:00:00Z",
+    },
+)["requirement_completion_bundle"]
+dims = bundle["dependency_graph"]["dimensions"]
+assert set(dims) == {"environment", "upstream", "downstream", "code"}, dims
+assert all(dims[key] for key in dims), dims
+assert validate(bundle)["status"] == "passed"
+print("PASS requirement completion bundle: dependency graph covers four dimensions")
+PY
+
 test_done

@@ -166,6 +166,14 @@ Gateway imports these helpers at startup with a soft-fail strategy: if any helpe
 
 Helper modules have strict单向依赖: `intake -> projection -> evidence`. No circular imports are allowed.
 
+## Atomic Write & Recovery
+
+Gateway state files use `AtomicWriter` for `run.json`, `tasks.json`, and other JSON artifacts:
+
+- Write path: temp file in the same directory, `fsync`, then atomic rename.
+- Conflict detection: a changed target `mtime` returns a `conflict` receipt instead of overwriting.
+- Recovery: `AtomicWriter.recover(path)` can restore the newest valid `.tmp.*` file when the target is missing or damaged.
+
 ## Project Profile Format
 
 `.hermes/project-profile.yaml` is the **source of truth** for project metadata (Sprint 1). If `.hermes/project.json` exists, it is preserved as a read-only fallback with `deprecated: true` and `superseded_by: project-profile.yaml`.

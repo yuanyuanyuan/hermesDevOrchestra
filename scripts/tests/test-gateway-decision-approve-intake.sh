@@ -173,6 +173,7 @@ PY
 
 python3 - "$TMP_DIR/decision.json" "$TMP_DIR/status.json" "$TMP_DIR/events.json" "$TMP_DIR/tasks.json" "$STATE_ROOT" "$AUDIT_ROOT" "$PROJECT_ID" "$RUN_ID" "$DECISION_ID" "$HERMES_CALL_LOG" <<'PY'
 import json
+import re
 import pathlib
 import sys
 
@@ -194,6 +195,7 @@ assert status["blocked_reason"] is None
 assert status["pending_decision_id"] is None
 assert status["pending_decision_refs"] == []
 assert status["artifact_refs"]["structured_prd"].startswith("state://")
+assert status["artifact_refs"]["requirement_completion_bundle"].startswith("state://")
 
 event_types = [event["type"] for event in events["events"]]
 assert event_types == ["run_created", "ticket_normalized", "decision_required", "decision_resolved"]
@@ -208,6 +210,14 @@ structured_prd = json.loads((run_dir / "structured_prd.json").read_text(encoding
 assert structured_prd["status"] == "ready"
 assert structured_prd["source"] == "decision"
 assert structured_prd["acceptance_criteria"] == ["Login retry test passes", "No raw secrets in evidence"]
+
+bundle = json.loads((run_dir / "requirement-completion-bundle.json").read_text(encoding="utf-8"))
+assert bundle["artifact_type"] == "requirement_completion_bundle"
+for section in ("intent_summary", "dependency_graph", "conflict_list", "acceptance_matrix", "prompt_envelope", "risk_flags"):
+    assert re.fullmatch(r"[0-9a-f]{64}", bundle[section]["source_input_hash"]), bundle
+    assert bundle[section]["projection_timestamp"].endswith("Z"), bundle
+assert set(bundle["dependency_graph"]["dimensions"]) == {"environment", "upstream", "downstream", "code"}, bundle
+assert bundle["prompt_envelope"]["context_window_budget"] >= 1, bundle
 
 audit_records = [
     json.loads(line)
