@@ -13,6 +13,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, TypedDict
 
+from correction_gate import build_confirmation_nodes
 from gateway_intake import NormalizedIntent
 
 
@@ -63,6 +64,7 @@ class ProjectedState(TypedDict, total=False):
     state_refs: list[str]
     mapped_entities: dict[str, Any]
     projection_issues: list[str]
+    confirmation_nodes: list[dict[str, Any]]
     intent_type: str
     confidence: float
     requirement_completion_bundle: RequirementCompletionBundle
@@ -92,6 +94,7 @@ def project(intent: NormalizedIntent, context: GatewayContext) -> ProjectedState
     state_refs = _build_state_refs(intent, context)
     mapped_entities = _map_entities(intent, context)
     projection_issues = list(validation_errors)
+    confirmation_nodes = build_confirmation_nodes(intent)
 
     if confidence < 0.5:
         projection_issues.append(f"low_confidence: {confidence:.2f}")
@@ -102,6 +105,7 @@ def project(intent: NormalizedIntent, context: GatewayContext) -> ProjectedState
         "state_refs": state_refs,
         "mapped_entities": mapped_entities,
         "projection_issues": projection_issues,
+        "confirmation_nodes": confirmation_nodes,
         "intent_type": intent_type,
         "confidence": confidence,
         "requirement_completion_bundle": requirement_completion_bundle,
@@ -164,6 +168,7 @@ def build_requirement_completion_bundle(intent: NormalizedIntent, context: Gatew
             **bundle_meta,
             "items": _risk_flags(payload, ticket, summary_confidence, manual_review_required),
         },
+        "confirmation_nodes": build_confirmation_nodes(intent),
     }
     return bundle
 

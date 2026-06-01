@@ -359,6 +359,8 @@ class GatewayApp:
         bundle = projected.get("requirement_completion_bundle")
         if not isinstance(bundle, dict):
             raise RuntimeError("requirement completion bundle missing")
+        if isinstance(projected.get("confirmation_nodes"), list):
+            bundle["confirmation_nodes"] = projected["confirmation_nodes"]
         return bundle
 
     def health(self) -> dict[str, Any]:

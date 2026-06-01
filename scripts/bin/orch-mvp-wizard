@@ -34,6 +34,9 @@ REAL_WORKER_DEMO=0
 STRICT_UPSTREAM=0
 INIT_GIT=0
 REQUIRE_API_KEYS=0
+INTERACTIVE_CONFIRMATION=0
+BATCH_CONFIRMATION=0
+MOCK_CONFIRMATION=0
 PROJECT_ID=""
 PROJECT_DIR=""
 HOST="127.0.0.1"
@@ -54,6 +57,9 @@ Options:
   --host HOST            Gateway host, default 127.0.0.1
   --port PORT            Gateway port, default 8642
   --report PATH          Acceptance report path
+  --interactive          Run Sprint 3 two-round CLI correction flow
+  --batch                Run Sprint 3 non-interactive correction flow
+  --mock                 Use mock intent for Sprint 3 correction flow
   --yes                  Non-interactive yes to safe prompts
   --init-git             Run git init if project dir is not a git repo
   --skip-setup           Do not run scripts/setup.sh
@@ -79,6 +85,9 @@ while [ "$#" -gt 0 ]; do
         --host) HOST="${2:-}"; shift 2 ;;
         --port) PORT="${2:-}"; shift 2 ;;
         --report) REPORT_PATH="${2:-}"; shift 2 ;;
+        --interactive) INTERACTIVE_CONFIRMATION=1; shift ;;
+        --batch) BATCH_CONFIRMATION=1; shift ;;
+        --mock) MOCK_CONFIRMATION=1; shift ;;
         --yes) YES=1; shift ;;
         --init-git) INIT_GIT=1; shift ;;
         --skip-setup) SKIP_SETUP=1; shift ;;
@@ -116,11 +125,11 @@ write_report() {
     mkdir -p "$(dirname "$REPORT_PATH")"
     python3 - "$REPORT_PATH" "$PROJECT_ID" "$PROJECT_DIR" "$status" "$STEP_FILE" "$(orch_now)" <<'PY'
 import json
-import os
 import sys
 from pathlib import Path
 
-import yaml
+sys.path.insert(0, str(Path("/data/hermes/scripts/lib")))
+from project_config_loader import ProjectConfigLoader
 
 path, project_id, project_dir, status, step_file, generated_at = sys.argv[1:]
 steps = []
@@ -129,39 +138,7 @@ with open(step_file, encoding="utf-8") as handle:
         name, step_status, detail = line.rstrip("\n").split("\t", 2)
         steps.append({"name": name, "status": step_status, "detail": detail})
 
-# Sprint 1: project config resolution — yaml is source of truth, json is read-only fallback
-project_config = {}
-project = Path(project_dir)
-profile_yaml = project / ".hermes" / "project-profile.yaml"
-profile_yaml2 = project / ".hermes" / "projects" / project_id / "project-profile.yaml"
-project_json = project / ".hermes" / "projects" / project_id / "project.json"
-project_json2 = project / ".hermes" / "project.json"
-
-def load_yaml(path):
-    if not path.exists():
-        return {}
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-if profile_yaml.exists():
-    project_config = load_yaml(profile_yaml)
-elif profile_yaml2.exists():
-    project_config = load_yaml(profile_yaml2)
-elif project_json.exists():
-    try:
-        with open(project_json, encoding="utf-8") as f:
-            project_config = json.load(f)
-    except Exception:
-        pass
-elif project_json2.exists():
-    try:
-        with open(project_json2, encoding="utf-8") as f:
-            project_config = json.load(f)
-    except Exception:
-        pass
+project_config = ProjectConfigLoader().load(project_dir, project_id)
 
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(
@@ -258,6 +235,21 @@ check_command() {
     fi
     record_step "command:$command_name" "warning" "missing"
     warn "Optional command not found: $command_name"
+}
+
+run_sprint3_preview() {
+    local preview_dir="${PROJECT_DIR:-$PWD}"
+    python3 "$PACKAGE_DIR/scripts/lib/project_config_loader.py" --project-dir "$preview_dir" --project-id "${PROJECT_ID:-}" --preview
+}
+
+run_sprint3_correction() {
+    local preview_dir="${PROJECT_DIR:-$PWD}"
+    local args=(--project-dir "$preview_dir")
+    [ -n "${PROJECT_ID:-}" ] && args+=(--project-id "$PROJECT_ID")
+    [ "$INTERACTIVE_CONFIRMATION" -eq 1 ] && args+=(--interactive)
+    [ "$BATCH_CONFIRMATION" -eq 1 ] && args+=(--batch)
+    [ "$MOCK_CONFIRMATION" -eq 1 ] && args+=(--mock)
+    python3 "$PACKAGE_DIR/scripts/lib/correction_gate.py" "${args[@]}"
 }
 
 check_env_file() {
@@ -1497,6 +1489,16 @@ run_real_worker_demo_step() {
         die "mvp-real-worker-demo failed"
     fi
 }
+
+if [ "$INTERACTIVE_CONFIRMATION" -eq 1 ] || [ "$BATCH_CONFIRMATION" -eq 1 ] || [ "$MOCK_CONFIRMATION" -eq 1 ]; then
+    run_sprint3_correction
+    exit 0
+fi
+
+if [ -z "$PROJECT_ID" ] && [ -n "${PROJECT_DIR:-}" ]; then
+    run_sprint3_preview
+    exit 0
+fi
 
 echo "========================================"
 echo " Hermes Orchestra MVP Guided Wizard"
