@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # post-comment.sh — 向 PR 发送评论（Issue Comment API）
 #
+# MCP FALLBACK: 当 SKILL.md 中 GitHub MCP 路径不可用时，调用此脚本作为降级方案。
+# 优先使用 mcp__github__add_issue_comment。
+# 此脚本依赖 gh CLI 发送评论。
+#
 # Usage: post-comment.sh <PR_NUMBER> <BODY_FILE>
 #   PR_NUMBER  — GitHub PR 编号
 #   BODY_FILE  — Markdown 评论内容文件路径

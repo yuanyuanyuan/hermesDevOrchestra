@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # submit-review.sh — Submit a PR review as COMMENT event (not APPROVE/REQUEST_CHANGES)
 #
+# MCP FALLBACK: 当 SKILL.md 中 GitHub MCP 路径不可用时，调用此脚本作为降级方案。
+# 优先使用 mcp__github__create_pull_request_review（event="COMMENT"）。
+# 此脚本依赖 gh CLI 提交 review。
+#
 # GitHub 不允许 review 自己的 PR，所以必须用 COMMENT 事件。
 # 此脚本处理 API 调用、格式验证和错误重试。
 #

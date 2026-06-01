@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # collect-review-context.sh — 收集 PR review 响应所需的全部上下文
 #
+# MCP FALLBACK: 当 SKILL.md 中 GitHub MCP 路径不可用时，调用此脚本作为降级方案。
+# 优先使用 mcp__github__get_pull_request / get_pull_request_reviews / get_pull_request_comments / get_pull_request_files。
+# PR issue comments 暂无 MCP 工具，即使 MCP 路径也仍需 gh api 获取。
+# 此脚本依赖 gh CLI，所有数据通过 gh 命令获取。
+#
 # 输出 JSON 到 stdout，包含：
 #   - PR 元数据（标题、分支、作者等）
 #   - Review bodies（REQUEST_CHANGES / APPROVED / COMMENTED 等）
