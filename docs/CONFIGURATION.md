@@ -193,6 +193,9 @@ deploy_target: container/python
 risk_flags:
   - protected_target:.env
 discovery_status: complete
+interaction:
+  default_mode: summary
+  confirmation_threshold: 0.5
 ```
 
 Fields:
@@ -205,10 +208,21 @@ Fields:
 - `deploy_target` — Inferred deployment target.
 - `risk_flags` — Protected-target hits.
 - `discovery_status` — `complete` or `partial`.
+- `interaction.default_mode` — `summary` or `detailed`. `summary` keeps 0 阶确认输出压缩到核心信息，`detailed` 展示完整六类补全包。
+- `interaction.confirmation_threshold` — Float threshold for low-confidence confirmation nodes. Default `0.5`.
 
 Migration from `project.json`:
 - Run `orch-profile-sync` to generate `project-profile.yaml`.
 - Existing `project.json` is automatically marked `deprecated`.
 - Downstream tools read yaml first and fall back to json only if yaml is absent.
+- `scripts/lib/project_config_loader.py` is the unified loader used by Sprint 3 CLI intake paths. It logs source selection and yaml/json conflicts to `logs/config-resolution.jsonl`.
+
+## Sprint 3 CLI Intake
+
+`orch-mvp-wizard` now has two lightweight confirmation paths before the full guided acceptance workflow:
+
+- `orch-mvp-wizard --project-dir <dir>` renders the 0 阶 confirmation preview using the resolved `interaction.default_mode`.
+- `orch-mvp-wizard --interactive --project-dir <dir>` runs the two-round CLI correction flow.
+- `orch-mvp-wizard --batch --project-dir <dir>` degrades to single-round confirmation and prints `non-interactive` warning metadata.
 
 <!-- VERIFY: recommended CI/ephemeral paths are conventions, not enforced by the codebase -->

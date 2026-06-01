@@ -485,6 +485,12 @@ quick_channel:
 - **摘要模式**："推测文件为 `Login.tsx`，i18n key 已存在。是否有误？【是/修正/查看详细】"
 - **详细模式**：当前完整补全包。
 
+Sprint 3 CLI 模拟补充：
+
+- `orch-mvp-wizard --project-dir <dir>` 会直接按 `interaction.default_mode` 输出摘要或详细确认视图，不再强制进入完整安装向导。
+- `orch-mvp-wizard --interactive --mock` 采用两轮门控：第一轮给出概要选项，选择 `Explain` 后进入第二轮细分追问。
+- `orch-mvp-wizard --batch` 会明确打印 `non-interactive: two-round correction degraded to single-round confirmation`，避免假装执行了两轮纠错。
+
 ### 5. 五阶残余风险主动通知（中优先级）
 
 `pass_with_warnings` 自动通过后，给用户推送：

@@ -46,6 +46,23 @@ mkdir -p "$HOME" "$PROJECT_DIR"
 git -C "$PROJECT_DIR" init >/dev/null
 
 "$REPO_ROOT/scripts/bin/orch-init" test-proj "$PROJECT_DIR" >/tmp/orch-risk-decisions-init.out
+python3 - "$REPO_ROOT" "$PROJECT_DIR" <<'PY'
+import json
+import subprocess
+import sys
+
+repo_root, project_dir = sys.argv[1:]
+completed = subprocess.run(
+    ["python3", f"{repo_root}/scripts/lib/project_config_loader.py", "--project-dir", project_dir, "--project-id", "test-proj"],
+    check=True,
+    capture_output=True,
+    text=True,
+)
+data = json.loads(completed.stdout)
+assert data["config_source"] == "project-profile.yaml", data
+assert data["interaction"]["default_mode"] in {"summary", "detailed"}, data
+print("config_loader_smoke: PASS")
+PY
 RUNTIME_DIR="$RUNTIME_ROOT/test-proj"
 cat > "$RUNTIME_DIR/task.md" <<'JSON'
 {"schema_version":"1.0","project_id":"test-proj","task_id":"task-1","correlation_id":"corr-1","description":"修改 JWT"}

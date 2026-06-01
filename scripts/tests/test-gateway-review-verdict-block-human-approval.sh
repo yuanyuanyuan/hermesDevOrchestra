@@ -239,6 +239,10 @@ verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
 assert verdict["verdict"] == "block", verdict
 assert verdict["authority_required"] == "human", verdict
 
+run_dir = pathlib.Path(state_root) / project_id / "runs" / run_id
+bundle = json.loads((run_dir / "requirement-completion-bundle.json").read_text(encoding="utf-8"))
+assert isinstance(bundle.get("confirmation_nodes"), list), bundle
+
 audit_records = [
     json.loads(line)
     for line in (pathlib.Path(audit_root) / project_id / "audit.jsonl").read_text(encoding="utf-8").splitlines()

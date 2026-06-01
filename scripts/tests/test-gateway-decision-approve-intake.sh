@@ -213,6 +213,7 @@ assert structured_prd["acceptance_criteria"] == ["Login retry test passes", "No 
 
 bundle = json.loads((run_dir / "requirement-completion-bundle.json").read_text(encoding="utf-8"))
 assert bundle["artifact_type"] == "requirement_completion_bundle"
+assert isinstance(bundle.get("confirmation_nodes"), list), bundle
 for section in ("intent_summary", "dependency_graph", "conflict_list", "acceptance_matrix", "prompt_envelope", "risk_flags"):
     assert re.fullmatch(r"[0-9a-f]{64}", bundle[section]["source_input_hash"]), bundle
     assert bundle[section]["projection_timestamp"].endswith("Z"), bundle
