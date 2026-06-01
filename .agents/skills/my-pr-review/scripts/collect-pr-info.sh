@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # collect-pr-info.sh — Collect PR metadata, diff, and existing review context
 #
+# MCP FALLBACK: 当 SKILL.md 中 GitHub MCP 路径不可用时，调用此脚本作为降级方案。
+# 此脚本依赖 gh CLI，所有数据通过 gh 命令获取。
+#
 # Usage: collect-pr-info.sh <PR_NUMBER>
 # Outputs JSON with all needed context to stdout
 
