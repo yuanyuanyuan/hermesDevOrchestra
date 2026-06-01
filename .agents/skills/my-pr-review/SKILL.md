@@ -43,7 +43,7 @@ my-pr-review <PR_NUMBER>
 | `${REPO}` | `gh repo view --json name --jq '.name'` |
 | `${REPO_DIR}` | 当前工作目录（`$(pwd)`） |
 | `${PR_URL}` | `gh pr view ${PR_NUMBER} --json url --jq '.url'` |
-| `${REVIEW_DRAFT}` | `/tmp/pr-review-draft-${PR_NUMBER}.md` |
+| `${REVIEW_DRAFT}` | `${REPO_DIR}/.tmp/pr-review-draft-${PR_NUMBER}.md` |
 
 ## 执行流程
 
@@ -63,8 +63,9 @@ my-pr-review <PR_NUMBER>
 **步骤 B — 读取 PR 完整 diff**
 
 ```bash
-gh pr diff ${PR_NUMBER} > /tmp/pr-${PR_NUMBER}-diff.patch
-grep -E "^\+\+\+ b/" /tmp/pr-${PR_NUMBER}-diff.patch | sed 's/+++ b\///' > /tmp/pr-${PR_NUMBER}-files.txt
+mkdir -p ${REPO_DIR}/.tmp
+gh pr diff ${PR_NUMBER} > ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-diff.patch
+grep -E "^\+\+\+ b/" ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-diff.patch | sed 's/+++ b\///' > ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-files.txt
 ```
 
 **步骤 C — 读取已有 Review Comments（避免重复评论）**
@@ -72,17 +73,17 @@ grep -E "^\+\+\+ b/" /tmp/pr-${PR_NUMBER}-diff.patch | sed 's/+++ b\///' > /tmp/
 ```bash
 gh api repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments \
   --jq '.[] | {id: .id, body: .body, user: .user.login, created_at: .created_at}' \
-  > /tmp/pr-${PR_NUMBER}-existing-comments.json
+  > ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-existing-comments.json
 
 gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
   --jq '.[] | {id: .id, state: .state, body: .body, user: .user.login}' \
-  > /tmp/pr-${PR_NUMBER}-existing-reviews.json
+  > ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-existing-reviews.json
 ```
 
 **步骤 D — 读取相关上下文**
 
 ```bash
-gh pr view ${PR_NUMBER} --json body | grep -oE '(docs/adr/[^ ]+|\.planning/specs/[^ ]+|#\d+)' | sort -u > /tmp/pr-${PR_NUMBER}-refs.txt
+gh pr view ${PR_NUMBER} --json body | grep -oE '(docs/adr/[^ ]+|\.planning/specs/[^ ]+|#\d+)' | sort -u > ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-refs.txt
 ```
 
 ---

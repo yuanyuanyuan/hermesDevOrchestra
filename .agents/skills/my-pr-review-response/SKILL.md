@@ -45,7 +45,7 @@ my-pr-review-response <PR_NUMBER>
 | `${REPO}` | `gh repo view --json name --jq '.name'` |
 | `${BRANCH}` | `gh pr view ${PR_NUMBER} --json headRefName --jq '.headRefName'` |
 | `${REPO_DIR}` | 当前工作目录（`$(pwd)`） |
-| `${REVIEW_LOG}` | `/tmp/pr-review-response-${PR_NUMBER}.md` |
+| `${REVIEW_LOG}` | `${REPO_DIR}/.tmp/pr-review-response-${PR_NUMBER}.md` |
 
 ---
 
@@ -68,13 +68,14 @@ gh pr view ${PR_NUMBER} --json number,title,body,headRefName,baseRefName,reviewD
 获取该 PR 上最新的 REQUEST_CHANGES review（提取问题列表）以及所有 PR comments：
 
 ```bash
+mkdir -p ${REPO_DIR}/.tmp
 gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
   --jq '.[] | {id: .id, state: .state, body: .body, user: .user.login, submitted_at: .submitted_at}' \
-  > /tmp/pr-reviews-${PR_NUMBER}.json
+  > ${REPO_DIR}/.tmp/pr-reviews-${PR_NUMBER}.json
 
 gh api repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments \
   --jq '.[] | {id: .id, body: .body, user: .user.login, created_at: .created_at}' \
-  > /tmp/pr-comments-${PR_NUMBER}.json
+  > ${REPO_DIR}/.tmp/pr-comments-${PR_NUMBER}.json
 ```
 
 重点关注 `state == "CHANGES_REQUESTED"` 的 review body 中的发现项清单。
@@ -84,13 +85,13 @@ gh api repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments \
 ```bash
 gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
   --jq '.[] | {id: .id, state: .state, user: .user.login, body: .body}' \
-  > /tmp/pr-reviews-${PR_NUMBER}.json
+  > ${REPO_DIR}/.tmp/pr-reviews-${PR_NUMBER}.json
 ```
 
 **步骤 D — 读取 PR diff 并 checkout 分支**
 
 ```bash
-gh pr diff ${PR_NUMBER} > /tmp/pr-diff-${PR_NUMBER}.patch
+gh pr diff ${PR_NUMBER} > ${REPO_DIR}/.tmp/pr-diff-${PR_NUMBER}.patch
 git fetch origin ${BRANCH}
 git checkout ${BRANCH}
 ```
@@ -247,7 +248,7 @@ gh pr comment ${PR_NUMBER} --body "❌ 不同意此 review 意见。
 **步骤 B — 发送 Review Response 汇总报告（PR Comment）**
 
 ```bash
-gh pr comment ${PR_NUMBER} --body-file /tmp/pr-response-summary-${PR_NUMBER}.md
+gh pr comment ${PR_NUMBER} --body-file ${REPO_DIR}/.tmp/pr-response-summary-${PR_NUMBER}.md
 gh pr edit ${PR_NUMBER} --add-label "awaiting-review"
 ```
 
@@ -273,8 +274,8 @@ gh pr edit ${PR_NUMBER} --add-label "awaiting-review"
 **写权限边界（可修改）：**
 - PR diff 中涉及的所有文件
 - `${REVIEW_LOG}`
-- `/tmp/counter-*.md`
-- `/tmp/pr-response-summary-*.md`
+- `${REPO_DIR}/.tmp/counter-*.md`
+- `${REPO_DIR}/.tmp/pr-response-summary-*.md`
 
 **只读边界（禁止写入）：**
 - `scripts/lib/orch_gateway.py`（除非 review 意见明确要求修改）
