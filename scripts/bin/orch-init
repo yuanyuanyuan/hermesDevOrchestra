@@ -390,7 +390,7 @@ def detect_tech_stack(project: Path) -> dict:
 
     framework_map = {"next": "Next.js", "react": "React", "vue": "Vue", "express": "Express", "fastapi": "FastAPI", "django": "Django", "flask": "Flask", "rails": "Ruby on Rails", "spring-boot": "Spring Boot"}
     for dep_name, fw_name in framework_map.items():
-        if dep_name in deps:
+        if dep_name in all_deps:
             stack["frameworks"].append(fw_name)
             if all_deps[dep_name]:
                 stack["versions"][fw_name] = all_deps[dep_name]

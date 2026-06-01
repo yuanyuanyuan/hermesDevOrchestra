@@ -308,6 +308,9 @@ class GatewayApp:
             self._record_fallback("FALLBACK_HEURISTIC", request_type, detail)
             return detail
 
+    def _run_intake_pipeline(self, payload: dict[str, Any], request_type: str, run_id: str | None = None) -> bool:
+        return self._intake_pipeline_fallback_reason(payload, request_type, run_id) is not None
+
     def _record_fallback(self, reason: str, request_type: str, detail: str | None = None) -> None:
         record = {"timestamp": utc_now(), "reason": reason, "request_type": request_type, "project": self.store.project_id}
         if detail:
