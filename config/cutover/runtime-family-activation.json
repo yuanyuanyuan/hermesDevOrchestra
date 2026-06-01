@@ -25,6 +25,66 @@
       "decision_ref": "repo://.workflow/knowledge/decisions/2026-05-20-gateway-authority-cutover.md"
     },
     {
+      "family_id": "full_debate_package",
+      "evidence": [
+        "full_contract_validation_report",
+        "mvp_compatibility_report",
+        "runtime_consumption_test_report",
+        "projection_compatibility_report",
+        "rollback_or_disable_plan",
+        "explicit_cutover_decision"
+      ],
+      "completed_checks": [
+        "canonical_team_mode_validation",
+        "legacy_alias_mapping_report",
+        "assembly_policy_fixture_report",
+        "backend_policy_degradation_fixture_report",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "decision_ref": "repo://.workflow/knowledge/decisions/2026-05-20-full-debate-package-cutover.md"
+    },
+    {
+      "family_id": "worker_execution",
+      "evidence": [
+        "full_contract_validation_report",
+        "mvp_compatibility_report",
+        "runtime_consumption_test_report",
+        "projection_compatibility_report",
+        "rollback_or_disable_plan",
+        "explicit_cutover_decision"
+      ],
+      "completed_checks": [
+        "worker_registry_validation",
+        "capability_negotiation_fixture_report",
+        "tmux_session_cleanup_fixture_report",
+        "write_scope_enforcement_report",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "decision_ref": "repo://.workflow/knowledge/decisions/2026-05-20-worker-execution-cutover.md"
+    },
+    {
+      "family_id": "runtime_domain_knowledge",
+      "evidence": [
+        "full_contract_validation_report",
+        "mvp_compatibility_report",
+        "runtime_consumption_test_report",
+        "projection_compatibility_report",
+        "rollback_or_disable_plan",
+        "explicit_cutover_decision"
+      ],
+      "completed_checks": [
+        "gbrain_adapter_contract_report",
+        "freshness_policy_fixture_report",
+        "authority_boundary_fixture_report",
+        "redaction_fixture_report",
+        "runtime_consumption_tests",
+        "explicit_cutover_decision"
+      ],
+      "decision_ref": "repo://.workflow/knowledge/decisions/2026-05-20-runtime-domain-knowledge-cutover.md"
+    },
+    {
       "family_id": "closeout_and_self_evolution",
       "evidence": [
         "full_contract_validation_report",

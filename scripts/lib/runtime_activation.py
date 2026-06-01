@@ -13,6 +13,15 @@ MODULE_FAMILY_DEFAULTS = {
     "degradation-policy": "gateway_authority",
     "performance-slo": "gateway_authority",
     "fixture-policy": "gateway_authority",
+    "debate-engine": "full_debate_package",
+    "debate-assembly": "full_debate_package",
+    "debate-backend-adapter": "full_debate_package",
+    "debate-member-invocation": "full_debate_package",
+    "debate-report": "full_debate_package",
+    "worker-registry": "worker_execution",
+    "capability-negotiation": "worker_execution",
+    "runtime-knowledge": "runtime_domain_knowledge",
+    "knowledge-ingestion": "runtime_domain_knowledge",
     "self-evolution": "closeout_and_self_evolution",
 }
 
