@@ -204,6 +204,7 @@ bash scripts/generate-sprint-files.sh /tmp/sprint-plan-assigned.json "${OUTPUT_D
   - 负向测试 / 边界条件
   - 风险与降级策略
   - 接口契约变更表
+  - **team_topology 字段（v3 配合）**：每个 implementation unit 增加可选的 `team_topology: solo | pair | trio`，供 execute 端直接读取
 - **checklist-sprint-{N}.md**：
   - **一级：架构红线合规**（helper module 优先、schema 同步、自动化校验）
   - **二级：功能验收**（逐条独立 checkbox，含验证方式和通过标准）
@@ -254,5 +255,11 @@ ${OUTPUT_DIR}/
 生成的文件可直接作为 `/my-sprint-execute`（Codex: `$my-sprint-execute`）的输入：
 
 ```
-/my-sprint-execute <OUTPUT_DIR>/plan-sprint-{N}.md <OUTPUT_DIR>/checklist-sprint-{N}.md {N}
+/my-sprint-execute <OUTPUT_DIR>/plan-sprint-{N}.md <OUTPUT_DIR>/checklist-sprint-{N}.md {N} [--team-topology auto] [--max-parallel-teams 3]
 ```
+
+**v3 配合要点**：
+- my-sprint-execute v3 支持 Team Topology 多 Agent 协作执行（结对编程 / 三三制战术）
+- Plan 中显式指定的 `team_topology` 字段会被 execute 端优先读取
+- 若 Plan 中未提供该字段，execute 端按 SP / 架构债务 / 文件数自动推断
+- 保持向后兼容：execute 端 solo 模式完全等价于 v2 的单 Agent 顺序执行

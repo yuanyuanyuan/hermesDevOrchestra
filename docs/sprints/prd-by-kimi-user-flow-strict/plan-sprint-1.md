@@ -12,9 +12,9 @@
 
 ## 详细说明
 
-### Task 1 (U1a): Gateway Seam Extraction & Intake Helper Modules
+### Task 1 (U1a): Gateway Intake/Projection/Evidence Seam
 
-- **目标**: 将 `orch_gateway.py` 中 6109 行的 intake / projection / evidence 逻辑按 seam extraction 原则外置到独立 helper modules，确保 Gateway 保持路由与编排边界，并建立可验证的成功标准与 fallback 策略。
+- **目标**: 为 `orch_gateway.py` 的 intake / projection / evidence 职责建立首条可验证的 seam，将新增 pipeline 逻辑外置到独立 helper modules，确保 Gateway 保持路由与编排边界，并建立可验证的成功标准与 fallback 策略。
 - **技术方案要点**:
   - **数据流**: 外部请求 → `orch_gateway.py` (路由层) → `gateway_intake.py` (输入校验+标准化) → `gateway_projection.py` (状态投影+映射追踪) → `gateway_evidence.py` (证据收集+置信度标记) → 返回结构化输出
   - **状态机**: Intake → Validate → Project → Evidence → Route；任一阶段失败进入 `FALLBACK_HEURISTIC` 模式（直接透传原始输入到标准通道）

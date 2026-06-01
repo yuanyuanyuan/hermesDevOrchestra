@@ -146,6 +146,9 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 project_dir, project_id, package_dir, generated_at = sys.argv[1:]
 project = Path(project_dir)
@@ -158,6 +161,16 @@ def read_json(path):
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def read_yaml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 def file_digest(path):
     try:
@@ -262,6 +275,53 @@ for name, payload in payloads.items():
             "project_id": project_id,
             "files": manifest_inputs,
             "source_digests": docs,
+            "generated_at": generated_at,
+        },
+        indent=2,
+        ensure_ascii=False,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+
+# --- Sprint 1: Project Discovery Pipeline ---
+sys.path.insert(0, str(package / "scripts" / "lib"))
+from project_discovery import run_discovery
+
+discovery_report = run_discovery(project)
+
+# Write project-profile.yaml (merge with existing to preserve user-defined fields)
+hermes_dir = project / ".hermes"
+hermes_dir.mkdir(parents=True, exist_ok=True)
+profile_yaml = hermes_dir / "project-profile.yaml"
+
+existing_profile = read_yaml(profile_yaml)
+profile_payload = {
+    "name": existing_profile.get("name", project_id),
+    "project_id": project_id,
+    "project_dir": str(project),
+    "profile_version": 2,
+    "source_of_truth": "yaml",
+    "tech_stack": discovery_report["tech_stack"]["languages"],
+    "test_command": discovery_report["test_command"],
+    "deploy_target": discovery_report["deploy_target"],
+    "risk_flags": discovery_report["risk_flags"],
+    "discovery_status": discovery_report["status"],
+}
+profile_yaml.write_text(
+    yaml.safe_dump(profile_payload, sort_keys=False, allow_unicode=True),
+    encoding="utf-8",
+)
+
+# Write detection report draft
+detection_report_path = knowledge / "detection-report.json"
+detection_report_path.write_text(
+    json.dumps(
+        {
+            "schema_version": "orchestra.v1",
+            "artifact_type": "project_detection_report",
+            "project_id": project_id,
+            "detection_report": discovery_report,
             "generated_at": generated_at,
         },
         indent=2,

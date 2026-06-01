@@ -116,7 +116,11 @@ write_report() {
     mkdir -p "$(dirname "$REPORT_PATH")"
     python3 - "$REPORT_PATH" "$PROJECT_ID" "$PROJECT_DIR" "$status" "$STEP_FILE" "$(orch_now)" <<'PY'
 import json
+import os
 import sys
+from pathlib import Path
+
+import yaml
 
 path, project_id, project_dir, status, step_file, generated_at = sys.argv[1:]
 steps = []
@@ -124,6 +128,40 @@ with open(step_file, encoding="utf-8") as handle:
     for line in handle:
         name, step_status, detail = line.rstrip("\n").split("\t", 2)
         steps.append({"name": name, "status": step_status, "detail": detail})
+
+# Sprint 1: project config resolution — yaml is source of truth, json is read-only fallback
+project_config = {}
+project = Path(project_dir)
+profile_yaml = project / ".hermes" / "project-profile.yaml"
+profile_yaml2 = project / ".hermes" / "projects" / project_id / "project-profile.yaml"
+project_json = project / ".hermes" / "projects" / project_id / "project.json"
+project_json2 = project / ".hermes" / "project.json"
+
+def load_yaml(path):
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+if profile_yaml.exists():
+    project_config = load_yaml(profile_yaml)
+elif profile_yaml2.exists():
+    project_config = load_yaml(profile_yaml2)
+elif project_json.exists():
+    try:
+        with open(project_json, encoding="utf-8") as f:
+            project_config = json.load(f)
+    except Exception:
+        pass
+elif project_json2.exists():
+    try:
+        with open(project_json2, encoding="utf-8") as f:
+            project_config = json.load(f)
+    except Exception:
+        pass
 
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(
@@ -134,6 +172,7 @@ with open(path, "w", encoding="utf-8") as handle:
             "project_dir": project_dir,
             "status": status,
             "steps": steps,
+            "project_config": project_config,
             "generated_at": generated_at,
         },
         handle,
@@ -196,7 +235,7 @@ resolve_helper() {
 run_step() {
     local name="$1"
     shift
-    info "运行: $name"
+    info "Running: $name"
     if "$@"; then
         ok "$name"
         record_step "$name" "passed" "$*"
@@ -231,13 +270,13 @@ check_env_file() {
         fi
     done
     if [ "${#missing[@]}" -eq 0 ]; then
-        ok "API key 配置存在: $env_file"
+        ok "API key config found: $env_file"
         record_step "api-key-check" "passed" "$env_file"
         return 0
     fi
-    warn "API key 缺失: ${missing[*]}"
+    warn "Missing API keys: ${missing[*]}"
     record_step "api-key-check" "warning" "missing:${missing[*]}"
-    warn "默认按 CLI 已登录模式继续；如需强制 .env Key 校验，请加 --require-api-keys"
+    warn "Continuing with existing CLI login; use --require-api-keys to enforce .env validation"
     if [ "$REQUIRE_API_KEYS" -eq 1 ]; then
         die "API key configuration incomplete"
     fi
@@ -730,7 +769,7 @@ run_mvp_demo_step() {
     local flow_path="$STATE_DIR/mvp-demo-flow.json"
     local log_path="$STATE_DIR/mvp-demo-log.jsonl"
     local run_id
-    info "运行: mvp-demo-run"
+    info "Running: mvp-demo-run"
     if run_id="$(run_mvp_demo "$flow_path" "$log_path")"; then
         ok "MVP demo run completed: $run_id"
         ok "MVP demo flow: $flow_path"
@@ -1447,7 +1486,7 @@ run_real_worker_demo_step() {
     local flow_path="$STATE_DIR/mvp-real-worker-flow.json"
     local log_path="$STATE_DIR/mvp-real-worker-log.jsonl"
     local run_id
-    info "运行: mvp-real-worker-demo"
+    info "Running: mvp-real-worker-demo"
     if run_id="$(run_real_worker_demo "$flow_path" "$log_path")"; then
         ok "MVP real-worker demo completed: $run_id"
         ok "MVP real-worker flow: $flow_path"
@@ -1475,7 +1514,7 @@ check_env_file
 
 if [ "$SKIP_SETUP" -eq 1 ]; then
     record_step "setup" "skipped" "--skip-setup"
-elif [ -f "$PACKAGE_DIR/scripts/setup.sh" ] && ask_yes "是否运行 scripts/setup.sh 安装/刷新 orch-* 命令"; then
+elif [ -f "$PACKAGE_DIR/scripts/setup.sh" ] && ask_yes "Run scripts/setup.sh to install or refresh orch-* commands"; then
     run_step "setup" bash "$PACKAGE_DIR/scripts/setup.sh"
 else
     record_step "setup" "skipped" "not requested or setup script unavailable"
@@ -1491,7 +1530,7 @@ fi
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
 if ! git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    if [ "$INIT_GIT" -eq 1 ] || ask_yes "项目目录不是 git 仓库，是否运行 git init"; then
+    if [ "$INIT_GIT" -eq 1 ] || ask_yes "Project directory is not a git repository. Run git init"; then
         run_step "git-init" git -C "$PROJECT_DIR" init
     else
         die "Project directory must be a git repository"
@@ -1510,7 +1549,7 @@ run_step "orch-init" "$ORCH_INIT" "$PROJECT_ID" "$PROJECT_DIR"
 
 if [ "$SKIP_START" -eq 1 ]; then
     record_step "orch-start" "skipped" "--skip-start"
-elif ask_yes "是否启动 Claude/Codex tmux 编排会话 orch-start"; then
+elif ask_yes "Start Claude/Codex tmux orchestration session with orch-start"; then
     ORCH_START="$(resolve_helper orch-start)" || die "orch-start not found"
     run_step "orch-start" "$ORCH_START" "$PROJECT_ID" "$PROJECT_DIR"
 else
@@ -1519,7 +1558,7 @@ fi
 
 if [ "$SKIP_GATEWAY" -eq 1 ]; then
     record_step "orch-gateway" "skipped" "--skip-gateway"
-elif ask_yes "是否启动 Gateway API http://$HOST:$PORT"; then
+elif ask_yes "Start Gateway API at http://$HOST:$PORT"; then
     ORCH_GATEWAY="$(resolve_helper orch-gateway)" || die "orch-gateway not found"
     mkdir -p "$STATE_DIR"
     GATEWAY_LOG="$STATE_DIR/gateway.log"
@@ -1606,7 +1645,7 @@ fi
 write_report "passed"
 
 echo ""
-echo "MVP 引导验收完成"
+echo "MVP guided acceptance complete"
 echo "Project: $PROJECT_ID"
 echo "Project dir: $PROJECT_DIR"
 echo "Report: $REPORT_PATH"
