@@ -40,8 +40,8 @@ assert_contains "module_disabled" "$DOC" "module disabled failure contract missi
 assert_contains "backend_disabled" "$DOC" "backend disabled failure contract missing"
 assert_contains "package_not_active" "$DOC" "package status failure contract missing"
 assert_contains "## Authority Trust Boundary" "$DOC" "authority trust boundary section missing"
-assert_contains "Phase 1 trust model: localhost-only." "$DOC" "localhost trust model is undocumented"
-assert_contains "not standalone remote authentication" "$DOC" "authority field authentication boundary is undocumented"
+assert_contains "Phase 2 trust model: actor-token capability enforcement" "$DOC" "actor-token trust model is undocumented"
+assert_contains 'Projection and Kanban authority routes additionally require `X-Actor-Token`' "$DOC" "authority token boundary is undocumented"
 
 assert_contains "class DebateEngine" "$DOC" "Sprint 1 API contract missing"
 assert_contains "class DebateAssembly" "$DOC" "Sprint 2 API contract missing"
@@ -255,10 +255,10 @@ with urllib.request.urlopen(f"{base_url}/orchestra/capabilities", timeout=5) as 
     capabilities = json.loads(response.read().decode("utf-8"))
 
 authority_model = capabilities["authority_model"]
-assert authority_model["phase"] == "phase_1", authority_model
-assert authority_model["trust_boundary"] == "localhost_only", authority_model
-assert authority_model["authentication"] == "none", authority_model
-assert authority_model["authority_field_is_advisory_within_loopback"] is True, authority_model
+assert authority_model["phase"] == "phase_2", authority_model
+assert authority_model["trust_boundary"] == "actor_token", authority_model
+assert authority_model["authentication"] == "hmac_actor_token", authority_model
+assert authority_model["capability_count"] == 8, authority_model
 
 specs = {(item["module"], item["operation"]): item for item in capabilities["full_module_endpoints"]}
 routes = set(capabilities["routes"])

@@ -210,13 +210,59 @@ sequenceDiagram
 - Module returns structured Python dictionaries.
 - Gateway persists artifacts and events.
 
+## Run Projection API
+
+Gateway exposes Kimi-facing state projection without exposing raw Kanban mutation:
+
+| Method | Path | Capability | Notes |
+|---|---|---|---|
+| GET | `/orchestra/runs/{run_id}/projection` | `hydrate_requirements` | Returns `run`, `tasks`, `artifacts`, `decisions`, `audits`, and `events`; response header `X-Projection-Schema-Version: 1.0.0`. |
+| POST | `/orchestra/runs/{run_id}/projection` | `hydrate_requirements` | Refreshes projection for `stage_advance`, `heartbeat_sync`, `audit_rebuild`, or `manual_refresh`; invalid reasons return `invalid_refresh_reason`. |
+| POST | `/orchestra/kanban/raw-state` | `mutate_kanban_raw_state` | Gateway-only raw Kanban mutation seam; Kimi receives `mutate_kanban_raw_state_blocked`. |
+
+The projection is aggregated from existing Gateway file state: `run.json`, `tasks.json`, `events.jsonl`, `audit.jsonl`, command records, and run artifacts. It includes `run.intake_projection` with `original_intent_source`, numeric `confidence_score`, `conflict_summary`, and four-way `dependency_projection`.
+
+## Actor Authentication
+
+```mermaid
+sequenceDiagram
+    participant Actor
+    participant Gateway
+    participant Secrets as actor-secrets.json
+    participant Matrix as authority-matrix.json
+    Actor->>Gateway: Request + X-Actor-Token
+    Gateway->>Secrets: Load active HMAC secret
+    Gateway->>Gateway: Validate base64 payload, timestamp, HMAC, revoked token cache
+    Gateway->>Matrix: Resolve capability status
+    alt allowed
+        Gateway-->>Actor: Execute route / return projection
+    else blocked or undefined
+        Gateway-->>Actor: 401/403 machine-readable error
+    end
+```
+
+Actor tokens encode `actor_type`, `actor_id`, timestamp, HMAC signature, and optional L3/L4 approval claims. Valid actor types are `kimi`, `gateway`, `hermes_agents`, `claude_codex`, and `user`. Tokens expire after 300 seconds plus 30 seconds of clock skew.
+
+## PRD 2.2 Capability Mapping
+
+| Capability | Kimi | Gateway | Hermes Agents | Claude/Codex | User |
+|---|---|---|---|---|---|
+| `create_run` | allowed | allowed | blocked | blocked | allowed |
+| `hydrate_requirements` | allowed | allowed | requires approval | requires approval | allowed |
+| `mutate_kanban_raw_state` | blocked | allowed | blocked | blocked | blocked |
+| `advance_stage` | requires approval | allowed | requires approval | requires approval | allowed |
+| `select_debate_teams` | allowed | allowed | blocked | blocked | allowed |
+| `code_or_review` | blocked | requires approval | allowed | allowed | allowed |
+| `approve_l3_l4` | requires approval | blocked | blocked | blocked | allowed |
+| `apply_self_evolution` | requires approval | blocked | blocked | blocked | allowed |
+
 ## Authority Trust Boundary
 
-- Phase 1 trust model: localhost-only.
-- The default Gateway deployment binds to `127.0.0.1`, and the local loopback boundary is the only trust boundary assumed for Sprint 11 module endpoints.
+- Phase 2 trust model: actor-token capability enforcement for Projection and raw Kanban authority routes.
+- The default Gateway deployment still binds to `127.0.0.1`.
 - Non-loopback `--host` values are rejected unless the operator also passes `--allow-network-binding`.
-- The `authority` field on `/orchestra/modules/*` requests is an intent selector within that loopback boundary, not standalone remote authentication.
-- If Gateway is ever exposed beyond localhost, the module endpoints must gain an additional authentication layer such as a token check, Unix socket permission boundary, or mTLS before the `authority` field can be trusted.
+- The `authority` field on `/orchestra/modules/*` remains an intent selector; Projection and Kanban authority routes additionally require `X-Actor-Token`.
+- If Gateway is ever exposed beyond localhost, module endpoints should be moved behind the same token boundary or a stronger transport boundary such as mTLS.
 
 ## Non-Goals for Sprint 0
 

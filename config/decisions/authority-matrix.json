@@ -1,0 +1,71 @@
+{
+  "schema_version": "authority-matrix.v1",
+  "capabilities": {
+    "create_run": {
+      "kimi": "allowed",
+      "gateway": "allowed",
+      "hermes_agents": "blocked",
+      "claude_codex": "blocked",
+      "user": "allowed"
+    },
+    "hydrate_requirements": {
+      "kimi": "allowed",
+      "gateway": "allowed",
+      "hermes_agents": "requires_approval",
+      "claude_codex": "requires_approval",
+      "user": "allowed"
+    },
+    "mutate_kanban_raw_state": {
+      "kimi": "blocked",
+      "gateway": "allowed",
+      "hermes_agents": "blocked",
+      "claude_codex": "blocked",
+      "user": "blocked"
+    },
+    "advance_stage": {
+      "kimi": "requires_approval",
+      "gateway": "allowed",
+      "hermes_agents": "requires_approval",
+      "claude_codex": "requires_approval",
+      "user": "allowed"
+    },
+    "select_debate_teams": {
+      "kimi": "allowed",
+      "gateway": "allowed",
+      "hermes_agents": "blocked",
+      "claude_codex": "blocked",
+      "user": "allowed"
+    },
+    "code_or_review": {
+      "kimi": "blocked",
+      "gateway": "requires_approval",
+      "hermes_agents": "allowed",
+      "claude_codex": "allowed",
+      "user": "allowed"
+    },
+    "approve_l3_l4": {
+      "kimi": "requires_approval",
+      "gateway": "blocked",
+      "hermes_agents": "blocked",
+      "claude_codex": "blocked",
+      "user": "allowed"
+    },
+    "apply_self_evolution": {
+      "kimi": "requires_approval",
+      "gateway": "blocked",
+      "hermes_agents": "blocked",
+      "claude_codex": "blocked",
+      "user": "allowed"
+    }
+  },
+  "routes": {
+    "create_run": "POST /orchestra/runs",
+    "hydrate_requirements": "POST /orchestra/runs",
+    "mutate_kanban_raw_state": "internal Gateway-only Kanban adapter",
+    "advance_stage": "POST /orchestra/runs/{run_id}/worker-outputs",
+    "select_debate_teams": "POST /orchestra/modules/debate-assembly/select-for-stage",
+    "code_or_review": "Gateway-dispatched worker task",
+    "approve_l3_l4": "Gateway approval token validation",
+    "apply_self_evolution": "Gateway self-evolution queue approval"
+  }
+}

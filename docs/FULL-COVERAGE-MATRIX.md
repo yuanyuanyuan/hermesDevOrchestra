@@ -25,7 +25,7 @@ Status vocabulary:
 | Full fixture policy | `config/testing/full-fixture-policy.json` | staged | not runtime | Separates contract fixtures from runtime fake adapters and forbids fixture evidence from satisfying authority gates. |
 | Self evolution review queue policy | `config/evolution/self-evolution-review-queue.json` | staged | not runtime | Explicit queue, priority, batching, protected target, backlog, evidence, and retention policy for proposals. |
 | Gateway runtime contract | `.planning/specs/HERMES-ORCHESTRA-FULL-SPEC.md` | ready | partially implemented | Baseline is current Python local HTTP Gateway with JSON Run Projection API, optional `/v1/*` proxying, and filesystem State/Audit. |
-| Gateway full runtime implementation | `scripts/lib/orch_gateway.py` plus future full runtime work | pending | MVP/current runtime active | Current executable Gateway now has mixed-family activation substrate for `gateway_authority` and `closeout_and_self_evolution`, but run-level full artifact cutover is still incomplete. |
+| Gateway full runtime implementation | `scripts/lib/orch_gateway.py` plus `scripts/lib/actor_auth.py` and `scripts/lib/run_projection.py` | ready | partially implemented | Sprint 7 lands Run Projection API, actor-token auth, and PRD §2.2 authority enforcement for the 8 required capabilities; run-level full artifact cutover is still incomplete. |
 | Idempotency record contract | Full schema `idempotency_record` | ready | partially implemented | Retained with Gateway State, no independent TTL, same payload replays original result, different payload conflicts. |
 | Degradation policy | `config/degradation/policy.json` | staged | not active runtime | Defines degradation state machine, default completion-evidence denial, artifact-family exceptions, and recovery rule. |
 | MVP runtime schema | `config/schemas/orchestra.schema.json` | ready | active/current | Remains MVP/current runtime schema. |
@@ -38,6 +38,7 @@ Status vocabulary:
 | Release pipeline config | `config/release/pipeline.json` | disabled | not implemented | Formal path exists with `enabled: false`. |
 | Release command registry | `config/release/commands.json` | disabled | not implemented | Trusted deploy/rollback command refs, Gateway Release Executor, approval, timeout, kill, output capture, and redaction policy. |
 | Remote decision config | `config/decisions/remote-channel.json` | disabled | not implemented | Transport-only config; local CLI/SSH remains default. |
+| PRD §2.2 authority matrix | `config/decisions/authority-matrix.json` | ready | active/current | Covers `create_run`, `hydrate_requirements`, `mutate_kanban_raw_state`, `advance_stage`, `select_debate_teams`, `code_or_review`, `approve_l3_l4`, and `apply_self_evolution`. |
 | Runtime Domain Knowledge Base config | `config/knowledge/runtime-kb.json` | ready | deferred / not runtime | Deferred during Sprint 14 supplement; active runtime does not connect gbrain. |
 | Runtime knowledge entry contract | Full schema + `config/knowledge/runtime-kb.json` | ready | partially implemented | State-store entry pages use YAML frontmatter and required sections. |
 | Runtime knowledge ingestion audit | Full schema `knowledge_ingestion_record` | ready | partially implemented | Promotion, overwrite, supersession, deprecation, and failed re-verification require records. |

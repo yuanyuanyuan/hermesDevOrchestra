@@ -90,10 +90,10 @@ body = json.load(open(capabilities_path, encoding="utf-8"))
 assert body["schema_version"] == "orchestra.v1", body
 assert body["gateway"]["project"], body
 assert body["kanban"]["backend"] == "official_hermes_kanban", body
-assert body["authority_model"]["phase"] == "phase_1", body["authority_model"]
-assert body["authority_model"]["trust_boundary"] == "localhost_only", body["authority_model"]
-assert body["authority_model"]["authentication"] == "none", body["authority_model"]
-assert body["authority_model"]["authority_field_is_advisory_within_loopback"] is True, body["authority_model"]
+assert body["authority_model"]["phase"] == "phase_2", body["authority_model"]
+assert body["authority_model"]["trust_boundary"] == "actor_token", body["authority_model"]
+assert body["authority_model"]["authentication"] == "hmac_actor_token", body["authority_model"]
+assert body["authority_model"]["capability_count"] == 8, body["authority_model"]
 
 cache = body["cache"]
 assert cache["backend"] == "local_filesystem", cache
@@ -116,6 +116,8 @@ assert debaters["default_backend"] == "template", debaters
 routes = set(body["routes"])
 assert "POST /orchestra/runs/{run_id}/closeout" in routes, routes
 assert "POST /orchestra/runs/{run_id}/global-evaluations" in routes, routes
+assert "GET /orchestra/runs/{run_id}/projection" in routes, routes
+assert "POST /orchestra/runs/{run_id}/projection" in routes, routes
 PY
 
 test_done
