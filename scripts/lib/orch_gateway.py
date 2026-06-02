@@ -118,6 +118,12 @@ FULL_MODULE_ENDPOINTS = [
     module_endpoint("self-evolution", "transition", "SelfEvolutionQueue", "gateway_local_review", ["queue_item", "next_status"], ["decision_ref", "rejection_reason", "kimi_review_ref", "human_approval_ref", "allow_staged", "enabled"], ["queue_item_id", "status", "decision_ref", "rejection_reason"]),
     module_endpoint("self-evolution", "list-pending", "SelfEvolutionQueue", "gateway_local_review", [], ["queue_items", "allow_staged", "enabled"], ["items"]),
     module_endpoint("performance-slo", "evaluate", "PerformanceBudgetPolicy", "gateway_local_runtime", ["component_id", "observed"], ["allow_staged", "enabled"], ["component_id", "budget_status", "budget_misses", "degradation_status"]),
+    module_endpoint("channel-router", "classify", "ChannelRouter", "gateway_local_runtime", ["intent", "project_age_weeks"], ["profile"], ["channel", "reason", "project_age_weeks"]),
+    module_endpoint("rollout-gate", "allow", "RolloutGate", "gateway_local_runtime", ["channel", "project_age_weeks", "calibration_evidence"], [], ["allowed", "channel", "forced_standard", "reason"]),
+    module_endpoint("evidence-scanner", "scan", "EvidenceScanner", "gateway_local_runtime", ["diff", "files"], [], ["lint_pass", "syntax_pass", "i18n_pass", "sensitive_keywords", "pii_detected"]),
+    module_endpoint("security-gate", "evaluate", "SecurityGate", "gateway_local_runtime", ["scan"], [], ["verdict", "security_pass", "block_reason"]),
+    module_endpoint("auto-merge", "merge", "AutoMergeController", "gateway_local_release_operator", ["target_branch", "pr_number", "audit_context"], [], ["status", "target_branch", "pr_number", "audit_ref"]),
+    module_endpoint("notification", "send", "NotificationDispatcher", "gateway_local_runtime", ["level", "scan_result"], [], ["level", "sent", "message"]),
     module_endpoint("fixture-policy", "validate-contract-fixture", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "completion_evidence_allowed"]),
     module_endpoint("fixture-policy", "validate-runtime-fake-adapter", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "degraded", "required_degradation_class"]),
     module_endpoint("degradation-policy", "transition", "DegradationPolicy", "gateway_local_runtime", ["current_status", "next_status"], ["allow_staged", "enabled"], ["next_status"]),
@@ -190,6 +196,12 @@ FULL_MODULE_ENDPOINTS = [
     module_endpoint("self-evolution", "transition", "SelfEvolutionQueue", "gateway_local_review", ["queue_item", "next_status"], ["decision_ref", "rejection_reason", "kimi_review_ref", "human_approval_ref", "allow_staged", "enabled"], ["queue_item_id", "status", "decision_ref", "rejection_reason"]),
     module_endpoint("self-evolution", "list-pending", "SelfEvolutionQueue", "gateway_local_review", [], ["queue_items", "allow_staged", "enabled"], ["items"]),
     module_endpoint("performance-slo", "evaluate", "PerformanceBudgetPolicy", "gateway_local_runtime", ["component_id", "observed"], ["allow_staged", "enabled"], ["component_id", "budget_status", "budget_misses", "degradation_status"]),
+    module_endpoint("channel-router", "classify", "ChannelRouter", "gateway_local_runtime", ["intent", "project_age_weeks"], ["profile"], ["channel", "reason", "project_age_weeks"]),
+    module_endpoint("rollout-gate", "allow", "RolloutGate", "gateway_local_runtime", ["channel", "project_age_weeks", "calibration_evidence"], [], ["allowed", "channel", "forced_standard", "reason"]),
+    module_endpoint("evidence-scanner", "scan", "EvidenceScanner", "gateway_local_runtime", ["diff", "files"], [], ["lint_pass", "syntax_pass", "i18n_pass", "sensitive_keywords", "pii_detected"]),
+    module_endpoint("security-gate", "evaluate", "SecurityGate", "gateway_local_runtime", ["scan"], [], ["verdict", "security_pass", "block_reason"]),
+    module_endpoint("auto-merge", "merge", "AutoMergeController", "gateway_local_release_operator", ["target_branch", "pr_number", "audit_context"], [], ["status", "target_branch", "pr_number", "audit_ref"]),
+    module_endpoint("notification", "send", "NotificationDispatcher", "gateway_local_runtime", ["level", "scan_result"], [], ["level", "sent", "message"]),
     module_endpoint("fixture-policy", "validate-contract-fixture", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "completion_evidence_allowed"]),
     module_endpoint("fixture-policy", "validate-runtime-fake-adapter", "FixturePolicy", "gateway_local_runtime", ["family_id", "fixture"], ["allow_staged", "enabled"], ["family_id", "fixture_name", "fixture_kind", "degraded", "required_degradation_class"]),
     module_endpoint("degradation-policy", "transition", "DegradationPolicy", "gateway_local_runtime", ["current_status", "next_status"], ["allow_staged", "enabled"], ["next_status"]),
@@ -349,7 +361,7 @@ class GatewayApp:
 
     def _fallback_response(self) -> tuple[int, dict[str, Any]]:
         body = self.error("gateway_fallback", "Gateway degraded to heuristic mode")
-        body["fallback"] = "heuristic"
+        body["fallback"] = "FALLBACK_HEURISTIC"
         return 503, body
 
     def _requirement_completion_bundle(self, payload: dict[str, Any], request_type: str, run_id: str) -> dict[str, Any]:
@@ -767,6 +779,66 @@ class GatewayApp:
                 return slo.evaluate(
                     component_id=self.require_string(payload, "component_id"),
                     observed=self.require_dict(payload, "observed"),
+                )
+
+        if module == "channel-router":
+            from channel_router import ChannelRouter
+
+            router = ChannelRouter(self.repo_root)
+            if operation == "classify":
+                return router.classify(
+                    intent=self.require_dict(payload, "intent"),
+                    project_age_weeks=self.require_int(payload, "project_age_weeks"),
+                    profile=self.dict_value(payload, "profile", {}),
+                )
+
+        if module == "rollout-gate":
+            from rollout_gate import RolloutGate
+
+            gate = RolloutGate(self.repo_root)
+            if operation == "allow":
+                return gate.allow(
+                    channel=self.require_string(payload, "channel"),
+                    project_age_weeks=self.require_int(payload, "project_age_weeks"),
+                    calibration_evidence=self.require_dict(payload, "calibration_evidence"),
+                )
+
+        if module == "evidence-scanner":
+            from evidence_scanner import EvidenceScanner
+
+            scanner = EvidenceScanner()
+            if operation == "scan":
+                return scanner.scan(
+                    diff=self.require_string(payload, "diff"),
+                    files=self.require_string_list(payload, "files"),
+                )
+
+        if module == "security-gate":
+            from security_gate import SecurityGate
+
+            gate = SecurityGate()
+            if operation == "evaluate":
+                return gate.evaluate(self.require_dict(payload, "scan"))
+
+        if module == "auto-merge":
+            from auto_merge_controller import AutoMergeController
+
+            controller = AutoMergeController(self.repo_root)
+            if operation == "merge":
+                return controller.merge(
+                    target_branch=self.require_string(payload, "target_branch"),
+                    pr_number=self.require_int(payload, "pr_number"),
+                    audit_context=self.require_dict(payload, "audit_context"),
+                )
+
+        if module == "notification":
+            from auto_merge_controller import NotificationDispatcher
+
+            dispatcher = NotificationDispatcher(self.repo_root)
+            if operation == "send":
+                return dispatcher.send(
+                    level=self.require_string(payload, "level"),
+                    scan_result=self.require_dict(payload, "scan_result"),
                 )
 
         if module == "fixture-policy":
@@ -4251,6 +4323,12 @@ class GatewayApp:
         )
 
         return 200, response
+
+    def build_parallel_worker_artifacts(self, run_id: str, task_id: str, role_payload: dict[str, Any]) -> dict[str, Any] | None:
+        return None
+
+    def persist_parallel_worker_artifacts(self, parallel_artifacts: dict[str, Any]) -> None:
+        return None
 
     def accept_worker_output(
         self,
