@@ -80,7 +80,19 @@
     "may_remove_stage_floor": false,
     "may_remove_task_type_overlay": false,
     "may_remove_risk_overlay": false,
-    "coverage_lowering_requires_human_approval": true
+    "coverage_lowering_requires_human_approval": true,
+    "max_team_policy": {
+      "profile_key": "max_teams",
+      "default": 16,
+      "minimum": 1,
+      "hard_limit": 64,
+      "on_hard_limit_violation": "config_error: max_teams exceeds hard limit 64"
+    },
+    "custom_team_security_scan": {
+      "scanner": "scripts/lib/security_scanner.py",
+      "blocked_team_flag": "security_blocked",
+      "log_ref": "logs/security-scan.jsonl"
+    }
   },
   "member_selection_policy": {
     "minimum_members_per_selected_team": 1,

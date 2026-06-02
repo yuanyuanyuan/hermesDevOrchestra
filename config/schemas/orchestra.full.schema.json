@@ -848,7 +848,7 @@
         "teams": {
           "type": "array",
           "minItems": 16,
-          "maxItems": 16,
+          "maxItems": 64,
           "items": {
             "type": "object",
             "required": ["id", "name", "focus", "dimensions", "members"],
@@ -967,6 +967,32 @@
         "project_override_policy": {"type": "object"},
         "member_selection_policy": {"type": "object"},
         "audit_requirements": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "debate_alias_mapping": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "package_kind", "package_status", "mappings"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "debate_alias_mapping"},
+        "package_kind": {"const": "full_debate_package"},
+        "package_status": {"type": "string"},
+        "mappings": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "object",
+            "required": ["alias", "canonical_team", "deprecated_since", "migration_note"],
+            "properties": {
+              "alias": {"type": "string"},
+              "canonical_team": {"$ref": "#/$defs/debate_team_id"},
+              "deprecated_since": {"type": ["string", "null"]},
+              "migration_note": {"type": ["string", "null"]}
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": true
     },

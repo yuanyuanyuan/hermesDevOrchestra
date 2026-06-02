@@ -20,6 +20,10 @@ import pathlib
 import sys
 
 repo = pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(repo / "scripts/lib"))
+
+from team_selector import TeamSelector, TeamSelectorError
+
 backends = json.loads((repo / "config/workers/backends.json").read_text(encoding="utf-8"))
 roles = json.loads((repo / "config/workers/roles.json").read_text(encoding="utf-8"))
 teams = json.loads((repo / "config/debate/teams.json").read_text(encoding="utf-8"))
@@ -45,6 +49,24 @@ assert knowledge["enabled"] is False, knowledge
 assert knowledge["backend"]["id"] == "deferred", knowledge
 assert knowledge["backend"]["enabled"] is False, knowledge
 assert knowledge["backend"]["adapter_required_before_enable"] is True, knowledge
+
+selector = TeamSelector(repo)
+result = selector.select(
+    task_type="refactor",
+    project_profile={
+        "max_teams": 32,
+        "custom_teams": [{"id": f"extended_{index}", "prompt_injection": "review only"} for index in range(16)],
+    },
+)
+assert len(result.selected_team_ids) == 32, result
+
+try:
+    selector.select(task_type="refactor", project_profile={"max_teams": 100})
+except TeamSelectorError as exc:
+    assert exc.code == "config_error", exc
+    assert exc.message == "max_teams exceeds hard limit 64", exc.message
+else:
+    raise AssertionError("expected max_teams hard limit error")
 PY
 
 TMP_DIR="$(mktemp -d)"

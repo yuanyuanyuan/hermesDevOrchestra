@@ -211,6 +211,18 @@ Fields:
 - `interaction.default_mode` — `summary` or `detailed`. `summary` keeps 0 阶确认输出压缩到核心信息，`detailed` 展示完整六类补全包。
 - `interaction.confirmation_threshold` — Float threshold for low-confidence confirmation nodes. Default `0.5`.
 
+### Direction Debate Team Selection
+
+`project-profile.yaml` may set `max_teams` for full-package direction debate selection:
+
+```yaml
+max_teams: 32
+```
+
+The default is 16. The accepted range is 1 through 64. A value above 64 is a configuration error: `max_teams exceeds hard limit 64`.
+
+Legacy debate team aliases are configured in `config/debate/full/alias-mapping.json`. Custom team `prompt_injection` text is scanned before selection. The safety denylist includes filesystem destruction (`rm -rf`, `mkfs.`), data destruction (`DROP TABLE`, `DELETE FROM`), and code execution (`eval(`, `exec(`, `subprocess.call`). Scan events are appended to `logs/security-scan.jsonl`.
+
 Migration from `project.json`:
 - Run `orch-profile-sync` to generate `project-profile.yaml`.
 - Existing `project.json` is automatically marked `deprecated`.

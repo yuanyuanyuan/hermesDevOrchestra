@@ -1,0 +1,32 @@
+{
+  "schema_version": "orchestra.full.v1",
+  "artifact_type": "debate_alias_mapping",
+  "package_kind": "full_debate_package",
+  "package_status": "active",
+  "mappings": [
+    {
+      "alias": "architecture",
+      "canonical_team": "platform",
+      "deprecated_since": "2026-06-02",
+      "migration_note": "Full Debate Package maps architecture review into the platform team."
+    },
+    {
+      "alias": "product",
+      "canonical_team": "business",
+      "deprecated_since": "2026-06-02",
+      "migration_note": "Product value and acceptance review maps to business."
+    },
+    {
+      "alias": "ux",
+      "canonical_team": "frontend",
+      "deprecated_since": "2026-06-02",
+      "migration_note": "UX flow review maps to frontend."
+    },
+    {
+      "alias": "release",
+      "canonical_team": "devops_sre",
+      "deprecated_since": "2026-06-02",
+      "migration_note": "Release readiness maps to DevOps SRE."
+    }
+  ]
+}
