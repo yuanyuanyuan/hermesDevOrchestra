@@ -177,6 +177,50 @@ debate:
 | `observed_value` | string/number | 必填 |
 | `status` | string | `pass` / `warn` / `fail` |
 
+### `debate_metrics`
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| `conflict_density` | number | `0..1`，冲突声明数 / 总声明数 |
+| `assumption_divergence` | number | `0..1`，候选方案假设集合平均 Jaccard 距离 |
+| `team_position_variance` | number | `0..1`，team score 标准差归一化值 |
+| `weights` | object | 必含 `conflict_density`、`assumption_divergence`、`team_position_variance`，权重和必须为 `1.0` |
+| `dispute_score` | number | `0..1`，可由同一 `candidate_solutions` 重放，偏差 `< 0.01` |
+| `canonical_mode_selected` | string | `consensus_fast` / `standard_debate` / `deep_fork` |
+| `selection_timestamp` | ISO-8601 timestamp | 必填，记录模式选择时间 |
+
+路由矩阵：
+
+- `dispute_score < 0.3` → `consensus_fast`
+- `0.3 <= dispute_score < 0.6` → `standard_debate`
+- `dispute_score >= 0.6` → `deep_fork`
+
+### `dag_validation_result`
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| `acyclicity_passed` | boolean | 无回边时为 `true` |
+| `cycle_detected` | boolean | 检测到 DFS back-edge 时为 `true`，并写入 `dag_cycle_detected` 事件 |
+| `back_edges` | array | 每项含 `from`、`to` |
+| `connectivity_passed` | boolean | root 可达所有 task 时为 `true` |
+| `orphan_task_ids` | array of string | 不可达 task id 列表 |
+| `topological_order` | array of string | DAG 拓扑序 |
+| `topological_sort_consistent` | boolean | 拓扑序与 `task.dependencies` 一致时为 `true` |
+| `passed` | boolean | 三项验证全部通过时为 `true` |
+| `errors` | array of string | `cycle_detected` / `orphan_task` / `topological_sort_mismatch` 等 |
+
+### `source_isolation_check`
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| `task_id` | string | 被检查的 delegate task |
+| `delegate_to` | string | 目标 worker / agent |
+| `expected_fingerprint` | sha256 string | `SHA-256(agent_id + workspace_path + context_hash)` |
+| `actual_fingerprint` | sha256 string | 实际计算或输入的 fingerprint |
+| `collision_result` | boolean | 同一 `delegate_to` 下 fingerprint 重复时为 `true` |
+
+同源隔离整体结果写入 `implementation_report.source_isolation_result`。无法提供独立身份时必须降级为 `sequential_execution`，并阻断自动进入三阶。
+
 ## 持久化说明
 
 本轮仍不新增数据库表。

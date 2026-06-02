@@ -114,7 +114,10 @@
         "dynamic_assembly",
         "meta_review",
         "risk_priority_matrix",
-        "cross_team_conflict_detector"
+        "cross_team_conflict_detector",
+        "consensus_fast",
+        "standard_debate",
+        "deep_fork"
       ]
     },
     "backend_family": {
@@ -890,8 +893,8 @@
         "registry_authority": {"const": "qnN4o510"},
         "modes": {
           "type": "array",
-          "minItems": 8,
-          "maxItems": 8,
+          "minItems": 11,
+          "maxItems": 11,
           "items": {
             "type": "object",
             "required": ["id", "name", "purpose", "mechanism", "selection_rules", "required_inputs", "output_contract"],

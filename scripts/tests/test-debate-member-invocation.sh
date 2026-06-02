@@ -35,6 +35,7 @@ from debate_assembly import DebateAssembly
 from debate_backend_adapter import DebateBackendAdapterRegistry, TemplateFixtureDebateAdapter
 from debate_engine import DebateEngine
 from debate_member_invocation import DebateMemberInvocationError, DebateMemberInvocationService
+from debate_report import DebateReportError, calculate_debate_metrics, select_canonical_mode
 
 
 schema = json.loads((repo / "config/schemas/orchestra.full.schema.json").read_text(encoding="utf-8"))
@@ -58,6 +59,15 @@ def expect_error(code, func):
         assert exc.code == code, (exc.code, code, exc.message)
         return exc
     raise AssertionError(f"expected DebateMemberInvocationError({code})")
+
+
+def expect_report_error(code, func):
+    try:
+        func()
+    except DebateReportError as exc:
+        assert exc.code == code, (exc.code, code, exc.message)
+        return exc
+    raise AssertionError(f"expected DebateReportError({code})")
 
 
 engine = DebateEngine(repo)
@@ -160,6 +170,63 @@ assert result["audit_trail"]["raw_stdout_persisted"] is False, result["audit_tra
 recorded_invocation_ids = {entry["invocation_id"] for entry in result["audit_trail"]["invocations"]}
 expected_invocation_ids = {entry["invocation_id"] for entry in result["invocations"]}
 assert recorded_invocation_ids == expected_invocation_ids, (recorded_invocation_ids, expected_invocation_ids)
+
+candidate_solutions = [
+    {
+        "team_id": "architecture",
+        "solution_text": "Keep Gateway seam small and validate DAG in a helper module.",
+        "team_score": 4.0,
+        "assumptions": ["gateway facade stays thin", "helper module is reusable"],
+        "conflicts": ["direct gateway mutation is risky"],
+        "write_scope": ["scripts/lib/dag_validator.py"],
+    },
+    {
+        "team_id": "delivery",
+        "solution_text": "Add report metrics and gate Stage 3 automatically.",
+        "team_score": 2.0,
+        "assumptions": ["events are replayable", "stage gate uses report fields"],
+        "conflicts": ["direct gateway mutation is risky", "parallel tasks need source isolation"],
+        "write_scope": ["scripts/lib/debate_report.py"],
+    },
+]
+metrics_a = calculate_debate_metrics(candidate_solutions)
+metrics_b = calculate_debate_metrics(candidate_solutions)
+assert abs(metrics_a["dispute_score"] - metrics_b["dispute_score"]) < 0.01, (metrics_a, metrics_b)
+assert 0 <= metrics_a["dispute_score"] <= 1, metrics_a
+assert select_canonical_mode(0.15) == "consensus_fast"
+assert select_canonical_mode(0.45) == "standard_debate"
+assert select_canonical_mode(0.75) == "deep_fork"
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_path = pathlib.Path(tmp)
+    staged = service.execute(
+        run=run,
+        assembly=selection,
+        input_refs=input_refs,
+        context_refs=context_refs,
+        option_refs=option_refs,
+        affected_scopes=["gateway", "release"],
+        candidate_solutions=candidate_solutions,
+        event_log_path=tmp_path / "events.jsonl",
+        audit_log_path=tmp_path / "audit.jsonl",
+    )
+    report = staged["report"]
+    assert "debate_metrics" in report, report
+    assert report["debate_metrics"]["dispute_score"] == metrics_a["dispute_score"], report["debate_metrics"]
+    assert report["implementation_report"]["dag_validation_result"]["passed"] is True, report["implementation_report"]
+    assert report["ready_for_stage3"] is True, report
+    events_text = (tmp_path / "events.jsonl").read_text(encoding="utf-8")
+    assert '"dispute_score"' in events_text, events_text
+    assert "stage_transition" in events_text, events_text
+    assert "source_isolation_check" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
+
+expect_report_error(
+    "validation_error",
+    lambda: calculate_debate_metrics(
+        candidate_solutions,
+        weights={"conflict_density": 0.5, "assumption_divergence": 0.5, "team_position_variance": 0.5},
+    ),
+)
 
 disabled = DebateMemberInvocationService(repo, enabled=False)
 expect_error(

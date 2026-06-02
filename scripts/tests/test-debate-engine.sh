@@ -46,9 +46,10 @@ def expect_error(code, func):
 engine = DebateEngine(repo)
 registries = engine.load_registries()
 assert len(registries["teams"]) == 16, len(registries["teams"])
-assert len(registries["modes"]) == 8, len(registries["modes"])
+assert len(registries["modes"]) == 11, len(registries["modes"])
 assert registries["team_ids"][0] == "security", registries["team_ids"][:3]
 assert "dynamic_assembly" in registries["mode_ids"], registries["mode_ids"]
+assert {"consensus_fast", "standard_debate", "deep_fork"} <= set(registries["mode_ids"]), registries["mode_ids"]
 assert registries["package_status"] == "active", registries["package_status"]
 
 run = engine.create_run(

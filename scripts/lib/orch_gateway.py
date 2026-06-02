@@ -627,6 +627,10 @@ class GatewayApp:
                     option_refs=self.list_value(payload, "option_refs", []),
                     affected_scopes=self.list_value(payload, "affected_scopes", []),
                     preferred_backend_id=self.optional_string(payload, "preferred_backend_id"),
+                    candidate_solutions=self.list_value(payload, "candidate_solutions", []),
+                    implementation_report=self.optional_dict(payload, "implementation_report"),
+                    event_log_path=self.optional_string(payload, "event_log_path"),
+                    audit_log_path=self.optional_string(payload, "audit_log_path"),
                 )
 
         if module == "debate-report":
@@ -643,6 +647,10 @@ class GatewayApp:
                     invocation_receipts=self.require_list(payload, "invocation_receipts"),
                     input_refs=self.require_string_list(payload, "input_refs"),
                     affected_scopes=self.require_string_list(payload, "affected_scopes"),
+                    candidate_solutions=self.list_value(payload, "candidate_solutions", []),
+                    implementation_report=self.optional_dict(payload, "implementation_report"),
+                    event_log_path=self.optional_string(payload, "event_log_path"),
+                    audit_log_path=self.optional_string(payload, "audit_log_path"),
                 )
 
         if module == "worker-registry":
@@ -964,6 +972,14 @@ class GatewayApp:
 
     def dict_value(self, payload: dict[str, Any], key: str, default: dict[str, Any]) -> dict[str, Any]:
         value = payload.get(key, default)
+        if not isinstance(value, dict):
+            raise ValueError(f"{key} must be an object")
+        return value
+
+    def optional_dict(self, payload: dict[str, Any], key: str) -> dict[str, Any] | None:
+        value = payload.get(key)
+        if value is None:
+            return None
         if not isinstance(value, dict):
             raise ValueError(f"{key} must be an object")
         return value

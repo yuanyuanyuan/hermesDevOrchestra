@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import jsonschema
+
+from dag_validator import check_source_isolation, validate_dag
 
 
 class DebateReportError(Exception):
@@ -54,6 +58,10 @@ class DebateReportBuilder:
         invocation_receipts: list[dict[str, Any]],
         input_refs: list[str],
         affected_scopes: list[str],
+        candidate_solutions: list[dict[str, Any]] | None = None,
+        implementation_report: dict[str, Any] | None = None,
+        event_log_path: str | Path | None = None,
+        audit_log_path: str | Path | None = None,
     ) -> dict[str, Any]:
         run_id = self._run_id(run)
         stage = assembly["stage"]
@@ -90,6 +98,16 @@ class DebateReportBuilder:
             degraded=degraded,
             affected_evidence_refs=opinion_refs,
             policy_ref=backend_ref,
+        )
+
+        debate_metrics = calculate_debate_metrics(candidate_solutions or [])
+        stage2_report = self._stage2_report(
+            run=run,
+            debate_metrics=debate_metrics,
+            candidate_solutions=candidate_solutions or [],
+            implementation_report=implementation_report,
+            event_log_path=event_log_path,
+            audit_log_path=audit_log_path,
         )
 
         report = {
@@ -142,7 +160,10 @@ class DebateReportBuilder:
             ] if degraded else [],
             "audit_trail_ref": audit_ref,
             "artifact_refs": sorted(set([*input_refs, *invocation_refs, *opinion_refs, coverage_ref, assembly_ref, backend_ref])),
+            "debate_metrics": debate_metrics,
         }
+        if stage2_report is not None:
+            report.update(stage2_report["report_fields"])
 
         audit_trail = {
             "schema_version": "orchestra.full.v1",
@@ -187,6 +208,8 @@ class DebateReportBuilder:
             "raw_prompt_persisted": False,
             "raw_stdout_persisted": False,
         }
+        if stage2_report is not None:
+            audit_trail.update(stage2_report["audit_fields"])
 
         validate_artifact_definition(self.repo_root, "debate_report", report)
         validate_artifact_definition(self.repo_root, "debate_audit_trail", audit_trail)
@@ -197,6 +220,85 @@ class DebateReportBuilder:
             "audit_trail": audit_trail,
             "audit_ref": audit_ref,
         }
+
+    def _stage2_report(
+        self,
+        run: dict[str, Any],
+        debate_metrics: dict[str, Any],
+        candidate_solutions: list[dict[str, Any]],
+        implementation_report: dict[str, Any] | None,
+        event_log_path: str | Path | None,
+        audit_log_path: str | Path | None,
+    ) -> dict[str, Any] | None:
+        if implementation_report is None and not candidate_solutions:
+            return None
+
+        report = implementation_report or build_implementation_report(
+            run_id=self._run_id(run),
+            candidate_solutions=candidate_solutions,
+            debate_metrics=debate_metrics,
+        )
+        dag_result = validate_dag(report["dag"], event_log_path=event_log_path)
+        source_result = check_source_isolation(report.get("tasks", []), audit_log_path=audit_log_path)
+        dependency_matrix_complete = bool(report.get("tasks")) and all(
+            isinstance(task.get("inputs"), list)
+            and isinstance(task.get("outputs"), list)
+            and isinstance(task.get("write_scope"), list)
+            for task in report.get("tasks", [])
+        )
+        ready_for_stage3 = dag_result["passed"] and source_result["passed"] and dependency_matrix_complete
+        stage_event = {
+            "type": "stage_transition" if ready_for_stage3 else "stage2_blocker",
+            "stage_transition": "2->3" if ready_for_stage3 else None,
+            "run_id": self._run_id(run),
+            "reason": "stage2_ready" if ready_for_stage3 else "stage2_gate_failed",
+            "dag_validation_passed": dag_result["passed"],
+            "source_isolation_passed": source_result["passed"],
+            "dependency_matrix_complete": dependency_matrix_complete,
+            "dispute_score": debate_metrics["dispute_score"],
+        }
+        self._append_jsonl(event_log_path, stage_event)
+
+        report["dag"]["topological_order"] = dag_result["topological_order"]
+        report["debate_metrics"] = debate_metrics
+        report["dag_validation_result"] = dag_result
+        report["source_isolation_result"] = source_result
+        report["state_machine"] = {
+            "current_state": "ready_for_stage3" if ready_for_stage3 else "debating",
+            "completed_states": self._completed_stage2_states(dag_result, source_result),
+        }
+        report["ready_for_stage3"] = ready_for_stage3
+
+        return {
+            "report_fields": {
+                "implementation_report": report,
+                "dag_validation_result": dag_result,
+                "source_isolation_check": source_result["checks"],
+                "ready_for_stage3": ready_for_stage3,
+            },
+            "audit_fields": {
+                "source_isolation_check": source_result["checks"],
+                "dag_validation_result": dag_result,
+            },
+        }
+
+    def _append_jsonl(self, path: str | Path | None, record: dict[str, Any]) -> None:
+        if path is None:
+            return
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+    def _completed_stage2_states(self, dag_result: dict[str, Any], source_result: dict[str, Any]) -> list[str]:
+        states = ["debating"]
+        if dag_result["passed"]:
+            states.append("dag_validated")
+        if source_result["passed"]:
+            states.append("source_isolation_verified")
+        if dag_result["passed"] and source_result["passed"]:
+            states.append("ready_for_stage3")
+        return states
 
     def _build_audit_invocations(
         self,
@@ -308,3 +410,134 @@ class DebateReportBuilder:
         if not isinstance(run_id, str) or not run_id:
             raise DebateReportError("validation_error", "run must provide run_id or debate_id")
         return run_id
+
+
+def calculate_debate_metrics(
+    candidate_solutions: list[dict[str, Any]],
+    weights: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    weights = weights or {
+        "conflict_density": 1 / 3,
+        "assumption_divergence": 1 / 3,
+        "team_position_variance": 1 / 3,
+    }
+    if set(weights) != {"conflict_density", "assumption_divergence", "team_position_variance"}:
+        raise DebateReportError("validation_error", "debate metric weights must define the three canonical factors")
+    if abs(sum(weights.values()) - 1.0) > 0.001:
+        raise DebateReportError("validation_error", "debate metric weights must sum to 1.0")
+
+    conflict_count = sum(len(_list_value(solution.get("conflicts"))) for solution in candidate_solutions)
+    assumption_sets = [set(_list_value(solution.get("assumptions"))) for solution in candidate_solutions]
+    claim_count = max(
+        1,
+        len(candidate_solutions)
+        + conflict_count
+        + sum(len(assumptions) for assumptions in assumption_sets),
+    )
+    conflict_density = min(1.0, conflict_count / claim_count)
+    assumption_divergence = _average_jaccard_distance(assumption_sets)
+    scores = [float(solution["team_score"]) for solution in candidate_solutions if _is_number(solution.get("team_score"))]
+    team_position_variance = min(1.0, _standard_deviation(scores) / 2.5)
+    dispute_score = (
+        weights["conflict_density"] * conflict_density
+        + weights["assumption_divergence"] * assumption_divergence
+        + weights["team_position_variance"] * team_position_variance
+    )
+    dispute_score = round(dispute_score, 4)
+    canonical_mode = select_canonical_mode(dispute_score)
+    return {
+        "conflict_density": round(conflict_density, 4),
+        "assumption_divergence": round(assumption_divergence, 4),
+        "team_position_variance": round(team_position_variance, 4),
+        "weights": weights,
+        "dispute_score": dispute_score,
+        "canonical_mode_selected": canonical_mode,
+        "selection_timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def select_canonical_mode(dispute_score: float) -> str:
+    if dispute_score < 0.3:
+        return "consensus_fast"
+    if dispute_score < 0.6:
+        return "standard_debate"
+    return "deep_fork"
+
+
+def build_implementation_report(
+    run_id: str,
+    candidate_solutions: list[dict[str, Any]],
+    debate_metrics: dict[str, Any],
+) -> dict[str, Any]:
+    tasks = []
+    edges = []
+    for index, solution in enumerate(candidate_solutions, start=1):
+        task_id = str(solution.get("task_id") or f"solution-task-{index}")
+        edges.append({"from": "root", "to": task_id})
+        tasks.append(
+            {
+                "task_id": task_id,
+                "delegate_to": str(solution.get("team_id") or f"team-{index}"),
+                "inputs": list(solution.get("inputs", [f"candidate_solution:{index}"])),
+                "outputs": list(solution.get("outputs", [f"implementation_artifact:{index}"])),
+                "write_scope": _normalize_write_scope(solution.get("write_scope", [f"./tasks/{task_id}.md"])),
+                "parallel_boundary_id": str(solution.get("parallel_boundary_id") or "stage2-candidate-solutions"),
+                "test_strategy": str(solution.get("test_strategy") or "run task-specific validation before merge"),
+                "source_fingerprint": str(solution.get("source_fingerprint") or f"candidate-{run_id}-{index}"),
+            }
+        )
+    return {
+        "schema_version": "orchestra.full.v1",
+        "artifact_type": "implementation_report",
+        "run_id": run_id,
+        "dag": {
+            "root_id": "root",
+            "nodes": [{"id": "root", "kind": "root"}, *[{"id": task["task_id"], "kind": "task"} for task in tasks]],
+            "edges": edges,
+            "topological_order": [],
+        },
+        "tasks": tasks,
+        "dependency_conflict_resolution": [],
+        "debate_metrics": debate_metrics,
+    }
+
+
+def _average_jaccard_distance(sets: list[set[str]]) -> float:
+    if len(sets) < 2:
+        return 0.0
+    distances = []
+    for left_index, left in enumerate(sets):
+        for right in sets[left_index + 1 :]:
+            union = left | right
+            if not union:
+                distances.append(0.0)
+            else:
+                distances.append(1.0 - (len(left & right) / len(union)))
+    return sum(distances) / len(distances)
+
+
+def _standard_deviation(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = sum(values) / len(values)
+    return math.sqrt(sum((value - mean) ** 2 for value in values) / len(values))
+
+
+def _list_value(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _normalize_write_scope(value: Any) -> list[str]:
+    items = value if isinstance(value, list) else []
+    normalized = []
+    for item in items:
+        if not isinstance(item, str) or not item:
+            continue
+        if item.startswith("/") or ".." in item.split("/"):
+            continue
+        normalized.append(item if item.startswith("./") else f"./{item}")
+    return normalized or ["./"]

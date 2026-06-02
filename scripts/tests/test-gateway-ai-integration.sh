@@ -71,6 +71,11 @@ else
     echo "    ✗ debate-engine load-registries: $REGISTRIES"
     fail "load-registries should return result" "result key" "$REGISTRIES"
 fi
+if echo "$REGISTRIES" | python3 -c "import sys, json; modes={m['id'] for m in json.load(sys.stdin)['result']['modes']}; assert {'consensus_fast','standard_debate','deep_fork'} <= modes" 2>/dev/null; then
+    echo "    ✓ stage 2 canonical modes are registered"
+else
+    fail "mode registry should contain stage 2 canonical modes" "consensus_fast/standard_debate/deep_fork" "$REGISTRIES"
+fi
 
 # Test module endpoint: worker-registry load-backends
 echo "  Testing worker-registry load-backends..."

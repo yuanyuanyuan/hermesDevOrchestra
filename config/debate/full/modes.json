@@ -76,6 +76,33 @@
       "selection_rules": ["Use when multiple teams disagree.", "Use before Kimi makes direction, solution, or global evaluation decisions."],
       "required_inputs": ["opinion_refs", "team_ids", "question"],
       "output_contract": {"artifact_type": "debate_report", "requires_conflicts": true, "requires_kimi_decision_inputs": true}
+    },
+    {
+      "id": "consensus_fast",
+      "name": "Consensus Fast",
+      "purpose": "Confirm low-dispute solution choices without running a mini-debate.",
+      "mechanism": "Use a single confirmation pass when dispute_score is below 0.3.",
+      "selection_rules": ["Use when dispute_score < 0.3.", "Skip mini-debate and preserve metrics for replay."],
+      "required_inputs": ["candidate_solutions", "team_scores", "debate_metrics"],
+      "output_contract": {"artifact_type": "implementation_report", "requires_debate_metrics": true}
+    },
+    {
+      "id": "standard_debate",
+      "name": "Standard Debate",
+      "purpose": "Run the normal second-stage solution debate for moderate disagreement.",
+      "mechanism": "Run mini-debate and synthesize a single implementation DAG when 0.3 <= dispute_score < 0.6.",
+      "selection_rules": ["Use when 0.3 <= dispute_score < 0.6.", "Validate DAG and source isolation before Stage 3."],
+      "required_inputs": ["candidate_solutions", "team_scores", "debate_metrics"],
+      "output_contract": {"artifact_type": "implementation_report", "requires_dag_validation": true}
+    },
+    {
+      "id": "deep_fork",
+      "name": "Deep Fork",
+      "purpose": "Preserve high-dispute candidate solutions for parallel downstream exploration.",
+      "mechanism": "Keep candidate branches separate when dispute_score is at least 0.6.",
+      "selection_rules": ["Use when dispute_score >= 0.6.", "Require explicit parallel boundaries and source isolation."],
+      "required_inputs": ["candidate_solutions", "team_scores", "debate_metrics"],
+      "output_contract": {"artifact_type": "implementation_report", "preserve_parallel_branches": true}
     }
   ]
 }
