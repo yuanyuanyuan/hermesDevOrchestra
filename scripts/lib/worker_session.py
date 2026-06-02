@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import shutil
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -19,8 +20,8 @@ class WorkerSessionError(Exception):
         self.message = message
 
 
-ACTIVE_SESSION_STATUSES = frozenset({"starting", "running", "stopping"})
-TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "timed_out", "abandoned"})
+ACTIVE_SESSION_STATUSES = frozenset({"starting", "running", "stopping", "dispatched", "evidence_submitted", "gateway_verifying"})
+TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "timed_out", "abandoned", "rejected", "cleaned_up"})
 
 
 class WorkerSessionManager:
@@ -35,6 +36,12 @@ class WorkerSessionManager:
         "failed": set(),
         "timed_out": set(),
         "abandoned": set(),
+        "created": {"dispatched", "abandoned"},
+        "dispatched": {"running", "timed_out", "abandoned"},
+        "evidence_submitted": {"gateway_verifying", "rejected", "timed_out"},
+        "gateway_verifying": {"completed", "rejected"},
+        "rejected": {"cleaned_up"},
+        "cleaned_up": set(),
     }
 
     def __init__(
@@ -113,6 +120,94 @@ class WorkerSessionManager:
         except Exception:
             shutil.rmtree(workspace_path, ignore_errors=True)
             raise
+
+    def create_dispatch_session(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        assigned_actor: str,
+        workspace_root: Path | str,
+        computed_write_scope: list[str],
+        context_bundle_id: str,
+        token_ttl_seconds: int = 3600,
+    ) -> dict[str, Any]:
+        self._require_string(run_id, "run_id")
+        self._require_string(task_id, "task_id")
+        self._require_string(assigned_actor, "assigned_actor")
+        self._require_string(context_bundle_id, "context_bundle_id")
+        if not isinstance(token_ttl_seconds, int) or token_ttl_seconds < 1:
+            raise WorkerSessionError("validation_error", "token_ttl_seconds must be an integer >= 1")
+
+        suffix = self._normalize_suffix(self._suffix_factory())
+        session_id = f"{self._slug(run_id)}-{self._slug(task_id)}-{suffix}"
+        workspace_path = Path(workspace_root) / self._slug(run_id) / self._slug(task_id) / session_id
+        workspace_path.mkdir(parents=True, exist_ok=False)
+        os.chmod(workspace_path, 0o700)
+        try:
+            now_dt = self._clock()
+            now = now_dt.isoformat()
+            expiry_time = datetime.fromtimestamp(now_dt.timestamp() + token_ttl_seconds, timezone.utc).isoformat()
+            token = str(uuid.uuid4())
+            record = {
+                "schema_version": "orchestra.full.v1",
+                "artifact_type": "worker_session_record",
+                "session_id": session_id,
+                "run_id": run_id,
+                "task_id": task_id,
+                "role": assigned_actor,
+                "backend_id": assigned_actor,
+                "assigned_actor": assigned_actor,
+                "workspace_ref": f"state://runs/{run_id}/worker-workspaces/{session_id}.json",
+                "write_scope_ref": f"state://runs/{run_id}/write-scopes/{task_id}.json",
+                "context_bundle_ref": f"state://runs/{run_id}/context-bundles/{context_bundle_id}.json",
+                "context_bundle_id": context_bundle_id,
+                "computed_write_scope": list(computed_write_scope),
+                "dispatch_token": token,
+                "dispatch_token_expires_at": expiry_time,
+                "created_at": now,
+                "started_at": now,
+                "ended_at": None,
+                "status": "dispatched",
+                "exit_signal": None,
+                "transcript_ref": f"state://runs/{run_id}/worker-transcripts/{session_id}.log",
+                "output_envelope_ref": None,
+                "cleanup_owner": "gateway_worker_session_sweeper",
+                "cleanup_status": "not_started",
+                "timeout_seconds": token_ttl_seconds,
+                "last_heartbeat_at": None,
+                "termination_reason": None,
+                "workspace_path": str(workspace_path),
+                "tmux_session_name": session_id,
+                "tmux_socket_name": f"hermes-worker-{suffix}",
+                "tmux_launch_args": ["-L", f"hermes-worker-{suffix}", "new-session", "-d", "-s", session_id],
+                "cleanup_attempted_at": None,
+                "cleanup_error": None,
+            }
+            self.validate_record(record)
+            return record
+        except Exception:
+            shutil.rmtree(workspace_path, ignore_errors=True)
+            raise
+
+    def validate_dispatch_token(self, record: dict[str, Any], token: str, *, now: datetime | None = None) -> dict[str, Any]:
+        try:
+            parsed = uuid.UUID(token, version=4)
+        except (TypeError, ValueError) as exc:
+            raise WorkerSessionError("dispatch_token_invalid", "dispatch_token must be a valid UUIDv4") from exc
+        if str(parsed) != record.get("dispatch_token"):
+            raise WorkerSessionError("dispatch_token_invalid", "dispatch_token does not match session record")
+        expires_at = record.get("dispatch_token_expires_at")
+        if not isinstance(expires_at, str):
+            raise WorkerSessionError("dispatch_token_invalid", "session record is missing dispatch_token_expires_at")
+        try:
+            expiry = datetime.fromisoformat(expires_at)
+        except ValueError as exc:
+            raise WorkerSessionError("dispatch_token_invalid", "dispatch_token_expires_at is invalid") from exc
+        current = now or self._clock()
+        if current > expiry:
+            raise WorkerSessionError("dispatch_token_expired", "dispatch_token has expired")
+        return {"result": "passed", "session_id": record.get("session_id")}
 
     def transition(
         self,
