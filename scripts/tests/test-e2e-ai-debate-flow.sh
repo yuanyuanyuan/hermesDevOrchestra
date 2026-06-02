@@ -59,12 +59,14 @@ print(open(log_path, encoding="utf-8", errors="replace").read(), file=sys.stderr
 raise SystemExit(f"gateway did not become healthy: {last_error}")
 PY
 
-python3 - "$BASE_URL" "$REPO_ROOT/config/debate/full/backend-policy.json" <<'PY'
+python3 - "$BASE_URL" "$REPO_ROOT/config/debate/full/backend-policy.json" "$TMP_DIR" <<'PY'
 import json
+import pathlib
 import sys
 import urllib.request
 
-base_url, backend_policy_path = sys.argv[1:]
+base_url, backend_policy_path, tmp_dir = sys.argv[1:]
+tmp_path = pathlib.Path(tmp_dir)
 
 def post(path, payload):
     request = urllib.request.Request(
@@ -129,6 +131,26 @@ execution_response = post(
         "context_refs": [f"state://runs/{run['debate_id']}/context.json"],
         "option_refs": [],
         "affected_scopes": ["api://gateway-contract"],
+        "candidate_solutions": [
+            {
+                "team_id": "architecture",
+                "solution_text": "Keep the local HTTP gateway contract.",
+                "team_score": 4,
+                "assumptions": ["loopback boundary holds", "module facade remains small"],
+                "conflicts": ["network exposure would need auth"],
+                "write_scope": ["scripts/lib/orch_gateway.py"],
+            },
+            {
+                "team_id": "delivery",
+                "solution_text": "Replace the gateway contract with a separate service.",
+                "team_score": 2,
+                "assumptions": ["sidecar can be deployed quickly"],
+                "conflicts": ["network exposure would need auth", "migration risk"],
+                "write_scope": ["docs/gateway-integration-architecture.md"],
+            },
+        ],
+        "event_log_path": str(tmp_path / "events.jsonl"),
+        "audit_log_path": str(tmp_path / "audit.jsonl"),
     },
 )
 execution = execution_response["result"]
@@ -143,6 +165,11 @@ assert report["artifact_type"] == "debate_report", report
 assert audit_trail["artifact_type"] == "debate_audit_trail", audit_trail
 assert report["stage"] == "direction_debate", report
 assert audit_trail["stage"] == "direction_debate", audit_trail
+assert report["debate_metrics"]["canonical_mode_selected"] in {"consensus_fast", "standard_debate", "deep_fork"}, report
+assert report["implementation_report"]["dag_validation_result"]["passed"] is True, report
+assert report["ready_for_stage3"] is True, report
+assert "stage_transition" in (tmp_path / "events.jsonl").read_text(encoding="utf-8")
+assert "source_isolation_check" in (tmp_path / "audit.jsonl").read_text(encoding="utf-8")
 
 if expected_degraded:
     assert all(opinion["degraded"] is True for opinion in opinions), opinions

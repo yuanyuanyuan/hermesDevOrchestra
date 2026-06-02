@@ -131,6 +131,10 @@ class DebateMemberInvocationService:
         option_refs: list[str] | None = None,
         affected_scopes: list[str] | None = None,
         preferred_backend_id: str | None = None,
+        candidate_solutions: list[dict[str, Any]] | None = None,
+        implementation_report: dict[str, Any] | None = None,
+        event_log_path: str | Path | None = None,
+        audit_log_path: str | Path | None = None,
     ) -> dict[str, Any]:
         self._require_enabled()
         context_refs = context_refs or []
@@ -187,6 +191,10 @@ class DebateMemberInvocationService:
                 invocation_receipts=receipts,
                 input_refs=input_refs,
                 affected_scopes=affected_scopes,
+                candidate_solutions=candidate_solutions,
+                implementation_report=implementation_report,
+                event_log_path=event_log_path,
+                audit_log_path=audit_log_path,
             )
         except DebateReportError as exc:
             raise DebateMemberInvocationError(exc.code, exc.message) from exc

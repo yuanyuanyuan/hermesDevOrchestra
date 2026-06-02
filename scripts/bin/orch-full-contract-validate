@@ -60,6 +60,9 @@ CANONICAL_MODE_IDS = {
     "meta_review",
     "risk_priority_matrix",
     "cross_team_conflict_detector",
+    "consensus_fast",
+    "standard_debate",
+    "deep_fork",
 }
 
 

@@ -130,6 +130,33 @@ The module classes below are the contract for implementation sprints. Method nam
 
 - `execute(command_ref: str, approval_ref: str | None = None) -> dict[str, Any]`
 
+`class DagValidator`
+
+- `validate_dag(dag: dict, event_log_path: str | None = None) -> dict`
+- `check_source_isolation(tasks: list[dict], audit_log_path: str | None = None) -> dict`
+
+Second-stage solution debate calls these helpers from `DebateReportBuilder` after `DebateMemberInvocationService` receives `candidate_solutions` or an `implementation_report`. Gateway remains a facade: it validates request shape, forwards optional `event_log_path` / `audit_log_path`, and does not own DAG traversal or collision logic.
+
+```mermaid
+sequenceDiagram
+  participant Gateway
+  participant Invocation as DebateMemberInvocationService
+  participant Report as DebateReportBuilder
+  participant DAG as dag_validator.py
+  participant Events as events.jsonl
+  participant Audit as audit.jsonl
+
+  Gateway->>Invocation: execute(run, assembly, candidate_solutions)
+  Invocation->>Report: build(..., candidate_solutions)
+  Report->>Report: calculate debate_metrics and canonical mode
+  Report->>DAG: validate_dag(implementation_report.dag)
+  DAG-->>Events: dag_cycle_detected / orphan_task when blocked
+  Report->>DAG: check_source_isolation(tasks)
+  DAG-->>Audit: source_isolation_check records
+  Report-->>Events: stage_transition 2->3 or stage2_blocker
+  Report-->>Gateway: debate_report with implementation_report
+```
+
 ### Sprint 7
 
 `class RuntimeKnowledgeBase`
