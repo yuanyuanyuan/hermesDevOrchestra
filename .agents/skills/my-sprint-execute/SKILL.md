@@ -76,11 +76,20 @@ my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
 
 **步骤 A — 环境准备**
 
-拉取远程更新并确保 `${BASE_BRANCH}` 为最新。
+拉取远程更新并确保 `${BASE_BRANCH}` 为最新：
+```bash
+git fetch origin ${BASE_BRANCH}
+git checkout ${BASE_BRANCH}
+git reset --hard origin/${BASE_BRANCH}
+```
 
 **步骤 B — 创建/切换分支**
 
-从 `${BASE_BRANCH}` 创建或切换至 `${BRANCH}`，如分支已存在则尝试 rebase。
+必须从**远端最新的 `origin/${BASE_BRANCH}`** 创建 `${BRANCH}`，禁止从本地可能过期的 `${BASE_BRANCH}` 直接切出：
+```bash
+git checkout -b ${BRANCH} origin/${BASE_BRANCH}
+```
+如分支已存在，先删除本地分支再从远端最新 `${BASE_BRANCH}` 重建，或执行 rebase 到 `origin/${BASE_BRANCH}`。
 
 **步骤 C — Worktree 模式（可选，仅在需要时）**
 
