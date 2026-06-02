@@ -69,11 +69,6 @@ my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
 
 **工作流选择策略：**
 
-默认使用 feature branch 模式。仅在以下情况使用 worktree：
-- 需要并行运行多个 Sprint 的验证脚本
-- 当前工作区有未提交的实验性改动需要隔离
-- 分支切换会导致文件监控工具中断
-
 **步骤 A — 环境准备**
 
 拉取远程更新并确保 `${BASE_BRANCH}` 为最新：
@@ -91,11 +86,7 @@ git checkout -b ${BRANCH} origin/${BASE_BRANCH}
 ```
 如分支已存在，先删除本地分支再从远端最新 `${BASE_BRANCH}` 重建，或执行 rebase 到 `origin/${BASE_BRANCH}`。
 
-**步骤 C — Worktree 模式（可选，仅在需要时）**
-
-如需隔离验证或并行开发，可通过 git worktree 在 `${WORKTREE_DIR}` 创建独立工作区（使用完毕后清理）。
-
-**步骤 D — 提交规范（Conventional Commits）**
+**步骤 C — 提交规范（Conventional Commits）**
 
 每完成一个子任务提交一次，格式：
 - 功能提交：`feat(sprint-${SPRINT}): [子任务名] — [一句话描述]`
@@ -231,10 +222,9 @@ which gbrain && gbrain --version || echo "gbrain not available, using degraded p
 - `gbrain` 不可用且降级路径也无法实现（如 Sprint 有特殊依赖）
 - `my-pr-skill` 脚本不可用且无法生成手动 PR 指令
 - `git rebase` 冲突无法自动解决
-- worktree 创建失败或清理失败
 
 **报告格式（必须包含）：**
-- Blocker 类型：`test-failure` / `missing-prereq` / `tool-unavailable` / `git-conflict` / `worktree-failure` / `unknown`
+- Blocker 类型：`test-failure` / `missing-prereq` / `tool-unavailable` / `git-conflict` / `unknown`
 - 最后执行的命令及输出（前 50 行）
 - 已尝试的修复次数和方式
 - 解锁所需的人类输入
