@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
+import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
+from uuid import uuid4
 
 from worker_session import ACTIVE_SESSION_STATUSES, TERMINAL_SESSION_STATUSES, WorkerSessionError, WorkerSessionManager
 
@@ -55,6 +59,7 @@ class TmuxController:
 class WorkerSessionSweeper:
     ACTIVE_STATUSES = ACTIVE_SESSION_STATUSES
     TERMINAL_STATUSES = TERMINAL_SESSION_STATUSES
+    HEARTBEAT_ACTIVE_STATUSES = {"running", "blocked"}
 
     def __init__(
         self,
@@ -99,6 +104,68 @@ class WorkerSessionSweeper:
             "missing_records": missing_records,
             "invalid_records": invalid_records,
         }
+
+    def sweep_run(
+        self,
+        records_root: Path | str,
+        events_path: Path | str,
+        *,
+        hard_timeout_seconds: int = 120,
+        soft_timeout_factor: float = 2.0,
+    ) -> dict[str, Any]:
+        records_path = Path(records_root)
+        sweep_run_id = f"sweep-{uuid4().hex[:16]}"
+        scanned = 0
+        zombies = 0
+        stalled = 0
+        events: list[dict[str, Any]] = []
+        now = self._clock()
+
+        for path in sorted(records_path.glob("*.json")) if records_path.exists() else []:
+            record = self.manager.load_record(path)
+            if record.get("status") not in self.HEARTBEAT_ACTIVE_STATUSES:
+                continue
+            scanned += 1
+            last_heartbeat_at = record.get("last_heartbeat_at") or record.get("started_at")
+            heartbeat_age = self._age_seconds(last_heartbeat_at, now)
+            if heartbeat_age >= hard_timeout_seconds:
+                zombies += 1
+                updated = self._mark_zombie(record, now, sweep_run_id, records_path / "archive")
+                self.manager.write_record(path, updated)
+                events.append(self._event(updated, "worker_zombie_detected", "error", sweep_run_id))
+                continue
+            estimated = record.get("estimated_seconds")
+            started_age = self._age_seconds(record.get("dispatched_at") or record.get("started_at"), now)
+            if isinstance(estimated, int) and estimated > 0 and started_age >= estimated * soft_timeout_factor and record.get("status") != "completed":
+                stalled += 1
+                updated = dict(record)
+                updated["sweeper_status"] = "likely_stalled"
+                updated["last_sweep_run_id"] = sweep_run_id
+                self.manager.write_record(path, updated)
+                events.append(self._event(updated, "worker_likely_stalled", "warning", sweep_run_id))
+
+        sweep_event = {
+            "schema_version": "orchestra.event.v1",
+            "seq": 0,
+            "timestamp": now.isoformat(),
+            "run_id": _run_id_from_events_path(Path(events_path)),
+            "task_id": None,
+            "stage": None,
+            "type": "sweep_run",
+            "severity": "info",
+            "status": "completed",
+            "message": "Worker session sweeper completed",
+            "artifact_refs": [],
+            "decision_id": None,
+            "sweep_run_id": sweep_run_id,
+            "scanned_sessions_count": scanned,
+            "zombie_count": zombies,
+            "stalled_count": stalled,
+        }
+        sweep_result_event = dict(sweep_event)
+        sweep_result_event["type"] = "sweep_result"
+        self._append_events(Path(events_path), [sweep_event, sweep_result_event, *events])
+        return {"sweep_run_id": sweep_run_id, "scanned_sessions_count": scanned, "zombie_count": zombies, "stalled_count": stalled}
 
     def _sweep_record(self, record: dict[str, Any]) -> dict[str, Any] | None:
         status = record["status"]
@@ -182,3 +249,75 @@ class WorkerSessionSweeper:
         except ValueError as exc:
             raise WorkerSessionSweeperError("record_invalid", f"invalid heartbeat timestamp: {heartbeat_at}") from exc
         return (self._clock() - heartbeat_time).total_seconds() >= timeout_seconds
+
+    def _mark_zombie(self, record: dict[str, Any], now: datetime, sweep_run_id: str, archive_root: Path) -> dict[str, Any]:
+        updated = dict(record)
+        updated["sweeper_status"] = "zombie"
+        updated["status"] = "timed_out"
+        updated["ended_at"] = now.isoformat()
+        updated["termination_reason"] = "heartbeat_timeout"
+        updated["cleanup_status"] = "cleaned"
+        updated["cleanup_attempted_at"] = now.isoformat()
+        updated["last_sweep_run_id"] = sweep_run_id
+        workspace_path = updated.get("workspace_path")
+        if isinstance(workspace_path, str) and workspace_path:
+            archive_root.mkdir(parents=True, exist_ok=True)
+            target = archive_root / Path(workspace_path).name
+            if Path(workspace_path).exists() and not target.exists():
+                shutil.move(workspace_path, target)
+            updated["workspace_archive_path"] = str(target)
+        self.manager.validate_record(updated)
+        return updated
+
+    def _age_seconds(self, timestamp: Any, now: datetime) -> float:
+        if not isinstance(timestamp, str) or not timestamp:
+            return float("inf")
+        return (now - datetime.fromisoformat(timestamp.replace("Z", "+00:00"))).total_seconds()
+
+    def _event(self, record: dict[str, Any], event_type: str, severity: str, sweep_run_id: str) -> dict[str, Any]:
+        return {
+            "schema_version": "orchestra.event.v1",
+            "seq": 0,
+            "timestamp": self._clock().isoformat(),
+            "run_id": record.get("run_id"),
+            "task_id": record.get("task_id"),
+            "stage": record.get("status"),
+            "type": event_type,
+            "severity": severity,
+            "status": record.get("sweeper_status"),
+            "message": event_type,
+            "artifact_refs": [record.get("workspace_ref")] if record.get("workspace_ref") else [],
+            "decision_id": None,
+            "session_id": record.get("session_id"),
+            "sweep_run_id": sweep_run_id,
+        }
+
+    def _append_events(self, path: Path, events: list[dict[str, Any]]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        seq = _next_event_seq(path)
+        with path.open("a", encoding="utf-8") as handle:
+            for event in events:
+                event["seq"] = seq
+                json.dump(event, handle, ensure_ascii=False)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+                seq += 1
+
+
+def _next_event_seq(path: Path) -> int:
+    if not path.exists():
+        return 1
+    seq = 0
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                seq = max(seq, int(json.loads(line).get("seq", 0)))
+    return seq + 1
+
+
+def _run_id_from_events_path(path: Path) -> str:
+    try:
+        return path.parent.name
+    except IndexError:
+        return ""

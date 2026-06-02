@@ -1353,7 +1353,7 @@
         "context_bundle_ref": {"$ref": "#/$defs/artifact_reference"},
         "started_at": {"$ref": "#/$defs/timestamp"},
         "ended_at": {"type": ["string", "null"]},
-        "status": {"enum": ["planned", "created", "dispatched", "starting", "running", "evidence_submitted", "gateway_verifying", "stopping", "completed", "rejected", "failed", "timed_out", "abandoned", "cleaned_up"]},
+        "status": {"enum": ["planned", "created", "dispatched", "starting", "running", "blocked", "evidence_submitted", "gateway_verifying", "stopping", "completed", "rejected", "failed", "timed_out", "abandoned", "cleaned_up"]},
         "exit_signal": {"type": ["string", "null"]},
         "transcript_ref": {"type": ["string", "null"]},
         "output_envelope_ref": {"type": ["string", "null"]},

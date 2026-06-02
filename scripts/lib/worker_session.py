@@ -20,7 +20,7 @@ class WorkerSessionError(Exception):
         self.message = message
 
 
-ACTIVE_SESSION_STATUSES = frozenset({"starting", "running", "stopping", "dispatched", "evidence_submitted", "gateway_verifying"})
+ACTIVE_SESSION_STATUSES = frozenset({"starting", "running", "blocked", "stopping", "dispatched", "evidence_submitted", "gateway_verifying"})
 TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "timed_out", "abandoned", "rejected", "cleaned_up"})
 
 
@@ -30,7 +30,8 @@ class WorkerSessionManager:
     ALLOWED_TRANSITIONS = {
         "planned": {"starting", "abandoned"},
         "starting": {"running", "failed", "timed_out", "abandoned"},
-        "running": {"stopping", "completed", "failed", "timed_out", "abandoned"},
+        "running": {"blocked", "stopping", "completed", "failed", "timed_out", "abandoned"},
+        "blocked": {"running", "stopping", "completed", "failed", "timed_out", "abandoned"},
         "stopping": {"completed", "failed", "timed_out", "abandoned"},
         "completed": set(),
         "failed": set(),
