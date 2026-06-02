@@ -25,11 +25,12 @@ my-pr-review <PR_NUMBER>
 ```
 
 - `PR_NUMBER`: GitHub PR 编号（如 `8`）
-- 当前目录必须是项目本地仓库，`gh` 会自动识别所属仓库
+- 当前目录必须是项目本地仓库
 
 ## 环境要求
 
-- `gh` CLI 已安装且已认证（`gh auth status` 通过）
+- `my-pr-skill` 已加载（所有 GitHub 操作由其 scripts/ 目录下的脚本完成）
+- `gh` CLI 已安装且已认证（由 `my-pr-skill` 底层脚本使用）
 - 当前目录 `${REPO_DIR}` 为项目本地仓库
 - 具有 `repo` 或 `pull_requests:write` 权限的 GitHub Token
 
@@ -40,11 +41,14 @@ my-pr-review <PR_NUMBER>
 | 变量 | 来源 |
 |------|------|
 | `${PR_NUMBER}` | 调用参数 `<PR_NUMBER>` |
-| `${OWNER}` | `gh repo view --json owner --jq '.owner.login'` |
-| `${REPO}` | `gh repo view --json name --jq '.name'` |
+| `${OWNER}` | `my-pr-skill` 脚本 `get-repo-info.sh --owner` |
+| `${REPO}` | `my-pr-skill` 脚本 `get-repo-info.sh --repo` |
 | `${REPO_DIR}` | 当前工作目录（`$(pwd)`） |
-| `${PR_URL}` | `gh pr view ${PR_NUMBER} --json url --jq '.url'` |
+| `${PR_URL}` | `my-pr-skill` 脚本 `get-pr-metadata.sh --number=N --field=url` |
 | `${REVIEW_DRAFT}` | `${REPO_DIR}/.tmp/pr-review-draft-${PR_NUMBER}.md` |
+| `${MY_PR_SKILL_SCRIPTS}` | `my-pr-skill` 的 scripts 目录路径 |
+
+---
 
 ## 执行流程
 
@@ -52,40 +56,19 @@ my-pr-review <PR_NUMBER>
 
 **步骤 A — 加载技能并读取 PR 元数据**
 
-收集 PR 基本信息：
-   ```bash
-   cd ${REPO_DIR}
-   OWNER=$(gh repo view --json owner --jq '.owner.login')
-   REPO=$(gh repo view --json name --jq '.name')
-   PR_URL=$(gh pr view ${PR_NUMBER} --json url --jq '.url')
-   gh pr view ${PR_NUMBER} --json number,title,body,author,headRefName,baseRefName,createdAt,updatedAt,mergeable,mergeStateStatus,changedFiles,additions,deletions
-   ```
+通过 `my-pr-skill` 获取仓库信息（`${OWNER}`、`${REPO}`）和 PR 元数据（`${PR_URL}`、完整 metadata JSON）。
 
 **步骤 B — 读取 PR 完整 diff**
 
-```bash
-mkdir -p ${REPO_DIR}/.tmp
-gh pr diff ${PR_NUMBER} > ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-diff.patch
-grep -E "^\+\+\+ b/" ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-diff.patch | sed 's/+++ b\///' > ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-files.txt
-```
+通过 `my-pr-skill` 的 `get-pr-diff.sh` 获取 PR diff 及变更文件列表。
 
 **步骤 C — 读取已有 Review Comments（避免重复评论）**
 
-```bash
-gh api repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments \
-  --jq '.[] | {id: .id, body: .body, user: .user.login, created_at: .created_at}' \
-  > ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-existing-comments.json
-
-gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
-  --jq '.[] | {id: .id, state: .state, body: .body, user: .user.login}' \
-  > ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-existing-reviews.json
-```
+通过 `my-pr-skill` 的 `get-pr-reviews.sh` 和 `get-pr-comments.sh` 获取已有 reviews 和 issue comments。
 
 **步骤 D — 读取相关上下文**
 
-```bash
-gh pr view ${PR_NUMBER} --json body | grep -oE '(docs/adr/[^ ]+|\.planning/specs/[^ ]+|#\d+)' | sort -u > ${REPO_DIR}/.tmp/pr-${PR_NUMBER}-refs.txt
-```
+从 PR body 中提取引用的文档路径和关联 issue，保存到本地引用列表。
 
 ---
 
@@ -165,12 +148,12 @@ gh pr view ${PR_NUMBER} --json body | grep -oE '(docs/adr/[^ ]+|\.planning/specs
 
 **步骤 A — 生成本地 Review Draft**
 
-写入 `${REVIEW_DRAFT}`：
+写入 `${REVIEW_DRAFT}`，内容模板如下：
 ```markdown
 # PR Review: ${PR_URL}
 - Reviewer: stark-008
-- Timestamp: $(date -Iseconds)
-- Commit Reviewed: $(gh pr view ${PR_NUMBER} --json headRefOid --jq .headRefOid)
+- Timestamp: [ISO 8601 时间戳]
+- Commit Reviewed: [PR head commit SHA]
 
 ## 摘要
 - 检查项总计: N | PASS: X | FAIL: Y | N/A: Z
@@ -183,21 +166,9 @@ gh pr view ${PR_NUMBER} --json body | grep -oE '(docs/adr/[^ ]+|\.planning/specs
 
 **步骤 B — 提交 Review**
 
-如果有 FAIL 项（REQUEST_CHANGES）：
-```bash
-gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
-  --method POST \
-  --field event=REQUEST_CHANGES \
-  --field body="$(cat ${REVIEW_DRAFT})"
-```
-
-如果全部 PASS（review approved comment）：
-```bash
-gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
-  --method POST \
-  --field event=COMMENT \
-  --field body="✅ Review approved. All ${N} criteria checked, 0 blockers. Evidence verified. Ready for merge."
-```
+通过 `my-pr-skill` 的 `submit-review.sh` 提交 review。
+- 如有 FAIL 项：使用 `--event=REQUEST_CHANGES`，body 为 Review Draft 全文。
+- 如全部 PASS：使用 `--event=COMMENT`，body 为 approved 说明。
 
 ---
 
@@ -214,10 +185,7 @@ gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
 
 **如果允许合并：**
 在 review comment 中明确告知用户："✅ Review approved. 满足所有合并条件，请手动执行合并。"
-用户自行执行：
-```bash
-gh pr merge ${PR_NUMBER} --squash --delete-branch=false
-```
+通过 `my-pr-skill` 的 `manage-pr.sh --checks` 确认 PR 状态。合并由用户手动执行。
 
 **如果拒绝合并：**
 已通过 REQUEST_CHANGES + review body 中的发现项表达拒绝原因。
@@ -244,7 +212,7 @@ gh pr merge ${PR_NUMBER} --squash --delete-branch=false
 ### 阶段 7：止损条件（BLOCKED STOP）
 
 **立即停止并报告的情况：**
-- `gh` CLI 无法读取 PR 或提交 review（权限不足、token 过期）
+- `my-pr-skill` 脚本无法读取 PR 或提交 review（权限不足、token 过期）
 - PR diff 超过 5000 行（超出合理 review 范围）
 - 测试脚本因环境问题持续失败 3 次
 - 发现敏感信息泄露 → 立即提交 REJECT review（body 直接说明）

@@ -31,7 +31,8 @@ my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
 ## 环境要求
 
 - `git` 已安装且配置好用户身份
-- `gh` CLI 已安装且已认证（`gh auth status` 通过）
+- `my-pr-skill` 已加载（所有 GitHub 操作由其 scripts/ 目录下的脚本完成）
+- `gh` CLI 已安装且已认证（由 `my-pr-skill` 底层脚本使用）
 - 当前目录 `${REPO_DIR}` 为项目本地仓库
 - 具有 `repo` 权限的 GitHub Token（用于发起 PR）
 
@@ -56,8 +57,9 @@ my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
 | `${PR_BODY_FILE}` | `/tmp/pr-body-sprint${SPRINT}.md` |
 | `${DEBUG_LOG}` | `/tmp/sprint${SPRINT}-debug.log` |
 | `${WORKTREE_DIR}` | `/tmp/wt-sprint${SPRINT}` |
-| `${OWNER}` | `gh repo view --json owner --jq '.owner.login'` |
-| `${REPO}` | `gh repo view --json name --jq '.name'` |
+| `${OWNER}` | `my-pr-skill` 脚本 `get-repo-info.sh --owner` |
+| `${REPO}` | `my-pr-skill` 脚本 `get-repo-info.sh --repo` |
+| `${MY_PR_SKILL_SCRIPTS}` | `my-pr-skill` 的 scripts 目录路径 |
 
 ---
 
@@ -74,33 +76,15 @@ my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
 
 **步骤 A — 环境准备**
 
-```bash
-cd ${REPO_DIR}
-git fetch origin
-# 确认 base 分支最新
-git checkout ${BASE_BRANCH}
-git pull origin ${BASE_BRANCH}
-```
+拉取远程更新并确保 `${BASE_BRANCH}` 为最新。
 
 **步骤 B — 创建/切换分支**
 
-```bash
-# 如果分支不存在，从 main 创建
-git checkout -b ${BRANCH} 2>/dev/null || git checkout ${BRANCH}
-# 如果分支已存在但落后 main，rebase
-git rebase ${BASE_BRANCH} || (git rebase --abort && echo "Rebase failed, manual merge needed")
-```
+从 `${BASE_BRANCH}` 创建或切换至 `${BRANCH}`，如分支已存在则尝试 rebase。
 
 **步骤 C — Worktree 模式（可选，仅在需要时）**
 
-```bash
-# 创建 worktree（用于隔离验证或并行开发）
-git worktree add ${WORKTREE_DIR} ${BRANCH}
-cd ${WORKTREE_DIR}
-# 使用完毕后必须清理：
-# git worktree remove ${WORKTREE_DIR}
-# git worktree prune
-```
+如需隔离验证或并行开发，可通过 git worktree 在 `${WORKTREE_DIR}` 创建独立工作区（使用完毕后清理）。
 
 **步骤 D — 提交规范（Conventional Commits）**
 
@@ -111,17 +95,7 @@ cd ${WORKTREE_DIR}
 
 **步骤 E — 推送与 PR**
 
-```bash
-# 首次推送并建立追踪
-git push -u origin ${BRANCH}
-# 发起 PR（如果尚未存在）
-gh pr create \
-  --title "feat(sprint-${SPRINT}): ${PR_TITLE}" \
-  --body-file ${PR_BODY_FILE} \
-  --base ${BASE_BRANCH} \
-  --head ${BRANCH} \
-  --repo ${OWNER}/${REPO} 2>/dev/null || echo "PR may already exist"
-```
+推送代码后，通过 `my-pr-skill` 的 `manage-pr.sh` 发起 PR。
 
 **步骤 F — 冲突处理（如果 rebase/push 遇到冲突）**
 
@@ -246,7 +220,7 @@ which gbrain && gbrain --version || echo "gbrain not available, using degraded p
 - Sprint `${SPRINT}` 前置依赖文件缺失（如 Sprint `${PREV_SPRINT}` 交付物不存在）
 - `config/knowledge/runtime-kb.json` 缺失或 schema 验证失败（项目特定，根据实际调整）
 - `gbrain` 不可用且降级路径也无法实现（如 Sprint 有特殊依赖）
-- `gh` CLI 不可用且无法生成手动 PR 指令
+- `my-pr-skill` 脚本不可用且无法生成手动 PR 指令
 - `git rebase` 冲突无法自动解决
 - worktree 创建失败或清理失败
 
