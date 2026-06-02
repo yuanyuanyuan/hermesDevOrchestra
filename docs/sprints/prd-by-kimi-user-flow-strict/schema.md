@@ -87,6 +87,42 @@ debate:
 - `approve_l3_l4`
 - `apply_self_evolution`
 
+### `actor_token`
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| `actor_type` | string | `kimi` / `gateway` / `hermes_agents` / `claude_codex` / `user` |
+| `actor_id` | string | `^[a-z0-9_-]{3,64}$` |
+| `timestamp` | integer | Unix 秒级时间戳，有效期 300 秒，允许 30 秒时钟漂移 |
+| `signature` | string | `hmac_sha256(secret, actor_type + actor_id + timestamp)` |
+| `approval_level` | string/null | 可选，`L3` / `L4` |
+| `protected_target_pattern` | string/null | L4 protected target 白名单，可选 |
+
+Gateway 从 `X-Actor-Token` 读取 base64 编码 token，校验 HMAC、过期时间和 revoked-token 缓存。
+
+### `authority_matrix_view`
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| `<capability>` | string | `allowed` / `blocked` / `requires_approval` |
+
+该视图按当前 actor 投影 `config/decisions/authority-matrix.json` 的 8 类能力结果。未定义 capability 必须 fail closed，返回 `capability_not_defined`。
+
+### `projection_response`
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| `projection_schema_version` | string | 固定为 `1.0.0` |
+| `run` | object | Run 级元数据，含 `intake_projection` |
+| `tasks` | array | Task 投影，含 `assigned_actor`、`write_scope`、`evidence_refs` / artifact refs |
+| `artifacts` | array | Artifact id、类型、state path、checksum |
+| `decisions` | array | Decision id、type、actor、timestamp、rationale、approval_level |
+| `audits` | array | 来自 `audit.jsonl` 的 run-scoped 审计事件 |
+| `events` | array | 来自 `events.jsonl` 的 workflow event |
+| `authority_matrix_view` | object | 当前 actor 对 8 类能力的投影视图 |
+
+HTTP 响应头必须包含 `X-Projection-Schema-Version: 1.0.0`。
+
 ### `intake_package`
 
 | 字段 | 类型 | 约束 |

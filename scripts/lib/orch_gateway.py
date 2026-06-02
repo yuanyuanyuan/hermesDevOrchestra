@@ -21,8 +21,10 @@ from urllib import request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
 from atomic_writer import AtomicWriter
+from actor_auth import ActorAuthError, load_actor_secrets, load_authority_matrix, mutate_raw_kanban_state, worker_advance_denied
 from blocker_validator import validate as _completion_bundle_validate
 from debate_report import validate_artifact_definition
+from run_projection import PROJECTION_SCHEMA_VERSION, projection_response, refresh_projection_response
 from runtime_activation import RuntimeActivation, RuntimeActivationError
 
 try:
@@ -301,6 +303,14 @@ class GatewayApp:
         self.upstream_api_url = upstream_api_url
         self.repo_root = Path(__file__).resolve().parents[2]
         self.runtime_activation = RuntimeActivation(self.repo_root)
+        try:
+            self.authority_matrix = load_authority_matrix(self.repo_root)
+            self.actor_secrets = load_actor_secrets(self.repo_root)
+        except ActorAuthError as exc:
+            print(f"FATAL: {exc.code}: {exc.message}", file=sys.stderr)
+            raise SystemExit(1) from exc
+        self.revoked_actor_tokens: set[str] = set()
+        print("authority_matrix_loaded: 8 capabilities", file=sys.stderr)
         self.recover_in_progress_commands()
 
     def _intake_pipeline_fallback_reason(self, payload: dict[str, Any], request_type: str, run_id: str | None = None) -> str | None:
@@ -435,8 +445,11 @@ class GatewayApp:
             "GET /orchestra/capabilities",
             "POST /orchestra/runs",
             "GET /orchestra/runs/{run_id}",
+            "GET /orchestra/runs/{run_id}/projection",
+            "POST /orchestra/runs/{run_id}/projection",
             "GET /orchestra/runs/{run_id}/events",
             "GET /orchestra/runs/{run_id}/tasks",
+            "POST /orchestra/kanban/raw-state",
             "POST /orchestra/runs/{run_id}/stop",
             "POST /orchestra/runs/{run_id}/worker-outputs",
             "POST /orchestra/runs/{run_id}/verdicts",
@@ -470,10 +483,11 @@ class GatewayApp:
                 "schema_version": SCHEMA_VERSION,
             },
             "authority_model": {
-                "phase": "phase_1",
-                "trust_boundary": "localhost_only",
-                "authentication": "none",
-                "authority_field_is_advisory_within_loopback": True,
+                "phase": "phase_2",
+                "trust_boundary": "actor_token",
+                "authentication": "hmac_actor_token",
+                "capability_count": len(self.authority_matrix["capabilities"]),
+                "matrix_ref": "config/decisions/authority-matrix.json",
             },
             "upstream_api": {
                 "url": self.upstream_api_url,
@@ -4138,6 +4152,9 @@ class GatewayApp:
         task = self.find_projected_task(tasks, task_id)
         if task is None:
             return 404, self.error("not_found", "task not found")
+        denied = worker_advance_denied(self, payload.get("actor_token"), task, payload.get("assignment_token"))
+        if denied is not None:
+            return denied
 
         violations = self.worker_response_schema_violations(worker_response)
         failure_class = "schema_mismatch"
@@ -5707,6 +5724,9 @@ class GatewayApp:
                     "stage": stage,
                     "title": title,
                     "status": "queued",
+                    "assigned_actor": "claude_codex" if stage in {"implementation", "improvement"} else "gateway",
+                    "assignment_token": f"assignment-{task_id}",
+                    "write_scope": ["scripts/**", "docs/**", "config/**"],
                     "kanban_ref": kanban_ref,
                     "workflow_parent_kanban_ref": parent_kanban_ref,
                     "parents": [] if index == 1 else [f"{run_id}-{STAGES[index - 2]}"],
@@ -5970,6 +5990,11 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 status, body = self.app.run_status(run_id)
                 self.send_json(status, body)
                 return
+            if child == "projection":
+                status, body = projection_response(self.app, run_id, self.headers.get("X-Actor-Token"))
+                extra = {"X-Projection-Schema-Version": PROJECTION_SCHEMA_VERSION} if status == 200 else None
+                self.send_json(status, body, extra)
+                return
             if child == "events":
                 query = parse_qs(parsed.query)
                 since_seq = self.int_query(query, "since_seq", 0)
@@ -6002,6 +6027,14 @@ class GatewayHandler(BaseHTTPRequestHandler):
             status, body = self.app.create_run(payload)
             self.send_json(status, body)
             return
+        if parsed.path == "/orchestra/kanban/raw-state":
+            payload = self.read_json_body()
+            if payload is None:
+                self.send_json(400, self.app.error("invalid_json", "request body must be JSON"))
+                return
+            status, body = mutate_raw_kanban_state(self.app, payload, self.headers.get("X-Actor-Token"))
+            self.send_json(status, body)
+            return
         module_route = self.module_route(parsed.path)
         if module_route:
             module, operation = module_route
@@ -6015,6 +6048,15 @@ class GatewayHandler(BaseHTTPRequestHandler):
         route = self.run_route(parsed.path)
         if route:
             run_id, child = route
+            if child == "projection":
+                payload = self.read_json_body()
+                if payload is None:
+                    self.send_json(400, self.app.error("invalid_json", "request body must be JSON"))
+                    return
+                status, body = refresh_projection_response(self.app, run_id, payload, self.headers.get("X-Actor-Token"))
+                extra = {"X-Projection-Schema-Version": PROJECTION_SCHEMA_VERSION} if status == 200 else None
+                self.send_json(status, body, extra)
+                return
             if child == "stop":
                 payload = self.read_json_body()
                 if payload is None:
@@ -6078,7 +6120,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
         parts = [part for part in path.split("/") if part]
         if len(parts) == 3 and parts[:2] == ["orchestra", "runs"]:
             return parts[2], None
-        if len(parts) == 4 and parts[:2] == ["orchestra", "runs"] and parts[3] in {"events", "tasks", "stop", "worker-outputs", "verdicts", "global-evaluations", "closeout", "failures"}:
+        if len(parts) == 4 and parts[:2] == ["orchestra", "runs"] and parts[3] in {"projection", "events", "tasks", "stop", "worker-outputs", "verdicts", "global-evaluations", "closeout", "failures"}:
             return parts[2], parts[3]
         return None
 
@@ -6109,10 +6151,12 @@ class GatewayHandler(BaseHTTPRequestHandler):
             return None
         return data if isinstance(data, dict) else None
 
-    def send_json(self, status: int, body: dict[str, Any]) -> None:
+    def send_json(self, status: int, body: dict[str, Any], headers: dict[str, str] | None = None) -> None:
         payload = json_bytes(body)
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         if body.get("fallback"):
             self.send_header("x-gateway-fallback", "heuristic" if body["fallback"] == "FALLBACK_HEURISTIC" else body["fallback"])
         self.send_header("Content-Length", str(len(payload)))

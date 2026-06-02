@@ -14,6 +14,20 @@ Legend:
 
 Kimi and Human are decision actors. Gateway is the state and execution authority boundary. Workers and backends produce evidence or perform scoped work only after Gateway dispatch.
 
+## Actor Token Claims
+
+Gateway Projection and Kanban authority routes require `X-Actor-Token`. The token payload includes `actor_type`, `actor_id`, timestamp, HMAC signature, and optional approval claims.
+
+| Claim | Required | Notes |
+|---|---:|---|
+| `actor_type` | yes | One of `kimi`, `gateway`, `hermes_agents`, `claude_codex`, `user`. |
+| `actor_id` | yes | Stable actor id, 3-64 lowercase-friendly characters. |
+| `timestamp` | yes | Valid for 300 seconds plus 30 seconds skew. |
+| `approval_level` | no | `L3` or `L4` for approval tokens. |
+| `protected_target_pattern` | no | Required with L4 approval when the approval applies only to specific protected targets. |
+
+Capability routes are loaded from `config/decisions/authority-matrix.json`; undefined capabilities fail closed with `capability_not_defined`.
+
 | Capability | Kimi | Human | Gateway | Worker / Backend | Notes |
 |---|---|---|---|---|---|
 | Create Run | request | request via local client or Kimi | validate/enforce, execute | no | Gateway creates one Active Run per project. |
