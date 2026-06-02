@@ -25,11 +25,12 @@ my-pr-review-response <PR_NUMBER>
 ```
 
 - `PR_NUMBER`: GitHub PR 编号（如 `8`）
-- 当前目录必须是项目本地仓库，`gh` 会自动识别所属仓库
+- 当前目录必须是项目本地仓库
 
 ## 环境要求
 
-- `gh` CLI 已安装且已认证（`gh auth status` 通过）
+- `my-pr-skill` 已加载（所有 GitHub 操作由其 scripts/ 目录下的脚本完成）
+- `gh` CLI 已安装且已认证（由 `my-pr-skill` 底层脚本使用）
 - 当前目录 `${REPO_DIR}` 为项目本地仓库
 - 本地仓库有 PR 分支的写权限
 - 具有 `repo` 或 `pull_requests:write` 权限的 GitHub Token
@@ -41,11 +42,12 @@ my-pr-review-response <PR_NUMBER>
 | 变量 | 来源 |
 |------|------|
 | `${PR_NUMBER}` | 调用参数 `<PR_NUMBER>` |
-| `${OWNER}` | `gh repo view --json owner --jq '.owner.login'` |
-| `${REPO}` | `gh repo view --json name --jq '.name'` |
-| `${BRANCH}` | `gh pr view ${PR_NUMBER} --json headRefName --jq '.headRefName'` |
+| `${OWNER}` | `my-pr-skill` 脚本 `get-repo-info.sh --owner` |
+| `${REPO}` | `my-pr-skill` 脚本 `get-repo-info.sh --repo` |
+| `${BRANCH}` | `my-pr-skill` 脚本 `get-pr-metadata.sh --number=N --field=headRefName` |
 | `${REPO_DIR}` | 当前工作目录（`$(pwd)`） |
 | `${REVIEW_LOG}` | `${REPO_DIR}/.tmp/pr-review-response-${PR_NUMBER}.md` |
+| `${MY_PR_SKILL_SCRIPTS}` | `my-pr-skill` 的 scripts 目录路径 |
 
 ---
 
@@ -55,46 +57,15 @@ my-pr-review-response <PR_NUMBER>
 
 **步骤 A — 读取 PR 元数据**
 
-```bash
-cd ${REPO_DIR}
-OWNER=$(gh repo view --json owner --jq '.owner.login')
-REPO=$(gh repo view --json name --jq '.name')
-BRANCH=$(gh pr view ${PR_NUMBER} --json headRefName --jq '.headRefName')
-gh pr view ${PR_NUMBER} --json number,title,body,headRefName,baseRefName,reviewDecision,mergeable
-```
+通过 `my-pr-skill` 获取仓库信息（`${OWNER}`、`${REPO}`）、PR 分支名（`${BRANCH}`）和完整 PR 元数据。
 
 **步骤 B — 读取 Review 意见**
 
-获取该 PR 上最新的 REQUEST_CHANGES review（提取问题列表）以及所有 PR comments：
-
-```bash
-mkdir -p ${REPO_DIR}/.tmp
-gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
-  --jq '.[] | {id: .id, state: .state, body: .body, user: .user.login, submitted_at: .submitted_at}' \
-  > ${REPO_DIR}/.tmp/pr-reviews-${PR_NUMBER}.json
-
-gh api repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments \
-  --jq '.[] | {id: .id, body: .body, user: .user.login, created_at: .created_at}' \
-  > ${REPO_DIR}/.tmp/pr-comments-${PR_NUMBER}.json
-```
-
-重点关注 `state == "CHANGES_REQUESTED"` 的 review body 中的发现项清单。
-
-**步骤 C — 读取 PR reviews 整体状态**
-
-```bash
-gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
-  --jq '.[] | {id: .id, state: .state, user: .user.login, body: .body}' \
-  > ${REPO_DIR}/.tmp/pr-reviews-${PR_NUMBER}.json
-```
+通过 `my-pr-skill` 获取 reviews 和 issue comments，重点关注 `state == "CHANGES_REQUESTED"` 的 review body 中的发现项清单。
 
 **步骤 D — 读取 PR diff 并 checkout 分支**
 
-```bash
-gh pr diff ${PR_NUMBER} > ${REPO_DIR}/.tmp/pr-diff-${PR_NUMBER}.patch
-git fetch origin ${BRANCH}
-git checkout ${BRANCH}
-```
+通过 `my-pr-skill` 获取 PR diff，并切换至 PR 分支 `${BRANCH}`。
 
 ---
 
@@ -134,26 +105,11 @@ git checkout ${BRANCH}
 
 **步骤 C — 在 PR 下回复修复结果（发 Comment）**
 
-修复提交后，针对该问题发一条 PR comment 说明：
-
-```bash
-gh pr comment ${PR_NUMBER} --body "✅ 已修复 review 意见。
-
-**文件**: ${FILE_PATH}:${LINE_NUM}
-**问题**: ${ISSUE_SUMMARY}
-
-**修改内容**: ${CHANGE_SUMMARY}
-**验证**: ${VERIFY_COMMAND} 结果 exit 0。
-**Commit**: $(git rev-parse HEAD)"
-```
+通过 `my-pr-skill` 的 `post-comment.sh` 发送修复结果 comment，包含文件路径、修改摘要、验证结果和 commit SHA。
 
 **步骤 D — 提交代码**
 
-```bash
-git add .
-git commit -m "fix(review): address review finding on ${FILE_PATH}:${LINE_NUM} — ${BRIEF_DESC}"
-git push origin ${BRANCH}
-```
+将修复提交并推送至远程分支 `${BRANCH}`。
 
 **步骤 E — 标记响应**
 
@@ -196,17 +152,7 @@ git push origin ${BRANCH}
 
 **步骤 B — 发 PR Comment 进行反驳**
 
-```bash
-gh pr comment ${PR_NUMBER} --body "❌ 不同意此 review 意见。
-
-**文件**: ${FILE_PATH}:${LINE_NUM}
-**问题**: ${ISSUE_SUMMARY}
-
-**理由**: ${COUNTER_REASON}
-**证据**: ${EVIDENCE}
-
-请 reviewer 重新考虑。"
-```
+通过 `my-pr-skill` 的 `post-comment.sh` 发送反驳 comment，包含理由和证据。
 
 **步骤 C — 标记响应**
 
@@ -245,19 +191,16 @@ gh pr comment ${PR_NUMBER} --body "❌ 不同意此 review 意见。
 请 reviewer 重新 review。如有需要，可点击 "Re-request review" 按钮。
 ```
 
-**步骤 B — 发送 Review Response 汇总报告（PR Comment）**
+**步骤 B — 发送 Review Response 汇总报告（PR Comment）并更新标签**
 
-```bash
-gh pr comment ${PR_NUMBER} --body-file ${REPO_DIR}/.tmp/pr-response-summary-${PR_NUMBER}.md
-gh pr edit ${PR_NUMBER} --add-label "awaiting-review"
-```
+通过 `my-pr-skill` 的 `post-comment.sh` 发送汇总报告，并通过 `manage-pr.sh` 更新标签为 `awaiting-review`。
 
 注意：PR 作者无法通过 API 触发 "Re-request review" 按钮（这是 GitHub UI 功能），但可以在汇总评论中 @ 原 reviewer。
 
 **步骤 C — 验证 PR 可合并状态**
 - 运行完整测试套件确认无回归
 - 确认无未解决的合并冲突
-- 确认 CI 状态（如果有）
+- 确认 CI 状态（通过 `my-pr-skill` 的 `manage-pr.sh --checks --number=${PR_NUMBER}`）
 
 ---
 
@@ -290,7 +233,7 @@ gh pr edit ${PR_NUMBER} --add-label "awaiting-review"
 - review 意见涉及文件不在当前 PR 中，且无法定位
 - 修复后测试持续失败 3 次，且失败与 review 修复无关
 - reviewer 意见自相矛盾，无法同时满足
-- `gh` CLI 不可用，无法发 comment 或推送代码
+- `my-pr-skill` 脚本不可用，无法发 comment 或推送代码
 - PR 存在未解决的合并冲突，无法推送修复
 - 无法从 review body 中解析出明确的问题清单
 

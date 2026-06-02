@@ -1,3 +1,5 @@
 .mycodemap/
 __pycache__/
 *.pyc
+.tmp/
+.logs/
