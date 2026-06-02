@@ -11,6 +11,7 @@ from write_scope_validator import WriteScopeError, compute_expected_write_scope,
 
 
 def dispatch_task(app: Any, run_id: str, task_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    """Create a Gateway-owned worker session and dispatch token for a ready task."""
     run_path = app.store.run_path(run_id)
     tasks_path = app.store.tasks_path(run_id)
     if not run_path.exists() or not tasks_path.exists():
@@ -84,6 +85,7 @@ def dispatch_task(app: Any, run_id: str, task_id: str, payload: dict[str, Any]) 
 
 
 def submit_completion_payload(app: Any, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    """Validate a worker completion payload against dispatch token, write scope, and evidence gates."""
     task_id = payload.get("task_id")
     completion = payload.get("completion_payload")
     if not isinstance(task_id, str) or not isinstance(completion, dict):
@@ -108,9 +110,9 @@ def submit_completion_payload(app: Any, run_id: str, payload: dict[str, Any]) ->
             completion.get("reported_write_scope", []),
             completion.get("file_manifest", []),
         )
-        evidence_result = validate_completion_evidence(completion, artifact_refs=set(completion.get("evidence_refs", [])))
+        evidence_result = validate_completion_evidence(completion)
     except (WorkerSessionError, WriteScopeError, EvidenceGateError) as exc:
-        _append_jsonl(app.store.audit_path(), _audit(run_id, task_id, "write_scope_check", getattr(exc, "code", "failed"), getattr(exc, "violations", [])))
+        _append_jsonl(app.store.audit_path(), _audit(run_id, task_id, _failure_event_type(exc), getattr(exc, "code", "failed"), getattr(exc, "violations", [])))
         return 200, {"schema_version": app.schema_version, "run_id": run_id, "task_id": task_id, "gate_result": "blocked", "failure_class": exc.code}
 
     now = record.get("created_at")
@@ -118,7 +120,7 @@ def submit_completion_payload(app: Any, run_id: str, payload: dict[str, Any]) ->
     _write_json(app.store.tasks_path(run_id), tasks)
     _append_jsonl(app.store.audit_path(), _audit(run_id, task_id, "write_scope_check", "passed", []))
     _append_jsonl(app.store.audit_path(), _audit(run_id, task_id, "evidence_gate_result", "passed", []))
-    return {"completed": (200, {"schema_version": app.schema_version, "run_id": run_id, "task_id": task_id, "gate_result": "accepted", "updated_at": now})}["completed"]
+    return 200, {"schema_version": app.schema_version, "run_id": run_id, "task_id": task_id, "gate_result": "accepted", "updated_at": now}
 
 
 def _default_actor(task: dict[str, Any]) -> str:
@@ -135,6 +137,14 @@ def _actor_matches_assignment(actor: Any, assigned_actor: str) -> bool:
 
 def _audit(run_id: str, task_id: str, event_type: str, result: str, violations: list[str]) -> dict[str, Any]:
     return {"type": event_type, "run_id": run_id, "task_id": task_id, "result": result, "violations": violations}
+
+
+def _failure_event_type(exc: Exception) -> str:
+    if isinstance(exc, WorkerSessionError):
+        return "dispatch_token_check"
+    if isinstance(exc, EvidenceGateError):
+        return "evidence_gate_check"
+    return "write_scope_check"
 
 
 def _read_json(path: Path) -> dict[str, Any]:

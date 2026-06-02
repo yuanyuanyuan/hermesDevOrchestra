@@ -12,6 +12,7 @@ class EvidenceGateError(Exception):
 
 
 def validate_completion_evidence(payload: dict[str, Any], artifact_refs: set[str] | None = None) -> dict[str, Any]:
+    """Validate required completion evidence and ensure evidence_refs resolve to known artifacts."""
     missing = [field for field in ["test_evidence", "review_evidence", "commit_evidence"] if not isinstance(payload.get(field), dict) or not payload.get(field)]
     if missing:
         raise EvidenceGateError("evidence_missing", "completion payload is missing required evidence", missing)

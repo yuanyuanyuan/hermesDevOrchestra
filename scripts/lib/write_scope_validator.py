@@ -15,6 +15,7 @@ class WriteScopeError(Exception):
 
 
 def normalize_path(value: Any) -> str:
+    """Normalize a relative repository path and reject traversal or absolute paths."""
     if not isinstance(value, str) or not value.strip():
         raise WriteScopeError("write_scope_violation", "write scope path must be a non-empty string", ["path"])
     if os.path.isabs(value):
@@ -26,12 +27,14 @@ def normalize_path(value: Any) -> str:
 
 
 def normalize_scope(scope: Any) -> list[str]:
+    """Return a sorted, de-duplicated write scope after validating each path."""
     if not isinstance(scope, list):
         raise WriteScopeError("write_scope_violation", "write scope must be a list", ["write_scope"])
     return sorted({normalize_path(item) for item in scope})
 
 
 def compute_expected_write_scope(tasks: list[dict[str, Any]], task_id: str) -> list[str]:
+    """Compute the target task write scope and reject overlaps within its parallel boundary."""
     target = next((task for task in tasks if isinstance(task, dict) and task.get("task_id") == task_id), None)
     if target is None:
         raise WriteScopeError("task_not_found", "task not found", [task_id])
@@ -58,6 +61,7 @@ def validate_completion_scope(
     reported_write_scope: list[str],
     file_manifest: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    """Validate reported writes and manifest hashes against the Gateway-computed scope."""
     expected = set(normalize_scope(computed_write_scope))
     reported = set(normalize_scope(reported_write_scope))
     extra_reported = sorted(reported - expected)
