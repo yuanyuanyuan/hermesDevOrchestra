@@ -98,4 +98,93 @@ data = json.load(open(sys.argv[1], encoding="utf-8"))
 assert data["handoff_ref"]
 PY
 
+init_project handoff-dispatch
+PORT="$(python3 - <<'PY'
+import socket
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)"
+BASE_URL="http://127.0.0.1:$PORT"
+GATEWAY_LOG="$TMP_DIR/gateway-dispatch.log"
+"$REPO_ROOT/scripts/bin/orch-gateway" --project-id handoff-dispatch --host 127.0.0.1 --port "$PORT" >"$GATEWAY_LOG" 2>&1 &
+GATEWAY_PID="$!"
+trap 'kill "$GATEWAY_PID" 2>/dev/null || true; rm -rf "$TMP_DIR"' EXIT
+
+python3 - "$BASE_URL" "$GATEWAY_LOG" "$TMP_DIR/dispatch-create.json" "$TMP_DIR/dispatch-tasks.json" "$TMP_DIR/direct-advance.json" "$TMP_DIR/dispatch-response.json" <<'PY'
+import json
+import sys
+import time
+import urllib.error
+import urllib.request
+
+base_url, log_path, create_path, tasks_path, advance_path, dispatch_path = sys.argv[1:]
+deadline = time.time() + 5
+while time.time() < deadline:
+    try:
+        with urllib.request.urlopen(f"{base_url}/health", timeout=0.5) as response:
+            if response.status == 200:
+                break
+    except Exception:
+        time.sleep(0.1)
+else:
+    print(open(log_path, encoding="utf-8", errors="replace").read(), file=sys.stderr)
+    raise SystemExit("gateway did not become healthy")
+
+payload = {
+    "idempotency_key": "handoff-dispatch-create",
+    "ticket": {
+        "background": "dispatch authority",
+        "goal": "dispatch tasks through Gateway",
+        "deliverables": ["dispatch token"],
+        "acceptance_criteria": ["direct advance is blocked"],
+        "hard_constraints": [],
+        "soft_constraints": [],
+        "related_tasks": [],
+        "failure_strategy": "block"
+    },
+    "options": {"mode": "mvp_full"}
+}
+request = urllib.request.Request(f"{base_url}/orchestra/runs", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
+with urllib.request.urlopen(request, timeout=5) as response:
+    create = json.loads(response.read().decode())
+with urllib.request.urlopen(f"{base_url}/orchestra/runs/{create['run_id']}/tasks", timeout=5) as response:
+    tasks = json.loads(response.read().decode())
+task = next(item for item in tasks["tasks"] if item["stage"] == "implementation")
+
+advance_req = urllib.request.Request(
+    f"{base_url}/orchestra/runs/{create['run_id']}/tasks/{task['task_id']}/advance",
+    data=b"{}",
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    urllib.request.urlopen(advance_req, timeout=5)
+except urllib.error.HTTPError as exc:
+    direct = json.loads(exc.read().decode())
+    assert exc.code == 400, exc.code
+else:
+    raise AssertionError("direct advance should fail")
+assert direct["error"]["code"] == "dispatch_token_required", direct
+
+dispatch_req = urllib.request.Request(
+    f"{base_url}/orchestra/runs/{create['run_id']}/tasks/{task['task_id']}/dispatch",
+    data=json.dumps({"actor": "codex"}).encode(),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+with urllib.request.urlopen(dispatch_req, timeout=5) as response:
+    dispatched = json.loads(response.read().decode())
+assert response.status == 200
+assert dispatched["dispatch_token"], dispatched
+assert dispatched["computed_write_scope"], dispatched
+assert dispatched["workspace_path"], dispatched
+
+for path, body in [(create_path, create), (tasks_path, tasks), (advance_path, direct), (dispatch_path, dispatched)]:
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(body, handle, indent=2)
+        handle.write("\n")
+PY
+
 test_done

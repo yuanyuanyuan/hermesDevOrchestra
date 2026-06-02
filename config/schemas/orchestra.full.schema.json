@@ -1353,7 +1353,7 @@
         "context_bundle_ref": {"$ref": "#/$defs/artifact_reference"},
         "started_at": {"$ref": "#/$defs/timestamp"},
         "ended_at": {"type": ["string", "null"]},
-        "status": {"enum": ["planned", "starting", "running", "stopping", "completed", "failed", "timed_out", "abandoned"]},
+        "status": {"enum": ["planned", "created", "dispatched", "starting", "running", "evidence_submitted", "gateway_verifying", "stopping", "completed", "rejected", "failed", "timed_out", "abandoned", "cleaned_up"]},
         "exit_signal": {"type": ["string", "null"]},
         "transcript_ref": {"type": ["string", "null"]},
         "output_envelope_ref": {"type": ["string", "null"]},
@@ -1363,7 +1363,13 @@
         "last_heartbeat_at": {"type": ["string", "null"]},
         "termination_reason": {"type": ["string", "null"]},
         "cleanup_attempted_at": {"type": ["string", "null"]},
-        "cleanup_error": {"type": ["string", "null"]}
+        "cleanup_error": {"type": ["string", "null"]},
+        "assigned_actor": {"type": "string"},
+        "workspace_path": {"type": "string"},
+        "context_bundle_id": {"type": "string"},
+        "computed_write_scope": {"type": "array", "items": {"type": "string"}},
+        "dispatch_token": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+        "dispatch_token_expires_at": {"$ref": "#/$defs/timestamp"}
       },
       "additionalProperties": true
     },

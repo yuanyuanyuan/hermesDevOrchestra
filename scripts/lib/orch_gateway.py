@@ -24,6 +24,7 @@ from atomic_writer import AtomicWriter
 from actor_auth import ActorAuthError, load_actor_secrets, load_authority_matrix, mutate_raw_kanban_state, worker_advance_denied
 from blocker_validator import validate as _completion_bundle_validate
 from debate_report import validate_artifact_definition
+from dispatch_gate import dispatch_task, submit_completion_payload
 from run_projection import PROJECTION_SCHEMA_VERSION, projection_response, refresh_projection_response
 from runtime_activation import RuntimeActivation, RuntimeActivationError
 
@@ -302,6 +303,7 @@ class GatewayApp:
         self.store = GatewayStore(project_id)
         self.upstream_api_url = upstream_api_url
         self.repo_root = Path(__file__).resolve().parents[2]
+        self.schema_version = SCHEMA_VERSION
         self.runtime_activation = RuntimeActivation(self.repo_root)
         try:
             self.authority_matrix = load_authority_matrix(self.repo_root)
@@ -4116,6 +4118,9 @@ class GatewayApp:
         return 200, response
 
     def submit_worker_output(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        if "completion_payload" in payload:
+            return submit_completion_payload(self, run_id, payload)
+
         if self._run_intake_pipeline(payload, "submit_worker_output", run_id):
             return self._fallback_response()
         run_path = self.store.run_path(run_id)
@@ -6105,6 +6110,20 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 status, body = self.app.submit_failure(run_id, payload)
                 self.send_json(status, body)
                 return
+        task_route = self.task_route(parsed.path)
+        if task_route:
+            run_id, task_id, action = task_route
+            payload = self.read_json_body()
+            if payload is None:
+                self.send_json(400, self.app.error("invalid_json", "request body must be JSON"))
+                return
+            if action == "dispatch":
+                status, body = dispatch_task(self.app, run_id, task_id, payload)
+                self.send_json(status, body)
+                return
+            if action == "advance":
+                self.send_json(400, self.app.error("dispatch_token_required", "stage advancement requires a Gateway dispatch token"))
+                return
         decision_id = self.decision_route(parsed.path)
         if decision_id:
             payload = self.read_json_body()
@@ -6122,6 +6141,12 @@ class GatewayHandler(BaseHTTPRequestHandler):
             return parts[2], None
         if len(parts) == 4 and parts[:2] == ["orchestra", "runs"] and parts[3] in {"projection", "events", "tasks", "stop", "worker-outputs", "verdicts", "global-evaluations", "closeout", "failures"}:
             return parts[2], parts[3]
+        return None
+
+    def task_route(self, path: str) -> tuple[str, str, str] | None:
+        parts = [part for part in path.split("/") if part]
+        if len(parts) == 6 and parts[:2] == ["orchestra", "runs"] and parts[3] == "tasks" and parts[5] in {"dispatch", "advance"}:
+            return parts[2], parts[4], parts[5]
         return None
 
     def module_route(self, path: str) -> tuple[str, str] | None:
