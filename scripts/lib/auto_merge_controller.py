@@ -26,6 +26,19 @@ class AutoMergeController:
         self._policy: dict[str, Any] | None = None
 
     def merge(self, target_branch: str, pr_number: int, audit_context: dict[str, Any]) -> dict[str, Any]:
+        """Evaluate and record an auto-merge decision for a protected PR.
+
+        Args:
+            target_branch: Branch requested as the merge target.
+            pr_number: Positive GitHub pull request number.
+            audit_context: Evidence object with auto-merge, review, CI, and security gate data.
+
+        Returns:
+            A merge receipt with status, target branch, PR number, timestamp, and audit ref.
+
+        Raises:
+            MergeRejectedError: When validation, branch policy, security gate, review, or CI checks fail.
+        """
         if not isinstance(target_branch, str) or not target_branch:
             raise MergeRejectedError("validation_error", "target_branch must be a non-empty string")
         if not isinstance(pr_number, int) or pr_number <= 0:
@@ -119,6 +132,18 @@ class NotificationDispatcher:
         self.sender = sender
 
     def send(self, level: str, scan_result: dict[str, Any]) -> dict[str, Any]:
+        """Send or suppress a security notification according to configured level.
+
+        Args:
+            level: Notification level: `silent`, `compact`, or `verbose`.
+            scan_result: Evidence scan result to summarize or send in full.
+
+        Returns:
+            A notification receipt with `level`, `sent`, and `message`.
+
+        Raises:
+            ValueError: When the level or scan result shape is invalid.
+        """
         if level not in {"silent", "compact", "verbose"}:
             raise ValueError("level must be silent, compact, or verbose")
         if not isinstance(scan_result, dict):

@@ -20,6 +20,19 @@ class RolloutGate:
         self._policy: dict[str, Any] | None = None
 
     def allow(self, channel: str, project_age_weeks: int, calibration_evidence: dict[str, Any]) -> dict[str, Any]:
+        """Evaluate whether a requested channel may proceed through rollout.
+
+        Args:
+            channel: Requested channel, one of `quick`, `light`, or `standard`.
+            project_age_weeks: Natural week number counted from first intake date.
+            calibration_evidence: Object containing numeric `confidence` and `coverage`.
+
+        Returns:
+            A gate result with `allowed`, effective `channel`, `forced_standard`, and `reason`.
+
+        Raises:
+            RolloutGateError: On invalid input or unreadable rollout policy.
+        """
         if channel not in {"quick", "light", "standard"}:
             raise RolloutGateError("validation_error", "channel must be quick, light, or standard")
         if not isinstance(project_age_weeks, int) or project_age_weeks < 1:

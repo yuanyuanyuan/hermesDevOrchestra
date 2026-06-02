@@ -12,6 +12,17 @@ class SecurityGateError(Exception):
 
 class SecurityGate:
     def evaluate(self, scan: dict[str, Any]) -> dict[str, Any]:
+        """Convert an evidence scan into an allow/block security verdict.
+
+        Args:
+            scan: Result object returned by `EvidenceScanner.scan`.
+
+        Returns:
+            A verdict object with `verdict`, `security_pass`, `block_reason`, and `scan_result`.
+
+        Raises:
+            SecurityGateError: When `scan` is not an object.
+        """
         if not isinstance(scan, dict):
             raise SecurityGateError("validation_error", "scan must be an object")
 

@@ -21,6 +21,19 @@ class EvidenceScanner:
     )
 
     def scan(self, diff: str, files: list[str]) -> dict[str, Any]:
+        """Scan a diff for mechanical evidence and security blockers.
+
+        Args:
+            diff: Unified diff or raw changed text to inspect.
+            files: Changed file paths associated with the diff.
+
+        Returns:
+            A scan result containing pass booleans, hardcode flags, sensitive keywords,
+            compliance keywords, PII status, and copied file paths.
+
+        Raises:
+            EvidenceScannerError: When `diff` or `files` has the wrong type.
+        """
         if not isinstance(diff, str):
             raise EvidenceScannerError("validation_error", "diff must be a string")
         if not isinstance(files, list) or not all(isinstance(item, str) for item in files):

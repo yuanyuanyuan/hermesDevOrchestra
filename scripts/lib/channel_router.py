@@ -14,8 +14,6 @@ class ChannelRouterError(Exception):
 
 
 class ChannelRouter:
-    QUICK_TASKS = {"lint", "syntax", "i18n", "hardcoded_scan", "hardcode_scan"}
-
     def __init__(
         self,
         repo_root: Path | str,
@@ -28,6 +26,19 @@ class ChannelRouter:
         self._policy: dict[str, Any] | None = None
 
     def classify(self, intent: dict[str, Any], project_age_weeks: int, profile: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Route an intent into quick, light, or standard.
+
+        Args:
+            intent: Object with `task_type` or `type`, plus `files_count` or `files`.
+            project_age_weeks: Natural week number counted from first intake date.
+            profile: Reserved project profile object; accepted for interface stability.
+
+        Returns:
+            A routing decision with `channel`, `reason`, `task_type`, `files_count`, and `project_age_weeks`.
+
+        Raises:
+            ChannelRouterError: On invalid input or malformed channel configuration.
+        """
         if not isinstance(intent, dict):
             raise ChannelRouterError("validation_error", "intent must be an object")
         if not isinstance(project_age_weeks, int) or project_age_weeks < 1:
@@ -35,10 +46,10 @@ class ChannelRouter:
 
         policy = self._load_policy()
         channels = self._channels(policy)
-        task_type = str(intent.get("task_type") or intent.get("type") or "").strip()
+        task_type = self._task_type(intent)
         files_count = self._files_count(intent)
 
-        if self._is_quick_candidate(task_type, files_count, project_age_weeks):
+        if self._is_quick_candidate(task_type, project_age_weeks, channels["quick"]):
             if project_age_weeks <= 2 and files_count > 1:
                 return self._decision("standard", "week_1_2_quick_file_limit_exceeded", task_type, files_count, project_age_weeks)
             if project_age_weeks == 3 and files_count > 1:
@@ -52,14 +63,12 @@ class ChannelRouter:
 
         return self._decision("standard", "standard_required_for_complexity", task_type, files_count, project_age_weeks)
 
-    def _is_quick_candidate(self, task_type: str, files_count: int, project_age_weeks: int) -> bool:
-        if task_type in self.QUICK_TASKS:
-            return True
-        if project_age_weeks == 3 and task_type == "single_file_refactor" and files_count == 1:
-            return True
-        if project_age_weeks >= 4 and task_type in {"refactor", "single_file_refactor"} and files_count <= 3:
-            return True
-        return False
+    def _is_quick_candidate(self, task_type: str, project_age_weeks: int, quick_channel: dict[str, Any]) -> bool:
+        if project_age_weeks <= 2:
+            return task_type in self._allowed_tasks(quick_channel, "week_1_2_allowed_tasks")
+        if project_age_weeks == 3:
+            return task_type in self._allowed_tasks(quick_channel, "week_3_allowed_tasks")
+        return task_type in self._allowed_tasks(quick_channel, "week_4_plus_allowed_tasks")
 
     def _apply_kill_switch(
         self,
@@ -97,6 +106,18 @@ class ChannelRouter:
         if not isinstance(raw, int) or raw < 0:
             raise ChannelRouterError("validation_error", "files_count must be a non-negative integer")
         return raw
+
+    def _task_type(self, intent: dict[str, Any]) -> str:
+        task_type = str(intent.get("task_type") or intent.get("type") or "").strip()
+        if task_type == "hardcode_scan":
+            return "hardcoded_scan"
+        return task_type
+
+    def _allowed_tasks(self, quick_channel: dict[str, Any], key: str) -> set[str]:
+        raw = quick_channel.get(key)
+        if not isinstance(raw, list) or not all(isinstance(item, str) and item for item in raw):
+            raise ChannelRouterError("config_invalid", f"channels.quick.{key} must be a string array")
+        return set(raw)
 
     def _load_policy(self) -> dict[str, Any]:
         if self._policy is None:
