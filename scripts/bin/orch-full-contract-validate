@@ -16,6 +16,7 @@ CONFIG_CONTRACTS = [
     ("config/debate/full/modes.json", "debate_mode_registry"),
     ("config/debate/full/coverage-policy.json", "debate_coverage_policy"),
     ("config/debate/full/assembly-policy.json", "debate_assembly_policy"),
+    ("config/debate/full/alias-mapping.json", "debate_alias_mapping"),
     ("config/debate/full/backend-policy.json", "debate_backend_policy"),
     ("config/workers/full/backends.json", "worker_backend_registry"),
     ("config/workers/full/roles.json", "worker_role_registry"),

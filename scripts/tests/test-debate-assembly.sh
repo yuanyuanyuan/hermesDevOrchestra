@@ -112,6 +112,30 @@ expect_error("validation_error", lambda: assembly.select_for_stage("", "release_
 expect_error("stage_not_found", lambda: assembly.select_for_stage("missing", "release_deploy", "L1"))
 expect_error("risk_level_not_found", lambda: assembly.select_for_stage("direction_debate", "release_deploy", "LX"))
 
+ticket = {
+    "constraints": [
+        {"id": "gateway_growth", "type": "hard", "text": "Do not grow orch_gateway.py by more than 50 lines."},
+        {"id": "tone", "type": "soft", "text": "Prefer concise language."},
+    ],
+}
+from debate_assembly import direction_verdict, evaluate_constraint_overrides
+
+constraint_result = evaluate_constraint_overrides(ticket, {
+    "constraint_overrides": [{"constraint_id": "gateway_growth", "override_reason": "try anyway"}],
+})
+assert constraint_result["verdict"] == "blocked", constraint_result
+assert constraint_result["reason"] == "hard_constraint_violation", constraint_result
+
+soft_result = evaluate_constraint_overrides(ticket, {
+    "constraint_overrides": [{"constraint_id": "tone", "override_reason": "clarity"}],
+})
+assert soft_result["verdict"] == "accepted", soft_result
+
+assert direction_verdict({"confidence": 0.85, "risk_level": "low", "conflicts": []})["next_phase"] == "phase_2"
+assert direction_verdict({"confidence": 0.6, "risk_level": "low", "conflicts": []})["next_phase"] == "phase_1_review"
+assert direction_verdict({"confidence": 0.85, "risk_level": "high", "conflicts": []})["next_phase"] == "phase_1_review"
+assert direction_verdict({"confidence": 0.85, "risk_level": "low", "conflicts": ["scope"]})["next_phase"] == "phase_1_review"
+
 disabled = DebateAssembly(repo, enabled=False)
 expect_error("module_disabled", disabled.load_policy)
 

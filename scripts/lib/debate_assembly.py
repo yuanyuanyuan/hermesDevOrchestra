@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import argparse
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,36 @@ class DebateAssemblyError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def evaluate_constraint_overrides(ticket: dict[str, Any], conclusion: dict[str, Any]) -> dict[str, Any]:
+    constraints = ticket.get("constraints", [])
+    overrides = conclusion.get("constraint_overrides", [])
+    hard_ids = {
+        item.get("id")
+        for item in constraints
+        if isinstance(item, dict) and item.get("type") == "hard" and isinstance(item.get("id"), str)
+    }
+    for override in overrides:
+        if not isinstance(override, dict):
+            continue
+        constraint_id = override.get("constraint_id")
+        if constraint_id in hard_ids:
+            return {
+                "verdict": "blocked",
+                "reason": "hard_constraint_violation",
+                "constraint_id": constraint_id,
+            }
+    return {"verdict": "accepted", "reason": "constraints_satisfied"}
+
+
+def direction_verdict(debate_output: dict[str, Any]) -> dict[str, str]:
+    confidence = debate_output.get("confidence", 0)
+    risk_level = debate_output.get("risk_level")
+    conflicts = debate_output.get("conflicts", [])
+    if confidence >= 0.8 and risk_level == "low" and conflicts == []:
+        return {"next_phase": "phase_2"}
+    return {"next_phase": "phase_1_review"}
 
 
 class DebateAssembly:
@@ -314,3 +345,32 @@ class DebateAssembly:
                 "package_not_active",
                 f"{filename} package_status={package_status} is not active; allow_staged=True is required",
             )
+
+
+def _load_json_path(path: Path) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict):
+        raise DebateAssemblyError("validation_error", f"{path} must contain a JSON object")
+    return data
+
+
+def _main() -> int:
+    parser = argparse.ArgumentParser(description="Evaluate debate assembly guard decisions.")
+    parser.add_argument("--ticket", type=Path)
+    parser.add_argument("--conclusion", type=Path)
+    parser.add_argument("--direction-output", type=Path)
+    args = parser.parse_args()
+
+    if args.ticket and args.conclusion:
+        result = evaluate_constraint_overrides(_load_json_path(args.ticket), _load_json_path(args.conclusion))
+    elif args.direction_output:
+        result = direction_verdict(_load_json_path(args.direction_output))
+    else:
+        parser.error("provide --ticket and --conclusion, or --direction-output")
+    print(json.dumps(result, sort_keys=True))
+    return 0 if result.get("verdict") != "blocked" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
