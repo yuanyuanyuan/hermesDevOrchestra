@@ -310,6 +310,8 @@ const verifyResults = await parallel(
       schema: VERIFY_SCHEMA,
     }).then(r => {
       if (!r) return { dimension_id: dim.id, results: [], dimension_score: 0, summary: "验证失败" }
+      // 强制设置 dimension_id 为提取维度的 id，确保后续匹配
+      r.dimension_id = dim.id
       log(dim.name + ": " + (r.dimension_score * 100).toFixed(0) + "% (" +
         r.results.filter(x => x.status === "pass").length + " pass, " +
         r.results.filter(x => x.status === "fail").length + " fail)")
