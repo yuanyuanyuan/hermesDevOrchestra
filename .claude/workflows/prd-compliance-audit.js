@@ -323,14 +323,18 @@ const verifyResults = await parallel(
 const validResults = verifyResults.filter(Boolean)
 log("验证完成：" + validResults.length + "/" + extractResult.dimensions.length + " 维度已验证")
 
-// ─── Phase 3: Compliance Report (直接计算，不依赖代理) ───
-phase("Compliance Report")
-log("生成合规矩阵...")
+// 调试：输出验证结果的 dimension_id 列表
+log("调试 - verifyResults 维度 ID 列表：" + verifyResults.map((r, i) => (r ? r.dimension_id || "null" : "null")).join(", "))
+log("调试 - extractResult 维度 ID 列表：" + extractResult.dimensions.map(d => d.id).join(", "))
 
-// 直接从验证结果计算合规报告
+// 构建 id -> index 映射，用于后续查找
+const dimIdToIndex = {}
+extractResult.dimensions.forEach((dim, idx) => { dimIdToIndex[dim.id] = idx })
+
+// 直接用索引匹配，不依赖 dimension_id
 const complianceReport = {
-  dimensions: extractResult.dimensions.map(dim => {
-    const vr = validResults.find(r => r.dimension_id === dim.id)
+  dimensions: extractResult.dimensions.map((dim, idx) => {
+    const vr = verifyResults[idx]  // 直接用索引访问
     const score = vr ? vr.dimension_score : 0
     const pass_count = vr ? vr.results.filter(r => r.status === "pass").length : 0
     const fail_count = vr ? vr.results.filter(r => r.status === "fail").length : 0
@@ -352,7 +356,8 @@ const complianceReport = {
   veto_status: extractResult.dimensions
     .filter(dim => dim.is_veto)
     .map(dim => {
-      const vr = validResults.find(r => r.dimension_id === dim.id)
+      const idx = dimIdToIndex[dim.id]
+      const vr = verifyResults[idx]
       const score = vr ? vr.dimension_score : 0
       const pass_count = vr ? vr.results.filter(r => r.status === "pass").length : 0
       const fail_count = vr ? vr.results.filter(r => r.status === "fail").length : 0
@@ -370,11 +375,13 @@ const complianceReport = {
   critical_gaps: extractResult.dimensions
     .filter(dim => dim.is_veto)
     .filter(dim => {
-      const vr = validResults.find(r => r.dimension_id === dim.id)
+      const idx = dimIdToIndex[dim.id]
+      const vr = verifyResults[idx]
       return !vr || vr.dimension_score < PASS_THRESHOLD
     })
     .map(dim => {
-      const vr = validResults.find(r => r.dimension_id === dim.id)
+      const idx = dimIdToIndex[dim.id]
+      const vr = verifyResults[idx]
       const score = vr ? vr.dimension_score : 0
       const fail_count = vr ? vr.results.filter(r => r.status === "fail").length : 0
       const total = vr ? vr.results.length : 0
