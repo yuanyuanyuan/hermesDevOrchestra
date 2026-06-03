@@ -62,8 +62,9 @@
 ## 签核
 - [x] 开发完成
 - [x] 测试通过（所有 AC 断言通过）
-- [ ] Code Review 完成
+- [x] Code Review 完成
 - [x] 架构红线合规确认
-- [ ] 合并到 main
+- [x] 合并到 main
 
 [2026-06-01] Verified by Codex — all tests passed
+[2026-06-03] 已合并到 main — PR #20 (`feat/sprint3`), merged 2026-06-01T10:56:41Z
