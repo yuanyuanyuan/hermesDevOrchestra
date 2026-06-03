@@ -127,6 +127,12 @@ assert (run_dir / "system_improvement_proposals.json").is_file(), run_dir
 test_execution = json.loads((run_dir / "test_execution_report.json").read_text(encoding="utf-8"))
 assert test_execution["commands"][0]["executed"] is True, test_execution
 assert test_execution["commands"][0]["exit_code"] == 0, test_execution
+worker_sessions = [
+    json.loads(path.read_text(encoding="utf-8"))
+    for path in (run_dir / "worker-sessions").glob("*.json")
+]
+assert worker_sessions, "missing worker sessions"
+assert all(session["session_id"].startswith("wizard-demo-") for session in worker_sessions), worker_sessions
 
 log_records = [
     json.loads(line)

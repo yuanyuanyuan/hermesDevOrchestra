@@ -22,6 +22,9 @@ Status vocabulary:
 | Full contract readiness gate policy | `config/cutover/full-readiness-gates.json` | staged | not runtime | Artifact-family staged cutover, required evidence, historical preservation, and rollback or disable rules. |
 | Runtime family activation manifest | `config/cutover/runtime-family-activation.json` | ready | mixed-family runtime active | Activates `gateway_authority` and `closeout_and_self_evolution` defaults without a global schema switch. |
 | Performance SLO policy | `config/performance/slo-policy.json` | staged | not runtime | Component target budgets, measurement policy, and budget-miss degradation actions without fixed Six-Stage completion SLA. |
+| PRD §11 success metrics | `config/performance/slo-policy.json` `success_metrics`, `scripts/lib/success_metrics.py` | ready | CLI gate | Fourteen success metrics map source events to aggregation rules, thresholds, and `test-success-metrics-pipeline.sh`; `orch-audit` writes `metrics_summary.json`, `orch-verify` blocks below-threshold release gates. |
+| Schema/doc/Gateway sync gate | `scripts/bin/orch-schema-doc-sync`, `scripts/tests/test-schema-doc-sync.sh` | ready | CI gate | Validates Sprint 13 release gate docs against `orchestra.full.schema.json` defs and catches known Gateway field drift such as `legacy_run_status`. |
+| Strict 0→6 staging regression | `scripts/lib/staging Harness.sh`, `scripts/lib/staging inject-data.sh`, `scripts/tests/test-e2e-strict-six-stage-flow.sh` | ready | test harness | Replays intake, direction, solution, implementation, improvement, global evaluation, and closeout in `.hermes/staging/`, then verifies artifacts and metrics gate output. |
 | Full fixture policy | `config/testing/full-fixture-policy.json` | staged | not runtime | Separates contract fixtures from runtime fake adapters and forbids fixture evidence from satisfying authority gates. |
 | Self evolution review queue policy | `config/evolution/self-evolution-review-queue.json` | staged | not runtime | Explicit queue, priority, batching, protected target, backlog, evidence, and retention policy for proposals. |
 | Gateway runtime contract | `.planning/specs/HERMES-ORCHESTRA-FULL-SPEC.md` | ready | partially implemented | Baseline is current Python local HTTP Gateway with JSON Run Projection API, optional `/v1/*` proxying, and filesystem State/Audit. |
@@ -76,3 +79,12 @@ Status vocabulary:
 - Implement the remaining run-level full runtime consumption gaps: remote decisions, release execution, deeper closeout integration, and stronger parallel merge orchestration beyond mechanical conflict artifacts.
 - Add adapter implementation plans for runtime knowledge state-store adapter, release pipeline, and remote decision transport.
 - Keep `qnN4o510` as design-source traceability only; do not introduce it as runtime retrieval.
+
+## Sprint 13 Gate Coverage
+
+| Gate | Test | Release artifact |
+|---|---|---|
+| Success metrics pipeline | `scripts/tests/test-success-metrics-pipeline.sh` | `metrics_summary.json` with 14 `success_metrics_summary` entries |
+| Schema three-way sync | `scripts/tests/test-schema-doc-sync.sh` | `release_gate_report.schema_sync_passed` |
+| Strict six-stage staging run | `scripts/tests/test-e2e-strict-six-stage-flow.sh` | `run.json`, `tasks.json`, `events.jsonl`, `audit.jsonl`, `metrics_summary.json` |
+| Final release decision | `scripts/tests/test-mvp-acceptance.sh` | `release_gate_report.release_approved` |

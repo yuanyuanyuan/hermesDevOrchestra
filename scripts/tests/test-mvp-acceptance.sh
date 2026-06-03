@@ -97,4 +97,33 @@ assert_eq "qa-tester" "$(json_field "$RUNTIME_DIR/task.md" "role")" "reviewer ap
 assert_eq "qa_handoff" "$(json_field "$STATE_DIR/current-task.json" "workflow_state")" "workflow state should reach qa handoff"
 assert_eq "20min" "$(json_field "$RUNTIME_DIR/task.md" "expected_duration_max")" "qa child should receive default expected duration"
 
+PYTHONPATH="$REPO_ROOT/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - <<'PY'
+from success_metrics import release_gate_report
+
+approved = release_gate_report(
+    strict_six_stage_passed=True,
+    schema_sync_passed=True,
+    metrics_pipeline_passed=True,
+)
+assert approved["release_approved"] is True, approved
+assert approved["block_reasons"] == [], approved
+
+blocked = release_gate_report(
+    strict_six_stage_passed=True,
+    schema_sync_passed=True,
+    metrics_pipeline_passed=False,
+)
+assert blocked["release_approved"] is False, blocked
+assert blocked["block_reasons"], blocked
+assert "metrics_pipeline_failed" in blocked["block_reasons"], blocked
+
+blocked = release_gate_report(
+    strict_six_stage_passed=False,
+    schema_sync_passed=False,
+    metrics_pipeline_passed=True,
+)
+assert blocked["release_approved"] is False, blocked
+assert {"strict_six_stage_failed", "schema_sync_failed"} <= set(blocked["block_reasons"]), blocked
+PY
+
 test_done

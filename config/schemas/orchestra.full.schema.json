@@ -85,6 +85,44 @@
       },
       "additionalProperties": true
     },
+    "success_metrics_summary": {
+      "type": "object",
+      "required": ["metric_id", "source_events", "aggregation_rule", "threshold", "observed_value", "status"],
+      "properties": {
+        "metric_id": {"type": "string"},
+        "source_events": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "aggregation_rule": {"type": "string"},
+        "threshold": {"type": ["object", "string", "number"]},
+        "observed_value": {"type": ["string", "number"]},
+        "status": {"enum": ["pass", "warn", "fail"]}
+      },
+      "additionalProperties": true
+    },
+    "metrics_summary": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "metrics"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "metrics_summary"},
+        "run_id": {"type": "string"},
+        "metrics": {"type": "array", "items": {"$ref": "#/$defs/success_metrics_summary"}, "minItems": 1}
+      },
+      "additionalProperties": true
+    },
+    "release_gate_report": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "strict_six_stage_passed", "schema_sync_passed", "metrics_pipeline_passed", "release_approved", "block_reasons"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "release_gate_report"},
+        "strict_six_stage_passed": {"type": "boolean"},
+        "schema_sync_passed": {"type": "boolean"},
+        "metrics_pipeline_passed": {"type": "boolean"},
+        "release_approved": {"type": "boolean"},
+        "block_reasons": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
     "debate_team_id": {
       "enum": [
         "security",

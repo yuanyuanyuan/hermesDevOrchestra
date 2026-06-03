@@ -213,6 +213,18 @@ HTTP 响应头必须包含 `X-Projection-Schema-Version: 1.0.0`。
 | `observed_value` | string/number | 必填 |
 | `status` | string | `pass` / `warn` / `fail` |
 
+### `release_gate_report`
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| `schema_version` | string | 必填，`orchestra.full.v1` |
+| `artifact_type` | string | 必填，固定为 `release_gate_report` |
+| `strict_six_stage_passed` | boolean | 必填，staging 0→6 阶严格回归结果 |
+| `schema_sync_passed` | boolean | 必填，schema/doc/Gateway 三重一致性结果 |
+| `metrics_pipeline_passed` | boolean | 必填，成功指标采集与阈值验证结果 |
+| `release_approved` | boolean | 三项 gate 全为 `true` 时才能为 `true` |
+| `block_reasons` | array | 任一 gate 失败时必须非空 |
+
 ### `debate_metrics`
 
 | 字段 | 类型 | 约束 |

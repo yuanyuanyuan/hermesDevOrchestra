@@ -877,3 +877,33 @@ GET /orchestra/runs/{run_id}/snapshot
 | `heartbeat_duplicate_ignored` | 重复 `heartbeat_seq` | 网络重放已被 Gateway 忽略 |
 
 快照页的推荐展示方式是“当前任务 + 最近心跳时间 + 已完成子任务数 + 阻塞原因”。若连续两次查询显示 `snapshot_lag_seconds > 35`，界面应提示“执行状态可能延迟”，但不应自动取消任务；最终超时判定由 Sweeper 写入 `worker_zombie_detected` 或 `worker_likely_stalled` 事件。
+
+## 19. Sprint 13 上线 Gate
+
+成功指标采集链路使用本地事件文件作为权威输入：
+
+```bash
+scripts/bin/orch-audit --run-id <run_id> --state-root <state_root> --output metrics_summary.json
+scripts/bin/orch-verify --metrics metrics_summary.json --thresholds config/performance/slo-policy.json
+```
+
+`events.jsonl` 每行必须包含 `event_type`、`timestamp`、`run_id`、`payload`。`config/performance/slo-policy.json` 的 `success_metrics` 内联 PRD §11.1 指标，每项声明采集事件、聚合规则、阈值和验证脚本。`orch-verify` 只在 14 项指标全部存在且状态通过时返回 0；低于阈值会输出 `release_gate_report` 并阻断 closeout 标记为满足成功标准。
+
+Schema 同步 gate 使用：
+
+```bash
+scripts/bin/orch-schema-doc-sync --repo .
+```
+
+该脚本校验 `schema.md` 中的 Sprint 13 release gate 模型、`config/schemas/orchestra.full.schema.json` 的 `$defs` 和 Gateway 中已知硬编码字段漂移。若文档新增字段未同步 schema，或实现中出现已移除字段 `legacy_run_status`，测试会返回非 0。
+
+Staging 严格回归使用隔离目录 `.hermes/staging/`：
+
+```bash
+scripts/lib/staging\ Harness.sh
+scripts/lib/staging\ inject-data.sh
+scripts/tests/test-e2e-strict-six-stage-flow.sh
+scripts/lib/staging\ teardown.sh
+```
+
+注入数据包含 `project-profile.yaml`、protected target mock task 和 conflict intake。回归必须产出 `run.json`、`tasks.json`、`events.jsonl`、`audit.jsonl`、`metrics_summary.json`，并通过 schema 与完整性断言。

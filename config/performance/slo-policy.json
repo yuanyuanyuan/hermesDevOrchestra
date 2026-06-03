@@ -76,6 +76,106 @@
     "compliance_keywords": ["TODO: remove before prod"],
     "notification_levels": ["silent", "compact", "verbose"]
   },
+  "success_metrics": [
+    {
+      "metric_id": "intent_only_start_rate",
+      "source_events": ["run.created"],
+      "aggregation_rule": "intent_only_runs / total_runs",
+      "threshold": {"kind": "min", "value": 0.85},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "intake_completion_coverage",
+      "source_events": ["intake.completed"],
+      "aggregation_rule": "complete_intake_records / total_intake_records",
+      "threshold": {"kind": "min", "value": 0.9},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "conflict_auto_resolved_rate",
+      "source_events": ["conflict.resolved"],
+      "aggregation_rule": "auto_resolved_conflicts / total_conflicts",
+      "threshold": {"kind": "min", "value": 0.7},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "debate_error_interception_count",
+      "source_events": ["direction_debate.blocked", "solution_debate.blocked"],
+      "aggregation_rule": "blocked_direction_or_route_errors",
+      "threshold": {"kind": "min", "value": 1},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "implementation_evidence_rate",
+      "source_events": ["implementation.completed"],
+      "aggregation_rule": "implementation_records_with_all_evidence / total_implementation_records",
+      "threshold": {"kind": "min", "value": 0.95},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "improvement_a_class_closure_rate",
+      "source_events": ["improvement.closed"],
+      "aggregation_rule": "a_class_fixed_records / total_improvement_records",
+      "threshold": {"kind": "min", "value": 0.9},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "improvement_d_class_closure_rate",
+      "source_events": ["improvement.closed"],
+      "aggregation_rule": "d_class_closed_within_three_loops / total_improvement_records",
+      "threshold": {"kind": "min", "value": 0.8},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "global_warning_rate",
+      "source_events": ["global_evaluation.pass_with_warnings"],
+      "aggregation_rule": "pass_with_warnings_events / total_run_events",
+      "threshold": {"kind": "range", "min": 0.1, "max": 0.3},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "closeout_proposals_applied",
+      "source_events": ["closeout.completed"],
+      "aggregation_rule": "sum(proposals_applied)",
+      "threshold": {"kind": "min", "value": 1},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "gateway_blocked_count",
+      "source_events": ["gateway.blocked"],
+      "aggregation_rule": "count(gateway.blocked)",
+      "threshold": {"kind": "min", "value": 1},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "autonomous_run_rate",
+      "source_events": ["run.closed"],
+      "aggregation_rule": "runs_with_zero_human_interventions / closed_runs",
+      "threshold": {"kind": "min", "value": 0.7},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "heartbeat_progress_health",
+      "source_events": ["heartbeat.delivered"],
+      "aggregation_rule": "heartbeats_with_latency_le_5s_and_delivery_rate_ge_99pct / delivered_heartbeats",
+      "threshold": {"kind": "min", "value": 1},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "quick_channel_auto_merge_rate",
+      "source_events": ["quick_channel.merged"],
+      "aggregation_rule": "auto_merged_quick_channel_runs / total_quick_channel_runs",
+      "threshold": {"kind": "min", "value": 0.9},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    },
+    {
+      "metric_id": "risk_notification_delivery_rate",
+      "source_events": ["global_evaluation.notified"],
+      "aggregation_rule": "confirmed_risk_notifications / total_risk_notifications",
+      "threshold": {"kind": "min", "value": 1},
+      "validation_script_ref": "scripts/tests/test-success-metrics-pipeline.sh"
+    }
+  ],
   "component_budgets": {
     "gateway_api": {
       "health_p95_ms": 250,

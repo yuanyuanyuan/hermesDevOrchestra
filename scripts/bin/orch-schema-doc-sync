@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""Check Sprint 13 schema/docs/Gateway drift for release gate artifacts."""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+
+REQUIRED_MODELS = {"success_metrics_summary", "release_gate_report"}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo", default=".", help="Repository root")
+    parser.add_argument("--schema-doc", help="Override schema.md path")
+    parser.add_argument("--schema-json", help="Override orchestra.full.schema.json path")
+    parser.add_argument("--gateway", help="Override orch_gateway.py path")
+    return parser.parse_args()
+
+
+def model_tables(path: Path) -> dict[str, dict[str, str]]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    models: dict[str, dict[str, str]] = {}
+    current: str | None = None
+    in_table = False
+    for line in lines:
+        heading = re.match(r"^### `([^`]+)`", line)
+        if heading:
+            current = heading.group(1)
+            in_table = False
+            models.setdefault(current, {})
+            continue
+        if current is None:
+            continue
+        if line.startswith("| 字段 | 类型 |"):
+            in_table = True
+            continue
+        if in_table:
+            if not line.startswith("|"):
+                in_table = False
+                continue
+            cells = [cell.strip() for cell in line.strip("|").split("|")]
+            if len(cells) < 2 or cells[0].startswith("-") or cells[0] == "字段":
+                continue
+            field_match = re.match(r"`([^`]+)`$", cells[0])
+            if field_match:
+                models[current][field_match.group(1)] = cells[1]
+    return models
+
+
+def schema_defs(path: Path) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as handle:
+        schema = json.load(handle)
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        raise ValueError("schema is missing $defs")
+    return defs
+
+
+def schema_type(prop: dict[str, Any]) -> set[str]:
+    if "type" in prop:
+        value = prop["type"]
+        return set(value if isinstance(value, list) else [value])
+    if "const" in prop:
+        value = prop["const"]
+        if isinstance(value, bool):
+            return {"boolean"}
+        if isinstance(value, int):
+            return {"integer"}
+        if isinstance(value, (int, float)):
+            return {"number"}
+        if value is None:
+            return {"null"}
+        return {"string"}
+    if "enum" in prop:
+        return {"string"}
+    if "$ref" in prop:
+        return {"string", "object", "array", "boolean", "integer", "number", "null"}
+    return {"object"}
+
+
+def doc_type(value: str) -> set[str]:
+    text = value.lower().replace(" ", "")
+    if "string/null" in text:
+        return {"string", "null"}
+    if "string/number" in text:
+        return {"string", "number", "object"}
+    if "array" in text:
+        return {"array"}
+    if "object" in text:
+        return {"object"}
+    if "boolean" in text:
+        return {"boolean"}
+    if "integer" in text or "unix" in text:
+        return {"integer"}
+    if "number" in text:
+        return {"number"}
+    if "timestamp" in text or "string" in text:
+        return {"string"}
+    return {"string"}
+
+
+def check_doc_schema(doc_models: dict[str, dict[str, str]], defs: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for model in sorted(REQUIRED_MODELS):
+        if model not in doc_models:
+            errors.append(f"missing doc model: {model}")
+            continue
+        if model not in defs:
+            errors.append(f"missing schema def: {model}")
+            continue
+        properties = defs[model].get("properties", {})
+        for field, declared_type in doc_models[model].items():
+            if field not in properties:
+                errors.append(f"missing field in schema: {model}.{field}")
+                continue
+            schema_types = schema_type(properties[field])
+            declared_types = doc_type(declared_type)
+            if not declared_types & schema_types:
+                errors.append(
+                    f"type mismatch: {model}.{field} doc={declared_type} schema={sorted(schema_types)}"
+                )
+    return errors
+
+
+def all_schema_fields(defs: dict[str, Any]) -> set[str]:
+    fields: set[str] = set()
+    for definition in defs.values():
+        if isinstance(definition, dict):
+            properties = definition.get("properties", {})
+            if isinstance(properties, dict):
+                fields.update(properties)
+    return fields
+
+
+def string_literals(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    values: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            values.append(node.value)
+    return values
+
+
+def check_gateway(gateway: Path, defs: dict[str, Any]) -> list[str]:
+    fields = all_schema_fields(defs)
+    drift = sorted({value for value in string_literals(gateway) if value == "legacy_run_status" and value not in fields})
+    return [f"implementation drift: {item}" for item in drift]
+
+
+def main() -> int:
+    args = parse_args()
+    repo = Path(args.repo).resolve()
+    schema_doc = Path(args.schema_doc) if args.schema_doc else repo / "docs/sprints/prd-by-kimi-user-flow-strict/schema.md"
+    schema_json = Path(args.schema_json) if args.schema_json else repo / "config/schemas/orchestra.full.schema.json"
+    gateway = Path(args.gateway) if args.gateway else repo / "scripts/lib/orch_gateway.py"
+
+    errors = check_doc_schema(model_tables(schema_doc), schema_defs(schema_json))
+    errors.extend(check_gateway(gateway, schema_defs(schema_json)))
+    if errors:
+        print("FAIL schema doc sync")
+        for error in errors:
+            print(f"- {error}")
+        return 1
+    print("PASS schema doc sync")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

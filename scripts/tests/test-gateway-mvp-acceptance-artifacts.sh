@@ -85,12 +85,13 @@ print(open(log_path, encoding="utf-8", errors="replace").read(), file=sys.stderr
 raise SystemExit(f"gateway did not become healthy: {last_error}")
 PY
 
-python3 - "$BASE_URL" "$TMP_DIR/flow.json" <<'PY'
+python3 - "$BASE_URL" "$TMP_DIR/flow.json" "$STATE_ROOT" "$PROJECT_ID" <<'PY'
 import json
+import pathlib
 import sys
 import urllib.request
 
-base_url, flow_path = sys.argv[1:]
+base_url, flow_path, state_root, project_id = sys.argv[1:]
 
 def post(path, payload, expected=200):
     request = urllib.request.Request(
@@ -131,42 +132,63 @@ tasks = get(f"/orchestra/runs/{run_id}/tasks")["tasks"]
 test_execution_ref = f"state://runs/{run_id}/test_execution_report.json"
 for index, task in enumerate(tasks, start=1):
     changed_files = ["scripts/lib/orch_gateway.py"] if task["stage"] == "implementation" else []
-    post(
-        f"/orchestra/runs/{run_id}/worker-outputs",
-        {
-            "idempotency_key": f"gw-047-worker-{index}",
-            "task_id": task["task_id"],
-            "worker_response": {
-                "protocol": "hermes-role-engine/v1",
-                "role": "implementer",
-                "correlation_id": task["task_id"],
-                "turn": index,
-                "status": "completed",
-                "next_action": "complete",
-                "role_specific_payload": {
-                    "requested_transition": "task_complete",
-                    "artifact_refs": [f"state://runs/{run_id}/run.json"],
-                    "changed_files": changed_files,
-                    "diff_summary": "Gateway MVP acceptance task evidence",
-                    "write_scope_result": {
-                        "within_scope": True,
-                        "violations": [],
-                        "forbidden_paths_touched": []
-                    },
-                    "test_evidence_refs": [test_execution_ref] if changed_files else [],
-                    "risk_notes": [],
-                    "approval_refs": [],
-                    "commands": ["make test"],
-                    "backend_execution": {
-                        "backend": "codex",
-                        "backend_kind": "cli",
-                        "executed": True
-                    }
+    payload = {
+        "idempotency_key": f"gw-047-worker-{index}",
+        "task_id": task["task_id"],
+        "worker_response": {
+            "protocol": "hermes-role-engine/v1",
+            "role": "implementer",
+            "correlation_id": task["task_id"],
+            "turn": index,
+            "status": "completed",
+            "next_action": "complete",
+            "role_specific_payload": {
+                "requested_transition": "task_complete",
+                "artifact_refs": [f"state://runs/{run_id}/run.json"],
+                "changed_files": changed_files,
+                "diff_summary": "Gateway MVP acceptance task evidence",
+                "write_scope_result": {
+                    "within_scope": True,
+                    "violations": [],
+                    "forbidden_paths_touched": []
                 },
-                "conversation_context": [{"summary": "state and scoped artifact refs only"}]
+                "test_evidence_refs": [test_execution_ref] if changed_files else [],
+                "risk_notes": [],
+                "approval_refs": [],
+                "commands": ["make test"],
+                "backend_execution": {
+                    "backend": "codex",
+                    "backend_kind": "cli",
+                    "executed": True
+                }
+            },
+            "conversation_context": [{"summary": "state and scoped artifact refs only"}]
+        }
+    }
+    response = post(f"/orchestra/runs/{run_id}/worker-outputs", payload)
+    session_dir = pathlib.Path(state_root) / project_id / "runs" / run_id / "worker-sessions"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    session = {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "worker_session_record",
+        "session_id": f"gw-047-worker-{index}",
+        "run_id": run_id,
+        "task_id": task["task_id"],
+        "role": "implementer",
+        "backend_id": "codex",
+        "status": "completed",
+        "started_at": "2026-05-17T00:00:00Z",
+        "ended_at": "2026-05-17T00:00:00Z",
+        "invocations": [
+            {
+                "invocation_id": payload["idempotency_key"],
+                "endpoint": "POST /orchestra/runs/{run_id}/worker-outputs",
+                "status": "completed",
+                "artifact_refs": [response.get("worker_output_report_ref")] if response.get("worker_output_report_ref") else []
             }
-        },
-    )
+        ]
+    }
+    (session_dir / f"{task['task_id']}.json").write_text(json.dumps(session, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 global_report = {
     "schema_version": "orchestra.v1",

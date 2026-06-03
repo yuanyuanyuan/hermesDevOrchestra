@@ -448,6 +448,36 @@ def get(path, *, participant, stage, action, what_happened, input_data=None, art
         raise SystemExit(f"GET {path} failed {exc.code}: {error_body}") from exc
 
 
+def record_worker_invocation_session(run_id, task, backend, payload, response, *, session_id_prefix):
+    run_dir = pathlib.Path(state_dir) / "runs" / run_id
+    session_dir = run_dir / "worker-sessions"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    task_id = task["task_id"]
+    session = {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "worker_session_record",
+        "session_id": f"{session_id_prefix}-{task_id}",
+        "run_id": run_id,
+        "task_id": task_id,
+        "role": payload.get("worker_response", {}).get("role", "implementer"),
+        "backend_id": backend,
+        "status": "completed",
+        "started_at": now(),
+        "ended_at": now(),
+        "invocations": [
+            {
+                "invocation_id": payload["idempotency_key"],
+                "endpoint": "POST /orchestra/runs/{run_id}/worker-outputs",
+                "status": "completed",
+                "artifact_refs": [response.get("worker_output_report_ref")] if response.get("worker_output_report_ref") else [],
+            }
+        ],
+    }
+    with (session_dir / f"{task_id}.json").open("w", encoding="utf-8") as handle:
+        json.dump(session, handle, ensure_ascii=False, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
 capabilities = get(
     "/orchestra/capabilities",
     participant="wizard-as-kimi",
@@ -533,7 +563,7 @@ for index, task in enumerate(tasks, start=1):
             "conversation_context": [{"summary": "wizard demo uses scoped state refs only"}],
         },
     }
-    post(
+    worker_response = post(
         f"/orchestra/runs/{run_id}/worker-outputs",
         worker_payload,
         participant="wizard-demo-worker",
@@ -541,6 +571,14 @@ for index, task in enumerate(tasks, start=1):
         action="submit_worker_output",
         what_happened=f"Demo worker submitted schema-valid role-engine output for stage task {task['task_id']}; Gateway validated identity, scoped refs, write scope, and test evidence before completing the task.",
         artifact_refs=[f"state://runs/{run_id}/run.json"] + ([test_execution_ref] if changed_files else []),
+    )
+    record_worker_invocation_session(
+        run_id,
+        task,
+        "wizard-demo-worker",
+        worker_payload,
+        worker_response,
+        session_id_prefix="wizard-demo",
     )
 
 created_at = now()
@@ -924,6 +962,36 @@ def get(path, *, participant, stage, action, what_happened, input_data=None, art
         raise SystemExit(f"GET {path} failed {exc.code}: {error_body}") from exc
 
 
+def record_real_worker_invocation_session(run_id, task, backend, payload, response, *, session_id_prefix):
+    run_dir = pathlib.Path(state_dir) / "runs" / run_id
+    session_dir = run_dir / "worker-sessions"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    task_id = task["task_id"]
+    session = {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "worker_session_record",
+        "session_id": f"{session_id_prefix}-{task_id}",
+        "run_id": run_id,
+        "task_id": task_id,
+        "role": payload.get("worker_response", {}).get("role", "implementer"),
+        "backend_id": backend,
+        "status": "completed",
+        "started_at": now(),
+        "ended_at": now(),
+        "invocations": [
+            {
+                "invocation_id": payload["idempotency_key"],
+                "endpoint": "POST /orchestra/runs/{run_id}/worker-outputs",
+                "status": "completed",
+                "artifact_refs": [response.get("worker_output_report_ref")] if response.get("worker_output_report_ref") else [],
+            }
+        ],
+    }
+    with (session_dir / f"{task_id}.json").open("w", encoding="utf-8") as handle:
+        json.dump(session, handle, ensure_ascii=False, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
 def run_command(command, *, stdin_text, cwd, stdout_path, stderr_path, participant, stage, action, what_happened):
     started = time.time()
     stdout_file = pathlib.Path(stdout_path)
@@ -1183,63 +1251,91 @@ def worker_payload(task, *, role, backend, idempotency_key, changed_files, diff_
     }
 
 
+codex_payload = worker_payload(
+    implementation_task,
+    role="implementer",
+    backend="codex",
+    idempotency_key=f"real-worker-codex-{demo_id}",
+    changed_files=[low_risk_file.as_posix()],
+    diff_summary="Codex CLI updated the approved low-risk Orchestra knowledge demo file.",
+    commands=["codex exec --dangerously-bypass-approvals-and-sandbox --json --output-last-message <state-evidence>/codex-result.json -"],
+    local_evidence=[str(codex_result_path), str(codex_stdout_path), str(codex_stderr_path), str(git_status_path), str(git_diff_path), str(file_content_path)],
+)
 codex_worker_response = post(
     f"/orchestra/runs/{run_id}/worker-outputs",
-    worker_payload(
-        implementation_task,
-        role="implementer",
-        backend="codex",
-        idempotency_key=f"real-worker-codex-{demo_id}",
-        changed_files=[low_risk_file.as_posix()],
-        diff_summary="Codex CLI updated the approved low-risk Orchestra knowledge demo file.",
-        commands=["codex exec --dangerously-bypass-approvals-and-sandbox --json --output-last-message <state-evidence>/codex-result.json -"],
-        local_evidence=[str(codex_result_path), str(codex_stdout_path), str(codex_stderr_path), str(git_status_path), str(git_diff_path), str(file_content_path)],
-    ),
+    codex_payload,
     participant="wizard-as-kimi",
     stage="implementation",
     action="submit_real_worker_output",
     what_happened="Wizard submitted the real Codex CLI output through the public Gateway worker-output endpoint.",
     artifact_refs=[f"state://runs/{run_id}/run.json", test_execution_ref],
 )
+record_real_worker_invocation_session(
+    run_id,
+    implementation_task,
+    "codex",
+    codex_payload,
+    codex_worker_response,
+    session_id_prefix="real-worker-demo",
+)
+
+claude_payload = worker_payload(
+    review_task,
+    role="reviewer",
+    backend="claude",
+    idempotency_key=f"real-worker-claude-{demo_id}",
+    changed_files=[],
+    diff_summary="Claude CLI reviewed the Codex low-risk file change and returned review evidence.",
+    commands=["claude -p --output-format json --permission-mode auto <review-prompt>"],
+    local_evidence=[str(claude_stdout_path), str(claude_stderr_path)],
+)
 claude_worker_response = post(
     f"/orchestra/runs/{run_id}/worker-outputs",
-    worker_payload(
-        review_task,
-        role="reviewer",
-        backend="claude",
-        idempotency_key=f"real-worker-claude-{demo_id}",
-        changed_files=[],
-        diff_summary="Claude CLI reviewed the Codex low-risk file change and returned review evidence.",
-        commands=["claude -p --output-format json --permission-mode auto <review-prompt>"],
-        local_evidence=[str(claude_stdout_path), str(claude_stderr_path)],
-    ),
+    claude_payload,
     participant="wizard-as-kimi",
     stage="review",
     action="submit_real_review_output",
     what_happened="Wizard submitted the real Claude CLI review output through the public Gateway worker-output endpoint.",
     artifact_refs=[f"state://runs/{run_id}/run.json", codex_worker_response.get("worker_output_report_ref")],
 )
+record_real_worker_invocation_session(
+    run_id,
+    review_task,
+    "claude",
+    claude_payload,
+    claude_worker_response,
+    session_id_prefix="real-worker-demo",
+)
 
 for index, task in enumerate(tasks, start=1):
     if task["task_id"] in {implementation_task["task_id"], review_task["task_id"]}:
         continue
-    post(
+    harness_payload = worker_payload(
+        task,
+        role="implementer",
+        backend="wizard-real-worker-harness",
+        idempotency_key=f"real-worker-harness-{demo_id}-{index}",
+        changed_files=[],
+        diff_summary="Harness completed the non-worker-focus stage so the real-worker demo can reach MVP closeout.",
+        commands=[],
+        local_evidence=[],
+    )
+    harness_response = post(
         f"/orchestra/runs/{run_id}/worker-outputs",
-        worker_payload(
-            task,
-            role="implementer",
-            backend="wizard-real-worker-harness",
-            idempotency_key=f"real-worker-harness-{demo_id}-{index}",
-            changed_files=[],
-            diff_summary="Harness completed the non-worker-focus stage so the real-worker demo can reach MVP closeout.",
-            commands=[],
-            local_evidence=[],
-        ),
+        harness_payload,
         participant="wizard-real-worker-harness",
         stage=str(task.get("stage") or "worker"),
         action="submit_harness_worker_output",
         what_happened=f"Wizard harness completed non-focus stage {task['stage']} while preserving real Codex/Claude evidence for the focused implementation/review steps.",
         artifact_refs=[f"state://runs/{run_id}/run.json"],
+    )
+    record_real_worker_invocation_session(
+        run_id,
+        task,
+        "wizard-real-worker-harness",
+        harness_payload,
+        harness_response,
+        session_id_prefix="real-worker-demo",
     )
 
 created_at = now()
