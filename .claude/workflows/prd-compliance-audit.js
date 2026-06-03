@@ -1,13 +1,14 @@
 export const meta = {
   name: 'prd-compliance-audit',
-  description: '验证代码对 PRD 的合规性，检查文档一致性，列出清理建议。Phase 1 逐项比对 prd_by_kimi.md + user-flow-guide_by_kimi.md 与代码实现；Phase 2 检查文档一致性并归档过期文档，扫描项目列出移除建议。',
-  whenToUse: '当用户需要验证当前代码是否完整实现 PRD 要求、检查文档是否过期、或清理项目冗余内容时使用。执行前确保代码已 commit。',
+  description: '验证代码对 PRD 的合规性，检查文档一致性，列出清理建议，最终生成用户手册。Phase 1 逐项比对 prd_by_kimi.md + user-flow-guide_by_kimi.md 与代码实现；Phase 2 检查文档一致性并归档过期文档，扫描项目列出移除建议；Phase 3 基于审计结果生成 SOP 级用户手册。',
+  whenToUse: '当用户需要验证当前代码是否完整实现 PRD 要求、检查文档是否过期、清理项目冗余内容、或生成用户手册时使用。执行前确保代码已 commit。',
   phases: [
     { title: "Extract", detail: "从两份 PRD 提取所有可验证需求检查点" },
     { title: "Verify", detail: "并行验证每个需求维度的代码/配置/测试实现" },
     { title: "Compliance Report", detail: "生成合规矩阵，判定 PASS/FAIL" },
     { title: "Doc Audit", detail: "检查文档一致性，归档过期文档" },
     { title: "Cleanup Scan", detail: "扫描项目内容，列出移除建议" },
+    { title: "User Manual", detail: "基于审计结果生成 SOP 级用户手册" },
   ],
 }
 
@@ -16,13 +17,16 @@ const PASS_THRESHOLD = 0.85
 const VETO_DIMENSIONS = ["six_stage_state_machine", "evidence_gate", "security_compliance"]
 
 // ─── Schemas ───
-const EXTRACT_SCHEMA = {
+// Batch extraction schema — each batch handles 3-6 dimensions to avoid timeout
+const BATCH_EXTRACT_SCHEMA = {
   type: "object",
-  required: ["dimensions"],
+  required: ["batch_id", "dimensions"],
   properties: {
+    batch_id: { type: "string", description: "批次标识，如 batch_1_state_machine" },
     dimensions: {
       type: "array",
-      minItems: 10,
+      minItems: 2,
+      maxItems: 7,
       items: {
         type: "object",
         required: ["id", "name", "prd_section", "is_veto", "checkpoints"],
@@ -155,61 +159,120 @@ const CLEANUP_SCHEMA = {
   },
 }
 
-// ─── Phase 1: Extract requirements from both PRDs ───
-phase("Extract")
-log("从 prd_by_kimi.md 和 user-flow-guide_by_kimi.md 提取需求检查点...")
+const MANUAL_SCHEMA = {
+  type: "object",
+  required: ["manual_title", "manual_content", "sections", "based_on", "output_path"],
+  properties: {
+    manual_title: { type: "string", description: "手册标题" },
+    manual_content: { type: "string", description: "完整的用户手册内容（Markdown 格式），从用户视角、对话式、SOP 级别，包含调试指南" },
+    sections: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["title", "description"],
+        properties: {
+          title: { type: "string" },
+          description: { type: "string" },
+          content_preview: { type: "string", description: "该章节内容预览（前 200 字）" },
+        },
+      },
+    },
+    based_on: {
+      type: "object",
+      required: ["verified_dimensions", "total_dimensions", "compliance_rate"],
+      properties: {
+        verified_dimensions: { type: "number", description: "手册基于的已验证需求数" },
+        total_dimensions: { type: "number", description: "总需求数" },
+        compliance_rate: { type: "string", description: "合规率" },
+        key_features_covered: { type: "array", items: { type: "string" }, description: "手册覆盖的核心功能列表" },
+      },
+    },
+    output_path: { type: "string", description: "手册输出路径" },
+  },
+}
 
-const extractResult = await agent(
-  "## 任务：PRD 需求提取\n\n" +
-  "你需要从两份产品文档中提取所有可验证的技术需求检查点。\n\n" +
+// ─── Phase 1: Extract requirements from both PRDs (3 parallel batches) ───
+phase("Extract")
+log("从 prd_by_kimi.md 和 user-flow-guide_by_kimi.md 提取需求检查点（3 批并行）...")
+
+const PRD_CONTEXT =
   "### 输入文件\n" +
   "1. `/data/hermes/docs/prd_by_kimi.md` — 产品需求文档\n" +
   "2. `/data/hermes/docs/user-flow-guide_by_kimi.md` — 用户流程指南\n\n" +
-  "### 提取规则\n" +
-  "1. 读取两份文件，逐章节提取所有可验证的需求点\n" +
-  "2. 每个需求维度需要包含：\n" +
-  "   - `id`: 唯一标识（snake_case）\n" +
-  "   - `name`: 维度名称\n" +
-  "   - `prd_section`: 对应 PRD 章节号\n" +
-  "   - `is_veto`: 是否为一票否决维度（安全合规、证据门控、状态机为核心维度）\n" +
-  "   - `checkpoints`: 具体检查点列表\n" +
-  "3. 每个检查点需要：\n" +
-  "   - `check_id`: 唯一标识\n" +
-  "   - `description`: 检查内容描述\n" +
-  "   - `verify_method`: 验证方法（code_exists / function_grep / config_check / test_exists / manual_review）\n" +
-  "   - `expected_files`: 预期的代码/配置文件路径（可选）\n" +
-  "   - `grep_pattern`: 用于搜索的模式（可选）\n\n" +
-  "### 需要覆盖的维度（至少）\n" +
-  "- 六阶段 Run 状态机（§3.6, §4.0）→ orch_gateway.py\n" +
-  "- 0阶 需求补全（§4.1）→ gateway_intake.py, project_discovery.py\n" +
-  "- 一阶 方向辩论（§4.2）→ debate_ticket_generator.py, debate_assembly.py\n" +
-  "- 二阶 方案辩论（§4.3）→ dag_validator.py, debate_engine.py\n" +
-  "- 三阶 具体执行（§4.4）→ worker_session.py, heartbeat_handler.py\n" +
-  "- 四阶 改进实现（§4.5）→ gateway_improvement.py\n" +
-  "- 五阶 全局评估（§4.6）→ gateway_evaluation.py\n" +
-  "- 六阶 持续改进（§4.7）→ self_evolution.py, gateway_closeout.py\n" +
-  "- 16支辩论团队（§6.1）→ config/debate/full/teams.json\n" +
-  "- 8种辩论模式（§6.3）→ config/debate/full/modes.json\n" +
-  "- 通道分级（§7）→ channel_router.py, rollout_gate.py\n" +
-  "- Gateway 证据门控（§8）→ evidence_gate.py, security_gate.py\n" +
-  "- Worker 执行模型（§9）→ worker_registry.py\n" +
-  "- Conflict Ledger（§3.5）→ 冲突数据结构\n" +
-  "- Override 留痕（§4.1）→ correction_gate.py\n" +
-  "- 成功指标采集（§11.1）→ success_metrics.py\n" +
-  "- 自动合并安全（§7.3）→ auto_merge_controller.py\n\n" +
   "### 项目代码位置\n" +
   "- 运行时代码：`/data/hermes/scripts/lib/`\n" +
   "- 配置文件：`/data/hermes/config/`\n" +
   "- 测试脚本：`/data/hermes/scripts/tests/`\n" +
   "- CLI 工具：`/data/hermes/scripts/bin/`\n\n" +
-  "请先读取两份 PRD 文件，然后读取 scripts/lib/ 目录列表确认文件名，最后输出结构化的需求维度列表。\n\nStructured output only.",
-  { label: "extract", phase: "Extract", schema: EXTRACT_SCHEMA }
+  "### 通用提取规则\n" +
+  "1. 读取两份文件，逐章节提取本批次指定维度的可验证需求点\n" +
+  "2. 每个需求维度：id(snake_case)、name、prd_section、is_veto、checkpoints[]\n" +
+  "3. 每个检查点：check_id、description、verify_method(code_exists|function_grep|config_check|test_exists|manual_review)、expected_files(可选)、grep_pattern(可选)\n\n"
+
+const BATCH_PROMPTS = [
+  {
+    label: "extract-batch-1-state-machine",
+    prompt:
+      "## 任务：PRD 需求提取 — 批次 1：六阶段状态机\n\n" + PRD_CONTEXT +
+      "### 本批次聚焦\n" +
+      "- 六阶段 Run 状态机（§3.6, §4.0）→ orch_gateway.py\n" +
+      "  - 阶段入口函数（阶段 0-5）\n" +
+      "  - 阶段出口门禁\n" +
+      "  - 阶段状态持久化（phase_status.json）\n" +
+      "  - 阶段转换/回退机制\n" +
+      "- 0阶 需求补全（§4.1）→ gateway_intake.py, project_discovery.py\n" +
+      "- 一阶 方向辩论（§4.2）→ debate_ticket_generator.py, debate_assembly.py\n" +
+      "- 二阶 方案辩论（§4.3）→ dag_validator.py, debate_engine.py\n" +
+      "- 三阶 具体执行（§4.4）→ worker_session.py, heartbeat_handler.py\n" +
+      "- 四阶 改进实现（§4.5）→ gateway_improvement.py\n" +
+      "- 五阶 全局评估（§4.6）→ gateway_evaluation.py\n" +
+      "- 六阶 持续改进（§4.7）→ self_evolution.py, gateway_closeout.py\n\n" +
+      "请先读取两份 PRD 文件的相关章节，然后读取 scripts/lib/ 确认文件名，最后输出结构化结果。\n\nStructured output only.",
+  },
+  {
+    label: "extract-batch-2-evidence-security",
+    prompt:
+      "## 任务：PRD 需求提取 — 批次 2：证据门控 + 安全 + 冲突管理\n\n" + PRD_CONTEXT +
+      "### 本批次聚焦\n" +
+      "- Gateway 证据门控（§8）→ evidence_gate.py, security_gate.py\n" +
+      "  - 证据收集函数、签名验证、完整性校验\n" +
+      "  - 证据链路追踪\n" +
+      "- Conflict Ledger（§3.5）→ 冲突数据结构\n" +
+      "- Override 留痕（§4.1）→ correction_gate.py\n" +
+      "- 自动合并安全（§7.3）→ auto_merge_controller.py\n" +
+      "- Worker 执行模型（§9）→ worker_registry.py\n\n" +
+      "请先读取两份 PRD 文件的相关章节，然后读取 scripts/lib/ 确认文件名，最后输出结构化结果。\n\nStructured output only.",
+  },
+  {
+    label: "extract-batch-3-config-infra",
+    prompt:
+      "## 任务：PRD 需求提取 — 批次 3：配置 + 基础设施\n\n" + PRD_CONTEXT +
+      "### 本批次聚焦\n" +
+      "- 16支辩论团队（§6.1）→ config/debate/full/teams.json\n" +
+      "- 8种辩论模式（§6.3）→ config/debate/full/modes.json\n" +
+      "- 通道分级（§7）→ channel_router.py, rollout_gate.py\n" +
+      "- 成功指标采集（§11.1）→ success_metrics.py\n" +
+      "- 项目骨架生成（§5）→ project_scaffolder.py, template_engine.py\n" +
+      "- 变更日志（§10）→ change_logger.py\n\n" +
+      "请先读取两份 PRD 文件的相关章节，然后读取 scripts/lib/ 和 config/ 确认文件名，最后输出结构化结果。\n\nStructured output only.",
+  },
+]
+
+const batchResults = await parallel(
+  BATCH_PROMPTS.map(batch => () =>
+    agent(batch.prompt, { label: batch.label, phase: "Extract", schema: BATCH_EXTRACT_SCHEMA })
+  )
 )
 
-if (!extractResult) {
+// Merge all batch results
+const extractResult = {
+  dimensions: batchResults.filter(Boolean).flatMap(b => b.dimensions || []),
+}
+
+if (!extractResult.dimensions.length) {
   return { error: "需求提取失败，无法继续。" }
 }
-log("提取完成：" + extractResult.dimensions.length + " 个需求维度")
+log("提取完成：" + extractResult.dimensions.length + " 个需求维度（3 批合并）")
 
 // ─── Phase 2: Verify each dimension in parallel ───
 phase("Verify")
@@ -258,47 +321,73 @@ const verifyResults = await parallel(
 const validResults = verifyResults.filter(Boolean)
 log("验证完成：" + validResults.length + "/" + extractResult.dimensions.length + " 维度已验证")
 
-// ─── Phase 3: Compliance Report ───
+// ─── Phase 3: Compliance Report (直接计算，不依赖代理) ───
 phase("Compliance Report")
 log("生成合规矩阵...")
 
-const reportInput = extractResult.dimensions.map(dim => {
-  const vr = validResults.find(r => r.dimension_id === dim.id)
-  return {
-    id: dim.id,
-    name: dim.name,
-    is_veto: dim.is_veto,
-    prd_section: dim.prd_section,
-    checkpoint_count: dim.checkpoints.length,
-    score: vr ? vr.dimension_score : 0,
-    pass_count: vr ? vr.results.filter(r => r.status === "pass").length : 0,
-    fail_count: vr ? vr.results.filter(r => r.status === "fail").length : 0,
-    partial_count: vr ? vr.results.filter(r => r.status === "partial").length : 0,
-    issues: vr ? vr.results.filter(r => r.status === "fail" || r.status === "not_found").map(r => r.check_id + ": " + (r.details || r.status)) : ["验证未完成"],
-  }
-})
-
-const complianceReport = await agent(
-  "## 任务：生成 PRD 合规矩阵\n\n" +
-  "### 输入数据\n" +
-  "以下是各维度的验证结果：\n\n" +
-  JSON.stringify(reportInput, null, 2) + "\n\n" +
-  "### 判定规则\n" +
-  "1. **一票否决维度**（is_veto=true）：任一未通过则整体 FAIL\n" +
-  "2. **整体覆盖率**：所有检查点中 pass 占比 ≥ " + (PASS_THRESHOLD * 100) + "% 为 PASS\n" +
-  "3. **critical_gaps**：列出所有一票否决维度中 fail 的检查点\n\n" +
-  "### 输出要求\n" +
-  "- `overall_verdict`: PASS 或 FAIL\n" +
-  "- `coverage_rate`: 总体覆盖率（0-1）\n" +
-  "- `veto_status`: 每个一票否决维度的通过状态\n" +
-  "- `dimensions`: 每个维度的详细评分\n" +
-  "- `critical_gaps`: 关键缺失列表\n\nStructured output only.",
-  { label: "compliance-report", phase: "Compliance Report", schema: COMPLIANCE_REPORT_SCHEMA }
-)
-
-if (!complianceReport) {
-  return { error: "合规报告生成失败。" }
+// 直接从验证结果计算合规报告
+const complianceReport = {
+  dimensions: extractResult.dimensions.map(dim => {
+    const vr = validResults.find(r => r.dimension_id === dim.id)
+    const score = vr ? vr.dimension_score : 0
+    const pass_count = vr ? vr.results.filter(r => r.status === "pass").length : 0
+    const fail_count = vr ? vr.results.filter(r => r.status === "fail").length : 0
+    const partial_count = vr ? vr.results.filter(r => r.status === "partial").length : 0
+    const issues = vr
+      ? vr.results.filter(r => r.status === "fail" || r.status === "not_found").map(r => r.check_id + ": " + (r.details || r.status))
+      : ["验证未完成"]
+    return {
+      id: dim.id,
+      name: dim.name,
+      is_veto: dim.is_veto,
+      score,
+      pass_count,
+      fail_count,
+      partial_count,
+      issues,
+    }
+  }),
+  veto_status: extractResult.dimensions
+    .filter(dim => dim.is_veto)
+    .map(dim => {
+      const vr = validResults.find(r => r.dimension_id === dim.id)
+      const score = vr ? vr.dimension_score : 0
+      const pass_count = vr ? vr.results.filter(r => r.status === "pass").length : 0
+      const fail_count = vr ? vr.results.filter(r => r.status === "fail").length : 0
+      const partial_count = vr ? vr.results.filter(r => r.status === "partial").length : 0
+      const total = pass_count + fail_count + partial_count
+      const passed = score >= PASS_THRESHOLD
+      return {
+        dimension: dim.name,
+        passed,
+        reason: passed
+          ? `${pass_count}/${total} 通过，score ${(score * 100).toFixed(0)}%`
+          : `${pass_count}/${total} 通过，score ${(score * 100).toFixed(0)}%`,
+      }
+    }),
+  critical_gaps: extractResult.dimensions
+    .filter(dim => dim.is_veto)
+    .filter(dim => {
+      const vr = validResults.find(r => r.dimension_id === dim.id)
+      return !vr || vr.dimension_score < PASS_THRESHOLD
+    })
+    .map(dim => {
+      const vr = validResults.find(r => r.dimension_id === dim.id)
+      const score = vr ? vr.dimension_score : 0
+      const fail_count = vr ? vr.results.filter(r => r.status === "fail").length : 0
+      const total = vr ? vr.results.length : 0
+      return `${dim.name} (${dim.prd_section}): score ${(score * 100).toFixed(0)}%, ${fail_count} 项失败`
+    }),
 }
+
+// 计算总体覆盖率
+const totalCheckpoints = complianceReport.dimensions.reduce((sum, d) => sum + d.pass_count + d.fail_count + d.partial_count, 0)
+const totalPass = complianceReport.dimensions.reduce((sum, d) => sum + d.pass_count, 0)
+complianceReport.coverage_rate = totalCheckpoints > 0 ? totalPass / totalCheckpoints : 0
+
+// 判定整体结果
+const hasVetoFail = complianceReport.veto_status.some(v => !v.passed)
+complianceReport.overall_verdict = hasVetoFail || complianceReport.coverage_rate < PASS_THRESHOLD ? "FAIL" : "PASS"
 
 log("=== 合规判定 ===")
 log("整体判定：" + complianceReport.overall_verdict)
@@ -413,6 +502,73 @@ if (cleanupScan) {
   log("清理扫描未返回结果")
 }
 
+// ─── Phase 6: User Manual (based on verified audit results) ───
+phase("User Manual")
+log("基于审计结果生成 SOP 级用户手册...")
+
+// Build context from audit results for accurate manual generation
+const verifiedFeatures = complianceReport.dimensions
+  .filter(d => d.score >= 0.8)
+  .map(d => d.name)
+const failedFeatures = complianceReport.dimensions
+  .filter(d => d.score < 0.8)
+  .map(d => d.name + " (score: " + (d.score * 100).toFixed(0) + "%)")
+const archivedDocs = docAudit ? docAudit.docs.filter(d => d.action === "archive").map(d => d.file) : []
+const removedItems = cleanupScan ? cleanupScan.items.map(i => i.path + " — " + i.reason) : []
+
+const manualResult = await agent(
+  "## 任务：生成 SOP 级用户使用手册\n\n" +
+  "基于前面审计阶段的**实际验证结果**，为 Hermes Dev Orchestra 编写一份用户使用手册。\n\n" +
+  "### 审计结果（你必须基于这些事实来写手册）\n\n" +
+  "**合规状态**：" + complianceReport.overall_verdict + "\n" +
+  "**覆盖率**：" + (complianceReport.coverage_rate * 100).toFixed(1) + "%\n" +
+  "**已验证的功能维度**（≥80% 通过）：\n" +
+  verifiedFeatures.map(f => "- " + f).join("\n") + "\n\n" +
+  (failedFeatures.length > 0 ? "**未完全实现的功能维度**（<80%）：\n" + failedFeatures.map(f => "- " + f).join("\n") + "\n\n" : "") +
+  "**已归档的文档**：\n" +
+  (archivedDocs.length > 0 ? archivedDocs.map(d => "- " + d).join("\n") : "- 无") + "\n\n" +
+  "**已识别的清理项**：\n" +
+  (removedItems.length > 0 ? removedItems.map(i => "- " + i).join("\n") : "- 无") + "\n\n" +
+  "### 手册要求\n\n" +
+  "1. **视角**：从用户（开发者）使用的角度出发，不是从系统设计角度\n" +
+  "2. **风格**：对话聊天式，像一个老手带新手走一遍流程\n" +
+  "3. **粒度**：SOP step-by-step 级别，每一步都有具体命令和预期输出\n" +
+  "4. **示例**：以「开发一个新功能」为完整示例贯穿全流程\n" +
+  "5. **调试**：必须包含常见问题与调试指南，每个问题有诊断步骤和解决方案\n" +
+  "6. **准确性**：只写已验证通过的功能，未实现的功能不要出现在手册中\n" +
+  "7. **语言**：中文\n\n" +
+  "### 手册结构（建议）\n\n" +
+  "1. 开始之前：环境准备和安装验证\n" +
+  "2. 初始化项目：orch-init 的完整交互流程\n" +
+  "3. 提交开发任务：如何编写 task.md，任务注入流程\n" +
+  "4. 观察执行：tmux 会话监控，如何查看 Codex 工作状态\n" +
+  "5. 处理审批请求：L2/L3/L4 风险等级，approve/reject 操作\n" +
+  "6. 查看执行结果：codex-result.md、review-result.md 的解读\n" +
+  "7. 提交代码：git 操作和测试验证\n" +
+  "8. 常见问题与调试：4 大类问题（安装、任务执行、审批、性能），每类有诊断步骤和解决方案表格\n" +
+  "9. 命令速查表：所有 CLI 命令分类整理\n" +
+  "10. 附录：完整示例文件、配置示例、流程图\n\n" +
+  "### 输出\n\n" +
+  "- `manual_title`: 手册标题\n" +
+  "- `manual_content`: 完整的 Markdown 手册内容（这是核心输出，要完整、可直接使用）\n" +
+  "- `sections`: 章节列表（title + description + content_preview）\n" +
+  "- `based_on`: 手册基于的审计数据（verified_dimensions, total_dimensions, compliance_rate, key_features_covered）\n" +
+  "- `output_path`: 建议的手册保存路径（`/data/hermes/docs/USER-MANUAL.md`）\n\nStructured output only.",
+  { label: "user-manual", phase: "User Manual", schema: MANUAL_SCHEMA }
+)
+
+if (manualResult) {
+  log("用户手册生成完成：" + manualResult.manual_title)
+  log("  章节数：" + manualResult.sections.length)
+  log("  基于已验证需求：" + manualResult.based_on.verified_dimensions + "/" + manualResult.based_on.total_dimensions)
+  log("  合规率：" + manualResult.based_on.compliance_rate)
+  log("  输出路径：" + manualResult.output_path)
+  log("  章节预览：")
+  manualResult.sections.forEach(s => log("    📖 " + s.title + " — " + s.description))
+} else {
+  log("用户手册生成未返回结果")
+}
+
 // ─── Final Return ───
 return {
   phase1: {
@@ -426,10 +582,15 @@ return {
     doc_audit: docAudit || { docs: [], error: "未返回结果" },
     cleanup_scan: cleanupScan || { items: [], error: "未返回结果" },
   },
+  phase3: {
+    user_manual: manualResult || { error: "未返回结果" },
+  },
   summary: {
     prd_compliant: complianceReport.overall_verdict === "PASS",
     coverage_rate: (complianceReport.coverage_rate * 100).toFixed(1) + "%",
     docs_to_archive: docAudit ? docAudit.docs.filter(d => d.action === "archive").length : 0,
     items_to_review: cleanupScan ? cleanupScan.items.length : 0,
+    manual_generated: !!manualResult,
+    manual_path: manualResult ? manualResult.output_path : null,
   },
 }
