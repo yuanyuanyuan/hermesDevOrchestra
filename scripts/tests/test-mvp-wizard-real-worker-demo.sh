@@ -196,6 +196,12 @@ assert worker_reports, "missing worker output reports"
 worker_data = [json.loads(path.read_text(encoding="utf-8")) for path in worker_reports]
 assert any(report.get("backend_execution", {}).get("backend") == "codex" for report in worker_data), worker_data
 assert any(report.get("backend_execution", {}).get("backend") == "claude" for report in worker_data), worker_data
+worker_sessions = [
+    json.loads(path.read_text(encoding="utf-8"))
+    for path in (run_dir / "worker-sessions").glob("*.json")
+]
+assert worker_sessions, "missing worker sessions"
+assert all(session["session_id"].startswith("real-worker-demo-") for session in worker_sessions), worker_sessions
 
 audit_records = [
     json.loads(line)
