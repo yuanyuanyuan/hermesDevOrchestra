@@ -17,6 +17,8 @@ const PASS_THRESHOLD = 0.85
 const VETO_DIMENSIONS = [
   "six_stage_state_machine_and_gates",
   "evidence_gate",
+  "conflict_ledger",
+  "override_recording",
   "debate_teams_registry",
   "debate_modes_registry",
   "channel_routing",
@@ -25,6 +27,17 @@ const VETO_DIMENSION_IDS = new Set(VETO_DIMENSIONS)
 
 function isVetoDimension(dim) {
   return VETO_DIMENSION_IDS.has(dim.id)
+}
+
+function countResultStatuses(results) {
+  const safeResults = Array.isArray(results) ? results : []
+  return {
+    pass: safeResults.filter(r => r.status === "pass").length,
+    fail: safeResults.filter(r => r.status === "fail").length,
+    partial: safeResults.filter(r => r.status === "partial").length,
+    not_found: safeResults.filter(r => r.status === "not_found").length,
+    total: safeResults.length,
+  }
 }
 
 // ─── Schemas ───
@@ -111,7 +124,7 @@ const COMPLIANCE_REPORT_SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        required: ["id", "name", "is_veto", "score", "pass_count", "fail_count", "partial_count"],
+        required: ["id", "name", "is_veto", "score", "pass_count", "fail_count", "partial_count", "not_found_count"],
         properties: {
           id: { type: "string" },
           name: { type: "string" },
@@ -120,6 +133,7 @@ const COMPLIANCE_REPORT_SCHEMA = {
           pass_count: { type: "number" },
           fail_count: { type: "number" },
           partial_count: { type: "number" },
+          not_found_count: { type: "number" },
           issues: { type: "array", items: { type: "string" } },
         },
       },
@@ -359,9 +373,7 @@ const complianceReport = {
   dimensions: extractResult.dimensions.map((dim, idx) => {
     const vr = verifyResults[idx]  // 直接用索引访问，可能是 null
     const score = vr ? vr.dimension_score : 0
-    const pass_count = vr ? vr.results.filter(r => r.status === "pass").length : 0
-    const fail_count = vr ? vr.results.filter(r => r.status === "fail").length : 0
-    const partial_count = vr ? vr.results.filter(r => r.status === "partial").length : 0
+    const counts = countResultStatuses(vr && vr.results)
     const issues = vr
       ? vr.results.filter(r => r.status === "fail" || r.status === "not_found").map(r => r.check_id + ": " + (r.details || r.status))
       : ["验证未完成"]
@@ -370,9 +382,10 @@ const complianceReport = {
       name: dim.name,
       is_veto: isVetoDimension(dim),
       score,
-      pass_count,
-      fail_count,
-      partial_count,
+      pass_count: counts.pass,
+      fail_count: counts.fail,
+      partial_count: counts.partial,
+      not_found_count: counts.not_found,
       issues,
     }
   }),
@@ -382,17 +395,14 @@ const complianceReport = {
       const idx = dimIdToIndex[dim.id]
       const vr = verifyResults[idx]
       const score = vr ? vr.dimension_score : 0
-      const pass_count = vr ? vr.results.filter(r => r.status === "pass").length : 0
-      const fail_count = vr ? vr.results.filter(r => r.status === "fail").length : 0
-      const partial_count = vr ? vr.results.filter(r => r.status === "partial").length : 0
-      const total = pass_count + fail_count + partial_count
+      const counts = countResultStatuses(vr && vr.results)
       const passed = score >= PASS_THRESHOLD
       return {
         dimension: dim.name,
         passed,
         reason: passed
-          ? `${pass_count}/${total} 通过，score ${(score * 100).toFixed(0)}%`
-          : `${pass_count}/${total} 通过，score ${(score * 100).toFixed(0)}%`,
+          ? `${counts.pass}/${counts.total} 通过，score ${(score * 100).toFixed(0)}%`
+          : `${counts.pass}/${counts.total} 通过，score ${(score * 100).toFixed(0)}%`,
       }
     }),
   critical_gaps: extractResult.dimensions
@@ -406,14 +416,13 @@ const complianceReport = {
       const idx = dimIdToIndex[dim.id]
       const vr = verifyResults[idx]
       const score = vr ? vr.dimension_score : 0
-      const fail_count = vr ? vr.results.filter(r => r.status === "fail").length : 0
-      const total = vr ? vr.results.length : 0
-      return `${dim.name} (${dim.prd_section}): score ${(score * 100).toFixed(0)}%, ${fail_count} 项失败`
+      const counts = countResultStatuses(vr && vr.results)
+      return `${dim.name} (${dim.prd_section}): score ${(score * 100).toFixed(0)}%, ${counts.fail + counts.not_found} 项失败/未找到`
     }),
 }
 
 // 计算总体覆盖率
-const totalCheckpoints = complianceReport.dimensions.reduce((sum, d) => sum + d.pass_count + d.fail_count + d.partial_count, 0)
+const totalCheckpoints = complianceReport.dimensions.reduce((sum, d) => sum + d.pass_count + d.fail_count + d.partial_count + d.not_found_count, 0)
 const totalPass = complianceReport.dimensions.reduce((sum, d) => sum + d.pass_count, 0)
 complianceReport.coverage_rate = totalCheckpoints > 0 ? totalPass / totalCheckpoints : 0
 
