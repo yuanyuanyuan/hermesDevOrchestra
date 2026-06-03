@@ -94,4 +94,62 @@ else:
     raise AssertionError("invalid heartbeat was accepted")
 PY
 
+python3 - "$REPO_ROOT" "$TMP_DIR/concurrent" <<'PY'
+import json
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from heartbeat_handler import HeartbeatHandler
+from worker_session import WorkerSessionManager
+
+repo_root = Path(sys.argv[1])
+tmp = Path(sys.argv[2])
+run_id = "run-heartbeat-concurrent"
+run_dir = tmp / "runs" / run_id
+events_path = run_dir / "events.jsonl"
+run_dir.mkdir(parents=True)
+
+manager = WorkerSessionManager(repo_root)
+records = []
+for index in range(4):
+    local_manager = WorkerSessionManager(repo_root, suffix_factory=lambda index=index: f"concurrent{index}abc123")
+    record = local_manager.create_dispatch_session(
+        run_id=run_id,
+        task_id=f"task-{index}",
+        assigned_actor="codex",
+        workspace_root=tmp / "workspaces",
+        computed_write_scope=[f"src/{index}.py"],
+        context_bundle_id=f"ctx-{index}",
+    )
+    manager.persist_record(record, run_dir / "worker-sessions")
+    records.append(record)
+
+def post(index: int) -> dict:
+    record = records[index]
+    heartbeat = {
+        "protocol_version": "1.0.0",
+        "message_type": "worker_heartbeat",
+        "run_id": run_id,
+        "task_id": record["task_id"],
+        "session_id": record["session_id"],
+        "timestamp": (datetime.now(timezone.utc) + timedelta(milliseconds=index)).isoformat(timespec="milliseconds"),
+        "stage": "running",
+        "progress": {"completed_count": 0, "total_count": 1, "in_progress_tasks": [record["task_id"]], "blocked_tasks": []},
+        "eta_seconds": 10,
+        "block_reason": None,
+        "heartbeat_seq": 1,
+    }
+    return HeartbeatHandler().process_heartbeat(run_dir=run_dir, events_path=events_path, payload=heartbeat)
+
+with ThreadPoolExecutor(max_workers=4) as executor:
+    results = list(executor.map(post, range(4)))
+assert all(result["status"] == "accepted" for result in results), results
+
+events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+seqs = [event["seq"] for event in events]
+assert seqs == [1, 2, 3, 4], seqs
+PY
+
 test_done

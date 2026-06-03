@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import json
+import os
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
+
+import fcntl
+
+from atomic_writer import AtomicWriter
 
 
 HEARTBEAT_PROTOCOL_VERSION = "1.0.0"
 HEARTBEAT_STAGES = {"running", "paused", "blocked", "completed", "error"}
 BLOCK_REASONS = {"waiting_for_upstream_artifact", "resource_exhausted", "manual_approval", "error_retry", None}
 ACTIVE_SNAPSHOT_STATUSES = {"running", "blocked"}
+_ATOMIC_WRITER = AtomicWriter()
 
 
 class HeartbeatError(Exception):
@@ -30,43 +37,44 @@ class HeartbeatHandler:
         if not record_path.exists():
             raise HeartbeatError("worker_session_not_found", "heartbeat session_id does not match a worker session")
 
-        record = self._read_json(record_path)
-        if record.get("run_id") != heartbeat["run_id"] or record.get("task_id") != heartbeat["task_id"]:
-            raise HeartbeatError("worker_session_mismatch", "heartbeat run_id/task_id do not match the worker session")
-
         state_path = run_path / "heartbeats" / f"{heartbeat['session_id']}.json"
-        state = self._read_json(state_path) if state_path.exists() else {"last_seq": 0, "pending": {}}
-        seq = heartbeat["heartbeat_seq"]
-        last_seq = int(state.get("last_seq", 0))
-        pending = state.get("pending") if isinstance(state.get("pending"), dict) else {}
+        with _exclusive_lock(state_path.with_suffix(".lock")):
+            record = self._read_json(record_path)
+            if record.get("run_id") != heartbeat["run_id"] or record.get("task_id") != heartbeat["task_id"]:
+                raise HeartbeatError("worker_session_mismatch", "heartbeat run_id/task_id do not match the worker session")
 
-        if seq <= last_seq or str(seq) in pending:
-            return {"status": "heartbeat_duplicate_ignored", "session_id": heartbeat["session_id"], "heartbeat_seq": seq}
-        if seq > last_seq + 1:
-            pending[str(seq)] = heartbeat
+            state = self._read_json(state_path) if state_path.exists() else {"last_seq": 0, "pending": {}}
+            seq = heartbeat["heartbeat_seq"]
+            last_seq = int(state.get("last_seq", 0))
+            pending = state.get("pending") if isinstance(state.get("pending"), dict) else {}
+
+            if seq <= last_seq or str(seq) in pending:
+                return {"status": "heartbeat_duplicate_ignored", "session_id": heartbeat["session_id"], "heartbeat_seq": seq}
+            if seq > last_seq + 1:
+                pending[str(seq)] = heartbeat
+                state["pending"] = pending
+                self._write_json(state_path, state)
+                return {"status": "heartbeat_buffered_out_of_order", "session_id": heartbeat["session_id"], "heartbeat_seq": seq}
+
+            processed: list[dict[str, Any]] = []
+            current = heartbeat
+            while current:
+                processed.append(current)
+                last_seq = current["heartbeat_seq"]
+                current = pending.pop(str(last_seq + 1), None)
+
+            latest = processed[-1]
+            record["last_heartbeat_at"] = latest["timestamp"]
+            record["latest_heartbeat"] = latest
+            record["heartbeat_seq"] = latest["heartbeat_seq"]
+            record["status"] = latest["stage"] if latest["stage"] in {"running", "blocked"} else record.get("status")
+            self._write_json(record_path, record)
+            self._append_heartbeat_events(Path(events_path), processed)
+
+            state["last_seq"] = last_seq
             state["pending"] = pending
             self._write_json(state_path, state)
-            return {"status": "heartbeat_buffered_out_of_order", "session_id": heartbeat["session_id"], "heartbeat_seq": seq}
-
-        processed: list[dict[str, Any]] = []
-        current = heartbeat
-        while current:
-            processed.append(current)
-            last_seq = current["heartbeat_seq"]
-            current = pending.pop(str(last_seq + 1), None)
-
-        latest = processed[-1]
-        record["last_heartbeat_at"] = latest["timestamp"]
-        record["latest_heartbeat"] = latest
-        record["heartbeat_seq"] = latest["heartbeat_seq"]
-        record["status"] = latest["stage"] if latest["stage"] in {"running", "blocked"} else record.get("status")
-        self._write_json(record_path, record)
-        self._append_heartbeat_events(Path(events_path), processed)
-
-        state["last_seq"] = last_seq
-        state["pending"] = pending
-        self._write_json(state_path, state)
-        return {"status": "accepted", "session_id": heartbeat["session_id"], "processed_count": len(processed), "last_heartbeat_seq": last_seq}
+            return {"status": "accepted", "session_id": heartbeat["session_id"], "processed_count": len(processed), "last_heartbeat_seq": last_seq}
 
     def snapshot(self, *, run_id: str, run_dir: Path | str) -> dict[str, Any]:
         sessions = []
@@ -118,39 +126,43 @@ class HeartbeatHandler:
 
     def _append_heartbeat_events(self, events_path: Path, heartbeats: list[dict[str, Any]]) -> None:
         events_path.parent.mkdir(parents=True, exist_ok=True)
-        seq = _next_event_seq(events_path)
-        with events_path.open("a", encoding="utf-8") as handle:
-            for heartbeat in heartbeats:
-                json.dump(
-                    {
-                        "schema_version": "orchestra.event.v1",
-                        "seq": seq,
-                        "timestamp": heartbeat["timestamp"],
-                        "run_id": heartbeat["run_id"],
-                        "task_id": heartbeat["task_id"],
-                        "stage": heartbeat["stage"],
-                        "type": "heartbeat",
-                        "severity": "info",
-                        "status": heartbeat["stage"],
-                        "message": "Worker heartbeat accepted",
-                        "artifact_refs": [],
-                        "decision_id": None,
-                        "session_id": heartbeat["session_id"],
-                        "heartbeat_seq": heartbeat["heartbeat_seq"],
-                    },
-                    handle,
-                    ensure_ascii=False,
-                )
-                handle.write("\n")
-                seq += 1
+        with _exclusive_lock(events_path.with_suffix(".lock")):
+            seq = _next_event_seq(events_path)
+            with events_path.open("a", encoding="utf-8") as handle:
+                for heartbeat in heartbeats:
+                    json.dump(
+                        {
+                            "schema_version": "orchestra.event.v1",
+                            "seq": seq,
+                            "timestamp": heartbeat["timestamp"],
+                            "run_id": heartbeat["run_id"],
+                            "task_id": heartbeat["task_id"],
+                            "stage": heartbeat["stage"],
+                            "type": "heartbeat",
+                            "severity": "info",
+                            "status": heartbeat["stage"],
+                            "message": "Worker heartbeat accepted",
+                            "artifact_refs": [],
+                            "decision_id": None,
+                            "session_id": heartbeat["session_id"],
+                            "heartbeat_seq": heartbeat["heartbeat_seq"],
+                        },
+                        handle,
+                        ensure_ascii=False,
+                    )
+                    handle.write("\n")
+                    seq += 1
+                handle.flush()
+                os.fsync(handle.fileno())
 
     def _read_json(self, path: Path) -> dict[str, Any]:
         with path.open(encoding="utf-8") as handle:
             return json.load(handle)
 
     def _write_json(self, path: Path, data: dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        receipt = _ATOMIC_WRITER.write(path, data)
+        if receipt.get("status") == "conflict":
+            raise HeartbeatError("atomic_write_conflict", f"atomic write conflict: {path}")
 
 
 def _next_event_seq(path: Path) -> int:
@@ -162,6 +174,17 @@ def _next_event_seq(path: Path) -> int:
             if line.strip():
                 seq = max(seq, int(json.loads(line).get("seq", 0)))
     return seq + 1
+
+
+@contextmanager
+def _exclusive_lock(path: Path) -> Iterator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _parse_time(value: str) -> datetime:

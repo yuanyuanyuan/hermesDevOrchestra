@@ -4,10 +4,13 @@ import json
 import os
 import shutil
 import subprocess
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Iterator, Protocol
 from uuid import uuid4
+
+import fcntl
 
 from worker_session import ACTIVE_SESSION_STATUSES, TERMINAL_SESSION_STATUSES, WorkerSessionError, WorkerSessionManager
 
@@ -294,15 +297,16 @@ class WorkerSessionSweeper:
 
     def _append_events(self, path: Path, events: list[dict[str, Any]]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        seq = _next_event_seq(path)
-        with path.open("a", encoding="utf-8") as handle:
-            for event in events:
-                event["seq"] = seq
-                json.dump(event, handle, ensure_ascii=False)
-                handle.write("\n")
+        with _exclusive_lock(path.with_suffix(".lock")):
+            seq = _next_event_seq(path)
+            with path.open("a", encoding="utf-8") as handle:
+                for event in events:
+                    event["seq"] = seq
+                    json.dump(event, handle, ensure_ascii=False)
+                    handle.write("\n")
+                    seq += 1
                 handle.flush()
                 os.fsync(handle.fileno())
-                seq += 1
 
 
 def _next_event_seq(path: Path) -> int:
@@ -321,3 +325,14 @@ def _run_id_from_events_path(path: Path) -> str:
         return path.parent.name
     except IndexError:
         return ""
+
+
+@contextmanager
+def _exclusive_lock(path: Path) -> Iterator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

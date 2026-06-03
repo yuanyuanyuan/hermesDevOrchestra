@@ -3,9 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
+
+import fcntl
 
 
 MERGE_STRATEGIES = frozenset({"ordered_merge", "last_writer_wins", "manual_conflict_resolution", "abort_on_conflict"})
@@ -76,11 +79,11 @@ def evaluate_parallel_write_sets(
     owners: dict[str, str] = {}
     conflicts: list[str] = []
     for item in normalized:
-        task_id = str(item.get("task_id") or "")
+        current_task_id = str(item.get("task_id") or "")
         for declared in item["declared_paths"]:
             path = declared["path"]
-            owner = owners.setdefault(path, task_id)
-            if owner != task_id:
+            owner = owners.setdefault(path, current_task_id)
+            if owner != current_task_id:
                 conflicts.append(path)
     conflict_paths = sorted(set(conflicts))
     if not conflict_paths:
@@ -95,24 +98,27 @@ def evaluate_parallel_write_sets(
 
 def append_parallel_write_conflict_event(events_path: Path, run_id: str, task_id: str, conflict_paths: list[str]) -> None:
     events_path.parent.mkdir(parents=True, exist_ok=True)
-    event = {
-        "schema_version": "orchestra.event.v1",
-        "seq": _next_event_seq(events_path),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "run_id": run_id,
-        "task_id": task_id,
-        "stage": "dispatch",
-        "type": "parallel_write_conflict",
-        "severity": "error",
-        "status": "blocked",
-        "message": "Parallel write set conflict blocked dispatch",
-        "artifact_refs": [],
-        "decision_id": None,
-        "conflict_paths": conflict_paths,
-    }
-    with events_path.open("a", encoding="utf-8") as handle:
-        json.dump(event, handle, ensure_ascii=False)
-        handle.write("\n")
+    with _exclusive_lock(events_path.with_suffix(".lock")):
+        event = {
+            "schema_version": "orchestra.event.v1",
+            "seq": _next_event_seq(events_path),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "run_id": run_id,
+            "task_id": task_id,
+            "stage": "dispatch",
+            "type": "parallel_write_conflict",
+            "severity": "error",
+            "status": "blocked",
+            "message": "Parallel write set conflict blocked dispatch",
+            "artifact_refs": [],
+            "decision_id": None,
+            "conflict_paths": conflict_paths,
+        }
+        with events_path.open("a", encoding="utf-8") as handle:
+            json.dump(event, handle, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
 
 
 def _next_event_seq(path: Path) -> int:
@@ -124,6 +130,17 @@ def _next_event_seq(path: Path) -> int:
             if line.strip():
                 seq = max(seq, int(json.loads(line).get("seq", 0)))
     return seq + 1
+
+
+@contextmanager
+def _exclusive_lock(path: Path) -> Iterator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def compute_expected_write_scope(tasks: list[dict[str, Any]], task_id: str) -> list[str]:
