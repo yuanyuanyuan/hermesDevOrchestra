@@ -33,7 +33,6 @@ sys.path.insert(0, str(repo / "scripts/lib"))
 
 from performance_slo import PerformanceSLOError, PerformanceBudgetPolicy
 
-
 def expect_error(code: str, func):
     try:
         func()
@@ -45,6 +44,14 @@ def expect_error(code: str, func):
 
 def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+success_metrics = load_json(repo / "config/performance/slo-policy.json").get("success_metrics", [])
+assert len(success_metrics) == 14, len(success_metrics)
+required_metric_keys = {"metric_id", "source_events", "aggregation_rule", "threshold", "validation_script_ref"}
+for metric in success_metrics:
+    assert required_metric_keys <= set(metric), metric
+    assert metric["validation_script_ref"] == "scripts/tests/test-success-metrics-pipeline.sh", metric
 
 
 def write_json(path: Path, payload: dict) -> None:
