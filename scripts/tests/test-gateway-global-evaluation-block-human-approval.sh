@@ -193,6 +193,8 @@ events = json.load(open(events_path, encoding="utf-8"))
 assert response["route_result"] == "decision_required", response
 assert response["blocked_reason"] == "global_evaluation_blocked", response
 assert response["authority_required"] == "human", response
+assert response["authority_route"]["next_stage"] == "approval_required", response
+assert "human" in response["authority_route"]["required_approvers"], response
 assert response["decision_id"].startswith("decision-"), response
 assert response["global_evaluation_report_ref"] == f"state://runs/{run_id}/global_evaluation_report.json", response
 

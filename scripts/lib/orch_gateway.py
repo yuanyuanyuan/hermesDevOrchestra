@@ -26,6 +26,8 @@ from blocker_validator import validate as _completion_bundle_validate
 from debate_report import validate_artifact_definition
 from dispatch_gate import dispatch_task, submit_completion_payload
 from gateway_improvement import improvement_cycles_endpoint, normalize_classification, reject_unknown_classification, review_verdict_budget_exceeded, submit_improvement_endpoint, write_regression_decision
+from gateway_evaluation import append_side_events as append_global_evaluation_side_events
+from gateway_evaluation import normalize_global_evaluation
 from run_projection import PROJECTION_SCHEMA_VERSION, projection_response, refresh_projection_response
 from runtime_activation import RuntimeActivation, RuntimeActivationError
 
@@ -458,6 +460,7 @@ class GatewayApp:
             "POST /orchestra/runs/{run_id}/stop",
             "POST /orchestra/runs/{run_id}/worker-outputs",
             "POST /orchestra/runs/{run_id}/verdicts",
+            "POST /orchestra/runs/{run_id}/global-evaluation",
             "POST /orchestra/runs/{run_id}/global-evaluations",
             "POST /orchestra/runs/{run_id}/closeout",
             "POST /orchestra/runs/{run_id}/failures",
@@ -3284,6 +3287,11 @@ class GatewayApp:
             body["existing_run_id"] = record.get("run_id")
             return 409, body
 
+        try:
+            report = normalize_global_evaluation(report, run_id, self.repo_root)
+        except ValueError as exc:
+            return 400, self.error("validation_error", str(exc))
+
         violations = self.global_evaluation_violations(report, run_id)
         if violations:
             body = self.error("validation_error", "global evaluation report failed schema validation")
@@ -3305,7 +3313,8 @@ class GatewayApp:
         if verdict == "pass_with_warnings":
             blocked_reason = "global_evaluation_acceptance_required"
             route_result = "final_acceptance_required"
-            authority_required = "kimi"
+            route_approvers = report.get("authority_route", {}).get("required_approvers", [])
+            authority_required = "human" if "human" in route_approvers else "kimi"
             audit_level = "L2"
             audit_decision = "WARNINGS"
             audit_details = "Global evaluation passed with warnings"
@@ -3448,6 +3457,7 @@ class GatewayApp:
         )
         if artifact_event_ref:
             projection_issue_refs.append(artifact_event_ref)
+        projection_issue_refs.extend(append_global_evaluation_side_events(self, run_id, report_artifact, command_id, idempotency_key, report_ref, audit_ref, now, EVENT_SCHEMA_VERSION))
         decision_event_ref = self.append_event(
             run_id,
             {
@@ -3476,6 +3486,11 @@ class GatewayApp:
             "idempotency_key": idempotency_key,
             "run_id": run_id,
             "global_evaluation_report_ref": report_ref,
+            "verdict": report_artifact["verdict"],
+            "dimensions": report_artifact["dimensions"],
+            "residual_risks": report_artifact["residual_risks"],
+            "notification_level": report_artifact["notification_level"],
+            "authority_route": report_artifact["authority_route"],
             "route_result": route_result,
             "decision_id": decision_id,
             "authority_required": authority_required,
@@ -3666,6 +3681,7 @@ class GatewayApp:
         )
         if stage_event_ref:
             projection_issue_refs.append(stage_event_ref)
+        projection_issue_refs.extend(append_global_evaluation_side_events(self, run_id, report_artifact, command_id, idempotency_key, report_ref, audit_ref, now, EVENT_SCHEMA_VERSION))
 
         response = {
             "schema_version": SCHEMA_VERSION,
@@ -3673,6 +3689,11 @@ class GatewayApp:
             "idempotency_key": idempotency_key,
             "run_id": run_id,
             "global_evaluation_report_ref": report_ref,
+            "verdict": report_artifact["verdict"],
+            "dimensions": report_artifact["dimensions"],
+            "residual_risks": report_artifact["residual_risks"],
+            "notification_level": report_artifact["notification_level"],
+            "authority_route": report_artifact["authority_route"],
             "route_result": "stage6_queued",
             "status": "queued",
             "event_projection_degraded": bool(projection_issue_refs),
@@ -4941,6 +4962,9 @@ class GatewayApp:
             "final_acceptance_ref",
             "next_actions",
             "created_at",
+            "dimensions",
+            "notification_level",
+            "authority_route",
         ]
         for field in required:
             if field not in report:
@@ -4957,6 +4981,26 @@ class GatewayApp:
             violations.append("verdict")
         if report.get("authority_required") not in {"kimi", "human"}:
             violations.append("authority_required")
+        dimensions = report.get("dimensions")
+        expected_dimensions = ["业务目标", "补全正确性", "安全合规", "质量", "性能", "可维护性", "文档", "可观测性"]
+        if not isinstance(dimensions, list) or [item.get("name") if isinstance(item, dict) else None for item in dimensions] != expected_dimensions:
+            violations.append("dimensions")
+        elif any(
+            not isinstance(item.get("score"), int)
+            or item.get("score") < 0
+            or item.get("score") > 10
+            or not isinstance(item.get("rationale"), str)
+            or not item.get("rationale")
+            or not isinstance(item.get("evidence_refs"), list)
+            or not item.get("evidence_refs")
+            for item in dimensions
+        ):
+            violations.append("dimensions")
+        if report.get("notification_level") not in {"none", "summary", "full"}:
+            violations.append("notification_level")
+        authority_route = report.get("authority_route")
+        if not isinstance(authority_route, dict) or "next_stage" not in authority_route or "required_approvers" not in authority_route or "block_reason" not in authority_route:
+            violations.append("authority_route")
         for list_field in [
             "input_artifact_refs",
             "debate_report_refs",
@@ -6132,7 +6176,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 status, body = submit_improvement_endpoint(self.app, run_id, payload)
                 self.send_json(status, body)
                 return
-            if child == "global-evaluations":
+            if child in {"global-evaluation", "global-evaluations"}:
                 payload = self.read_json_body()
                 if payload is None:
                     self.send_json(400, self.app.error("invalid_json", "request body must be JSON"))
@@ -6193,7 +6237,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
         parts = [part for part in path.split("/") if part]
         if len(parts) == 3 and parts[:2] == ["orchestra", "runs"]:
             return parts[2], None
-        if len(parts) == 4 and parts[:2] == ["orchestra", "runs"] and parts[3] in {"projection", "events", "tasks", "snapshot", "heartbeat", "stop", "worker-outputs", "verdicts", "improvement", "global-evaluations", "closeout", "failures"}:
+        if len(parts) == 4 and parts[:2] == ["orchestra", "runs"] and parts[3] in {"projection", "events", "tasks", "snapshot", "heartbeat", "stop", "worker-outputs", "verdicts", "improvement", "global-evaluation", "global-evaluations", "closeout", "failures"}:
             return parts[2], parts[3]
         if len(parts) == 5 and parts[:2] == ["orchestra", "runs"] and parts[3:] == ["improvement", "cycles"]:
             return parts[2], "improvement_cycles"

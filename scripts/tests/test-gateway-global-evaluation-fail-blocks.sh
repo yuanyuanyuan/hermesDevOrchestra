@@ -143,10 +143,27 @@ report = {
     "residual_risks": ["Required test execution evidence is missing"],
     "blocking_issues": [{"issue_id": "GE-FAIL-001", "summary": "Missing executable test evidence"}],
     "authority_required": "kimi",
+    "evaluator_scores": {"质量": [2, 6]},
+    "affected_teams": ["platform", "security"],
+    "protected_targets_changed": True,
+    "review_records": [
+        {"team": "platform", "file": "scripts/lib/orch_gateway.py", "conclusion": "approve"},
+        {"team": "security", "file": "scripts/lib/orch_gateway.py", "conclusion": "reject"}
+    ],
     "final_acceptance_ref": None,
     "next_actions": ["Decide whether to revise or stop"],
     "created_at": "2026-05-17T00:00:00Z"
 }
+names = ["业务目标", "补全正确性", "安全合规", "质量", "性能", "可维护性", "文档", "可观测性"]
+report["dimensions"] = [
+    {
+        "name": name,
+        "score": 2 if index == 0 else 8,
+        "rationale": f"{name} scored from failure evidence",
+        "evidence_refs": [f"state://runs/{run_id}/run.json"],
+    }
+    for index, name in enumerate(names)
+]
 payload = {"idempotency_key": "gw-041-global-evaluation", "report": report}
 request = urllib.request.Request(
     f"{base_url}/orchestra/runs/{run_id}/global-evaluations",
@@ -194,6 +211,8 @@ assert response["route_result"] == "decision_required", response
 assert response["blocked_reason"] == "global_evaluation_failed", response
 assert response["failure_class"] == "global_evaluation_failed", response
 assert response["authority_required"] == "kimi", response
+assert response["authority_route"]["next_stage"] in {"improvement", "rollback"}, response
+assert response["authority_route"]["next_stage"] != "closeout", response
 assert response["decision_id"].startswith("decision-"), response
 assert response["global_evaluation_report_ref"] == f"state://runs/{run_id}/global_evaluation_report.json", response
 
@@ -207,6 +226,9 @@ assert status["artifact_refs"]["global_evaluation_report"] == response["global_e
 event_types = [event["type"] for event in events["events"]]
 assert "artifact_written" in event_types, event_types
 assert "decision_required" in event_types, event_types
+assert "jury_panel_triggered" in event_types, event_types
+assert "meta_review_triggered" in event_types, event_types
+assert "cross_team_conflict_triggered" in event_types, event_types
 assert "stage_started" not in event_types, event_types
 assert "run_completed" not in event_types, event_types
 
