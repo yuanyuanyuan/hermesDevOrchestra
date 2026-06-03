@@ -300,7 +300,8 @@ const VERIFY_PROMPT = (dim) =>
   "- `status`: pass / partial / fail / not_found\n" +
   "- `evidence`: 找到的证据（文件路径、函数名、配置项等）\n" +
   "- `details`: 详细说明（特别是 partial 和 fail 的原因）\n\n" +
-  "最后给出该维度的整体评分（0-1）和摘要。\n\nStructured output only."
+  "最后给出该维度的整体评分（0-1）和摘要。\n\n" +
+  "⚠️ **重要**：你必须使用 StructuredOutput 工具返回结果，不要直接输出文本。返回的 JSON 必须包含 `dimension_id`、`results`、`dimension_score` 和 `summary` 字段。"
 
 const verifyResults = await parallel(
   extractResult.dimensions.map(dim => () =>
