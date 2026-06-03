@@ -90,7 +90,8 @@ main() {
         exit 1
       fi
       if [[ -n "$add_label" ]]; then
-        gh issue edit "$number" --add-label "$add_label" --repo "$repo"
+        # PR labels use GitHub's issue labels endpoint.
+        gh api -X POST "repos/${repo}/issues/${number}/labels" -f "labels[]=${add_label}" >/dev/null
       fi
       ;;
     checks)

@@ -7,7 +7,7 @@ FAILED=0
 
 shopt -s nullglob
 for test_script in "$TEST_DIR"/test-*.sh; do
-    if head -n 1 "$test_script" | grep -q "python3"; then
+    if head -n 1 "$test_script" | grep -qE '^#!.*python'; then
         runner=(python3)
     else
         runner=(bash)

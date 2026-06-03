@@ -102,4 +102,53 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ---
 
+## CodeMap 集成
+
+> 本项目使用 [CodeMap](https://github.com/yuanyuanyuan/mycodemap) 进行 AI-Native 代码分析和依赖管理。
+
+### 快速命令
+
+```bash
+mycodemap doctor      # 诊断项目健康状态
+mycodemap generate    # 生成代码地图
+mycodemap preview     # 零配置预览
+mycodemap query       # 搜索符号、模块和依赖
+mycodemap cycles      # 检测循环依赖
+mycodemap impact      # 评估文件变更影响
+mycodemap analyze     # 统一分析入口（意图驱动）
+```
+
+### 代码地图产物
+
+- `.mycodemap/AI_MAP.md` — AI 可读的项目结构概览
+- `.mycodemap/dependency-graph.md` — 依赖关系 Mermaid 图
+- `.mycodemap/codemap.json` — 机器可读的完整代码地图
+- `.mycodemap/context/` — 上下文文件（供 AI 代理使用）
+- `docs/solutions/` — 已解决问题知识库（按 category 组织，frontmatter 包含 `module`、`tags`、`problem_type`），在实现、调试或对齐已记录方案时 relevant
+
+### 规则引用
+
+<!-- mycodemap-rules-bundle:start -->
+- `@.mycodemap/rules/commit/default.md`
+- `@.mycodemap/rules/test/default.md`
+- `@.mycodemap/rules/lint/default.md`
+- `@.mycodemap/rules/docs/default.md`
+- `@.mycodemap/rules/validation/default.md`
+<!-- mycodemap-rules-bundle:end -->
+
+### 子代理检索
+
+当需要项目环境契约时：
+
+```bash
+mycodemap env-contract --for default --json
+```
+
+使用 `--for explore`、`--for plan`、`--for worker` 或 `--for verify` 指定委托角色。
+
+### CodeMap 上下文
+
+> 详见 `.mycodemap/assistants/agents-context.md`
+
+---
 

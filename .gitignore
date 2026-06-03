@@ -4,4 +4,5 @@ __pycache__/
 .tmp/
 logs/
 .logs/
+.hermes/evolution-queue/*.json
 config/decisions/actor-secrets.json

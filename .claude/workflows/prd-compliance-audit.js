@@ -335,8 +335,6 @@ const verifyResults = await parallel(
       phase: "Verify",
       schema: VERIFY_SCHEMA,
     }).then(r => {
-      // 调试：记录每个代理的返回情况
-      log("验证代理返回 - " + dim.id + ": " + (r === null ? "null" : "object"))
       if (!r) return { dimension_id: dim.id, results: [], dimension_score: 0, summary: "验证失败" }
       // 强制设置 dimension_id 为提取维度的 id，确保后续匹配
       r.dimension_id = dim.id
@@ -350,19 +348,6 @@ const verifyResults = await parallel(
 
 const validResults = verifyResults.filter(Boolean)
 log("验证完成：" + validResults.length + "/" + extractResult.dimensions.length + " 维度已验证")
-
-// 调试：输出 verifyResults 每个元素的状态
-log("调试 - verifyResults 长度：" + verifyResults.length)
-for (let i = 0; i < verifyResults.length; i++) {
-  const r = verifyResults[i]
-  if (r === null) {
-    log("调试 - verifyResults[" + i + "]: null")
-  } else if (typeof r === "object") {
-    log("调试 - verifyResults[" + i + "]: object, dimension_id=" + (r.dimension_id || "无") + ", score=" + (r.dimension_score || 0))
-  } else {
-    log("调试 - verifyResults[" + i + "]: " + typeof r)
-  }
-}
 
 // 构建 id -> index 映射，用于 veto_status 和 critical_gaps 查找
 const dimIdToIndex = {}
