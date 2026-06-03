@@ -552,3 +552,27 @@ Sweeper 以独立调度单元运行，建议每 60 秒调用一次 `WorkerSessio
 - `last_heartbeat_at` 超过 120 秒未更新：标记 `sweeper_status="zombie"`，写入 `worker_zombie_detected` 事件，并归档 workspace 到 `worker-sessions/archive/`。
 - 执行时长超过 `estimated_seconds * 2` 且仍未完成：标记 `sweeper_status="likely_stalled"`，写入 `worker_likely_stalled` 告警。
 - 每轮扫描都会写入 `sweep_run` 和 `sweep_result` 事件，包含 `sweep_run_id`、`scanned_sessions_count`、`zombie_count`、`stalled_count`。
+
+## Sprint 13 补充：staging 严格回归验证
+
+Sprint 13 将沙箱推演绑定到本地 staging harness。初始化脚本每次重建 `.hermes/staging/`，确保同一回归不读取旧状态：
+
+```bash
+scripts/lib/staging\ Harness.sh
+scripts/lib/staging\ inject-data.sh
+```
+
+数据注入包含三类最小夹具：
+
+- `project-profile.yaml`：包含 `protected_targets`、`quick_channel`、`evaluation`。
+- `tasks/protected-target-task.json`：命中 L4 protected target，用于覆盖审批路径。
+- `intake/conflict-intake.json`：包含冲突标记，用于覆盖 conflict resolution 路径。
+
+`scripts/tests/test-e2e-strict-six-stage-flow.sh` 在 staging 下合成一条 0→6 阶 Run，写入 `run.json`、`tasks.json`、`events.jsonl`、`audit.jsonl`，再调用：
+
+```bash
+scripts/bin/orch-audit --run-id run-strict-001 --state-root .hermes/staging/state --output .hermes/staging/state/strict-six-stage/runs/run-strict-001/metrics_summary.json
+scripts/bin/orch-verify --metrics .hermes/staging/state/strict-six-stage/runs/run-strict-001/metrics_summary.json --thresholds config/performance/slo-policy.json
+```
+
+通过条件是 staging 脚本可执行且幂等、注入数据完整、JSON/JSONL artifact 可解析、`metrics_summary.json` 符合 full schema 的 `metrics_summary` 定义，并且 14 项成功指标全部满足阈值。任一条件失败时，release gate 不允许标记为满足 PRD 成功标准。
