@@ -4,9 +4,9 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Multi-project AI development orchestration system — coordinating Claude Code CLI (supervisor) and Codex CLI (executor) through the Hermes Agent to enable single-developer, multi-project parallel development.
+Multi-project AI development orchestration system — coordinating Claude Code CLI (supervisor), Codex CLI (executor), and the local Gateway runtime through the Hermes Agent.
 
-<!-- VERIFY: Requires Hermes Agent v0.11.0+, Claude Code CLI v2.1.110+, Codex CLI v0.122.0+ -->
+<!-- VERIFY: Minimums are Hermes Agent v0.11.0+, Claude Code CLI v2.1.110+, Codex CLI v0.122.0+. Last local verification used Hermes Agent v0.13.0, Claude Code 2.1.161, and codex-cli 0.136.0. -->
 
 ---
 
@@ -23,13 +23,23 @@ Developers managing multiple projects face fragmented workflows when working wit
 
 ### Solution
 
-Hermes Dev Orchestra automates the entire Claude↔Codex collaboration pipeline with one-command project initialization and isolated session management:
+Hermes Dev Orchestra automates the Claude↔Codex collaboration pipeline and exposes newer Gateway-backed run state:
 
 - **One-command setup**: `orch-init` scaffolds the project configuration, directory structure, and risk policies.
 - **Isolated tmux session pairs**: `orch-start` automatically creates paired tmux sessions (`hermes-{project}-claude` / `hermes-{project}-codex`) for each project.
 - **File-exchange task flow**: Structured files in `/tmp/hermes-orchestra/{project}/` automatically dispatch tasks, questions, decisions, and results between agents.
 - **L1–L4 risk interception**: `orch-risk-check` evaluates commands against `config/risk-policy.yaml`; L3/L4 operations block and await human approval via `orch-approve` / `orch-reject`.
 - **Built-in audit**: Every operation is written to `~/.local/share/hermes-orchestra/{project}/audit.jsonl` for full traceability.
+- **Gateway run projection**: `orch-gateway` exposes run creation, task/event projection, actor-token authority checks, and staged full-system modules.
+
+Current capability layers:
+
+| Layer | Status | Primary docs |
+|---|---|---|
+| MVP/local orchestration | Active/current | [`docs/WORKFLOW.md`](docs/WORKFLOW.md), [`docs/COVERAGE-MATRIX.md`](docs/COVERAGE-MATRIX.md) |
+| Gateway runtime | Partially implemented/current | [`docs/gateway-integration-architecture.md`](docs/gateway-integration-architecture.md) |
+| Strict 0→6 gate | Ready/test harness | [`docs/FULL-COVERAGE-MATRIX.md`](docs/FULL-COVERAGE-MATRIX.md) |
+| Full-target system | Staged/mixed-family, not globally cut over | [`docs/FULL-COVERAGE-MATRIX.md`](docs/FULL-COVERAGE-MATRIX.md), [`docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md`](docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md) |
 
 ### Result
 
@@ -151,7 +161,7 @@ orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway --
 ### Run Tests
 
 ```bash
-# Full test suite (unit tests + risk tests + JSON validation + shell validation + upstream version check)
+# Full test suite (smoke + risk + JSON validation + shell lint if available + upstream pin advisory)
 make test
 
 # Unit tests only
@@ -186,3 +196,5 @@ make test-risk
 - [`WORKFLOW.md`](docs/WORKFLOW.md) — Detailed guide for the single-developer full-cycle workflow
 - [`specs/`](specs/) — Derived specifications (command set, task exchange protocol, risk decisions)
 - [`docs/COVERAGE-MATRIX.md`](docs/COVERAGE-MATRIX.md) — Feature coverage matrix
+- [`docs/FULL-COVERAGE-MATRIX.md`](docs/FULL-COVERAGE-MATRIX.md) — Full-target readiness and runtime status
+- [`docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md`](docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md) — Full-target authority boundaries

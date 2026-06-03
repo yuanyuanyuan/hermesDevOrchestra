@@ -8,7 +8,7 @@
 
 ## 诚实的前置条件
 
-Hermes Dev Orchestra 本身只是一个**编排适配层**（约 250 行的 `setup.sh` + 一些配置模板）。但在它能工作之前，你需要先安装并配置好 **3 个外部 CLI 工具** 和 **3 个基础依赖**。这些都不是标准系统包，无法通过 `apt`/`brew` 一键搞定。
+Hermes Dev Orchestra 本身是一个**编排适配层**（`setup.sh`、Gateway/helper 库、配置模板和测试套件）。但在它能工作之前，你需要先安装并配置好 **3 个外部 CLI 工具** 和 **3 个基础依赖**。这些都不是标准系统包，无法通过 `apt`/`brew` 一键搞定。
 
 **整体流程预估时间**：如果你已有 API Key 和订阅账号，约 15-20 分钟；如果需要注册和订阅，可能需要 30-60 分钟。
 
@@ -64,7 +64,7 @@ hermes --version  # 应输出 >= 0.11.0
 
 ```bash
 npm install -g @anthropic-ai/claude-code
-claude --version  # 应输出 >= 2.1.110
+claude --version  # 最低 >= 2.1.110；最近本地验证为 2.1.161
 ```
 
 **认证要求**：
@@ -78,7 +78,7 @@ claude --version  # 应输出 >= 2.1.110
 
 ```bash
 npm install -g @openai/codex
-codex --version  # 应输出 >= 0.122.0
+codex --version  # 最低 >= 0.122.0；最近本地验证为 codex-cli 0.136.0
 ```
 
 **认证要求**：
@@ -94,7 +94,7 @@ codex --version  # 应输出 >= 0.122.0
 
 如果你使用的是 Hermes Agent provider-backed 模式，或希望安装验收强制检查 `.env`，再配置以下变量，并运行 `orch-mvp-wizard --require-api-keys`。
 
-默认完整验收会运行 `make test`、`npm test`、`upstream-status`，并通过 Gateway 创建一个 MVP demo run。demo run 的完整链路日志写到 `~/.local/state/hermes-orchestra/{project}/mvp-demo-log.jsonl`，结构化总览写到 `~/.local/state/hermes-orchestra/{project}/mvp-demo-flow.json`。只配置/启动时可以加 `--skip-tests`；只跳过 demo run 时可以加 `--skip-demo`。
+默认完整验收会运行 `make test`，其中包含 smoke tests、risk tests、JSON lint、可用时 Shell lint，以及 advisory 的 `upstream-status`。`npm test` 只是代理到 `make test`，不是额外测试框架。验收还会通过 Gateway 创建一个 MVP demo run。demo run 的完整链路日志写到 `~/.local/state/hermes-orchestra/{project}/mvp-demo-log.jsonl`，结构化总览写到 `~/.local/state/hermes-orchestra/{project}/mvp-demo-flow.json`。只配置/启动时可以加 `--skip-tests`；只跳过 demo run 时可以加 `--skip-demo`。
 
 如果要验收真实 CLI worker，运行 `orch-mvp-wizard --real-worker-demo ...`。该模式会实际调用 `codex exec` 修改 `.workflow/knowledge/orchestra-real-worker-demo.md`，调用 `claude -p` 审查该低风险改动，并把链路写到 `mvp-real-worker-flow.json` 和 `mvp-real-worker-log.jsonl`。超时时间可用 `ORCH_REAL_WORKER_TIMEOUT=秒数` 调整。
 
@@ -139,6 +139,7 @@ bash scripts/setup.sh
 | 安装 SOUL.md | `hermes/SOUL.md` → `~/.hermes/SOUL.md` | 退出 |
 | 安装 4 个 Skills | `skills/*/` → `~/.hermes/skills/` | 退出 |
 | 安装 CLI 工具 | `scripts/bin/orch-*` → `~/.local/bin/` | 退出 |
+| 安装 Gateway/helper 库 | `scripts/lib/*.py`、`orch-common.sh` → `~/.hermes-orchestra/lib/` | 退出 |
 | 安装配置模板 | `claude-config/settings.json` → `~/.hermes-orchestra/claude-config-template/` | 退出 |
 | 安装风险策略 | `config/risk-policy.yaml` → `~/.hermes-orchestra/` | 退出 |
 | 安装 Profile/Hooks/Plugins | 复制到 `~/.hermes-orchestra/` | 警告 |
@@ -185,9 +186,9 @@ source ~/.bashrc
 orch-verify
 ```
 
-这会运行内置的冒烟测试套件。如果通过，你会看到所有测试项的通过报告。
+这会运行内置的冒烟测试套件。如果通过，你会看到所有测试项的通过报告和 `Smoke summary`。
 
-完整验证（包含风险测试、JSON 校验、Shell 校验和上游版本对齐检查）：
+完整验证（包含 smoke tests、风险测试、JSON 校验、可用时 Shell 校验和上游版本对齐 advisory）：
 
 ```bash
 make test
@@ -203,7 +204,7 @@ make test
 | `setup.sh` 报 "tmux is required" | tmux 未安装 | `apt install tmux` 或 `brew install tmux` |
 | `orch-*` 命令找不到 | `~/.local/bin` 不在 PATH | 添加到 shell profile 并 `source` |
 | `claude auth` 失败 | 使用了 raw API key | 改用 OAuth Token (`sk-ant-oat01-*`) |
-| `make test` 的 `upstream-status` 失败 | Hermes Agent 的版本与仓库锁定版本不一致 | `cd ~/.hermes/hermes-agent && git checkout 023b1bff11c2a01a435f1956a0e2ac1773a065f3` |
+| `make upstream-status` 显示 `status: mismatch` | Hermes Agent 的版本与仓库锁定版本不一致；默认是 advisory，不会让 `make test` 失败 | 如需严格对齐，运行 `cd ~/.hermes/hermes-agent && git checkout 023b1bff11c2a01a435f1956a0e2ac1773a065f3`，或用 `make upstream-status-strict` 强制失败 |
 
 ---
 

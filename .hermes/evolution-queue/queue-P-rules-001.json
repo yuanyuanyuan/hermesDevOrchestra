@@ -1,0 +1,24 @@
+{
+  "schema_version": "orchestra.v1",
+  "artifact_type": "self_evolution_review_queue_item",
+  "run_id": "run-self-1",
+  "proposal_id": "P-rules-001",
+  "queue_item_id": "queue-P-rules-001",
+  "proposal_ref": "state://runs/run-self-1/review-queue/queue-P-rules-001.json",
+  "source_run_ids": [
+    "run-self-1"
+  ],
+  "status": "pending_review",
+  "protected_target_class": "root_rules",
+  "source_event_refs": [
+    "state://runs/run-self-1/closeout.json",
+    "state://runs/run-self-1/reviews/release-gap.json",
+    "state://runs/run-self-1/decisions/rules-gap.json"
+  ],
+  "confidence_score": 0.8,
+  "applicable_scope": "root_rules",
+  "decision_ref": null,
+  "rejection_reason": null,
+  "created_at": "2026-06-03T06:39:50.098413+00:00",
+  "updated_at": "2026-06-03T07:16:39.095896+00:00"
+}

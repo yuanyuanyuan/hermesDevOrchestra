@@ -18,7 +18,7 @@ test-risk:
 	done
 
 lint-json:
-	@find . -path './.git' -prune -o -name '*.json' -type f -print0 | xargs -0 -r -n1 python3 -m json.tool >/dev/null
+	@find . -path './.git' -prune -o -path './.tmp' -prune -o -name '*.json' -type f -print0 | xargs -0 -r -n1 python3 -m json.tool >/dev/null
 
 lint-shell:
 	@if command -v shellcheck >/dev/null 2>&1; then \

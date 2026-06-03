@@ -54,8 +54,14 @@ assert_contains "cli: codex" "$CONFIG_OUT" "base engine cli missing"
 assert_contains "mode: exec" "$CONFIG_OUT" "base engine mode missing"
 assert_contains "flags: --dangerously-skip-permissions --json" "$CONFIG_OUT" "engine flags override missing"
 assert_contains "fallback: null" "$CONFIG_OUT" "engine fallback null override missing"
-assert_contains "enabled: [terminal, file, memory, kanban, web]" "$CONFIG_OUT" "toolset merge output incorrect"
-assert_contains "disabled: [delegation, messaging, browser, code_execution]" "$CONFIG_OUT" "disabled toolset merge output incorrect"
+python3 - "$CONFIG_OUT" <<'PY'
+import sys
+import yaml
+
+data = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+assert data["toolsets"]["enabled"] == ["terminal", "file", "memory", "kanban", "web"], data
+assert data["toolsets"]["disabled"] == ["delegation", "messaging", "browser", "code_execution"], data
+PY
 assert_contains "Project-only rule: check project constraints before coding." "$SOUL_OUT" "project SOUL fragment missing"
 
 python3 - "$SOUL_OUT" <<'PY'

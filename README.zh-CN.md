@@ -4,9 +4,9 @@
 
 [English](README.md) | 简体中文
 
-多项目 AI 开发编排系统 —— 通过 Hermes Agent 协调 Claude Code CLI（监督者）与 Codex CLI（执行者），实现单人多项目并行开发。
+多项目 AI 开发编排系统 —— 通过 Hermes Agent 协调 Claude Code CLI（监督者）、Codex CLI（执行者）和本地 Gateway runtime。
 
-<!-- VERIFY: 需要预装 Hermes Agent v0.11.0+、Claude Code CLI v2.1.110+、Codex CLI v0.122.0+ -->
+<!-- VERIFY: 最低版本为 Hermes Agent v0.11.0+、Claude Code CLI v2.1.110+、Codex CLI v0.122.0+。最近一次本地验证使用 Hermes Agent v0.13.0、Claude Code 2.1.161、codex-cli 0.136.0。 -->
 
 ---
 
@@ -23,13 +23,23 @@
 
 ### 方案
 
-Hermes Dev Orchestra 将整个 Claude↔Codex 协作流水线自动化，一键初始化项目并管理隔离会话：
+Hermes Dev Orchestra 将 Claude↔Codex 协作流水线自动化，并暴露更新的 Gateway run state：
 
 - **一键设置**：`orch-init` 脚手架式地生成项目配置、目录结构和风险策略。
 - **隔离的 tmux 会话对**：`orch-start` 自动为每个项目创建成对的 tmux 会话（`hermes-{project}-claude` / `hermes-{project}-codex`）。
 - **文件交换任务流**：`/tmp/hermes-orchestra/{project}/` 下的结构化文件自动在代理之间派发任务、问题、决策和结果。
 - **L1–L4 风险拦截**：`orch-risk-check` 依据 `config/risk-policy.yaml` 评估命令；L3/L4 操作会被阻塞，等待通过 `orch-approve` / `orch-reject` 进行人工审批。
 - **内置审计**：每一次操作都写入 `~/.local/share/hermes-orchestra/{project}/audit.jsonl`，实现完整可追溯。
+- **Gateway run projection**：`orch-gateway` 暴露 run 创建、任务/事件投影、actor-token authority 检查和 staged full-system 模块。
+
+当前能力分层：
+
+| 层级 | 状态 | 主要文档 |
+|---|---|---|
+| MVP/local orchestration | active/current | [`docs/WORKFLOW.md`](docs/WORKFLOW.md), [`docs/COVERAGE-MATRIX.md`](docs/COVERAGE-MATRIX.md) |
+| Gateway runtime | partially implemented/current | [`docs/gateway-integration-architecture.md`](docs/gateway-integration-architecture.md) |
+| Strict 0→6 gate | ready/test harness | [`docs/FULL-COVERAGE-MATRIX.md`](docs/FULL-COVERAGE-MATRIX.md) |
+| Full-target system | staged/mixed-family，尚未全局 cutover | [`docs/FULL-COVERAGE-MATRIX.md`](docs/FULL-COVERAGE-MATRIX.md), [`docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md`](docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md) |
 
 ### 结果
 
@@ -151,7 +161,7 @@ orch-mvp-wizard --project-id api-gateway --project-dir ~/projects/api-gateway --
 ### 运行测试
 
 ```bash
-# 全部测试（单元测试 + 风险测试 + JSON 校验 + Shell 校验 + 上游版本检查）
+# 全部测试（smoke + 风险测试 + JSON 校验 + 可用时 Shell lint + upstream pin advisory）
 make test
 
 # 仅单元测试
@@ -186,3 +196,5 @@ make test-risk
 - [`WORKFLOW.md`](docs/WORKFLOW.md) — 单人全周期工作流详细指南
 - [`specs/`](specs/) — 派生规范（命令集、任务交换协议、风险决策）
 - [`docs/COVERAGE-MATRIX.md`](docs/COVERAGE-MATRIX.md) — 功能覆盖矩阵
+- [`docs/FULL-COVERAGE-MATRIX.md`](docs/FULL-COVERAGE-MATRIX.md) — full-target readiness 与 runtime 状态
+- [`docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md`](docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md) — full-target authority 边界
