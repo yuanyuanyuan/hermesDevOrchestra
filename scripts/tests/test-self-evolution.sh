@@ -260,6 +260,60 @@ with tempfile.TemporaryDirectory() as tmp:
     non_protected_item = queue.transition(non_protected_item, "queued")
     assert non_protected_item["status"] == "queued", non_protected_item
 
+    persisted = queue.load_persistent_queue()
+    assert len(persisted) == 2, persisted
+    assert queue.query_persistent_queue(run_id="run-self-1", proposal_id="P-knowledge-001", status="pending_review"), persisted
+    assert (tmp_repo / ".hermes/evolution-queue").is_dir()
+
+    enqueued_again = queue.enqueue(artifact)
+    assert len(enqueued_again["queue_items"]) == 2, enqueued_again
+    assert len(queue.load_persistent_queue()) == 2
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = Path(tmp)
+    prepare_active_repo(tmp_repo)
+    queue = SelfEvolutionQueue(tmp_repo, allow_staged=True)
+    applicable = non_protected_proposal()
+    applicable["proposal_id"] = "P-knowledge-apply"
+    artifact = queue.generate_stage6_sweep(
+        run_id="run-self-apply",
+        source_refs=["state://runs/run-self-apply/closeout.json"],
+        proposals=[applicable],
+        trigger_matches=["review_or_qa_same_class_repeated"],
+    )
+    item = queue.enqueue(artifact)["queue_items"][0]
+    item = queue.transition(item, "under_review")
+    item = queue.transition(item, "accepted", decision_ref="state://runs/run-self-apply/decisions/accept.json")
+    item = queue.transition(item, "applied", decision_ref="state://runs/run-self-apply/decisions/apply.json")
+    assert item["status"] == "applied", item
+    applied = queue.query_persistent_queue(run_id="run-self-apply", proposal_id="P-knowledge-apply", status="applied")
+    assert len(applied) == 1, applied
+
+with tempfile.TemporaryDirectory() as tmp:
+    tmp_repo = Path(tmp)
+    prepare_active_repo(tmp_repo)
+    queue = SelfEvolutionQueue(tmp_repo, allow_staged=True)
+    rejectable = non_protected_proposal()
+    rejectable["proposal_id"] = "P-knowledge-reject"
+    artifact = queue.generate_stage6_sweep(
+        run_id="run-self-reject",
+        source_refs=["state://runs/run-self-reject/closeout.json"],
+        proposals=[rejectable],
+        trigger_matches=["review_or_qa_same_class_repeated"],
+    )
+    item = queue.enqueue(artifact)["queue_items"][0]
+    item = queue.transition(item, "under_review")
+    item = queue.transition(
+        item,
+        "rejected",
+        decision_ref="state://runs/run-self-reject/decisions/reject.json",
+        rejection_reason="Not applicable to this project",
+    )
+    assert item["status"] == "rejected", item
+    rejected = queue.query_persistent_queue(run_id="run-self-reject", proposal_id="P-knowledge-reject", status="rejected")
+    assert len(rejected) == 1, rejected
+    assert rejected[0]["rejection_reason"] == "Not applicable to this project", rejected
+
 with tempfile.TemporaryDirectory() as tmp:
     tmp_repo = Path(tmp)
     prepare_active_repo(tmp_repo)

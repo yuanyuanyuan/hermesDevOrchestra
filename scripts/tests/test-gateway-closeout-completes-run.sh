@@ -85,12 +85,14 @@ print(open(log_path, encoding="utf-8", errors="replace").read(), file=sys.stderr
 raise SystemExit(f"gateway did not become healthy: {last_error}")
 PY
 
-python3 - "$BASE_URL" "$TMP_DIR/flow.json" <<'PY'
+python3 - "$BASE_URL" "$TMP_DIR/flow.json" "$STATE_ROOT" "$PROJECT_ID" <<'PY'
 import json
+import pathlib
 import sys
+import urllib.error
 import urllib.request
 
-base_url, flow_path = sys.argv[1:]
+base_url, flow_path, state_root, project_id = sys.argv[1:]
 
 def post(path, payload, expected=200):
     request = urllib.request.Request(
@@ -99,9 +101,13 @@ def post(path, payload, expected=200):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=5) as response:
-        assert response.status == expected, (response.status, path)
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert response.status == expected, (response.status, path)
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8")
+        raise AssertionError((exc.code, path, body)) from exc
 
 def get(path):
     with urllib.request.urlopen(f"{base_url}{path}", timeout=5) as response:
@@ -127,6 +133,23 @@ create = post(
     expected=201,
 )
 run_id = create["run_id"]
+run_dir = pathlib.Path(state_root) / project_id / "runs" / run_id
+(run_dir / "worker-sessions").mkdir(parents=True, exist_ok=True)
+(run_dir / "worker-sessions" / "session-closeout.json").write_text(
+    json.dumps(
+        {
+            "schema_version": "orchestra.v1",
+            "artifact_type": "worker_session_record",
+            "session_id": "session-closeout",
+            "run_id": run_id,
+            "task_id": "closeout-audit",
+            "invocations": [{"tool": "codex", "argv": ["codex", "exec"], "exit_code": 0}],
+        },
+        indent=2,
+    )
+    + "\n",
+    encoding="utf-8",
+)
 tasks = get(f"/orchestra/runs/{run_id}/tasks")["tasks"]
 test_execution_ref = f"state://runs/{run_id}/test_execution_report.json"
 for index, task in enumerate(tasks, start=1):
@@ -253,7 +276,17 @@ proposals = {
     "artifact_type": "system_improvement_proposals",
     "run_id": run_id,
     "source_refs": [closeout_ref],
-    "proposals": [],
+    "proposals": [
+        {
+            "proposal_id": "P-closeout-001",
+            "target": ".workflow/knowledge/closeout.md",
+            "summary": "Retain closeout audit learning",
+            "rationale": "Stage 6 gathered complete audit inputs",
+            "risk_level": "low",
+            "authority_required": "kimi",
+            "artifact_refs": [closeout_ref]
+        }
+    ],
     "auto_applied_refs": [],
     "proposed_patch_refs": [],
     "approval_required": [],
@@ -305,23 +338,43 @@ assert response["status"] == "completed", response
 assert response["route_result"] == "run_completed", response
 assert response["iteration_closeout_report_ref"] == flow["closeout_ref"], response
 assert response["system_improvement_proposals_ref"] == flow["proposals_ref"], response
+assert response["closeout_audit_checklist_ref"].endswith("/closeout_audit_checklist.json"), response
 
 assert status["status"] == "completed", status
 assert status["blocked_reason"] is None, status
 assert status["artifact_refs"]["iteration_closeout_report"] == flow["closeout_ref"], status
 assert status["artifact_refs"]["system_improvement_proposals"] == flow["proposals_ref"], status
+assert status["artifact_refs"]["closeout_audit_checklist"] == response["closeout_audit_checklist_ref"], status
 
 event_types = [event["type"] for event in events["events"]]
 assert "run_completed" in event_types, event_types
 completed_event = next(event for event in events["events"] if event["type"] == "run_completed")
-assert completed_event["artifact_refs"] == [flow["closeout_ref"], flow["proposals_ref"], f"state://runs/{run_id}/run.json"], completed_event
+assert flow["closeout_ref"] in completed_event["artifact_refs"], completed_event
+assert flow["proposals_ref"] in completed_event["artifact_refs"], completed_event
+assert response["closeout_audit_checklist_ref"] in completed_event["artifact_refs"], completed_event
 
 run_dir = pathlib.Path(state_root) / project_id / "runs" / run_id
 closeout = json.loads((run_dir / "iteration_closeout_report.json").read_text(encoding="utf-8"))
 proposals = json.loads((run_dir / "system_improvement_proposals.json").read_text(encoding="utf-8"))
+checklist = json.loads((run_dir / "closeout_audit_checklist.json").read_text(encoding="utf-8"))
 assert closeout["closeout_kind"] == "completed", closeout
 assert closeout["completion_gate"]["completion_blockers"] == [], closeout
 assert proposals["artifact_type"] == "system_improvement_proposals", proposals
+assert checklist["passed"] is True, checklist
+assert {item["category"] for item in checklist["checks"]} >= {
+    "complete_logs",
+    "intake_package",
+    "worker_invocation_logs",
+    "error_stack",
+    "review_records",
+    "closeout_artifacts",
+}, checklist
+assert all(item["exists"] and item["non_empty"] and item["passed"] for item in checklist["checks"]), checklist
+proposal = proposals["proposals"][0]
+assert proposal["status"] == "pending_review", proposal
+assert proposal["source_event_refs"], proposal
+assert 0 <= proposal["confidence_score"] <= 1, proposal
+assert proposal["applicable_scope"], proposal
 
 audit_records = [
     json.loads(line)

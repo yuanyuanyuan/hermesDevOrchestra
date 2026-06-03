@@ -547,18 +547,25 @@ authority route：
 
 ## 13. 六阶：持续改进 → 经验沉淀
 
-六阶由 Kimi 做独立审计。
+六阶由 Kimi 做独立审计，并由 Gateway 在 closeout 前执行完整性校验。closeout 的状态机为：
+
+```text
+closeout_initiated
+→ audit_inputs_collected
+→ integrity_verified
+→ proposals_generated
+→ approved / rejected / queued
+→ closeout_completed / blocked
+```
 
 Kimi 读取：
 
-- 原始需求和补全包。
-- 依赖图和验收矩阵。
-- 代理交互。
-- 工具调用。
-- 错误堆栈。
-- 测试输出。
-- 审查意见。
-- Gateway 状态和审计记录。
+- 完整日志：`events.jsonl` 与 `audit.jsonl`。
+- 补全包：Run Projection 中的 `intake_package`、结构化 PRD 或等价需求补全产物。
+- 工具调用记录：`worker-sessions/*.json` 中的 `invocations[]`。
+- 错误栈：所有 `error` 类型 event；没有错误时必须显式记录为“无错误”。
+- 审查记录：四阶 review/qa 输出；没有 review 时必须显式记录为“无 review”。
+- closeout artifacts：summary、proposals、metrics 或 completion gate。
 
 Kimi 回答：
 
@@ -568,6 +575,28 @@ Kimi 回答：
 4. 哪些经验应该持久化到 AGENTS.md、SOUL.md 或配置策略，哪些应该丢弃？
 
 经验沉淀必须保留适用边界，避免把偶然成功写成通用规则。
+
+每条经验建议必须带 `source_event_refs[]`、`confidence_score` 和 `applicable_scope`。建议状态只允许进入三类审计视图：
+
+| 状态 | 含义 | 落地边界 |
+|------|------|----------|
+| `applied` | 已经通过 Gateway authority 校验并写入 AGENTS.md/SOUL.md/配置 | 需要记录 decision ref |
+| `pending_review` | 已进入 self-evolution queue，等待 Kimi 或 Human 审批 | 可通过 queue 查询回溯 |
+| `rejected` | 明确拒绝并保留理由 | 不删除，保留审计记录 |
+
+Self-evolution queue 持久化在 `.hermes/evolution-queue/`，写入采用临时文件加原子重命名。Gateway 启动或查询时从该目录恢复记录；同一 `proposal_id` 重复 enqueue 只更新时间，不创建重复记录。queue 查询入口为 `GET /orchestra/modules/self-evolution/enqueue`，支持按 `run_id`、`proposal_id`、`status` 过滤。
+
+protected target 审批流程：
+
+```text
+proposal target 匹配 protected target
+→ Gateway 判定 approval_level
+→ L3: 必须有 human_approval_ref
+→ L4: 必须同时有 kimi_review_ref 和 human_approval_ref
+→ 缺失审批引用: closeout 返回 422，audit.jsonl 记录 protected_target_missing_approval
+```
+
+L4 包括 k8s production、db schema、auth policy、IAM secrets、infrastructure、payment compliance、legal terms、data privacy。L3 包括 api contract、CI/CD pipeline、core business logic。任何从 queue 到 AGENTS.md/SOUL.md 的写入都必须经过 Gateway authority 校验，agent 直写会在后续 audit 中标记为 unauthorized apply。
 
 ---
 

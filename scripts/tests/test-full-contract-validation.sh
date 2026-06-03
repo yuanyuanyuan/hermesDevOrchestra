@@ -42,6 +42,19 @@ assert_file_exists "$REPO_ROOT/scripts/lib/gateway_evaluation.py" "gateway evalu
 grep -Fq "DIMENSION_NAMES" "$REPO_ROOT/scripts/lib/gateway_evaluation.py" || fail "global evaluation dimensions missing from helper" "DIMENSION_NAMES" "$(sed -n '1,120p' "$REPO_ROOT/scripts/lib/gateway_evaluation.py")"
 grep -Fq "normalize_global_evaluation" "$REPO_ROOT/scripts/lib/gateway_evaluation.py" || fail "global evaluation normalizer missing from helper" "normalize_global_evaluation" "$(sed -n '1,180p' "$REPO_ROOT/scripts/lib/gateway_evaluation.py")"
 grep -Fq "normalize_global_evaluation" "$REPO_ROOT/scripts/lib/orch_gateway.py" || fail "Gateway global evaluation endpoint missing helper call" "normalize_global_evaluation" "$(rg -n "normalize_global_evaluation" "$REPO_ROOT/scripts/lib/orch_gateway.py" || true)"
+assert_file_exists "$REPO_ROOT/scripts/lib/gateway_closeout.py" "gateway closeout helper missing"
+grep -Fq "closeout_audit_checklist" "$REPO_ROOT/scripts/lib/gateway_closeout.py" || fail "closeout audit checklist helper missing" "closeout_audit_checklist" "$(sed -n '1,160p' "$REPO_ROOT/scripts/lib/gateway_closeout.py")"
+grep -Fq "protected_target_approval_blockers" "$REPO_ROOT/scripts/lib/gateway_closeout.py" || fail "protected target approval helper missing" "protected_target_approval_blockers" "$(sed -n '1,180p' "$REPO_ROOT/scripts/lib/gateway_closeout.py")"
+grep -Fq "gateway_closeout" "$REPO_ROOT/scripts/lib/orch_gateway.py" || fail "Gateway closeout seam import missing" "gateway_closeout" "$(rg -n "gateway_closeout" "$REPO_ROOT/scripts/lib/orch_gateway.py" || true)"
+
+BASE_COMMIT="$(git -C "$REPO_ROOT" merge-base HEAD origin/main 2>/dev/null || true)"
+if [ -n "$BASE_COMMIT" ]; then
+  GATEWAY_ADDED="$(git -C "$REPO_ROOT" diff --numstat "$BASE_COMMIT" -- scripts/lib/orch_gateway.py | awk '{print $1}')"
+  GATEWAY_ADDED="${GATEWAY_ADDED:-0}"
+  if [ "$GATEWAY_ADDED" -gt 50 ]; then
+    fail "orch_gateway.py grew beyond Sprint 12 seam budget" "added lines <= 50" "$GATEWAY_ADDED"
+  fi
+fi
 
 python3 - "$REPO_ROOT" <<'PY'
 import json
@@ -56,6 +69,7 @@ sys.path.insert(0, str(repo_root / "scripts" / "lib"))
 from blocker_validator import validate
 from gateway_evaluation import DIMENSION_NAMES, normalize_global_evaluation
 from gateway_improvement import CLASSIFICATION_TABLE, route_improvement
+from gateway_closeout import protected_target_for
 from gateway_intake import normalize
 from gateway_projection import project
 
@@ -126,6 +140,9 @@ evaluation = normalize_global_evaluation(report, "run-full-contract-eval", repo_
 assert [item["name"] for item in evaluation["dimensions"]] == DIMENSION_NAMES
 assert evaluation["authority_route"]["next_stage"] == "closeout"
 print("PASS global evaluation helper: eight-dimension scoring and route contract")
+assert protected_target_for("terraform/main.tf")[2] == "L4"
+assert protected_target_for("docs/api/spec.yaml")[2] == "L3"
+print("PASS closeout helper: protected target approval levels resolve")
 PY
 
 test_done
