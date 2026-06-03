@@ -90,7 +90,7 @@ main() {
         exit 1
       fi
       if [[ -n "$add_label" ]]; then
-        gh pr edit "$number" --add-label "$add_label"
+        gh issue edit "$number" --add-label "$add_label" --repo "$repo"
       fi
       ;;
     checks)
