@@ -309,6 +309,8 @@ const verifyResults = await parallel(
       phase: "Verify",
       schema: VERIFY_SCHEMA,
     }).then(r => {
+      // 调试：记录每个代理的返回情况
+      log("验证代理返回 - " + dim.id + ": " + (r === null ? "null" : "object"))
       if (!r) return { dimension_id: dim.id, results: [], dimension_score: 0, summary: "验证失败" }
       // 强制设置 dimension_id 为提取维度的 id，确保后续匹配
       r.dimension_id = dim.id
