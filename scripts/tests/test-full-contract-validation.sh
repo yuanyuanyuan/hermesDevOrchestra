@@ -38,6 +38,10 @@ assert_file_exists "$REPO_ROOT/scripts/lib/gateway_improvement.py" "gateway impr
 grep -Fq "CLASSIFICATION_TABLE" "$REPO_ROOT/scripts/lib/gateway_improvement.py" || fail "A-E classification table missing from helper" "CLASSIFICATION_TABLE" "$(sed -n '1,120p' "$REPO_ROOT/scripts/lib/gateway_improvement.py")"
 grep -Fq "route_improvement" "$REPO_ROOT/scripts/lib/gateway_improvement.py" || fail "improvement router missing from helper" "route_improvement" "$(sed -n '1,220p' "$REPO_ROOT/scripts/lib/gateway_improvement.py")"
 grep -Fq "submit_improvement" "$REPO_ROOT/scripts/lib/orch_gateway.py" || fail "Gateway improvement endpoint missing" "submit_improvement" "$(rg -n "submit_improvement" "$REPO_ROOT/scripts/lib/orch_gateway.py" || true)"
+assert_file_exists "$REPO_ROOT/scripts/lib/gateway_evaluation.py" "gateway evaluation helper missing"
+grep -Fq "DIMENSION_NAMES" "$REPO_ROOT/scripts/lib/gateway_evaluation.py" || fail "global evaluation dimensions missing from helper" "DIMENSION_NAMES" "$(sed -n '1,120p' "$REPO_ROOT/scripts/lib/gateway_evaluation.py")"
+grep -Fq "normalize_global_evaluation" "$REPO_ROOT/scripts/lib/gateway_evaluation.py" || fail "global evaluation normalizer missing from helper" "normalize_global_evaluation" "$(sed -n '1,180p' "$REPO_ROOT/scripts/lib/gateway_evaluation.py")"
+grep -Fq "normalize_global_evaluation" "$REPO_ROOT/scripts/lib/orch_gateway.py" || fail "Gateway global evaluation endpoint missing helper call" "normalize_global_evaluation" "$(rg -n "normalize_global_evaluation" "$REPO_ROOT/scripts/lib/orch_gateway.py" || true)"
 
 python3 - "$REPO_ROOT" <<'PY'
 import json
@@ -50,6 +54,7 @@ assert "requirement_completion_bundle" in schema["$defs"], schema["$defs"].keys(
 
 sys.path.insert(0, str(repo_root / "scripts" / "lib"))
 from blocker_validator import validate
+from gateway_evaluation import DIMENSION_NAMES, normalize_global_evaluation
 from gateway_improvement import CLASSIFICATION_TABLE, route_improvement
 from gateway_intake import normalize
 from gateway_projection import project
@@ -90,6 +95,37 @@ assert set(dims) == {"environment", "upstream", "downstream", "code"}, dims
 assert all(dims[key] for key in dims), dims
 assert validate(bundle)["status"] == "passed"
 print("PASS requirement completion bundle: dependency graph covers four dimensions")
+
+report = {
+    "schema_version": "orchestra.v1",
+    "artifact_type": "global_evaluation_report",
+    "run_id": "run-full-contract-eval",
+    "stage": "global_evaluation",
+    "input_artifact_refs": ["state://runs/run-full-contract-eval/run.json"],
+    "structured_prd_ref": "state://runs/run-full-contract-eval/structured_prd.json",
+    "development_plan_ref": "state://runs/run-full-contract-eval/development_plan.json",
+    "debate_report_refs": [],
+    "implementation_evidence_refs": [],
+    "review_verdict_refs": [],
+    "qa_verdict_refs": [],
+    "test_execution_refs": [],
+    "improvement_report_refs": [],
+    "downgrade_refs": [],
+    "unresolved_decision_refs": [],
+    "audit_refs": [],
+    "verdict": "pass",
+    "warnings": [],
+    "residual_risks": [],
+    "blocking_issues": [],
+    "authority_required": "kimi",
+    "final_acceptance_ref": None,
+    "next_actions": ["Start Stage 6"],
+    "created_at": "2026-06-03T00:00:00Z",
+}
+evaluation = normalize_global_evaluation(report, "run-full-contract-eval", repo_root)
+assert [item["name"] for item in evaluation["dimensions"]] == DIMENSION_NAMES
+assert evaluation["authority_route"]["next_stage"] == "closeout"
+print("PASS global evaluation helper: eight-dimension scoring and route contract")
 PY
 
 test_done

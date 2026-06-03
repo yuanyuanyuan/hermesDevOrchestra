@@ -138,7 +138,7 @@ report = {
     "downgrade_refs": [],
     "unresolved_decision_refs": [],
     "audit_refs": [],
-    "verdict": "pass_with_warnings",
+    "verdict": "pass",
     "warnings": [{"warning_id": "W-001", "summary": "Template debate fallback was used"}],
     "residual_risks": ["Decision evidence is degraded"],
     "blocking_issues": [],
@@ -147,6 +147,16 @@ report = {
     "next_actions": ["Request Kimi final acceptance"],
     "created_at": "2026-05-17T00:00:00Z"
 }
+names = ["业务目标", "补全正确性", "安全合规", "质量", "性能", "可维护性", "文档", "可观测性"]
+report["dimensions"] = [
+    {
+        "name": name,
+        "score": 4 if index == 0 else 6,
+        "rationale": f"{name} scored from acceptance evidence",
+        "evidence_refs": [f"state://runs/{run_id}/run.json"],
+    }
+    for index, name in enumerate(names)
+]
 payload = {
     "idempotency_key": "gw-029-global-evaluation",
     "report": report
@@ -214,6 +224,8 @@ report_path = pathlib.Path(state_root) / project_id / "runs" / run_id / "global_
 report = json.loads(report_path.read_text(encoding="utf-8"))
 assert report["artifact_type"] == "global_evaluation_report", report
 assert report["verdict"] == "pass_with_warnings", report
+assert response["verdict"] == "pass_with_warnings", response
+assert response["dimensions"][0]["score"] == 4, response
 
 audit_records = [
     json.loads(line)

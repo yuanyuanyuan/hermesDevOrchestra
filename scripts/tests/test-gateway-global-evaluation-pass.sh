@@ -211,6 +211,11 @@ assert "run_completed" not in event_types, event_types
 report_path = pathlib.Path(state_root) / project_id / "runs" / run_id / "global_evaluation_report.json"
 report = json.loads(report_path.read_text(encoding="utf-8"))
 assert report["verdict"] == "pass", report
+expected_dimensions = ["业务目标", "补全正确性", "安全合规", "质量", "性能", "可维护性", "文档", "可观测性"]
+assert [item["name"] for item in response["dimensions"]] == expected_dimensions, response
+assert all(isinstance(item["score"], int) and 0 <= item["score"] <= 10 for item in response["dimensions"]), response
+assert all(item["rationale"] and item["evidence_refs"] for item in response["dimensions"]), response
+assert response["authority_route"]["next_stage"] == "closeout", response
 
 audit_records = [
     json.loads(line)

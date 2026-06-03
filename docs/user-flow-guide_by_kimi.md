@@ -456,24 +456,30 @@ write_scope_ref 校验
 
 五阶检查“是否真的满足需求”，而不是只看代码能不能跑。
 
-评估维度：
+固定 8 维评分：
 
-- 原始目标是否达成。
-- 系统补全是否正确。
-- 验收矩阵是否全部覆盖。
-- 测试证据是否足够。
-- 安全和合规是否过线。
-- 性能和可靠性是否可接受。
-- 文档和交接是否完整。
-- 是否存在残余风险或未消解冲突。
+| 维度 | 输出要求 |
+|------|----------|
+| 业务目标 | 是否达成原始目标和用户可见结果。 |
+| 补全正确性 | 0 阶补全的依赖、验收和约束是否仍成立。 |
+| 安全合规 | 权限、密钥、合规、安全红线是否过线。 |
+| 质量 | 代码、测试、评审结论和缺陷风险。 |
+| 性能 | 性能预算、退化风险和运行成本。 |
+| 可维护性 | 模块边界、变更面、后续维护成本。 |
+| 文档 | 用户文档、交接说明、矩阵和 ADR 是否完整。 |
+| 可观测性 | 日志、事件、审计、指标和追踪证据是否足够。 |
 
-推荐模式：
+每一维输出 `{name, score, rationale, evidence_refs[]}`，`score` 是 0-10 整数，`rationale` 必须引用具体 artifact、event 或 test result。Gateway 将结果写入 `global_evaluation_report.dimensions[]`，并在 `POST /orchestra/runs/{run_id}/global-evaluation` 响应中返回。
 
-- `jury_panel`：形成总体 verdict。
-- `meta_review`：审视前序评审是否遗漏。
-- `cross_team_conflict_detector`：保留跨团队冲突。
+模式触发矩阵：
 
-如果 verdict 为 pass 且证据完整，系统可自动通过并通知用户；如果 fail/block，或 pass_with_warnings 但残余风险超阈值，才阻塞等待决策。
+| 模式 | 触发条件 | 事件 |
+|------|----------|------|
+| `jury_panel` | 任意维度不同 evaluator 评分分歧 >= 3，或 E 类争议未收敛 | `jury_panel_triggered` |
+| `meta_review` | 跨团队影响面 >= 2，或存在 protected target 变更 | `meta_review_triggered` |
+| `cross_team_conflict_detector` | 不同团队对同一文件给出相反结论 | `cross_team_conflict_triggered` |
+
+`pass_with_warnings` 由 `config/debate/full/coverage-policy.json` 配置：默认任一维 `< 5` 且无维度 `< 3` 时触发；任一维 `< 3` 自动修正为 `fail`。如果 verdict 为 `pass` 且证据完整，系统可自动进入六阶；如果 `fail` / `block` / `pass_with_warnings` 需要接受残余风险，则按 authority route 阻塞或要求审批。
 
 **残余风险阈值定义（用户可见）**：
 
@@ -518,6 +524,24 @@ write_scope_ref 校验
   evaluation:
     warning_notification: summary  # none / summary / full
   ```
+
+notification_level 行为：
+
+| 级别 | 行为 |
+|------|------|
+| `none` | 不向用户发送通知；残余风险仅写入审计日志并记录 `notification_suppressed`。 |
+| `summary` | 发送摘要：verdict、高/中/低风险计数、最高风险项；不包含 8 维详细评分。 |
+| `full` | 发送完整报告：8 维评分、rationale、全部 residual_risks 和 authority_route。 |
+
+authority route：
+
+| verdict / 场景 | 路由 |
+|----------------|------|
+| `pass` | `next_stage = closeout`，自动进入六阶。 |
+| `pass_with_warnings` | `next_stage = approval_required`，默认需要 Kimi 接受残余风险。 |
+| `fail` | `next_stage = improvement` 或 `rollback`，禁止直接 closeout。 |
+| `block` | `next_stage = approval_required`，需要 Human 审批。 |
+| 高风险残余 + L4 变更 | `required_approvers = [human, kimi]`。 |
 
 ---
 

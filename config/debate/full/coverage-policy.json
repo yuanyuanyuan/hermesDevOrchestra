@@ -22,6 +22,8 @@
       "minimum_team_ids": ["business", "security", "observability", "documentation", "devops_sre"],
       "minimum_member_count": 8,
       "required_modes": ["jury_panel", "meta_review", "cross_team_conflict_detector"],
+      "warning_trigger_min_score": 3,
+      "warning_trigger_any_below": 5,
       "coverage_failure_blocks_stage": true
     }
   },
