@@ -5,7 +5,8 @@ description: >
   收集情报、按维度逐项检查、以 PR Review Body 方式发送结构化 review 结果，
   提交 REQUEST_CHANGES 或 review approved comment，并基于证据做出合并/拒绝建议。
   Reviewer 身份：stark-008。
-  注意：GitHub 不允许 PR 作者对自己的 PR 提交 APPROVE review，因此即使检查全部通过，也使用 COMMENT 事件附带 approved 说明，而非 APPROVE 事件。合并由用户手动执行。
+  注意：GitHub 不允许 PR 作者对自己的 PR 提交 REQUEST_CHANGES 或 APPROVE review，
+  因此 self-review 场景下所有事件降级为 COMMENT。合并由用户手动执行。
 ---
 
 # PR Review Skill
@@ -47,6 +48,7 @@ my-pr-review <PR_NUMBER>
 | `${PR_URL}` | `my-pr-skill` 脚本 `get-pr-metadata.sh --number=N --field=url` |
 | `${REVIEW_DRAFT}` | `${REPO_DIR}/.tmp/pr-review-draft-${PR_NUMBER}.md` |
 | `${MY_PR_SKILL_SCRIPTS}` | `my-pr-skill` 的 scripts 目录路径 |
+| `${IS_SELF_REVIEW}` | 阶段 4 步骤 A 检测：`reviewer == PR author` 时为 `true` |
 
 ---
 
@@ -146,7 +148,17 @@ my-pr-review <PR_NUMBER>
 
 ### 阶段 4：REVIEW 提交（REVIEW SUBMISSION）
 
-**步骤 A — 生成本地 Review Draft**
+**步骤 A — 检查 Reviewer 身份**
+
+通过 `gh pr view ${PR_NUMBER} --json author --jq '.author.login'` 获取 PR 作者。
+通过 `gh api user --jq '.login'` 获取当前认证用户（reviewer）。
+
+如果 `reviewer == PR author`，设置 `${IS_SELF_REVIEW} = true`，否则为 `false`。
+
+> ⚠️ **GitHub 限制**：PR 作者不能对自己的 PR 提交 `REQUEST_CHANGES` 或 `APPROVE` review。
+> 当 `IS_SELF_REVIEW == true` 时，所有 review 事件必须降级为 `COMMENT`。
+
+**步骤 B — 生成本地 Review Draft**
 
 写入 `${REVIEW_DRAFT}`，内容模板如下：
 ```markdown
@@ -154,21 +166,36 @@ my-pr-review <PR_NUMBER>
 - Reviewer: stark-008
 - Timestamp: [ISO 8601 时间戳]
 - Commit Reviewed: [PR head commit SHA]
+- Self-Review: ${IS_SELF_REVIEW}（若为 true，事件类型降级为 COMMENT）
 
 ## 摘要
 - 检查项总计: N | PASS: X | FAIL: Y | N/A: Z
 - 发现项数量: Y（每个 FAIL 对应一条）
-- 建议决策: [review approved / REQUEST_CHANGES]（均以 COMMENT 事件提交，见阶段 4）
+- 建议决策: [review approved / REQUEST_CHANGES]
 
 ## 发现项清单
 [列出每个 FAIL 的文件:行号 + 问题摘要]
 ```
 
-**步骤 B — 提交 Review**
+**步骤 C — 提交 Review**
 
 通过 `my-pr-skill` 的 `submit-review.sh` 提交 review。
-- 如有 FAIL 项：使用 `--event=REQUEST_CHANGES`，body 为 Review Draft 全文。
-- 如全部 PASS：使用 `--event=COMMENT`，body 为 approved 说明。
+
+事件类型选择逻辑：
+```
+if IS_SELF_REVIEW:
+    event = "COMMENT"  # GitHub 限制，无论 PASS/FAIL 都只能用 COMMENT
+elif has_FAIL:
+    event = "REQUEST_CHANGES"
+else:
+    event = "COMMENT"  # approved 说明
+```
+
+在 review body 末尾追加说明（仅 self-review 时）：
+```
+> ⚠️ **Self-Review 说明**：由于 reviewer 与 PR 作者为同一人，GitHub 不允许 REQUEST_CHANGES/APPROVE 事件。
+> 本次 review 以 COMMENT 事件提交，发现项仍需修复后才能合并。
+```
 
 ---
 
@@ -188,7 +215,9 @@ my-pr-review <PR_NUMBER>
 通过 `my-pr-skill` 的 `manage-pr.sh --checks` 确认 PR 状态。合并由用户手动执行。
 
 **如果拒绝合并：**
-已通过 REQUEST_CHANGES + review body 中的发现项表达拒绝原因。
+- 正常 review：通过 `REQUEST_CHANGES` 事件 + review body 中的发现项表达拒绝原因，GitHub 会自动阻塞合并。
+- Self-review：通过 `COMMENT` 事件 + review body 中的发现项表达拒绝原因。由于 GitHub 不会自动阻塞合并，需在 body 中明确标注 "🚫 合并阻塞：发现 N 个问题需修复"。
+
 在 review body 中说明：阻塞问题数量、修复后重新请求 review 的方式。
 
 ---
