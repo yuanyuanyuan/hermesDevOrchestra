@@ -217,4 +217,108 @@ assert status["status"] == "queued", status
 assert status["artifact_refs"].get("iteration_closeout_report") is None, status
 PY
 
+python3 - "$BASE_URL" "$RUN_ID" "$TMP_DIR/protected-response.json" <<'PY'
+import json
+import sys
+import urllib.error
+import urllib.request
+
+base_url, run_id, response_path = sys.argv[1:]
+payload = {
+    "idempotency_key": "gw-036-closeout-protected",
+    "iteration_closeout_report": {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "iteration_closeout_report",
+        "run_id": run_id,
+        "global_evaluation_report_ref": f"state://runs/{run_id}/global_evaluation_report.json",
+        "closeout_kind": "completed",
+        "final_acceptance": {"accepted_by": "kimi", "authority": "kimi", "verdict": "pass", "rationale": "", "decision_ref": None},
+        "accepted_warning_refs": [],
+        "downgrade_records": [],
+        "unresolved_decisions": [],
+        "pending_decision_refs": [],
+        "deferred_decisions": [],
+        "completed_stage_refs": [],
+        "incomplete_stage_refs": [],
+        "stop_request_ref": None,
+        "run_stopped_event_ref": None,
+        "preserved_artifact_refs": [],
+        "resume_checkpoint_refs": [],
+        "worker_cancel_marker_refs": [],
+        "test_execution_refs": [],
+        "review_verdict_refs": [],
+        "qa_verdict_refs": [],
+        "worker_fallbacks": [],
+        "knowledge_updates": {"auto_applied_refs": [], "proposal_refs": [], "forbidden_target_refs": []},
+        "system_improvement_proposals_ref": f"state://runs/{run_id}/system_improvement_proposals.json",
+        "completion_gate": {
+            "artifacts_schema_valid": True,
+            "audit_closeout_recorded": True,
+            "kanban_stage_tasks_done": True,
+            "gateway_state_consistent": True,
+            "completion_blockers": []
+        },
+        "created_at": "2026-05-17T00:00:00Z"
+    },
+    "system_improvement_proposals": {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "system_improvement_proposals",
+        "run_id": run_id,
+        "source_refs": [],
+        "proposals": [
+            {
+                "proposal_id": "P-INFRA-001",
+                "target": "terraform/main.tf",
+                "summary": "Change production infrastructure",
+                "rationale": "L4 protected target requires both approvals",
+                "risk_level": "high",
+                "authority_required": "human",
+                "artifact_refs": [],
+                "status": "pending_review"
+            }
+        ],
+        "auto_applied_refs": [],
+        "proposed_patch_refs": [],
+        "approval_required": [],
+        "decision_refs": [],
+        "final_acceptance_ref": None,
+        "downgrade_refs": [],
+        "worker_fallback_refs": [],
+        "knowledge_update_refs": []
+    }
+}
+request = urllib.request.Request(
+    f"{base_url}/orchestra/runs/{run_id}/closeout",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    urllib.request.urlopen(request, timeout=5)
+except urllib.error.HTTPError as exc:
+    status = exc.code
+    body = json.loads(exc.read().decode("utf-8"))
+else:
+    raise AssertionError("protected target closeout unexpectedly completed")
+assert status == 422, (status, body)
+assert "protected_target_missing_approval:terraform/main.tf" in body["completion_blockers"], body
+with open(response_path, "w", encoding="utf-8") as handle:
+    json.dump(body, handle, indent=2)
+    handle.write("\n")
+PY
+
+python3 - "$AUDIT_ROOT" "$PROJECT_ID" <<'PY'
+import json
+import pathlib
+import sys
+
+audit_root, project_id = sys.argv[1:]
+records = [
+    json.loads(line)
+    for line in (pathlib.Path(audit_root) / project_id / "audit.jsonl").read_text(encoding="utf-8").splitlines()
+    if line.strip()
+]
+assert any(record.get("type") == "protected_target_missing_approval" for record in records), records
+PY
+
 test_done

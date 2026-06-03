@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import ipaddress
 import json
@@ -28,6 +29,7 @@ from dispatch_gate import dispatch_task, submit_completion_payload
 from gateway_improvement import improvement_cycles_endpoint, normalize_classification, reject_unknown_classification, review_verdict_budget_exceeded, submit_improvement_endpoint, write_regression_decision
 from gateway_evaluation import append_side_events as append_global_evaluation_side_events
 from gateway_evaluation import normalize_global_evaluation
+from gateway_closeout import closeout_audit_checklist, enrich_proposals, protected_target_approval_blockers, protected_target_rejection
 from run_projection import PROJECTION_SCHEMA_VERSION, projection_response, refresh_projection_response
 from runtime_activation import RuntimeActivation, RuntimeActivationError
 
@@ -577,6 +579,22 @@ class GatewayApp:
             "operation": operation,
             "authority": spec["authority"],
             "result": result,
+        }
+
+    def self_evolution_queue_status(self, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+        from self_evolution import SelfEvolutionQueue
+
+        queue = SelfEvolutionQueue(self.repo_root, allow_staged=True)
+        items = queue.query_persistent_queue(
+            run_id=query.get("run_id", [None])[0],
+            proposal_id=query.get("proposal_id", [None])[0],
+            status=query.get("status", [None])[0],
+        )
+        return 200, {
+            "schema_version": SCHEMA_VERSION,
+            "module": "self-evolution",
+            "operation": "enqueue",
+            "queue_items": items,
         }
 
     def require_module_authority(self, payload: dict[str, Any], expected_authority: str) -> tuple[int, dict[str, Any]] | None:
@@ -3777,11 +3795,26 @@ class GatewayApp:
             body["existing_run_id"] = record.get("run_id")
             return 409, body
 
+        proposals = enrich_proposals(proposals, run_id)
+        protected_blockers, protected_approvals = protected_target_approval_blockers(proposals)
+        if protected_approvals:
+            closeout_report = copy.deepcopy(closeout_report)
+            closeout_report["protected_target_approvals"] = protected_approvals
+        if protected_blockers:
+            rejection = protected_target_rejection(self.store.project_id, run_id, protected_blockers, utc_now())
+            append_jsonl(self.store.audit_path(), rejection["audit_record"])
+            return 422, rejection["body"]
+
+        audit_checklist = closeout_audit_checklist(self.store.run_dir(run_id), self.store.audit_path(), closeout_report, proposals)
         completion_blockers = self.closeout_completion_blockers(run_id, closeout_report, proposals)
+        if not audit_checklist["passed"]:
+            completion_blockers.append("closeout_audit_checklist")
         if completion_blockers:
             body = self.error("closeout_validation_failed", "closeout completion gate did not pass")
             body["run_id"] = run_id
             body["completion_blockers"] = completion_blockers
+            body["audit_status"] = "audit_incomplete" if not audit_checklist["passed"] else "blocked"
+            body["missing_audit_inputs"] = audit_checklist["missing_items"]
             body["event_projection_degraded"] = False
             body["projection_status"] = "consistent"
             body["projection_issue_refs"] = []
@@ -3792,6 +3825,7 @@ class GatewayApp:
         command_path = self.store.command_path(run_id, command_id)
         closeout_ref = self.store.state_ref(run_id, "iteration_closeout_report.json")
         proposals_ref = self.store.state_ref(run_id, "system_improvement_proposals.json")
+        checklist_ref = self.store.state_ref(run_id, "closeout_audit_checklist.json")
         run_ref = self.store.state_ref(run_id, "run.json")
 
         command_record = {
@@ -3808,6 +3842,7 @@ class GatewayApp:
             "planned_side_effects": [
                 "write_iteration_closeout_report",
                 "write_system_improvement_proposals",
+                "write_closeout_audit_checklist",
                 "write_run_state",
                 "append_audit",
                 "append_event_projection",
@@ -3823,13 +3858,17 @@ class GatewayApp:
         closeout_artifact["command_id"] = command_id
         proposals_artifact = dict(proposals)
         proposals_artifact["command_id"] = command_id
+        audit_checklist_artifact = dict(audit_checklist)
+        audit_checklist_artifact["command_id"] = command_id
         write_json(self.store.run_dir(run_id) / "iteration_closeout_report.json", closeout_artifact)
         write_json(self.store.run_dir(run_id) / "system_improvement_proposals.json", proposals_artifact)
+        write_json(self.store.run_dir(run_id) / "closeout_audit_checklist.json", audit_checklist_artifact)
 
         run = read_json(self.store.run_path(run_id))
         artifact_refs = run.get("artifact_refs") if isinstance(run.get("artifact_refs"), dict) else {}
         artifact_refs["iteration_closeout_report"] = closeout_ref
         artifact_refs["system_improvement_proposals"] = proposals_ref
+        artifact_refs["closeout_audit_checklist"] = checklist_ref
         run.update(
             {
                 "status": "completed",
@@ -3871,6 +3910,7 @@ class GatewayApp:
                 "run_id": run_id,
                 "iteration_closeout_report_ref": closeout_ref,
                 "system_improvement_proposals_ref": proposals_ref,
+                "closeout_audit_checklist_ref": checklist_ref,
             },
         )
 
@@ -3890,7 +3930,7 @@ class GatewayApp:
                 "severity": "info",
                 "status": "completed",
                 "message": "Run completed through closeout gate",
-                "artifact_refs": [closeout_ref, proposals_ref, run_ref],
+                "artifact_refs": [closeout_ref, proposals_ref, checklist_ref, run_ref],
                 "decision_id": None,
             },
         )
@@ -3906,6 +3946,7 @@ class GatewayApp:
             "route_result": "run_completed",
             "iteration_closeout_report_ref": closeout_ref,
             "system_improvement_proposals_ref": proposals_ref,
+            "closeout_audit_checklist_ref": checklist_ref,
             "event_projection_degraded": bool(projection_issue_refs),
             "projection_status": "inconsistent" if projection_issue_refs else "consistent",
             "projection_issue_refs": projection_issue_refs,
@@ -3915,6 +3956,7 @@ class GatewayApp:
         command_record["steps"] = [
             {"step_id": "write_iteration_closeout_report", "target_authority": "state", "operation": "write", "status": "completed", "refs": [closeout_ref]},
             {"step_id": "write_system_improvement_proposals", "target_authority": "state", "operation": "write", "status": "completed", "refs": [proposals_ref]},
+            {"step_id": "write_closeout_audit_checklist", "target_authority": "state", "operation": "write", "status": "completed", "refs": [checklist_ref]},
             {"step_id": "write_run_state", "target_authority": "state", "operation": "write", "status": "completed", "refs": [run_ref]},
             {"step_id": "append_audit", "target_authority": "audit", "operation": "append", "status": "completed", "refs": [audit_ref]},
             {
@@ -6059,6 +6101,11 @@ class GatewayHandler(BaseHTTPRequestHandler):
             return
         if parsed.path.startswith("/v1/"):
             status, body = self.app.proxy_v1(self.path, "GET")
+            self.send_json(status, body)
+            return
+        module_route = self.module_route(parsed.path)
+        if module_route == ("self-evolution", "enqueue"):
+            status, body = self.app.self_evolution_queue_status(parse_qs(parsed.query))
             self.send_json(status, body)
             return
 

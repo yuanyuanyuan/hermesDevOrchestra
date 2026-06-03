@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,7 @@ class SelfEvolutionQueue:
         self.allow_staged = allow_staged
         self.enabled = enabled
         self._policy: dict[str, Any] | None = None
+        self.queue_dir = self.repo_root / ".hermes" / "evolution-queue"
 
     def load_policy(self) -> dict[str, Any]:
         self._require_enabled()
@@ -125,6 +127,7 @@ class SelfEvolutionQueue:
             proposal_refs.append(str(queue_item["proposal_ref"]))
 
         proposal["queued_item_refs"] = proposal_refs
+        self._persist_queue_items(queue_items)
         return {"proposals_artifact": proposal, "queue_items": queue_items}
 
     def transition(
@@ -179,6 +182,7 @@ class SelfEvolutionQueue:
             updated["human_approval_ref"] = human_approval_ref
         if decision_ref is not None and decision_ref not in updated["audit_refs"]:
             updated["audit_refs"] = [*updated["audit_refs"], decision_ref]
+        self._persist_queue_items([updated])
         return updated
 
     def list_pending(self, queue_items: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -202,6 +206,34 @@ class SelfEvolutionQueue:
                 str(item["created_at"]),
             ),
         )
+
+    def load_persistent_queue(self) -> list[dict[str, Any]]:
+        self._require_enabled()
+        records = []
+        for path in sorted(self.queue_dir.glob("*.json")):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(data, dict):
+                records.append(data)
+        return records
+
+    def query_persistent_queue(
+        self,
+        *,
+        run_id: str | None = None,
+        proposal_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        records = self.load_persistent_queue()
+        if run_id is not None:
+            records = [record for record in records if record.get("run_id") == run_id or run_id in record.get("source_run_ids", [])]
+        if proposal_id is not None:
+            records = [record for record in records if record.get("proposal_id") == proposal_id]
+        if status is not None:
+            records = [record for record in records if record.get("status") == status]
+        return records
 
     def _build_proposals_artifact(
         self,
@@ -315,6 +347,64 @@ class SelfEvolutionQueue:
         }
         self._validate_queue_item_shape(policy, queue_item)
         return queue_item
+
+    def _persist_queue_items(self, queue_items: list[dict[str, Any]]) -> None:
+        for item in queue_items:
+            record = self._persistent_record(item)
+            path = self.queue_dir / f"{self._queue_item_id(str(item['proposal_id']))}.json"
+            existing = self._load_persistent_record(path)
+            if existing:
+                record["created_at"] = existing.get("created_at") or record["created_at"]
+            self._atomic_write(path, record)
+
+    def _persistent_record(self, queue_item: dict[str, Any]) -> dict[str, Any]:
+        now = self._timestamp()
+        return {
+            "schema_version": "orchestra.v1",
+            "artifact_type": "self_evolution_review_queue_item",
+            "run_id": self._run_id_from_ref(str(queue_item["proposal_ref"])),
+            "proposal_id": queue_item["proposal_id"],
+            "queue_item_id": queue_item["queue_item_id"],
+            "proposal_ref": queue_item["proposal_ref"],
+            "source_run_ids": list(queue_item["source_run_ids"]),
+            "status": self._persistent_status(str(queue_item["status"])),
+            "protected_target_class": queue_item["protected_target_class"],
+            "source_event_refs": list(queue_item.get("audit_refs", [])),
+            "confidence_score": 0.8,
+            "applicable_scope": queue_item.get("protected_target_class") or "task_type:general",
+            "decision_ref": queue_item.get("decision_ref"),
+            "rejection_reason": queue_item.get("rejection_reason"),
+            "created_at": queue_item.get("created_at") or now,
+            "updated_at": now,
+        }
+
+    def _persistent_status(self, status: str) -> str:
+        if status in {"applied", "rejected"}:
+            return status
+        return "pending_review"
+
+    def _run_id_from_ref(self, ref: str) -> str:
+        prefix = "state://runs/"
+        if ref.startswith(prefix):
+            return ref[len(prefix) :].split("/", 1)[0]
+        return ""
+
+    def _load_persistent_record(self, path: Path) -> dict[str, Any] | None:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    def _atomic_write(self, path: Path, data: dict[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+        temp_path = path.with_name(f".tmp.{path.name}.{os.getpid()}.{datetime.now(timezone.utc).timestamp()}")
+        with temp_path.open("wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
 
     def _priority_score(
         self,

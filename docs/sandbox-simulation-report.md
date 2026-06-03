@@ -127,6 +127,22 @@
 
 > **用户**：没问题，继续。
 
+### 场景 B closeout 完整性校验方法
+
+沙箱中完成五阶后，Gateway closeout 必须先生成 `closeout_audit_checklist.json`，再允许 Run 进入 `completed`。验证步骤：
+
+1. 保留 `events.jsonl`、项目级 `audit.jsonl`、结构化补全包、`worker-sessions/*.json` invocation log、review/qa 输出和 closeout payload。
+2. 调用 `POST /orchestra/runs/{run_id}/closeout`。
+3. 读取 `state://runs/{run_id}/closeout_audit_checklist.json`，确认六类输入对应检查项均 `exists=true`、`passed=true`；完整日志、补全包、worker invocation 和 closeout artifacts 必须 `non_empty=true`，错误栈/审查记录允许 `count=0`，但必须有显式 note。
+4. 删除或清空任一关键输入后重试 closeout，例如删除 `worker-sessions/*.json` 或 `events.jsonl`。
+5. 期望 Gateway 返回阻塞响应，`audit_status = audit_incomplete`，`missing_audit_inputs[]` 列出缺失项，Run 不得标记为 completed。
+
+protected target 沙箱断言：
+
+- L4 示例：`terraform/main.tf`、`k8s/production/payment.yaml`。缺 `kimi_review_ref` 或 `human_approval_ref` 时 closeout 返回 HTTP 422，并在 `audit.jsonl` 写入 `protected_target_missing_approval`。
+- L3 示例：`docs/api/spec.yaml`、`.github/workflows/deploy.yml`。缺 `human_approval_ref` 时返回 HTTP 422；提供 human approval 后可进入普通完整性校验。
+- self-evolution proposal 不直接写 AGENTS.md/SOUL.md，而是进入 `.hermes/evolution-queue/`。重启 Gateway 后通过 `GET /orchestra/modules/self-evolution/enqueue?run_id={run_id}&status=pending_review` 仍能查到待审项。
+
 **【一阶：方向辩论】**
 
 > **Kimi**：启动方向辩论（标准通道）。
