@@ -323,18 +323,16 @@ const verifyResults = await parallel(
 const validResults = verifyResults.filter(Boolean)
 log("验证完成：" + validResults.length + "/" + extractResult.dimensions.length + " 维度已验证")
 
-// 调试：输出验证结果的 dimension_id 列表
-log("调试 - verifyResults 维度 ID 列表：" + verifyResults.map((r, i) => (r ? r.dimension_id || "null" : "null")).join(", "))
+// 调试：输出 verifyResults 每个元素的状态
+log("调试 - verifyResults 长度：" + verifyResults.length)
+log("调试 - verifyResults 每个元素类型：" + verifyResults.map((r, i) => (r === null ? "null" : typeof r)).join(", "))
+log("调试 - verifyResults 非 null 元素的 dimension_id：" + verifyResults.filter(r => r !== null).map(r => r.dimension_id || "无").join(", "))
 log("调试 - extractResult 维度 ID 列表：" + extractResult.dimensions.map(d => d.id).join(", "))
 
-// 构建 id -> index 映射，用于后续查找
-const dimIdToIndex = {}
-extractResult.dimensions.forEach((dim, idx) => { dimIdToIndex[dim.id] = idx })
-
-// 直接用索引匹配，不依赖 dimension_id
+// 直接用索引匹配，处理 null 值
 const complianceReport = {
   dimensions: extractResult.dimensions.map((dim, idx) => {
-    const vr = verifyResults[idx]  // 直接用索引访问
+    const vr = verifyResults[idx]  // 直接用索引访问，可能是 null
     const score = vr ? vr.dimension_score : 0
     const pass_count = vr ? vr.results.filter(r => r.status === "pass").length : 0
     const fail_count = vr ? vr.results.filter(r => r.status === "fail").length : 0
