@@ -154,6 +154,7 @@ payload = {
         "within_approved_scope": True,
         "risk_level": "medium",
         "authority_required": "kimi",
+        "classification": "D",
         "improvement_cycle": 0,
         "supersedes_ref": None
     }
@@ -204,8 +205,62 @@ payload = {
         "within_approved_scope": True,
         "risk_level": "medium",
         "authority_required": "kimi",
+        "classification": "D",
         "improvement_cycle": 1,
         "supersedes_ref": first_verdict_ref
+    }
+}
+request = urllib.request.Request(
+    f"{base_url}/orchestra/runs/{run_id}/verdicts",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+with urllib.request.urlopen(request, timeout=5) as response:
+    assert response.status == 200, response.status
+    body = json.loads(response.read().decode("utf-8"))
+with open(response_path, "w", encoding="utf-8") as handle:
+    json.dump(body, handle, indent=2)
+    handle.write("\n")
+PY
+
+SECOND_VERDICT_REF="$(python3 - "$TMP_DIR/second-verdict.json" <<'PY'
+import json
+import sys
+body = json.load(open(sys.argv[1], encoding="utf-8"))
+assert body["route_result"] == "improvement_queued", body
+assert body["improvement_cycle"] == 2, body
+print(body["verdict_ref"])
+PY
+)"
+
+python3 - "$BASE_URL" "$RUN_ID" "$TASK_ID" "$SECOND_VERDICT_REF" "$TMP_DIR/third-verdict.json" <<'PY'
+import json
+import sys
+import urllib.request
+
+base_url, run_id, task_id, second_verdict_ref, response_path = sys.argv[1:]
+payload = {
+    "idempotency_key": "gw-028-verdict-3",
+    "task_id": task_id,
+    "verdict": {
+        "schema_version": "orchestra.v1",
+        "artifact_type": "re_review_report",
+        "run_id": run_id,
+        "task_id": task_id,
+        "stage": "improvement",
+        "review_kind": "code_review",
+        "verdict": "request_changes",
+        "findings": [],
+        "affected_acceptance_criteria_refs": [],
+        "required_fixes": ["Architecture fix still fails after the third regression cycle"],
+        "evidence_refs": [f"state://runs/{run_id}/run.json", second_verdict_ref],
+        "within_approved_scope": True,
+        "risk_level": "high",
+        "authority_required": "kimi",
+        "classification": "D",
+        "improvement_cycle": 2,
+        "supersedes_ref": second_verdict_ref
     }
 }
 request = urllib.request.Request(
@@ -241,7 +296,7 @@ for url, path in (
         handle.write("\n")
 PY
 
-python3 - "$TMP_DIR/second-verdict.json" "$TMP_DIR/status.json" "$TMP_DIR/events.json" "$TMP_DIR/tasks-after.json" "$STATE_ROOT" "$AUDIT_ROOT" "$PROJECT_ID" "$RUN_ID" "$TASK_ID" "$HERMES_CALL_LOG" <<'PY'
+python3 - "$TMP_DIR/third-verdict.json" "$TMP_DIR/status.json" "$TMP_DIR/events.json" "$TMP_DIR/tasks-after.json" "$STATE_ROOT" "$AUDIT_ROOT" "$PROJECT_ID" "$RUN_ID" "$TASK_ID" "$HERMES_CALL_LOG" <<'PY'
 import json
 import pathlib
 import sys
@@ -272,8 +327,14 @@ assert "run_completed" not in event_types, event_types
 verdict_path = pathlib.Path(state_root) / project_id / "runs" / run_id / "review-verdicts" / pathlib.Path(response["verdict_ref"]).name
 verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
 assert verdict["artifact_type"] == "re_review_report", verdict
-assert verdict["improvement_cycle"] == 1, verdict
+assert verdict["improvement_cycle"] == 2, verdict
 assert verdict["supersedes_ref"], verdict
+
+decisions = json.loads((pathlib.Path(state_root) / project_id / "runs" / run_id / "decisions.json").read_text(encoding="utf-8"))
+decision = next(item for item in decisions["decisions"] if item["decision_id"] == response["decision_id"])
+assert decision["type"] == "regression_budget_exceeded", decision
+assert decision["classification"] == "D", decision
+assert set(decision["options"]) == {"accept_with_risk", "rollback", "redesign"}, decision
 
 audit_records = [
     json.loads(line)
@@ -286,6 +347,43 @@ assert any(record.get("type") == "review_verdict_recorded" and record.get("failu
 calls = pathlib.Path(hermes_log).read_text(encoding="utf-8").splitlines()
 assert len([line for line in calls if line.startswith("kanban create")]) == 7
 assert len([line for line in calls if line.startswith("kanban block")]) >= 2
+PY
+
+python3 - "$BASE_URL" "$RUN_ID" "$TASK_ID" "$AUDIT_ROOT" "$PROJECT_ID" <<'PY'
+import json
+import pathlib
+import sys
+import urllib.error
+import urllib.request
+
+base_url, run_id, task_id, audit_root, project_id = sys.argv[1:]
+payload = {
+    "idempotency_key": "gw-028-unknown-classification",
+    "task_id": task_id,
+    "classification": "F",
+    "outcome": "failed",
+}
+request = urllib.request.Request(
+    f"{base_url}/orchestra/runs/{run_id}/improvement",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    urllib.request.urlopen(request, timeout=5)
+except urllib.error.HTTPError as exc:
+    assert exc.code == 400, exc.code
+    body = json.loads(exc.read().decode("utf-8"))
+else:
+    raise AssertionError("unknown classification did not return HTTP 400")
+assert body["error"]["code"] == "unknown_classification", body
+
+audit_records = [
+    json.loads(line)
+    for line in (pathlib.Path(audit_root) / project_id / "audit.jsonl").read_text(encoding="utf-8").splitlines()
+    if line.strip()
+]
+assert any(record.get("type") == "unknown_classification" for record in audit_records), audit_records
 PY
 
 test_done

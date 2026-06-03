@@ -257,4 +257,43 @@ assert len([line for line in calls if line.startswith("kanban create")]) == 7
 assert any(line.startswith("kanban block") for line in calls), calls
 PY
 
+python3 - "$BASE_URL" "$RUN_ID" "$TASK_ID" "$TMP_DIR/scope-response.json" <<'PY'
+import json
+import sys
+import urllib.error
+import urllib.request
+
+base_url, run_id, task_id, response_path = sys.argv[1:]
+payload = {
+    "idempotency_key": "gw-027-scope",
+    "task_id": task_id,
+    "classification": "C",
+    "outcome": "failed",
+    "cycles_count": 0,
+    "write_scope_ref": ["scripts/example.py"],
+    "changed_files": ["scripts/example.py", "db/migrations/001.sql"]
+}
+request = urllib.request.Request(
+    f"{base_url}/orchestra/runs/{run_id}/improvement",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    urllib.request.urlopen(request, timeout=5)
+except urllib.error.HTTPError as exc:
+    assert exc.code == 422, exc.code
+    body = json.loads(exc.read().decode("utf-8"))
+else:
+    raise AssertionError("scope violation did not return HTTP 422")
+assert body["route_result"] == "scope_violation_blocked", body
+assert body["status"] == "blocked_scope_violation", body
+assert body["classification"] == "C", body
+assert body["child_task_refs"], body
+assert body["authority_route"]["target"] == "human", body
+with open(response_path, "w", encoding="utf-8") as handle:
+    json.dump(body, handle, indent=2)
+    handle.write("\n")
+PY
+
 test_done

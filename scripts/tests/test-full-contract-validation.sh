@@ -34,6 +34,11 @@ grep -Fq "PASS self evolution queue: proposals go through an explicit queue by d
 grep -Fq "PASS self evolution rejected retention: rejected proposals are retained with reasons" <<<"$OUTPUT" || fail "self evolution rejected retention was not checked" "evolution retention pass" "$OUTPUT"
 grep -Fq "PASS runtime knowledge deferred state: runtime knowledge backend is deferred and disabled before adapter selection" <<<"$OUTPUT" || fail "runtime knowledge deferred state was not checked" "knowledge pass" "$OUTPUT"
 
+assert_file_exists "$REPO_ROOT/scripts/lib/gateway_improvement.py" "gateway improvement helper missing"
+grep -Fq "CLASSIFICATION_TABLE" "$REPO_ROOT/scripts/lib/gateway_improvement.py" || fail "A-E classification table missing from helper" "CLASSIFICATION_TABLE" "$(sed -n '1,120p' "$REPO_ROOT/scripts/lib/gateway_improvement.py")"
+grep -Fq "route_improvement" "$REPO_ROOT/scripts/lib/gateway_improvement.py" || fail "improvement router missing from helper" "route_improvement" "$(sed -n '1,220p' "$REPO_ROOT/scripts/lib/gateway_improvement.py")"
+grep -Fq "submit_improvement" "$REPO_ROOT/scripts/lib/orch_gateway.py" || fail "Gateway improvement endpoint missing" "submit_improvement" "$(rg -n "submit_improvement" "$REPO_ROOT/scripts/lib/orch_gateway.py" || true)"
+
 python3 - "$REPO_ROOT" <<'PY'
 import json
 import sys
@@ -45,8 +50,21 @@ assert "requirement_completion_bundle" in schema["$defs"], schema["$defs"].keys(
 
 sys.path.insert(0, str(repo_root / "scripts" / "lib"))
 from blocker_validator import validate
+from gateway_improvement import CLASSIFICATION_TABLE, route_improvement
 from gateway_intake import normalize
 from gateway_projection import project
+
+assert set(CLASSIFICATION_TABLE) == {"A", "B", "C", "D", "E"}, CLASSIFICATION_TABLE.keys()
+for classification in ("A", "B", "C", "D", "E"):
+    route = route_improvement({"classification": classification, "outcome": "failed", "cycles_count": 0})
+    assert route.classification == classification
+assert route_improvement({"classification": "D", "outcome": "failed", "cycles_count": 2}).status == "regression_budget_exceeded"
+try:
+    route_improvement({"classification": "F", "outcome": "failed"})
+except ValueError:
+    pass
+else:
+    raise AssertionError("unknown classification accepted")
 
 payload = {
     "idempotency_key": "full-contract-bundle",

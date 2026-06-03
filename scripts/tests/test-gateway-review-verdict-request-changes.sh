@@ -251,4 +251,41 @@ calls = pathlib.Path(hermes_log).read_text(encoding="utf-8").splitlines()
 assert len([line for line in calls if line.startswith("kanban create")]) == 7
 PY
 
+python3 - "$BASE_URL" "$RUN_ID" "$TASK_ID" "$TMP_DIR/dispute-response.json" <<'PY'
+import json
+import sys
+import urllib.request
+
+base_url, run_id, task_id, response_path = sys.argv[1:]
+payload = {
+    "idempotency_key": "gw-026-dispute",
+    "task_id": task_id,
+    "classification": "E",
+    "outcome": "failed",
+    "consensus_scores": [0.42, 0.55],
+    "review_feedback": [
+        {"reviewer": "reviewer-a", "comment": "Keep the current architecture", "severity": "medium"},
+        {"reviewer": "reviewer-b", "comment": "Redesign the module boundary", "severity": "medium"}
+    ]
+}
+request = urllib.request.Request(
+    f"{base_url}/orchestra/runs/{run_id}/improvement",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+with urllib.request.urlopen(request, timeout=5) as response:
+    assert response.status == 200, response.status
+    body = json.loads(response.read().decode("utf-8"))
+assert body["route_result"] == "decision_required", body
+assert body["status"] == "escalated", body
+assert body["classification"] == "E", body
+assert body["authority_route"]["target"] == "kimi", body
+assert len(body["debate_rounds"]) == 2, body
+assert body["debate_rounds"][1]["consensus_score"] < 0.60, body
+with open(response_path, "w", encoding="utf-8") as handle:
+    json.dump(body, handle, indent=2)
+    handle.write("\n")
+PY
+
 test_done

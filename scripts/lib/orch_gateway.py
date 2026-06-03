@@ -25,6 +25,7 @@ from actor_auth import ActorAuthError, load_actor_secrets, load_authority_matrix
 from blocker_validator import validate as _completion_bundle_validate
 from debate_report import validate_artifact_definition
 from dispatch_gate import dispatch_task, submit_completion_payload
+from gateway_improvement import improvement_cycles_endpoint, normalize_classification, reject_unknown_classification, review_verdict_budget_exceeded, submit_improvement_endpoint, write_regression_decision
 from run_projection import PROJECTION_SCHEMA_VERSION, projection_response, refresh_projection_response
 from runtime_activation import RuntimeActivation, RuntimeActivationError
 
@@ -2608,7 +2609,10 @@ class GatewayApp:
                 payload_hash,
                 idempotency_path,
             )
-        if verdict.get("verdict") == "request_changes" and self.verdict_improvement_cycle(verdict) >= 1:
+        classification = verdict.get("classification")
+        if classification is not None and normalize_classification(classification) is None:
+            return reject_unknown_classification(self, run_id, task_id, classification)
+        if verdict.get("verdict") == "request_changes" and review_verdict_budget_exceeded(verdict):
             return self.block_on_review_verdict(
                 run_id,
                 task_id,
@@ -3120,6 +3124,8 @@ class GatewayApp:
         )
         write_json(self.store.run_path(run_id), run)
         write_json(self.store.active_run_path(), {"schema_version": SCHEMA_VERSION, "run_id": run_id, "status": "blocked", "updated_at": now})
+        if improvement_exhausted:
+            write_regression_decision(self, run_id, decision_id, verdict, authority_required, verdict_ref, now)
 
         for record_type, decision, details in (
             ("review_verdict_recorded", audit_decision, verdict_details),
@@ -6042,6 +6048,10 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 status, body = self.app.run_tasks(run_id)
                 self.send_json(status, body)
                 return
+            if child == "improvement_cycles":
+                status, body = improvement_cycles_endpoint(self.app, run_id)
+                self.send_json(status, body)
+                return
 
         self.send_json(404, self.app.error("not_found", "route not found"))
 
@@ -6114,6 +6124,14 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 status, body = self.app.submit_verdict(run_id, payload)
                 self.send_json(status, body)
                 return
+            if child == "improvement":
+                payload = self.read_json_body()
+                if payload is None:
+                    self.send_json(400, self.app.error("invalid_json", "request body must be JSON"))
+                    return
+                status, body = submit_improvement_endpoint(self.app, run_id, payload)
+                self.send_json(status, body)
+                return
             if child == "global-evaluations":
                 payload = self.read_json_body()
                 if payload is None:
@@ -6175,8 +6193,10 @@ class GatewayHandler(BaseHTTPRequestHandler):
         parts = [part for part in path.split("/") if part]
         if len(parts) == 3 and parts[:2] == ["orchestra", "runs"]:
             return parts[2], None
-        if len(parts) == 4 and parts[:2] == ["orchestra", "runs"] and parts[3] in {"projection", "events", "tasks", "snapshot", "heartbeat", "stop", "worker-outputs", "verdicts", "global-evaluations", "closeout", "failures"}:
+        if len(parts) == 4 and parts[:2] == ["orchestra", "runs"] and parts[3] in {"projection", "events", "tasks", "snapshot", "heartbeat", "stop", "worker-outputs", "verdicts", "improvement", "global-evaluations", "closeout", "failures"}:
             return parts[2], parts[3]
+        if len(parts) == 5 and parts[:2] == ["orchestra", "runs"] and parts[3:] == ["improvement", "cycles"]:
+            return parts[2], "improvement_cycles"
         return None
 
     def task_route(self, path: str) -> tuple[str, str, str] | None:
