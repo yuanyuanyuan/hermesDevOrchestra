@@ -431,13 +431,24 @@ Claude/Codex 分工：
 
 流程：
 
-1. Kimi 读取《任务反馈文档》和验收矩阵。
-2. 对问题归类：实现缺陷、测试不足、架构偏差、风险未处理、需求偏离。
-3. 可自动修复的问题直接调度 Hermes。
-4. 修复后重新测试、重新审查。
-5. 超出原范围或触发风险边界时才上浮。
+```text
+review / qa feedback
+  ↓
+A-E 分类
+  ├─ A 格式/风格问题 → 自动修复 + 复测
+  ├─ B 简单逻辑错误 → 自动修复 + 复测；2 次失败后人工介入
+  ├─ C 边界条件缺失 → 自动修复 + 补边界用例 + 复测；2 次失败后人工介入
+  ├─ D 架构/设计缺陷 → mini-debate → 修复；第 3 次 failed 后上浮裁决
+  └─ E 评审争议 → 2 轮 mini-debate；共识 < 0.60 时阻塞并交给 Kimi/用户裁决
+  ↓
+write_scope_ref 校验
+  ├─ 未越界 → fixing → retesting → resolved / escalated
+  └─ 越界 → HTTP 422 + blocked_scope_violation + 子任务或新 Run
+```
 
-输出《改进报告》，记录问题、修复、复测证据和残余风险。
+四阶状态机为 `review_received → classified → fixing → retesting → {resolved | regression_budget_exceeded | escalated} → closed`。D 类回归循环最多 3 次；第 3 次失败后必须生成包含 `accept_with_risk`、`rollback`、`redesign` 的裁决节点。E 类争议最多 2 轮 mini-debate，未达到共识阈值时不得自动选择任一评审结论推进。
+
+输出《改进报告》，记录 `classification`、`cycles_count`、`verdict`、`residual_risks[]`、`child_task_refs[]`、authority route 和回放验证路径。
 
 ---
 
