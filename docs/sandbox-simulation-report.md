@@ -133,7 +133,7 @@
 
 1. 保留 `events.jsonl`、项目级 `audit.jsonl`、结构化补全包、`worker-sessions/*.json` invocation log、review/qa 输出和 closeout payload。
 2. 调用 `POST /orchestra/runs/{run_id}/closeout`。
-3. 读取 `state://runs/{run_id}/closeout_audit_checklist.json`，确认六类输入对应检查项的 `exists`、`non_empty`、`passed` 均为 `true`。
+3. 读取 `state://runs/{run_id}/closeout_audit_checklist.json`，确认六类输入对应检查项均 `exists=true`、`passed=true`；完整日志、补全包、worker invocation 和 closeout artifacts 必须 `non_empty=true`，错误栈/审查记录允许 `count=0`，但必须有显式 note。
 4. 删除或清空任一关键输入后重试 closeout，例如删除 `worker-sessions/*.json` 或 `events.jsonl`。
 5. 期望 Gateway 返回阻塞响应，`audit_status = audit_incomplete`，`missing_audit_inputs[]` 列出缺失项，Run 不得标记为 completed。
 

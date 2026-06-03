@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import ipaddress
 import json
@@ -3797,7 +3798,7 @@ class GatewayApp:
         proposals = enrich_proposals(proposals, run_id)
         protected_blockers, protected_approvals = protected_target_approval_blockers(proposals)
         if protected_approvals:
-            closeout_report = dict(closeout_report)
+            closeout_report = copy.deepcopy(closeout_report)
             closeout_report["protected_target_approvals"] = protected_approvals
         if protected_blockers:
             rejection = protected_target_rejection(self.store.project_id, run_id, protected_blockers, utc_now())

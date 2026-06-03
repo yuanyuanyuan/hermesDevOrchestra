@@ -3,7 +3,7 @@
 ## 验收条件（可独立验证子项）
 
 ### AC-1: 六阶审计读取完整六类输入
-- **可执行断言**: 运行 closeout 流程后，`closeout_audit_checklist.json` 中六类输入（完整日志、补全包、工具调用记录、错误栈、审查记录、closeout artifacts）的 `exists` 和 `non_empty` 字段均为 `true`；每条经验建议含 `source_event_refs[]`、`confidence_score`（0.00~1.00）、`applicable_scope`。
+- **可执行断言**: 运行 closeout 流程后，`closeout_audit_checklist.json` 中六类输入均 `exists=true` 且 `passed=true`；完整日志、补全包、工具调用记录、closeout artifacts 必须 `non_empty=true`；错误栈和审查记录允许为空，但必须用 `count=0` 与 note 显式标注；每条经验建议含 `source_event_refs[]`、`confidence_score`（0.00~1.00）、`applicable_scope`。
 - **测试脚本**: `scripts/tests/test-gateway-closeout-completes-run.sh`
 - **负向用例**: 审计聚合器未读取 `events.jsonl`（如直接删除该文件后运行 closeout），`closeout_audit_checklist.json` 中对应项为 `false`，但 Gateway 仍允许 closeout 标记完成 → 测试脚本必须以非 0 退出码失败。
 - **状态**: ✅

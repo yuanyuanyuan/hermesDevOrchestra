@@ -186,7 +186,7 @@ def _review_check(closeout_report: dict[str, Any]) -> dict[str, Any]:
         "id": "review_records",
         "category": "review_records",
         "exists": True,
-        "non_empty": True,
+        "non_empty": bool(refs),
         "passed": True,
         "count": len(refs),
         "note": "no review" if not refs else "",

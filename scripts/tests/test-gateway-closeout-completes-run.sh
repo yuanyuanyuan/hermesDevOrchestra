@@ -369,7 +369,11 @@ assert {item["category"] for item in checklist["checks"]} >= {
     "review_records",
     "closeout_artifacts",
 }, checklist
-assert all(item["exists"] and item["non_empty"] and item["passed"] for item in checklist["checks"]), checklist
+assert all(item["exists"] and item["passed"] for item in checklist["checks"]), checklist
+review_check = next(item for item in checklist["checks"] if item["category"] == "review_records")
+assert review_check["non_empty"] is False and review_check["note"] == "no review", review_check
+required_non_empty = {"complete_logs", "intake_package", "worker_invocation_logs", "closeout_artifacts"}
+assert all(item["non_empty"] for item in checklist["checks"] if item["category"] in required_non_empty), checklist
 proposal = proposals["proposals"][0]
 assert proposal["status"] == "pending_review", proposal
 assert proposal["source_event_refs"], proposal
