@@ -11,24 +11,27 @@
 
 | 指标 | 结果 |
 |------|------|
-| **整体合规判定** | ✅ PASS |
+| **整体合规判定** | ⚠️ PASS_WITH_BLOCKERS（阈值通过，PRD 完整合规未达成） |
 | **覆盖率** | 90.3% |
 | **验证维度** | 18/18 全部完成 |
-| **一票否决维度** | 4/4 全部通过 |
-| **文档审计** | 40 份文档（全部保持） |
-| **清理建议** | 13 项（1 中风险 + 12 低风险） |
+| **固定门禁维度** | 5/5 全部达到阈值 |
+| **文档审计** | 工作流称 40 份文档；本报告仅列样例，需补完整清单 |
+| **清理建议** | 1 项需评估；原低风险删除建议已撤回 |
 | **用户手册** | ✅ 已生成（10 章节） |
+
+> **口径说明**：`PASS_WITH_BLOCKERS` 表示覆盖率和固定门禁维度达到 85% 阈值，但仍存在 P0/P1 PRD 缺口。它不能等同于“完整实现 PRD”。
 
 ---
 
 ## 🔍 Phase 1: 合规验证
 
-### 一票否决维度（全部通过）
+### 固定门禁维度（全部达到阈值）
 
 | 维度 | 得分 | 通过/失败 | 状态 |
 |------|------|-----------|------|
 | 六阶段 Run 状态机与阶段出口门禁 | 100% | 12/12 | ✅ PASS |
-| 16支canonical辩论团队注册表 | 85% | 6/7 | ✅ PASS |
+| Gateway 证据门控 | 90% | 9/10 | ✅ PASS（仍需补证据链追踪） |
+| 16支canonical辩论团队注册表 | 85% | 6/7 | ✅ PASS（阈值通过） |
 | 8种canonical辩论模式注册表 | 100% | 6/6 | ✅ PASS |
 | 三层通道分级与路由 | 100% | 9/9 | ✅ PASS |
 
@@ -101,7 +104,7 @@
 
 ## 📚 Phase 2: 文档审计
 
-### 文档清单（40 份，全部保持）
+### 文档清单（工作流称 40 份，本报告仅列样例）
 
 | 文档 | 状态 | 原因 |
 |------|------|------|
@@ -114,61 +117,20 @@
 | FULL-COVERAGE-MATRIX.md | ✅ 保持 | 全面就绪矩阵准确 |
 | gateway-integration-architecture.md | ✅ 保持 | Gateway 集成文档正确 |
 | GETTING-STARTED.md | ✅ 保持 | CLI 命令已验证 |
-| ... | ✅ 保持 | 其余 31 份文档全部保持 |
+| ... | ⚠️ 待补证据 | 其余文档未在本报告展开，需从工作流输出补完整清单后才能复核 |
 
-### 清理建议（13 项）
+### 清理建议（当前仅保留 1 项需评估）
 
 #### 🟡 中风险（1 项）
 
 | 文件 | 原因 | 建议 |
 |------|------|------|
-| `config/rules.json` | 在文档中有描述，但无代码引用。orch-init 引用的是 coding-rules.json（不同文件） | 评估是否需要保留或合并 |
+| `config/rules.json` | 文档中被描述为规则数据，但当前运行时代码未直接读取；`orch-init` 生成的是 `coding-rules.json`（不同文件） | 不直接删除；先决定接入运行时，或把文档改为“非运行时参考文件” |
 
-#### 🟢 低风险（12 项）
-
-| 文件 | 原因 | 建议 |
-|------|------|------|
-| `docs/archive/gsd-auto-flow.md` | 自归档于 2026-05-20，已被 SKILL.md 替代 | 可安全删除 |
-| `docs/archive/gsd-claude-codex-automation-playbook.md` | 自归档于 2026-05-20，已被 SKILL.md 替代 | 可安全删除 |
-| `docs/archive/codex-commands-quickref.md` | 归档文档，Codex 命令参考已被替代 | 可安全删除 |
-| `docs/archive/poc-headless-gsd-execution.md` | 自归档于 2026-05-20 的 POC 报告 | 可安全删除 |
-| `docs/archive/TDD-LONG-TASK-WORKFLOW.md` | 自归档于 2026-05-20，社区草案 | 可安全删除 |
-| `docs/archive/execution-checklist.md` | 基于 2026-05-18 的执行清单，已被替代 | 可安全删除 |
-| `docs/archive/...cutover-debate...plan.md` | 2026-05-20 的 cutover 计划，已被替代 | 可安全删除 |
-| `config/debate/full/alias-mapping.json` | 全部 4 条映射已标注 deprecated | 清理或删除 |
-| `.hermes/evolution-queue/queue-P-knowledge-001.json` | 自进化运行的中间产物 | 可安全删除 |
-| `.hermes/evolution-queue/queue-P-rules-001.json` | 自进化运行的中间产物 | 可安全删除 |
-| `docs/sandbox-simulation-report.md` | 2026-05-26 的一次性沙盒推演报告 | 可归档 |
-| `reference/hermes-orchestra-poc.html` | 119K 的 POC 交互原型，无引用 | 可安全删除 |
 
 ---
 
-## 📖 Phase 3: 用户手册
 
-### 手册信息
-
-| 属性 | 值 |
-|------|-----|
-| **标题** | Hermes Dev Orchestra 用户使用手册 |
-| **章节数** | 10 |
-| **基于已验证需求** | 15/16 |
-| **合规率** | 90.3% |
-| **输出路径** | `/data/hermes/docs/USER-MANUAL.md` |
-
-### 章节结构
-
-| 章节 | 标题 | 描述 |
-|------|------|------|
-| 1 | 开始之前：环境准备和安装验证 | 环境依赖清单、一键自检、依赖安装、Orchestra 安装、PATH 配置、最终验证 |
-| 2 | 初始化项目：orch-init 的完整交互流程 | orch-init 的前置条件、执行过程、MVP 向导、多项目初始化 |
-| 3 | 提交开发任务 | orch-start 启动编排、hermes chat 提交任务、/dev 简化命令、完整工作流示例 |
-| 4 | 观察执行：tmux 会话监控 | orch-status 查看状态、tmux attach 实时观察、文件交换时序说明 |
-| 5 | 处理审批请求 | L1-L4 风险等级说明、orch-risk-check 预检、orch-decisions/approve/reject 操作、超时策略 |
-| 6 | 查看执行结果 | codex-result.md 和 review-result.md 的字段解读、审计日志查看 |
-| 7 | 提交代码：git 操作和测试验证 | 运行测试、git 操作、停止项目 |
-| 8 | 常见问题与调试 | 4 大类问题（安装、任务执行、审批、性能），每类有诊断步骤和解决方案表格 |
-| 9 | 命令速查表 | 所有 CLI 命令分类整理：项目管理、审批风险、审计验证、引导配置、GSD 简化命令、tmux 操作 |
-| 10 | 附录 | 完整任务流转示例、配置文件位置速查、风险策略配置、审查 Checklist、Codex 模型选择 |
 
 ---
 
@@ -198,9 +160,10 @@
 
 ### 优先级 P2（可选优化）
 
-5. **清理低风险文件**
-   - 删除 12 个低风险的 archive 和临时文件
-   - 评估 `config/rules.json` 的保留价值
+5. **重新评估低风险清理项**
+   - 不再建议直接删除 archive、alias mapping、POC 或临时文件
+   - 先补完整依赖/引用证据，再决定是否归档或删除
+   - 评估 `config/rules.json` 是接入运行时还是降级为参考文档
 
 6. **完善 Worker 执行模型**
    - 添加 model_source 字段验证

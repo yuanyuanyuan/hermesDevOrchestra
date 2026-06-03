@@ -14,7 +14,18 @@ export const meta = {
 
 // ─── Constants ───
 const PASS_THRESHOLD = 0.85
-const VETO_DIMENSIONS = ["six_stage_state_machine", "evidence_gate", "security_compliance"]
+const VETO_DIMENSIONS = [
+  "six_stage_state_machine_and_gates",
+  "evidence_gate",
+  "debate_teams_registry",
+  "debate_modes_registry",
+  "channel_routing",
+]
+const VETO_DIMENSION_IDS = new Set(VETO_DIMENSIONS)
+
+function isVetoDimension(dim) {
+  return VETO_DIMENSION_IDS.has(dim.id)
+}
 
 // ─── Schemas ───
 // Batch extraction schema — each batch handles 3-6 dimensions to avoid timeout
@@ -357,7 +368,7 @@ const complianceReport = {
     return {
       id: dim.id,
       name: dim.name,
-      is_veto: dim.is_veto,
+      is_veto: isVetoDimension(dim),
       score,
       pass_count,
       fail_count,
@@ -366,7 +377,7 @@ const complianceReport = {
     }
   }),
   veto_status: extractResult.dimensions
-    .filter(dim => dim.is_veto)
+    .filter(dim => isVetoDimension(dim))
     .map(dim => {
       const idx = dimIdToIndex[dim.id]
       const vr = verifyResults[idx]
@@ -385,7 +396,7 @@ const complianceReport = {
       }
     }),
   critical_gaps: extractResult.dimensions
-    .filter(dim => dim.is_veto)
+    .filter(dim => isVetoDimension(dim))
     .filter(dim => {
       const idx = dimIdToIndex[dim.id]
       const vr = verifyResults[idx]
