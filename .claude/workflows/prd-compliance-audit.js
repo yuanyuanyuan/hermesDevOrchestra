@@ -339,6 +339,10 @@ for (let i = 0; i < verifyResults.length; i++) {
   }
 }
 
+// 构建 id -> index 映射，用于 veto_status 和 critical_gaps 查找
+const dimIdToIndex = {}
+extractResult.dimensions.forEach((dim, idx) => { dimIdToIndex[dim.id] = idx })
+
 // 直接用索引匹配，处理 null 值
 const complianceReport = {
   dimensions: extractResult.dimensions.map((dim, idx) => {
