@@ -791,3 +791,25 @@ full-system 目标注册表位于：
 - `config/debate/full/assembly-policy.json`
 
 仓库仍可能保留 MVP/legacy alias，例如 `red_team`、`risk_review`、`consensus`。这些是兼容层，不应替代 `qnN4o510` 对齐的 canonical team/mode id。
+
+## 18. Sprint 9 实时快照查询
+
+用户或 Kimi 可在三阶执行期间调用：
+
+```http
+GET /orchestra/runs/{run_id}/snapshot
+```
+
+该接口只读取 Gateway 本地状态，不触发 worker 侧刷新、重试或状态推进。响应包含当前 `running` / `blocked` session 的最新心跳摘要、`task_id`、`session_id`、`status` 与 `snapshot_lag_seconds`。正常情况下，`snapshot_lag_seconds <= 35` 表示心跳链路健康。
+
+相关错误码：
+
+| 错误码 | 场景 | 用户可见含义 |
+|---|---|---|
+| `not_found` | run 不存在 | 当前执行不存在或已被清理 |
+| `worker_session_not_found` | 心跳中的 `session_id` 不存在 | worker 可能使用了错误会话 |
+| `worker_session_mismatch` | 心跳 `run_id` / `task_id` 与 session 记录不一致 | 心跳来源与分派记录不匹配 |
+| `invalid_heartbeat` | 心跳字段缺失、类型错误或枚举非法 | worker 上报协议错误 |
+| `heartbeat_duplicate_ignored` | 重复 `heartbeat_seq` | 网络重放已被 Gateway 忽略 |
+
+快照页的推荐展示方式是“当前任务 + 最近心跳时间 + 已完成子任务数 + 阻塞原因”。若连续两次查询显示 `snapshot_lag_seconds > 35`，界面应提示“执行状态可能延迟”，但不应自动取消任务；最终超时判定由 Sweeper 写入 `worker_zombie_detected` 或 `worker_likely_stalled` 事件。

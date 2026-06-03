@@ -257,6 +257,61 @@ HTTP 响应头必须包含 `X-Projection-Schema-Version: 1.0.0`。
 
 同源隔离整体结果写入 `implementation_report.source_isolation_result`。无法提供独立身份时必须降级为 `sequential_execution`，并阻断自动进入三阶。
 
+## Sprint 9 数据模型补充
+
+### `heartbeat_message`
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| `protocol_version` | string | 必须为 `1.0.0` |
+| `message_type` | string | 必须为 `worker_heartbeat` |
+| `run_id` / `task_id` / `session_id` | string | 必须匹配 `worker_session_record` |
+| `timestamp` | ISO-8601 timestamp | 必须包含时区 |
+| `stage` | string | `running` / `paused` / `blocked` / `completed` / `error` |
+| `progress.completed_count` | integer | 单调不减 |
+| `progress.total_count` | integer | 子任务总数 |
+| `progress.in_progress_tasks` | array of string | 当前执行中的子任务 |
+| `progress.blocked_tasks` | array of string | 当前阻塞子任务 |
+| `eta_seconds` | integer | `-1` 表示无法估算 |
+| `block_reason` | string/null | `waiting_for_upstream_artifact` / `resource_exhausted` / `manual_approval` / `error_retry` / null |
+| `heartbeat_seq` | integer | 每个 session 从 1 开始递增 |
+
+### `sweep_result`
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| `sweep_run_id` | string | 每轮扫描唯一 |
+| `scanned_sessions_count` | integer | 被扫描的 active session 数 |
+| `zombie_count` | integer | 120 秒未收到心跳的 session 数 |
+| `stalled_count` | integer | 超过预估 200% 的 session 数 |
+
+每轮扫描必须向 `events.jsonl` 写入 `sweep_run` 与 `sweep_result`；发现硬超时写入 `worker_zombie_detected`；发现软超时写入 `worker_likely_stalled`。
+
+### `write_set`
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| `write_set_id` | string | 建议 UUID |
+| `task_id` / `run_id` | string | 与分派任务一致 |
+| `declared_paths[].path` | string | 项目根相对路径，禁止绝对路径与 `..` |
+| `declared_paths[].intent` | string | `create` / `modify` / `delete` |
+| `declared_paths[].optional` | boolean | 可选写入标记 |
+| `path_normalization` | string | `project_root_relative` |
+| `computed_at` | ISO-8601 timestamp | 计算时间 |
+
+并行分派前必须对同一并行边界内的 `declared_paths[].path` 做交集检测。无交集时 `disjoint=true`，有交集且无合法 merge strategy 时返回 `parallel_write_conflict`。
+
+### `merge_strategy_enum`
+
+合法值为：
+
+- `ordered_merge`
+- `last_writer_wins`
+- `manual_conflict_resolution`
+- `abort_on_conflict`
+
+非法值返回 `invalid_merge_strategy`。对 `protected_targets` 命中的路径，禁止使用 `last_writer_wins`，应改用 `manual_conflict_resolution` 或 `abort_on_conflict`。
+
 ## 持久化说明
 
 本轮仍不新增数据库表。

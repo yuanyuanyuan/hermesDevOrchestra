@@ -264,6 +264,52 @@ Actor tokens encode `actor_type`, `actor_id`, timestamp, HMAC signature, and opt
 - The `authority` field on `/orchestra/modules/*` remains an intent selector; Projection and Kanban authority routes additionally require `X-Actor-Token`.
 - If Gateway is ever exposed beyond localhost, module endpoints should be moved behind the same token boundary or a stronger transport boundary such as mTLS.
 
+## Sprint 9 Heartbeat, Snapshot, Sweeper Flow
+
+```mermaid
+sequenceDiagram
+    participant Worker
+    participant Gateway
+    participant Session as worker-sessions/{session_id}.json
+    participant Buffer as heartbeats/{session_id}.json
+    participant Events as events.jsonl
+    participant User
+    participant Sweeper
+
+    Worker->>Gateway: POST /orchestra/runs/{run_id}/heartbeat
+    Gateway->>Session: verify session_id/run_id/task_id
+    alt duplicate heartbeat_seq
+        Gateway-->>Worker: heartbeat_duplicate_ignored
+    else out-of-order heartbeat_seq
+        Gateway->>Buffer: buffer pending heartbeat
+        Gateway-->>Worker: heartbeat_buffered_out_of_order
+    else next heartbeat_seq
+        Gateway->>Session: update last_heartbeat_at/latest_heartbeat
+        Gateway->>Events: append heartbeat event(s)
+        Gateway-->>Worker: accepted
+    end
+
+    User->>Gateway: GET /orchestra/runs/{run_id}/snapshot
+    Gateway->>Session: read latest running/blocked heartbeat summaries
+    Gateway-->>User: readonly snapshot
+
+    Sweeper->>Session: scan running/blocked sessions every 60s
+    alt last_heartbeat_at age >= 120s
+        Sweeper->>Session: mark sweeper_status=zombie and cleanup
+        Sweeper->>Events: worker_zombie_detected
+    else started age >= estimated_seconds * 2
+        Sweeper->>Session: mark sweeper_status=likely_stalled
+        Sweeper->>Events: worker_likely_stalled
+    end
+    Sweeper->>Events: sweep_run
+```
+
+Gateway facade responsibilities stay narrow:
+
+- `POST /orchestra/runs/{run_id}/heartbeat` delegates validation, sequencing, buffering, session update, and event append to `HeartbeatHandler`.
+- `GET /orchestra/runs/{run_id}/snapshot` delegates read-only aggregation to `HeartbeatHandler.snapshot`.
+- `WorkerSessionSweeper.sweep_run(...)` remains separate from the HTTP server process and can be invoked by a supervisor, cron loop, or test harness.
+
 ## Non-Goals for Sprint 0
 
 - No Gateway refactor.

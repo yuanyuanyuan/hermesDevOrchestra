@@ -524,3 +524,15 @@ Sprint 3 CLI 模拟补充：
 ---
 
 *本报告作为 PRD v1.2 发布后验证的一部分，建议与六阶实现同步迭代，每两周复盘一次真实用户日志与推演假设的差异。*
+
+## Sprint 9 补充：三阶心跳与 Sweeper 调度
+
+三阶 worker 执行期间通过 `POST /orchestra/runs/{run_id}/heartbeat` 上报结构化心跳。消息使用 `protocol_version="1.0.0"`、`message_type="worker_heartbeat"`，包含 `run_id`、`task_id`、`session_id`、ISO-8601 `timestamp`、`stage`、`progress`、`eta_seconds`、`block_reason` 与单调递增 `heartbeat_seq`。
+
+Gateway 对同一 `session_id` 的 `heartbeat_seq` 做去重和乱序缓冲：重复序列返回 `heartbeat_duplicate_ignored`；若 N+2 先到，则暂存到 `heartbeats/{session_id}.json`，待 N+1 到达后按序写入 `events.jsonl`。最新心跳摘要写回 `worker-sessions/{session_id}.json` 的 `latest_heartbeat`，供实时快照读取。
+
+Sweeper 以独立调度单元运行，建议每 60 秒调用一次 `WorkerSessionSweeper.sweep_run(...)`。扫描范围为 `running` / `blocked` worker session：
+
+- `last_heartbeat_at` 超过 120 秒未更新：标记 `sweeper_status="zombie"`，写入 `worker_zombie_detected` 事件，并归档 workspace 到 `worker-sessions/archive/`。
+- 执行时长超过 `estimated_seconds * 2` 且仍未完成：标记 `sweeper_status="likely_stalled"`，写入 `worker_likely_stalled` 告警。
+- 每轮扫描都会写入 `sweep_run` 和 `sweep_result` 事件，包含 `sweep_run_id`、`scanned_sessions_count`、`zombie_count`、`stalled_count`。

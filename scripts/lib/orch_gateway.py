@@ -450,7 +450,9 @@ class GatewayApp:
             "GET /orchestra/runs/{run_id}/projection",
             "POST /orchestra/runs/{run_id}/projection",
             "GET /orchestra/runs/{run_id}/events",
+            "GET /orchestra/runs/{run_id}/snapshot",
             "GET /orchestra/runs/{run_id}/tasks",
+            "POST /orchestra/runs/{run_id}/heartbeat",
             "POST /orchestra/kanban/raw-state",
             "POST /orchestra/runs/{run_id}/stop",
             "POST /orchestra/runs/{run_id}/worker-outputs",
@@ -5852,6 +5854,28 @@ class GatewayApp:
             "projection_issue_refs": projection_issue_refs,
         }
 
+    def run_snapshot(self, run_id: str) -> tuple[int, dict[str, Any]]:
+        if not self.store.run_path(run_id).exists():
+            return 404, self.error("not_found", "run not found")
+        from heartbeat_handler import HeartbeatHandler
+
+        body = HeartbeatHandler().snapshot(run_id=run_id, run_dir=self.store.run_dir(run_id))
+        body.update({"schema_version": SCHEMA_VERSION, "project": self.store.project_id})
+        return 200, body
+
+    def submit_heartbeat(self, run_id: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        if not self.store.run_path(run_id).exists():
+            return 404, self.error("not_found", "run not found")
+        payload = dict(payload)
+        payload.setdefault("run_id", run_id)
+        from heartbeat_handler import HeartbeatError, HeartbeatHandler
+
+        try:
+            result = HeartbeatHandler().process_heartbeat(run_dir=self.store.run_dir(run_id), events_path=self.store.events_path(run_id), payload=payload)
+        except HeartbeatError as exc:
+            return 400, self.error(exc.code, exc.message)
+        return 200, {"schema_version": SCHEMA_VERSION, "run_id": run_id, **result}
+
     def event_sequence_consistent(self, events: list[dict[str, Any]]) -> bool:
         expected = 1
         seen: set[int] = set()
@@ -6010,6 +6034,10 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 else:
                     self.send_json(status, body)
                 return
+            if child == "snapshot":
+                status, body = self.app.run_snapshot(run_id)
+                self.send_json(status, body)
+                return
             if child == "tasks":
                 status, body = self.app.run_tasks(run_id)
                 self.send_json(status, body)
@@ -6110,6 +6138,14 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 status, body = self.app.submit_failure(run_id, payload)
                 self.send_json(status, body)
                 return
+            if child == "heartbeat":
+                payload = self.read_json_body()
+                if payload is None:
+                    self.send_json(400, self.app.error("invalid_json", "request body must be JSON"))
+                    return
+                status, body = self.app.submit_heartbeat(run_id, payload)
+                self.send_json(status, body)
+                return
         task_route = self.task_route(parsed.path)
         if task_route:
             run_id, task_id, action = task_route
@@ -6139,7 +6175,7 @@ class GatewayHandler(BaseHTTPRequestHandler):
         parts = [part for part in path.split("/") if part]
         if len(parts) == 3 and parts[:2] == ["orchestra", "runs"]:
             return parts[2], None
-        if len(parts) == 4 and parts[:2] == ["orchestra", "runs"] and parts[3] in {"projection", "events", "tasks", "stop", "worker-outputs", "verdicts", "global-evaluations", "closeout", "failures"}:
+        if len(parts) == 4 and parts[:2] == ["orchestra", "runs"] and parts[3] in {"projection", "events", "tasks", "snapshot", "heartbeat", "stop", "worker-outputs", "verdicts", "global-evaluations", "closeout", "failures"}:
             return parts[2], parts[3]
         return None
 
