@@ -2,5 +2,6 @@
 __pycache__/
 *.pyc
 .tmp/
+logs/
 .logs/
 config/decisions/actor-secrets.json

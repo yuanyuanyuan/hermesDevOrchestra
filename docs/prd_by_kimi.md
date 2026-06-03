@@ -2,17 +2,18 @@
 
 # Hermes Dev Orchestra 产品需求文档
 
-**版本**：v1.2
-**日期**：2026-05-26
+**版本**：v1.3
+**日期**：2026-06-03
 **项目根目录**：`/data/hermes`
 **核心依据**：Get 知识库 `qnN4o510`、`docs/knowledge/qnN4o510-synthesis.md`、`docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md`、`config/debate/full/*`、`scripts/lib/orch_gateway.py`
 
-> 说明：本文同时包含目标态需求与 Sprint 分解，当前仓库只实现其中已落地的子集；实现边界以对应 Sprint 计划、ADR 和测试为准。
+> 说明：本文同时包含目标态需求与当前 strict sprint 已落地能力。实现边界以运行时代码、schema、ADR、Sprint checklist 和测试为准。
 >
-> 当前边界（截至 PR #17 / 2026-06-01）：
-> - 已落地并可直接在仓库中验证的内容，以 `scripts/lib/orch_gateway.py`、相关 CLI 脚本、对应 ADR 和测试脚本覆盖的子集为准。
-> - 下文中如 Conflict Ledger 持久化/仲裁全流程、完整 rollback API、快速通道自动合并、Low-Risk Override 等描述，除非有对应代码与测试支撑，否则一律视为目标态设计，不代表仓库已经完整实现。
-> - 因此，本文任何单个章节都不能单独作为“功能已可用”的证据；是否已落地必须同时回看代码、ADR 和测试。
+> 当前边界（截至 PR #31 / 2026-06-03）：
+> - `docs/sprints/prd-by-kimi-user-flow-strict` 覆盖的 13 个 strict sprint 已完成；关键 gate 由 `test-schema-doc-sync.sh`、`test-success-metrics-pipeline.sh`、`test-e2e-strict-six-stage-flow.sh` 验证。
+> - 运行时合同优先级为：`scripts/lib/*` 实现与测试 > `config/schemas/*` > `docs/sprints/prd-by-kimi-user-flow-strict/spec.md` / `schema.md` > 本 PRD 与用户流程文档。
+> - `docs/FULL-COVERAGE-MATRIX.md` 中标记为 `staged`、`not runtime`、`partially implemented` 的 full-system 能力仍不是全量 runtime cutover 证据。
+> - 因此，本文可作为当前 strict flow 的产品入口，但是否可执行仍必须以对应代码、ADR、schema 和测试为准。
 
 ---
 
@@ -352,7 +353,7 @@ continuous_improvement
         "test_strategy": "string",
         "acceptance_criteria_refs": ["ac_id"],
         "estimated_duration_seconds": 120,
-        "merge_strategy": "fast_forward|merge_commit|squash_then_merge|sequential_rebase|manual"
+        "merge_strategy": "ordered_merge|last_writer_wins|manual_conflict_resolution|abort_on_conflict"
       }
     ],
     "edges": [
@@ -521,39 +522,38 @@ continuous_improvement
 
 以下变更无论大小，均视为 protected target，强制走 Kimi review + Human Approval：
 
-| 类别 | 具体范围 | 审批级别 |
-|------|----------|----------|
-| 根规则 | `AGENTS.md` 根级规则、`SOUL.md` 核心决策偏好、`.hermes/project-profile.yaml` 的 `protected_targets` 自身 | L4 |
-| CI/CD | `.github/workflows/`、Jenkinsfile、GitLab CI、ArgoCD 配置、发布流水线脚本 | L4 |
-| 权限与密钥 | IAM 策略、RBAC 配置、API key / secret 的增删改、数据库访问凭证 | L4 |
-| 基础设施 | `k8s/production/`、`terraform/`、网络策略、DNS 配置、负载均衡规则 | L4 |
-| 风险策略 | `config/debate/full/*` 核心注册表、`config/performance/slo-policy.json`、degradation/evolution 策略 | L3 |
-| Worker/Gateway 配置 | `orch_gateway.py` 路由规则、worker session 超时策略、authority matrix 本身 | L3 |
-| 支付与合规 | 支付网关配置、PCI-DSS 相关文件、GDPR/CCPA 数据处理规则 | L4 |
+| 类别 | Pattern 示例 | 审批级别 |
+|------|-------------|----------|
+| `k8s_production` | `k8s/production/*` | L4 |
+| `db_schema` | `db/migrations/*` | L4 |
+| `api_contract` | `docs/api/*`、`specs/*` | L3 |
+| `auth_policy` | `config/auth/*`、`policies/*` | L4 |
+| `iam_secrets` | `config/secrets/*`、`.env*` | L4 |
+| `infrastructure` | `terraform/*`、`infrastructure/*` | L4 |
+| `payment_compliance` | `src/payment/*`、`compliance/*` | L4 |
+| `ci_cd_pipeline` | `.github/workflows/*`、`ci/*` | L3 |
+| `legal_terms` | `docs/legal/*`、`terms/*` | L4 |
+| `core_business_logic` | `src/core/*`、`domain/*` | L3 |
+| `data_privacy` | `src/pii/*`、`privacy/*` | L4 |
 
 **Self-evolution Queue 工作机制**：
 
-六阶产出的《工作流优化建议》不直接修改配置，而是进入 `self-evolution queue`，按以下状态流转：
+六阶产出的《工作流优化建议》不直接修改配置，而是进入 `self-evolution queue`。当前 strict runtime 将持久化审计视图收敛为三种状态：
 
 ```text
-proposed → kimi_reviewed → human_approved → applied → verified
-         → rejected
-         → auto_applied (仅限非 protected target 且置信度=高、无冲突)
+pending_review → applied
+               → rejected
 ```
 
 | 状态 | 进入条件 | 处理者 |
 |------|----------|--------|
-| `proposed` | 六阶审计自动生成建议 | Kimi |
-| `kimi_reviewed` | Kimi 审查建议的合理性、来源可靠性、适用边界 | Kimi |
-| `human_approved` | 涉及 protected target 或 Kimi 置信度 ≤ 中时必须人工审批 | 项目 Owner / 安全负责人 |
-| `applied` | Hermes agents 将建议写入目标文件（AGENTS.md / SOUL.md / 配置） | Codex（受 Gateway 监督） |
-| `verified` | 下一 Run 执行后，Gateway 验证该建议是否改善了目标指标 | Gateway |
+| `pending_review` | 建议进入 queue，等待 Kimi 或 Human 审批 | Kimi / Human |
+| `applied` | 建议通过 Gateway authority 校验并写入目标文件 | Codex（受 Gateway 监督） |
 | `rejected` | Kimi 或人工判定建议不合理、适用边界不清、或风险 > 收益 | Kimi / Human |
-| `auto_applied` | 非 protected target、置信度=高、与现有规则无冲突、同类建议已有 3 次以上成功验证 | Gateway 自动执行 |
 
 **队列管理规则**：
-- queue 持久化为 `config/evolution/self-evolution-review-queue.json`。
-- 同一类建议（如"增加前端 i18n 检查"）被 reject 后，30 天内不得再次 auto_apply，必须人工审批。
+- queue policy 位于 `config/evolution/self-evolution-review-queue.json`；运行时 queue 持久化在 `.hermes/evolution-queue/`。
+- 同一类建议（如"增加前端 i18n 检查"）被 reject 后，30 天内不得再次绕过 review，必须人工审批。
 - 六阶审计必须输出 queue 状态摘要：已落地 N 条、待审 M 条、拒绝 P 条。
 
 **验收标准**：
@@ -843,20 +843,20 @@ cross_team_conflict_detector
 
 | 策略 | 适用场景 | 执行方式 |
 |------|----------|----------|
-| `fast_forward` | 各子任务修改完全 disjoint 的文件集 | 按完成顺序依次 rebase 到基线，保持线性历史 |
-| `merge_commit` | 子任务有 disjoint write set 但需保留并行历史 | 全部完成后统一 merge，生成合并提交 |
-| `squash_then_merge` | 子任务产生大量中间 commit | 每个子任务先 squash 为单 commit，再 merge |
-| `sequential_rebase` | 子任务间有逻辑依赖（如 A 改接口，B 改调用方） | 严格按 DAG 拓扑顺序 rebase，后序任务基于前序任务的结果 |
-| `manual` | write set 可能重叠，或涉及重命名/大范围重构 | Gateway 阻塞，等待 Kimi 或用户决策合并顺序 |
+| `ordered_merge` | 各子任务修改完全 disjoint 的文件集，按固定顺序合并 | Gateway 按 DAG 顺序依次合并并记录审计 |
+| `last_writer_wins` | 允许后完成任务覆盖前任务，且目标不是 protected target | Gateway 记录覆盖顺序；protected target 禁用该策略 |
+| `manual_conflict_resolution` | write set 可能重叠，或涉及重命名/大范围重构 | Gateway 阻塞，等待 Kimi 或用户决策合并顺序 |
+| `abort_on_conflict` | 任何冲突都必须中断 | Gateway 返回 `parallel_write_conflict`，拒绝继续执行 |
 
-**默认策略**：未声明时 Gateway 强制使用 `manual`，拒绝自动执行。
+**默认策略**：未声明时 Gateway 拒绝自动执行，并要求显式声明合法 `merge_strategy`。
 
 **Write Set 冲突检测算法**：
 - 并行任务进入执行前，Gateway 收集所有节点的 `write_scope` 列表。
 - 对每一对并行节点 `(ti, tj)`，检查其 write_scope 是否存在交集：
   - 若交集为空 → 允许并行执行。
-  - 若交集非空但 `merge_strategy ≠ manual` → Gateway 阻塞，返回 `write_set_overlap`，要求显式声明 `manual` 或缩小 write_scope。
-  - 若交集非空且 `merge_strategy = manual` → 允许进入执行，但 Gateway 标记为 `requires_manual_merge`，在三阶完成后通知 Kimi/用户决策合并顺序。
+  - 若交集非空且 `merge_strategy = abort_on_conflict` → Gateway 阻塞，返回 `parallel_write_conflict`。
+  - 若交集非空且 `merge_strategy = manual_conflict_resolution` → 允许进入执行，但 Gateway 标记为 `requires_manual_merge`，在三阶完成后通知 Kimi/用户决策合并顺序。
+  - 若交集非空且 `merge_strategy = last_writer_wins` → 仅在非 protected target 且审计记录可回放时允许；否则阻塞。
 - write_scope 支持 glob 表达式（如 `src/pages/*.tsx`）；冲突检测采用字符串前缀匹配 + glob 展开后的路径交集计算。
 
 ---

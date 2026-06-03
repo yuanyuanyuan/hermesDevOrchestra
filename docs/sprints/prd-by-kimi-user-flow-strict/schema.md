@@ -198,9 +198,9 @@ HTTP 响应头必须包含 `X-Projection-Schema-Version: 1.0.0`。
 
 | 字段 | 类型 | 约束 |
 |------|------|------|
-| `strategy` | string | 枚举：`sequential` / `branch_merge` / `overwrite_with_backup` / `abort_on_conflict` |
+| `strategy` | string | 枚举：`ordered_merge` / `last_writer_wins` / `manual_conflict_resolution` / `abort_on_conflict` |
 | `fallback` | string | 当首选策略失败时的回退策略，必须与 `strategy` 同枚举集且不能等于自身 |
-| `disjoint_write_set_verified` | boolean | 必填，仅当 `true` 时才允许 `branch_merge` |
+| `disjoint_write_set_verified` | boolean | 必填，仅当 `true` 时才允许 `ordered_merge` |
 
 ### `success_metrics_summary`
 
