@@ -24,9 +24,15 @@ const VETO_DIMENSIONS = [
   "channel_routing",
 ]
 const VETO_DIMENSION_IDS = new Set(VETO_DIMENSIONS)
+const PROJECT_ROOT = "."
+const DOCS_DIR = `${PROJECT_ROOT}/docs`
+const LIB_DIR = `${PROJECT_ROOT}/scripts/lib`
+const CONFIG_DIR = `${PROJECT_ROOT}/config`
+const TESTS_DIR = `${PROJECT_ROOT}/scripts/tests`
+const BIN_DIR = `${PROJECT_ROOT}/scripts/bin`
 
 function isVetoDimension(dim) {
-  return VETO_DIMENSION_IDS.has(dim.id)
+  return Boolean(dim.is_veto) || VETO_DIMENSION_IDS.has(dim.id)
 }
 
 function countResultStatuses(results) {
@@ -222,13 +228,13 @@ log("从 prd_by_kimi.md 和 user-flow-guide_by_kimi.md 提取需求检查点（3
 
 const PRD_CONTEXT =
   "### 输入文件\n" +
-  "1. `/data/hermes/docs/prd_by_kimi.md` — 产品需求文档\n" +
-  "2. `/data/hermes/docs/user-flow-guide_by_kimi.md` — 用户流程指南\n\n" +
+  "1. `" + DOCS_DIR + "/prd_by_kimi.md` — 产品需求文档\n" +
+  "2. `" + DOCS_DIR + "/user-flow-guide_by_kimi.md` — 用户流程指南\n\n" +
   "### 项目代码位置\n" +
-  "- 运行时代码：`/data/hermes/scripts/lib/`\n" +
-  "- 配置文件：`/data/hermes/config/`\n" +
-  "- 测试脚本：`/data/hermes/scripts/tests/`\n" +
-  "- CLI 工具：`/data/hermes/scripts/bin/`\n\n" +
+  "- 运行时代码：`" + LIB_DIR + "/`\n" +
+  "- 配置文件：`" + CONFIG_DIR + "/`\n" +
+  "- 测试脚本：`" + TESTS_DIR + "/`\n" +
+  "- CLI 工具：`" + BIN_DIR + "/`\n\n" +
   "### 通用提取规则\n" +
   "1. 读取两份文件，逐章节提取本批次指定维度的可验证需求点\n" +
   "2. 每个需求维度：id(snake_case)、name、prd_section、is_veto、checkpoints[]\n" +
@@ -315,10 +321,10 @@ const VERIFY_PROMPT = (dim) =>
     (cp.grep_pattern ? "   搜索模式：" + cp.grep_pattern + "\n" : "")
   ).join("") + "\n" +
   "### 验证方法\n" +
-  "1. **code_exists**: 检查文件是否存在于 `/data/hermes/scripts/lib/` 或 `/data/hermes/config/`\n" +
+  "1. **code_exists**: 检查文件是否存在于 `" + LIB_DIR + "/` 或 `" + CONFIG_DIR + "/`\n" +
   "2. **function_grep**: 在代码文件中搜索函数/类定义（使用 Grep 工具）\n" +
   "3. **config_check**: 检查 JSON/YAML 配置文件内容\n" +
-  "4. **test_exists**: 检查 `/data/hermes/scripts/tests/` 下是否有对应测试\n" +
+  "4. **test_exists**: 检查 `" + TESTS_DIR + "/` 下是否有对应测试\n" +
   "5. **manual_review**: 读取代码片段，人工判断是否符合需求\n\n" +
   "对每个检查点，输出：\n" +
   "- `check_id`: 检查点 ID\n" +
@@ -444,7 +450,7 @@ log("检查 docs/ 目录下所有文档的一致性...")
 
 const docAudit = await agent(
   "## 任务：文档一致性审计\n\n" +
-  "检查 `/data/hermes/docs/` 目录下所有 `.md` 文件（不含 archive/ 子目录），判断每份文档是否与当前代码和 PRD 保持一致。\n\n" +
+  "检查 `" + DOCS_DIR + "/` 目录下所有 `.md` 文件（不含 archive/ 子目录），判断每份文档是否与当前代码和 PRD 保持一致。\n\n" +
   "### 检查规则\n" +
   "1. **代码路径引用**：文档中引用的代码文件路径是否仍存在\n" +
   "2. **API/命令有效性**：文档中描述的命令、接口是否与当前代码匹配\n" +
@@ -457,7 +463,7 @@ const docAudit = await agent(
   "- 与 PRD 矛盾且未标注为 legacy → archive\n" +
   "- archive/ 中已有更新版本 → archive\n\n" +
   "### 需要检查的文件\n" +
-  "先用 Glob 工具列出 `/data/hermes/docs/**/*.md`（不含 archive/），然后逐个读取并检查。\n\n" +
+  "先用 Glob 工具列出 `" + DOCS_DIR + "/**/*.md`（不含 archive/），然后逐个读取并检查。\n\n" +
   "### 输出\n" +
   "对每个文档输出：\n" +
   "- `file`: 文件路径\n" +
@@ -485,7 +491,7 @@ log("扫描项目内容，列出移除建议...")
 
 const cleanupScan = await agent(
   "## 任务：项目内容清理扫描\n\n" +
-  "扫描 `/data/hermes` 项目中的潜在冗余或不需要保留的内容。\n\n" +
+  "扫描 `" + PROJECT_ROOT + "` 项目中的潜在冗余或不需要保留的内容。\n\n" +
   "### 扫描维度\n" +
   "1. **重复文档**：docs/ 下内容高度相似的文件\n" +
   "2. **孤立配置**：config/ 下不再被代码引用的 JSON/YAML（用 Grep 检查引用计数）\n" +
@@ -579,7 +585,7 @@ const manualResult = await agent(
   "- `manual_content`: 完整的 Markdown 手册内容（这是核心输出，要完整、可直接使用）\n" +
   "- `sections`: 章节列表（title + description + content_preview）\n" +
   "- `based_on`: 手册基于的审计数据（verified_dimensions, total_dimensions, compliance_rate, key_features_covered）\n" +
-  "- `output_path`: 建议的手册保存路径（`/data/hermes/docs/USER-MANUAL.md`）\n\nStructured output only.",
+  "- `output_path`: 建议的手册保存路径（`" + DOCS_DIR + "/USER-MANUAL.md`）\n\nStructured output only.",
   { label: "user-manual", phase: "User Manual", schema: MANUAL_SCHEMA }
 )
 
