@@ -59,9 +59,41 @@ my-pr-review-response <PR_NUMBER>
 
 通过 `my-pr-skill` 获取仓库信息（`${OWNER}`、`${REPO}`）、PR 分支名（`${BRANCH}`）和完整 PR 元数据。
 
-**步骤 B — 读取 Review 意见**
+**步骤 B — 读取 Review 意见（全面收集，禁止遗漏）**
 
-通过 `my-pr-skill` 获取 reviews 和 issue comments，重点关注 `state == "CHANGES_REQUESTED"` 的 review body 中的发现项清单。
+通过 `my-pr-skill` 获取以下**全部**内容，**不得遗漏任何一类**：
+1. **PR reviews**（`get-pr-reviews.sh`）：提取所有 `state == "CHANGES_REQUESTED"` 的 review body 中的发现项
+2. **Review comments**（line-level 代码行评论）：提取 reviewer 附着在具体代码行上的所有评论
+3. **Issue comments**（`get-pr-comments.sh`）：提取 PR 下方所有通用评论中属于 review 反馈的部分
+
+> ⚠️ **常见遗漏源**：Line-level review comments（reviewer 在文件 diff 上点击行号添加的评论）经常独立于 review body 存在，必须与 review body 中的发现项**同等对待**。
+
+**步骤 C — 构建待处理清单（PENDING CHECKLIST）**
+
+将步骤 B 收集到的**所有** review 意见统一编号，建立以下格式的待处理清单，写入 `${REVIEW_LOG}`：
+
+```markdown
+## 待处理 Review Comment 清单 — PR #${PR_NUMBER}
+
+| # | 来源 | 评论者 | 文件:行号 | 内容摘要 | 状态 |
+|---|------|--------|-----------|----------|------|
+| 1 | review body | @reviewer | path:line | [摘要] | PENDING |
+| 2 | line comment | @reviewer | path:line | [摘要] | PENDING |
+| 3 | issue comment | @reviewer | — | [摘要] | PENDING |
+```
+
+**状态判定规则：**
+- `PENDING`：尚未有任何响应（无修复 commit、无回复 comment、无 resolved 标记）
+- `ADDRESSED`：已有之前的响应（如已有回复 comment 或修复 commit），但仍需纳入本次复核确认
+- `SKIPPED`：明确判定为不相关或已过时（需记录理由，且需经过验证）
+
+**已处理判定标准（满足任一即视为已处理）：**
+- [ ] 该 comment 已有来自 PR 作者（stark-007）的回复 comment
+- [ ] 该 comment 对应的代码行已在后续 commit 中被修改
+- [ ] 该 comment 已被 reviewer 标记为 resolved 或 approved
+- [ ] 该 comment 属于已被取代的早期 review 轮次，且 reviewer 已发新 review
+
+> 🚫 **禁止假设**：不得假设「review body 里的发现项 = 全部意见」。Line-level review comments 和 issue comments 中的反馈必须逐一检查，不得遗漏。
 
 **步骤 D — 读取 PR diff 并 checkout 分支**
 
@@ -87,6 +119,15 @@ my-pr-review-response <PR_NUMBER>
 - **同意（AGREE）** → 进入阶段 3 修复流水线
 - **不同意（DISAGREE）** → 进入阶段 4 反驳流水线
 
+**4. 实时更新处理进度：**
+每处理完一条发现项，**立即**在待处理清单中更新状态并记录证据：
+- `AGREE` → 状态改为 `FIXED`，记录修复 commit SHA 和 PR comment URL
+- `DISAGREE` → 状态改为 `COUNTERED`，记录反驳 comment URL
+- 已存在有效回复 → 状态改为 `VERIFIED`，记录验证结论
+- 明确过时/不相关 → 状态改为 `SKIPPED`，记录判定理由
+
+处理过程中持续维护清单，确保**随时可知剩余 PENDING 项数量**。如果 PENDING 项不为零，继续处理，禁止提前进入阶段 5。
+
 ---
 
 ### 阶段 3：修复流水线（AGREE → FIX → COMMENT）
@@ -106,6 +147,8 @@ my-pr-review-response <PR_NUMBER>
 **步骤 C — 在 PR 下回复修复结果（发 Comment）**
 
 通过 `my-pr-skill` 的 `post-comment.sh` 发送修复结果 comment，包含文件路径、修改摘要、验证结果和 commit SHA。
+
+> 注：`post-comment.sh` 会自动在 comment body 末尾追加 `@codex review`，触发 Codex 外部视觉 review，无需手动添加。
 
 **步骤 D — 提交代码**
 
@@ -154,6 +197,8 @@ my-pr-review-response <PR_NUMBER>
 
 通过 `my-pr-skill` 的 `post-comment.sh` 发送反驳 comment，包含理由和证据。
 
+> 注：`post-comment.sh` 会自动在 comment body 末尾追加 `@codex review`，触发 Codex 外部视觉 review，无需手动添加。
+
 **步骤 C — 标记响应**
 
 在 `${REVIEW_LOG}` 中记录：
@@ -168,6 +213,23 @@ my-pr-review-response <PR_NUMBER>
 ### 阶段 5：最终交付（DELIVERY）
 
 全部 review 意见处理完毕后：
+
+**步骤 0 — 完整性校验（COMPLETENESS CHECK，未通过禁止进入汇总）**
+
+在生成汇总报告之前，必须执行以下检查清单，**全部通过**方可进入步骤 A：
+
+- [ ] **Review body 全覆盖**：review body 中提到的每个发现项都有对应处理记录（AGREE / DISAGREE / VERIFIED / SKIPPED）
+- [ ] **Line comments 全覆盖**：所有 line-level review comments 都有对应处理记录
+- [ ] **Issue comments 全覆盖**：所有属于 review 反馈的 issue comments 都有对应处理记录
+- [ ] **无 PENDING 项**：待处理清单中不存在状态为 `PENDING` 的条目
+- [ ] **二次确认**：重新读取一次 PR 的 reviews 和 comments，确认在执行期间没有 reviewer 新增 feedback；如有新增，纳入清单并处理
+- [ ] **代码与评论一致性**：所有标记为 `FIXED` 的项，确认对应代码修改已推送至远程分支 `${BRANCH}`
+
+**如果有任何一项未通过：**
+1. **禁止发送汇总报告**，立即停止当前流程
+2. 将遗漏项列入「紧急待处理」，返回阶段 2/3/4 继续处理
+3. 处理完毕后**再次执行本校验**，循环直至全部通过
+4. 校验通过后，方可进入步骤 A
 
 **步骤 A — 生成 Review Response 汇总报告**
 
@@ -191,9 +253,13 @@ my-pr-review-response <PR_NUMBER>
 请 reviewer 重新 review。如有需要，可点击 "Re-request review" 按钮。
 ```
 
+> 注：`post-comment.sh` 会自动在汇总 comment body 末尾追加 `@codex review`，触发 Codex 外部视觉 review。
+
 **步骤 B — 发送 Review Response 汇总报告（PR Comment）并更新标签**
 
 通过 `my-pr-skill` 的 `post-comment.sh` 发送汇总报告，并通过 `manage-pr.sh` 更新标签为 `awaiting-review`。
+
+> 注：`post-comment.sh` 会自动追加 `@codex review` footer，确保 Codex 外部视觉 review 被触发。
 
 注意：PR 作者无法通过 API 触发 "Re-request review" 按钮（这是 GitHub UI 功能），但可以在汇总评论中 @ 原 reviewer。
 
@@ -213,6 +279,9 @@ my-pr-review-response <PR_NUMBER>
 - 不自动合并 PR（仅处理 review 意见，等待 reviewer 确认）
 - 反驳必须有证据，禁止主观感受式反驳
 - 必须以 PR Comment 方式回复每条修复或反驳结果，禁止只修改代码而不发评论说明
+- **禁止遗漏任何 review comment**：所有 review body 发现项、line-level review comments、issue comments 中的反馈必须全部处理，禁止在未检查完所有 comment 的情况下结束执行或发送汇总报告
+- **禁止跳过未回复项**：任何状态为 `PENDING` 的 review comment 不得被标记为「已处理」或「忽略」，必须有明确的 AGREE / DISAGREE / VERIFIED / SKIPPED 处理记录和证据
+- **禁止绕过完整性校验**：阶段 5 步骤 0 的校验清单未全部通过前，绝对禁止执行 `post-comment.sh` 发送汇总报告
 
 **写权限边界（可修改）：**
 - PR diff 中涉及的所有文件

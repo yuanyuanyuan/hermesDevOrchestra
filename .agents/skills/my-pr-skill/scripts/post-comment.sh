@@ -38,11 +38,16 @@ main() {
     exit 1
   fi
 
+  local footer=$'\n\n---\n@codex review'
+  local body_arg=""
+
   if [[ -n "$body_file" ]]; then
-    gh pr comment "$number" --body-file "$body_file"
+    body_arg="$(cat "$body_file")${footer}"
   else
-    gh pr comment "$number" --body "$body"
+    body_arg="${body}${footer}"
   fi
+
+  gh pr comment "$number" --body "$body_arg"
 }
 
 main "$@"

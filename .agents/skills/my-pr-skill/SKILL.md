@@ -16,6 +16,7 @@ description: >
 3. **gh api 补齐**：gh 没有直接命令的（如批量获取 reviews、update PR branch），用 `gh api` 调用 REST API
 4. **变量标准化**：所有脚本统一使用 `--number=N` 等 CLI 参数，调用方不再拼写 gh 命令
 5. **零副作用承诺**：本 Skill 只读或只写 GitHub，不碰本地工作区文件（除 `--output` 指定路径外）
+6. **自动触发 Codex 视觉 Review**：所有通过 `post-comment.sh`、`submit-review.sh` 发送的 PR comment/review，以及通过 `manage-pr.sh --create` 创建的 PR body，均自动在末尾追加 `@codex review`，以触发 Codex 外部视觉 review
 
 ## 环境要求
 
@@ -64,6 +65,7 @@ ${MY_PR_SKILL_DIR}/scripts/
 3. **缓存目录统一**：临时文件写入 `${REPO_DIR}/.tmp/`，命名格式 `pr-${PR_NUMBER}-*.json`
 4. **错误处理**：脚本失败时返回非零退出码，调用方需检查 `$?`
 5. **不绕过**：调用方不得在本 Skill 已封装的场景下直接写 gh 命令（如有缺失接口，先扩展本 Skill）
+6. **@codex review 自动追加**：调用方无需在 body/body-file 中手动写入 `@codex review`。`post-comment.sh`、`submit-review.sh` 和 `manage-pr.sh --create` 会在发送前自动追加该 footer。调用方不应在模板中重复添加，避免重复触发
 
 ---
 

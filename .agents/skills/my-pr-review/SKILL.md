@@ -177,6 +177,8 @@ my-pr-review <PR_NUMBER>
 [列出每个 FAIL 的文件:行号 + 问题摘要]
 ```
 
+> 注：`submit-review.sh` 会在发送 review 时自动在 body 末尾追加 `@codex review`，无需在 Draft 中手动写入。
+
 **步骤 C — 提交 Review**
 
 通过 `my-pr-skill` 的 `submit-review.sh` 提交 review。
@@ -196,6 +198,8 @@ else:
 > ⚠️ **Self-Review 说明**：由于 reviewer 与 PR 作者为同一人，GitHub 不允许 REQUEST_CHANGES/APPROVE 事件。
 > 本次 review 以 COMMENT 事件提交，发现项仍需修复后才能合并。
 ```
+
+> 注：底层 `submit-review.sh` 会自动追加 `@codex review` footer，触发 Codex 外部视觉 review。
 
 ---
 

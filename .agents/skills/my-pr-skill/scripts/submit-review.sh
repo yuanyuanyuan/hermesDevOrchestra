@@ -48,11 +48,12 @@ main() {
   owner=$(gh repo view --json owner --jq '.owner.login')
   repo=$(gh repo view --json name --jq '.name')
 
+  local footer=$'\n\n---\n@codex review'
   local body_arg=""
   if [[ -n "$body_file" ]]; then
-    body_arg="$(cat "$body_file")"
+    body_arg="$(cat "$body_file")${footer}"
   else
-    body_arg="$body"
+    body_arg="${body}${footer}"
   fi
 
   gh api "repos/${owner}/${repo}/pulls/${number}/reviews" \
