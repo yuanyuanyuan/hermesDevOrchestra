@@ -531,4 +531,108 @@ assert len(blockers) == 0, blockers
 print("Test 11 PASSED: all open severities block closeout, resolved passes")
 PY
 
+# ========================================================================
+# Test 12: append_conflict rejects non-array conflicts ledger
+# ========================================================================
+python3 - "$REPO_ROOT" "$STATE_ROOT" <<'PY'
+import json
+import pathlib
+import sys
+
+repo_root, state_root = sys.argv[1:]
+sys.path.insert(0, str(pathlib.Path(repo_root) / "scripts" / "lib"))
+
+from gateway_closeout import append_conflict
+
+tmp = pathlib.Path(state_root) / "test-nonarray" / "runs" / "run-12"
+tmp.mkdir(parents=True, exist_ok=True)
+ledger_path = tmp / "conflict-ledger.json"
+
+# Write ledger with conflicts as a string (corrupt)
+ledger_path.write_text(json.dumps({"schema_version": "orchestra.full.v1", "artifact_type": "conflict_ledger", "run_id": "run-12", "conflicts": "not-an-array"}, indent=2, ensure_ascii=False), encoding="utf-8")
+
+try:
+    append_conflict(ledger_path, {"conflict_id": "c1", "run_id": "run-12", "stage": "direction_debate", "type": "intent_vs_inference", "sources": [], "severity": "high", "resolution": "open", "resolver": "", "resolution_evidence": "", "created_at": "2026-06-04T00:00:00Z", "resolved_at": None})
+    assert False, "should have raised ValueError for non-array conflicts"
+except ValueError as e:
+    assert "conflicts is not a list" in str(e), e
+
+print("Test 12 PASSED: append_conflict rejects non-array conflicts ledger")
+PY
+
+# ========================================================================
+# Test 13: closeout blocks schema-invalid ledger
+# ========================================================================
+python3 - "$REPO_ROOT" "$STATE_ROOT" <<'PY'
+import json
+import pathlib
+import sys
+
+repo_root, state_root = sys.argv[1:]
+sys.path.insert(0, str(pathlib.Path(repo_root) / "scripts" / "lib"))
+
+from gateway_closeout import closeout_conflict_blockers, load_conflict_ledger, FULL_SCHEMA_VERSION
+
+tmp = pathlib.Path(state_root) / "test-schema-invalid" / "runs" / "run-13"
+tmp.mkdir(parents=True, exist_ok=True)
+ledger_path = tmp / "conflict-ledger.json"
+
+# Write ledger with schema-invalid conflict records directly
+ledger = {
+    "schema_version": FULL_SCHEMA_VERSION,
+    "artifact_type": "conflict_ledger",
+    "run_id": "run-13",
+    "conflicts": [
+        {
+            "conflict_id": "c-invalid-resolution",
+            "run_id": "run-13",
+            "stage": "direction_debate",
+            "type": "intent_vs_inference",
+            "sources": [],
+            "severity": "high",
+            "resolution": "resolved",  # invalid enum
+            "resolver": "",
+            "resolution_evidence": "some-evidence",
+            "created_at": "2026-06-04T00:00:00Z",
+            "resolved_at": None,
+        },
+        {
+            "conflict_id": "c-invalid-severity",
+            "run_id": "run-13",
+            "stage": "direction_debate",
+            "type": "intent_vs_inference",
+            "sources": [],
+            "severity": "critical",  # invalid enum
+            "resolution": "open",
+            "resolver": "",
+            "resolution_evidence": "",
+            "created_at": "2026-06-04T00:00:00Z",
+            "resolved_at": None,
+        },
+        {
+            "conflict_id": "c-missing-type",
+            "run_id": "run-13",
+            "stage": "direction_debate",
+            # missing type
+            "sources": [],
+            "severity": "high",
+            "resolution": "open",
+            "resolver": "",
+            "resolution_evidence": "",
+            "created_at": "2026-06-04T00:00:00Z",
+            "resolved_at": None,
+        },
+    ],
+}
+ledger_path.write_text(json.dumps(ledger, indent=2, ensure_ascii=False), encoding="utf-8")
+
+ledger = load_conflict_ledger(ledger_path)
+blockers = closeout_conflict_blockers(ledger)
+assert any("schema_invalid_conflict:c-invalid-resolution" in b for b in blockers), blockers
+assert any("schema_invalid_conflict:c-invalid-severity" in b for b in blockers), blockers
+assert any("schema_invalid_conflict:c-missing-type" in b for b in blockers), blockers
+
+print("Test 13 PASSED: closeout blocks schema-invalid ledger")
+PY
+
 test_done

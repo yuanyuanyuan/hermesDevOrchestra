@@ -79,7 +79,7 @@ def append_conflict(ledger_path: Path, conflict: dict[str, Any]) -> dict[str, An
     ledger = load_conflict_ledger(ledger_path)
     conflicts = ledger.get("conflicts")
     if not isinstance(conflicts, list):
-        conflicts = []
+        raise ValueError(f"corrupt conflict ledger at {ledger_path}: conflicts is not a list")
     conflicts.append(conflict)
     ledger["conflicts"] = conflicts
     ledger["schema_version"] = FULL_SCHEMA_VERSION
@@ -189,17 +189,21 @@ def closeout_conflict_blockers(ledger: dict[str, Any]) -> list[str]:
     for c in unjustified:
         blockers.append(f"unjustified_accepted_risk:{c.get('conflict_id', 'unknown')}")
     # All resolved conflicts must carry non-empty resolution_evidence
+    # Also validate each conflict record against the schema
     conflicts = ledger.get("conflicts")
     if isinstance(conflicts, list):
         for c in conflicts:
             if not isinstance(c, dict):
+                blockers.append("schema_invalid_conflict:not_a_dict")
                 continue
             resolution = c.get("resolution")
-            if resolution == "open":
-                continue
-            evidence = c.get("resolution_evidence", "")
-            if not isinstance(evidence, str) or not evidence.strip():
-                blockers.append(f"missing_resolution_evidence:{c.get('conflict_id', 'unknown')}")
+            if resolution != "open":
+                evidence = c.get("resolution_evidence", "")
+                if not isinstance(evidence, str) or not evidence.strip():
+                    blockers.append(f"missing_resolution_evidence:{c.get('conflict_id', 'unknown')}")
+            violations = validate_conflict_record(c)
+            for v in violations:
+                blockers.append(f"schema_invalid_conflict:{c.get('conflict_id', 'unknown')}:{v}")
     return sorted(set(blockers))
 
 
