@@ -24,6 +24,20 @@ const VETO_DIMENSIONS = [
   "channel_routing",
 ]
 const VETO_DIMENSION_IDS = new Set(VETO_DIMENSIONS)
+const VETO_DIMENSION_ALIASES = {
+  six_stage_run_state_machine: "six_stage_state_machine_and_gates",
+  six_stage_state_machine: "six_stage_state_machine_and_gates",
+  run_state_machine: "six_stage_state_machine_and_gates",
+  gateway_evidence_gate: "evidence_gate",
+  evidence_gating: "evidence_gate",
+  override_approval: "override_recording",
+  override_audit: "override_recording",
+  debate_teams: "debate_teams_registry",
+  canonical_debate_teams: "debate_teams_registry",
+  debate_modes: "debate_modes_registry",
+  canonical_debate_modes: "debate_modes_registry",
+  channel_router: "channel_routing",
+}
 const PROJECT_ROOT = "."
 const DOCS_DIR = `${PROJECT_ROOT}/docs`
 const LIB_DIR = `${PROJECT_ROOT}/scripts/lib`
@@ -31,8 +45,12 @@ const CONFIG_DIR = `${PROJECT_ROOT}/config`
 const TESTS_DIR = `${PROJECT_ROOT}/scripts/tests`
 const BIN_DIR = `${PROJECT_ROOT}/scripts/bin`
 
+function canonicalDimensionId(id) {
+  return VETO_DIMENSION_ALIASES[id] || id
+}
+
 function isVetoDimension(dim) {
-  return VETO_DIMENSION_IDS.has(dim.id)
+  return VETO_DIMENSION_IDS.has(canonicalDimensionId(dim.id))
 }
 
 function countResultStatuses(results) {
@@ -238,7 +256,8 @@ const PRD_CONTEXT =
   "### 通用提取规则\n" +
   "1. 读取两份文件，逐章节提取本批次指定维度的可验证需求点\n" +
   "2. 每个需求维度：id(snake_case)、name、prd_section、is_veto、checkpoints[]\n" +
-  "3. 每个检查点：check_id、description、verify_method(code_exists|function_grep|config_check|test_exists|manual_review)、expected_files(可选)、grep_pattern(可选)\n\n"
+  "3. 固定一票否决维度必须使用以下精确 id：" + VETO_DIMENSIONS.join(", ") + "\n" +
+  "4. 每个检查点：check_id、description、verify_method(code_exists|function_grep|config_check|test_exists|manual_review)、expected_files(可选)、grep_pattern(可选)\n\n"
 
 const BATCH_PROMPTS = [
   {
@@ -357,9 +376,12 @@ log("验证完成：" + validResults.length + "/" + extractResult.dimensions.len
 
 // 构建 id -> index 映射，用于 veto_status 和 critical_gaps 查找
 const dimIdToIndex = {}
-extractResult.dimensions.forEach((dim, idx) => { dimIdToIndex[dim.id] = idx })
 const dimById = {}
-extractResult.dimensions.forEach(dim => { dimById[dim.id] = dim })
+extractResult.dimensions.forEach((dim, idx) => {
+  const canonicalId = canonicalDimensionId(dim.id)
+  if (dimIdToIndex[canonicalId] === undefined) dimIdToIndex[canonicalId] = idx
+  if (!dimById[canonicalId]) dimById[canonicalId] = dim
+})
 
 // 直接用索引匹配，处理 null 值
 const complianceReport = {
