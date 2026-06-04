@@ -21,8 +21,8 @@
 | `tmux` | 3.0 | 多项目会话隔离 |
 | `python3` | 3.10 | JSON 校验及辅助脚本 |
 | `hermes` | 0.11.0 | 上游 Hermes Agent CLI |
-| `claude` | 2.1.110 | Claude Code CLI（监督者代理） |
-| `codex` | 0.122.0 | Codex CLI（执行者代理） |
+| `claude` | 2.1.110 | Claude Code CLI（监督者代理）；最近本地验证为 2.1.161 |
+| `codex` | 0.122.0 | Codex CLI（执行者代理）；最近本地验证为 codex-cli 0.136.0 |
 
 验证安装：
 
@@ -91,12 +91,12 @@ Orchestra 的所有目录路径和运行时参数均通过环境变量控制，�
 
 | 目标 | 类别 | 说明 |
 |------|------|------|
-| `make test` | 测试 | 执行完整验证套件：单元测试 + 风险测试 + JSON 校验 + Shell 校验 + 上游版本检查 |
-| `make test-unit` | 测试 | 运行所有 smoke 测试（`scripts/tests/test-*.sh`） |
+| `make test` | 测试 | 执行完整验证套件：smoke tests + 风险测试 + JSON 校验 + 可用时 Shell lint + upstream pin advisory |
+| `make test-unit` | 测试 | 运行所有 smoke 测试（`scripts/tests/test-*.sh`，当前 147 个） |
 | `make test-risk` | 测试 | 运行风险相关专项测试（决策 CLI、风险策略加载等） |
-| `make lint-json` | 检查 | 使用 `python3 -m json.tool` 校验仓库内所有 `.json` 文件格式 |
-| `make lint-shell` | 检查 | 使用 `shellcheck` 检查 `scripts/` 下的 Shell 脚本 |
-| `make upstream-status` | 检查 | 比对仓库中记录的 upstream Hermes Agent pin 与本地运行时 checkout 的 commit，报告是否一致 |
+| `make lint-json` | 检查 | 使用 `python3 -m json.tool` 校验源码 `.json` 文件格式；忽略本地 `.tmp/` 缓存 |
+| `make lint-shell` | 检查 | 如果已安装 `shellcheck`，检查 `scripts/` 下的 Shell 脚本；未安装时跳过 |
+| `make upstream-status` | 检查 | 比对仓库中记录的 upstream Hermes Agent pin 与本地运行时 checkout 的 commit；默认 advisory，不失败 |
 
 常用命令示例：
 

@@ -386,10 +386,10 @@ version: v2
    - 验证冲突时，两个 write set 取路径交集，交集非空即判定为冲突；
    - 冲突检测必须在任务分派前完成，冲突时根据 `merge_strategy` 决定处理方式。
 4. **merge strategy 枚举**: `merge_strategy` 必须是以下之一：
-   - `sequential`：串行执行，后任务等待前任务完成，无需 write set 不相交；
-   - `branch_merge`：分支合并，各任务在独立分支执行，完成后通过 PR/MR 合并，需定义合并顺序与冲突解决策略；
-   - `overwrite_with_backup`：覆盖但备份，后任务的写入覆盖前任务结果，但 Gateway 必须先创建备份快照（`backup_ref`），覆盖操作写入审计日志；
-   - `abort_on_conflict`：冲突时中止，分派前检测到 write set 交集非空时立即中止并行配置，降级为 `sequential` 或返回错误等待人工决策。
+   - `ordered_merge`：写集已验证为 disjoint 时按 DAG 顺序合并，合并顺序写入审计日志；
+   - `last_writer_wins`：允许后完成任务覆盖前任务结果，但 protected target 禁用该策略；
+   - `manual_conflict_resolution`：冲突需 Kimi/用户决策合并顺序；
+   - `abort_on_conflict`：冲突时中止，分派前检测到 write set 交集非空时立即中止并行配置，返回错误等待人工决策。
 **Test scenarios:**
 - 长任务执行超过 30 秒时仍能持续输出进度摘要。
 - 用户在执行中发起状态查询，不会中断 worker。
@@ -467,7 +467,7 @@ version: v2
 - Modify: `scripts/tests/test-gateway-closeout-summary-alone-rejected.sh`
 - Modify: `scripts/tests/test-full-contract-validation.sh`
 **Approach:**
-1. **Self-evolution queue 持久化**: queue 必须写入磁盘（`config/evolution/self-evolution-review-queue.jsonl`）。每次 enqueue/dequeue/transition 都追加写入 JSONL，格式为：
+1. **Self-evolution queue 持久化**: queue policy 位于 `config/evolution/self-evolution-review-queue.json`；运行时 queue 必须写入磁盘（`.hermes/evolution-queue/`）。每次 enqueue/dequeue/transition 都追加或原子替换持久化记录，格式为：
    ```jsonl
    {"timestamp":"...","action":"enqueue","item_id":"...","state":"pending","payload":{...}}
    ```

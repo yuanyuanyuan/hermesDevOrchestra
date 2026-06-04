@@ -4,13 +4,22 @@
 
 ## System Overview
 
-Hermes Dev Orchestra is a single-developer, multi-project AI development orchestration layer. It coordinates two external CLI agents — Claude Code CLI (supervisor/reviewer) and Codex CLI (implementer) — across concurrent projects by mediating their communication through a file-based JSON envelope bus, tmux session isolation, and a static risk rulebook with L1–L4 escalation. The system does not perform code generation itself; it routes tasks, decisions, questions, and results between agents while enforcing guardrails and audit logging.
+Hermes Dev Orchestra is a single-developer, multi-project AI development orchestration layer. Its original active path coordinates two external CLI agents — Claude Code CLI (supervisor/reviewer) and Codex CLI (implementer) — through a file-based JSON envelope bus, tmux session isolation, and a static risk rulebook with L1–L4 escalation. The current system also includes a Python local HTTP Gateway for run projection, actor-token authority checks, staged debate/worker modules, success metrics, and strict 0→6 validation gates. Full-target runtime cutover is mixed-family and staged, not a one-shot global switch.
 
-<!-- VERIFY: Requires Hermes Agent v0.11.0+, Claude Code CLI v2.1.110+, and Codex CLI v0.122.0+ installed on the host. -->
+<!-- VERIFY: Minimums are Hermes Agent v0.11.0+, Claude Code CLI v2.1.110+, and Codex CLI v0.122.0+. Last local verification used Hermes Agent v0.13.0, Claude Code 2.1.161, and codex-cli 0.136.0. -->
+
+## Current Architecture Layers
+
+| Layer | Runtime status | Notes |
+|---|---|---|
+| MVP/local orchestration | active/current | tmux Claude/Codex sessions, file bus, local decision CLI, Audit JSONL |
+| Gateway runtime | partially implemented/current | `orch-gateway`, Run Projection API, actor-token authority, worker/debate/evaluation/closeout paths |
+| Strict 0→6 gates | ready/test harness | schema/doc sync, success metrics, strict six-stage staging regression |
+| Full-target system | staged/mixed-family | see `docs/FULL-COVERAGE-MATRIX.md`; release/remote decision/deeper full artifact cutover remain incomplete |
 
 ---
 
-## Component Diagram
+## MVP Component Diagram
 
 ```mermaid
 graph TD
@@ -33,9 +42,9 @@ graph TD
 
 ---
 
-## Data Flow
+## MVP Data Flow
 
-A typical task flows through the system as follows:
+A typical MVP/local task flows through the system as follows:
 
 1. **Task Ingestion** — The developer (or Hermes itself) describes work. Hermes writes a JSON envelope to `/tmp/hermes-orchestra/{project}/task.md` with `schema_version`, `project_id`, `task_id`, `correlation_id`, and `task_body`.
 
@@ -68,6 +77,9 @@ A typical task flows through the system as follows:
 | **Bus Loop Watcher** | `scripts/bin/orch-bus-loop` | Bash-driven polling loop that scans Runtime bus files, validates ownership/correlation, dispatches messages into tmux sessions, and migrates completed records to Audit. |
 | **Skills** | `skills/{dev-orchestra,claude-supervisor,codex-executor,escalation-handler}/SKILL.md` | Hermes-native skill definitions that encode the orchestration workflow, role behaviors, and escalation handling logic consumed by the upstream Hermes Agent. |
 | **Pre-Tool Risk Gate** | `hermes/hooks/pre_tool_call-risk-gate.sh` | Hook script invoked before tool execution to enforce role-specific guardrails and risk floors at the CLI layer. |
+| **Gateway Runtime** | `scripts/lib/orch_gateway.py`, `scripts/bin/orch-gateway` | Local HTTP runtime for Run Projection API, Gateway State/Audit, authority checks, idempotency, worker/debate/evaluation/closeout endpoints. |
+| **Authority Matrix** | `config/decisions/authority-matrix.json`, `docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md` | Runtime and full-target actor capability boundaries. |
+| **Strict Gate Harness** | `scripts/tests/test-e2e-strict-six-stage-flow.sh`, `scripts/tests/test-success-metrics-pipeline.sh`, `scripts/tests/test-schema-doc-sync.sh` | Regression gates for strict 0→6 flow, success metrics, and schema/doc/Gateway sync. |
 
 ---
 

@@ -2,14 +2,14 @@
 
 ## Goal
 
-Define how Hermes Orchestra full-system modules integrate with the existing Python Gateway without modifying `scripts/lib/orch_gateway.py` during Sprint 0.
+Define how Hermes Orchestra full-system modules integrate with the existing Python Gateway. This document started as the Sprint 0 integration baseline; later sections include subsequent Gateway additions such as Run Projection, actor-token authority, heartbeat/snapshot/sweeper behavior, and mixed-family runtime activation.
 
 ## Integration Mode
 
 - Integration mode: import-and-call Python modules under `scripts/lib/`.
 - Runtime owner: `GatewayApp` in `scripts/lib/orch_gateway.py` remains the only HTTP entrypoint.
 - Module boundary: new modules expose plain Python classes with small public methods; Gateway owns request validation, persistence, and event emission.
-- Execution boundary: no plugin callback system and no separate long-lived sidecar process in Sprint 0.
+- Execution boundary: no plugin callback system and no separate long-lived sidecar process in the original Sprint 0 baseline.
 
 ## Existing Gateway Integration Points
 
@@ -310,7 +310,7 @@ Gateway facade responsibilities stay narrow:
 - `GET /orchestra/runs/{run_id}/snapshot` delegates read-only aggregation to `HeartbeatHandler.snapshot`.
 - `WorkerSessionSweeper.sweep_run(...)` remains separate from the HTTP server process and can be invoked by a supervisor, cron loop, or test harness.
 
-## Non-Goals for Sprint 0
+## Historical Sprint 0 Non-Goals
 
 - No Gateway refactor.
 - No automatic full-package activation.

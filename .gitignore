@@ -2,5 +2,7 @@
 __pycache__/
 *.pyc
 .tmp/
+logs/
 .logs/
+.hermes/evolution-queue/*.json
 config/decisions/actor-secrets.json

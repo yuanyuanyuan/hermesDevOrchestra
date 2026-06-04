@@ -7,7 +7,13 @@ FAILED=0
 
 shopt -s nullglob
 for test_script in "$TEST_DIR"/test-*.sh; do
-    if bash "$test_script"; then
+    if head -n 1 "$test_script" | grep -qE '^#!.*python'; then
+        runner=(python3)
+    else
+        runner=(bash)
+    fi
+
+    if "${runner[@]}" "$test_script"; then
         echo "PASS $test_script"
         PASSED=$((PASSED + 1))
     else

@@ -31,13 +31,13 @@ All directory paths and runtime tunables are controlled through environment vari
 
 ### External API Keys (Upstream Tools)
 
-The following keys are **not** consumed by this repository directly. They belong to the upstream Hermes Agent, Claude Code CLI, and Codex CLI installations:
+The following keys are **not** consumed by this repository directly. They belong to the upstream Hermes Agent, Claude Code CLI, and Codex CLI installations. In local CLI-login mode, missing keys are warnings unless the command explicitly requires API-key validation.
 
 | Name | Required By | Description |
 |------|-------------|-------------|
-| `OPENROUTER_API_KEY` | Hermes Agent | LLM provider key for Hermes chat routing. <!-- VERIFY: key name and provider relationship --> |
-| `OPENAI_API_KEY` | Codex CLI | OpenAI API key for Codex code generation. <!-- VERIFY: key name and provider relationship --> |
-| `ANTHROPIC_API_KEY` | Claude Code CLI | OAuth token (`sk-ant-oat01-*`) for Claude Code authentication. <!-- VERIFY: token format and OAuth flow --> |
+| `OPENROUTER_API_KEY` | Hermes Agent | LLM provider key for Hermes provider-backed routing when that mode is used. |
+| `OPENAI_API_KEY` | Codex CLI | OpenAI API key for Codex code generation when not relying on existing local CLI login. |
+| `ANTHROPIC_API_KEY` | Claude Code CLI | Claude Code authentication value when that CLI mode requires an environment token; current local login/OAuth flows may avoid setting this in `~/.hermes/.env`. |
 
 Store these in `~/.hermes/.env` or your shell profile as required by the upstream tools.
 
