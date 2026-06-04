@@ -1,32 +1,7 @@
 export const meta = {
   name: 'sprint-execution-pipeline-unified',
-  description: 'Execute 13 sprints with configurable independent reviewer',
-  phases: [
-    { title: 'Sprint-1', model: 'sonnet' },
-    { title: 'Sprint-2', model: 'sonnet' },
-    { title: 'Sprint-3-4-7-8-10', model: 'sonnet' },
-    { title: 'Sprint-5-6-11', model: 'sonnet' },
-    { title: 'Sprint-9', model: 'sonnet' },
-    { title: 'Sprint-12', model: 'sonnet' },
-    { title: 'Sprint-13', model: 'sonnet' }
-  ]
-}
-
-// ── Sprint 依赖关系图 ──
-const DEPENDENCY_GRAPH = {
-  1: [],
-  2: [1],
-  3: [2],
-  4: [2],
-  5: [4],
-  6: [4],
-  7: [2],
-  8: [2],
-  9: [6, 8],
-  10: [2],
-  11: [10],
-  12: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-  13: [12]
+  description: 'Execute sprints from a directory with dynamic discovery, dependency resolution, and resume support',
+  phases: [] // 动态生成，由 discoverSprints() + buildExecutionPhases() 决定
 }
 
 // ── 配置 ──
@@ -90,11 +65,140 @@ function parseReviewerTextResponse(text) {
   return { passed, score, issues, summary: text.substring(0, 200) + '...' }
 }
 
+// ── Sprint 发现与依赖解析 ──
+
+/**
+ * 从目录中发现所有 sprint 文件
+ * 返回: { sprintNum: { planPath, checklistPath }, ... }
+ */
+async function discoverSprints(dir) {
+  log(`🔍 扫描 sprint 目录: ${dir}`)
+
+  const result = await agent(
+    `List all files in the directory ${dir}.\n\n` +
+    `Run: ls -1 ${dir}\n\n` +
+    `Return the FULL file list, one file per line. Do not summarize or filter.`,
+    { label: '扫描 sprint 目录' }
+  )
+
+  const files = (result || '').split('\n').map(f => f.trim()).filter(Boolean)
+  const sprints = {}
+
+  // 匹配 plan-sprint-N.md 和 checklist-sprint-N.md
+  const planRe = /^plan-sprint-(\d+)\.md$/
+  const checkRe = /^checklist-sprint-(\d+)\.md$/
+
+  for (const f of files) {
+    const planMatch = f.match(planRe)
+    if (planMatch) {
+      const num = parseInt(planMatch[1], 10)
+      sprints[num] = sprints[num] || {}
+      sprints[num].planPath = `${dir}/${f}`
+    }
+    const checkMatch = f.match(checkRe)
+    if (checkMatch) {
+      const num = parseInt(checkMatch[1], 10)
+      sprints[num] = sprints[num] || {}
+      sprints[num].checklistPath = `${dir}/${f}`
+    }
+  }
+
+  const sprintNums = Object.keys(sprints).map(Number).sort((a, b) => a - b)
+  log(`📋 发现 ${sprintNums.length} 个 Sprint: ${sprintNums.join(', ')}`)
+
+  // 验证每个 sprint 都有 plan 和 checklist
+  for (const num of sprintNums) {
+    if (!sprints[num].planPath) throw new Error(`Sprint ${num} 缺少 plan 文件`)
+    if (!sprints[num].checklistPath) throw new Error(`Sprint ${num} 缺少 checklist 文件`)
+  }
+
+  return sprints
+}
+
+/**
+ * 从 sprint-overview.md 解析依赖关系
+ * 表格格式: | Sprint | ... | Depends On |
+ * Depends On 可以是: Sprint 1, Sprints 1, 2, Sprints 2, 3, 4 等
+ * 返回: { sprintNum: [depNums], ... }
+ */
+async function parseDependencyGraph(dir, sprintNums) {
+  log(`📊 解析依赖关系...`)
+
+  const result = await agent(
+    `Read the file ${dir}/sprint-overview.md and extract the sprint dependency table.\n\n` +
+    `Find the table with columns including "Sprint" and "Depends On".\n` +
+    `For each row, extract:\n` +
+    `- The sprint number\n` +
+    `- The "Depends On" column value\n\n` +
+    `Return a JSON object mapping each sprint number to its dependency list.\n` +
+    `Example: {"1": [], "2": [1], "3": [2], "9": [6, 8], "12": [1,2,3,4,5,6,7,8,9,10,11]}\n\n` +
+    `Parse "Sprint N" as [N], "Sprints N, M" as [N, M], "Prior ..." as [].\n` +
+    `Return ONLY the JSON object.`,
+    { label: '解析依赖图' }
+  )
+
+  let depGraph = tryParseJSON(result)
+
+  if (!depGraph || Object.keys(depGraph).length === 0) {
+    log(`⚠️ 未能解析依赖表，使用无依赖模式（所有 sprint 独立执行）`)
+    depGraph = {}
+    for (const num of sprintNums) {
+      depGraph[num] = []
+    }
+  }
+
+  // 确保所有发现的 sprint 都在图中
+  for (const num of sprintNums) {
+    if (!(num in depGraph)) {
+      depGraph[num] = []
+    }
+  }
+
+  log(`📊 依赖图: ${Object.entries(depGraph).map(([k, v]) => `${k}←[${v}]`).join(', ')}`)
+  return depGraph
+}
+
+/**
+ * 拓扑排序 → 生成可并行的执行阶段
+ * 返回: [{ phase: 'Sprint-1', sprints: [1] }, { phase: 'Sprint-2-3', sprints: [2, 3] }, ...]
+ */
+function buildExecutionPhases(sprintNums, depGraph) {
+  const remaining = new Set(sprintNums)
+  const completed = new Set()
+  const phases = []
+
+  while (remaining.size > 0) {
+    // 找出所有依赖已满足的 sprint
+    const ready = [...remaining].filter(num => {
+      const deps = depGraph[num] || []
+      return deps.every(d => completed.has(d))
+    })
+
+    if (ready.length === 0) {
+      // 循环依赖 — 强制执行剩余的
+      log(`⚠️ 检测到循环依赖，强制执行剩余: ${[...remaining].join(', ')}`)
+      phases.push({ phase: `Sprint-${[...remaining].join('-')}`, sprints: [...remaining] })
+      break
+    }
+
+    const phaseName = ready.length === 1
+      ? `Sprint-${ready[0]}`
+      : `Sprint-${ready.join('-')}`
+    phases.push({ phase: phaseName, sprints: ready })
+
+    ready.forEach(num => {
+      completed.add(num)
+      remaining.delete(num)
+    })
+  }
+
+  return phases
+}
+
 // ── Skill 调用封装 ──
 
 /**
  * 调用 /my-sprint-execute 执行 Sprint 开发
- * Skill 接口: my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
  */
 async function callSprintExecute(sprintNum, planPath, checklistPath) {
   log(`📝 调用 /my-sprint-execute 执行 Sprint ${sprintNum} 开发...`)
@@ -114,7 +218,6 @@ async function callSprintExecute(sprintNum, planPath, checklistPath) {
     { label: `Sprint ${sprintNum} 开发`, phase: `Sprint-${sprintNum}` }
   )
 
-  // 提取 PR 号
   const prMatch = (result || '').match(/PR\s*#(\d+)/i)
   return {
     prNumber: prMatch ? parseInt(prMatch[1], 10) : null,
@@ -123,36 +226,7 @@ async function callSprintExecute(sprintNum, planPath, checklistPath) {
 }
 
 /**
- * 调用 /my-pr-skill 查询 PR 状态
- * 使用 manage-pr.sh 的查询功能
- */
-async function callPRStatus(prNumber) {
-  const result = await agent(
-    `Use the /my-pr-skill to check the status of PR #${prNumber} in repo ${REPO}.\n\n` +
-    `Run: gh pr view ${prNumber} --repo ${REPO} --json state,mergedAt,reviewDecision,reviews\n\n` +
-    `Return a JSON object with these fields:\n` +
-    `{"merged": true/false, "state": "OPEN/CLOSED/MERGED", "reviewDecision": "APPROVED/CHANGES_REQUESTED/REVIEW_REQUIRED/none", "reviewCount": N, "hasChangeRequests": true/false}\n\n` +
-    `Where hasChangeRequests = true if reviewDecision is CHANGES_REQUESTED OR any review has state CHANGES_REQUESTED.`,
-    { label: `PR #${prNumber} 状态`, phase: 'Sprint-1' }
-  )
-
-  const parsed = tryParseJSON(result)
-  if (parsed) return parsed
-
-  // 降级解析
-  const text = (result || '').toUpperCase()
-  return {
-    merged: text.includes('MERGED'),
-    state: 'OPEN',
-    reviewDecision: text.includes('CHANGES_REQUESTED') ? 'CHANGES_REQUESTED' : 'none',
-    reviewCount: 0,
-    hasChangeRequests: text.includes('CHANGES_REQUESTED')
-  }
-}
-
-/**
  * 调用 /my-pr-review-response 处理 PR review 反馈
- * Skill 接口: /my-pr-review-response (交互式，读取当前 PR 上下文)
  */
 async function callPRReviewResponse(prNumber, sprintNum) {
   log(`🔄 调用 /my-pr-review-response 处理 PR #${prNumber} review 反馈...`)
@@ -291,8 +365,8 @@ async function findMergedPR(sprintNum) {
 }
 
 /** 检查依赖是否满足 */
-function checkDependencies(sprintNum, completedSprints) {
-  const deps = DEPENDENCY_GRAPH[sprintNum] || []
+function checkDependencies(sprintNum, completedSprints, depGraph) {
+  const deps = depGraph[sprintNum] || []
   return deps.every(d => completedSprints.includes(d))
 }
 
@@ -310,7 +384,6 @@ async function executeSprint(sprintNum, planPath, checklistPath) {
 
     // 步骤 0b：检查已有 open PR
     let prNumber = await findExistingPR(sprintNum)
-    let devSummary = ''
 
     if (prNumber) {
       log(`ℹ️ Sprint ${sprintNum} 已有 PR #${prNumber}，跳过开发`)
@@ -319,7 +392,6 @@ async function executeSprint(sprintNum, planPath, checklistPath) {
       log(`📝 步骤 1/3：调用 /my-sprint-execute 执行开发任务...`)
       const devResult = await callSprintExecute(sprintNum, planPath, checklistPath)
       prNumber = devResult.prNumber
-      devSummary = devResult.summary
 
       // 降级：如果 skill 没返回 PR 号，查 GitHub
       if (!prNumber) {
@@ -357,16 +429,39 @@ async function executeSprint(sprintNum, planPath, checklistPath) {
 // ── 主逻辑 ──
 async function main() {
   const safeArgs = args || {}
-  const planPath = safeArgs.planPath || '/home/stark/.claude/plans/plan-sprint-*.md'
-  const checklistPath = safeArgs.checklistPath || '/data/hermes/docs/execution-checklist.md'
+  const sprintsDir = safeArgs.sprintsDir
 
-  log('🚀 启动统一版 Sprint 执行流水线...')
-  log(`📋 配置：`)
+  // sprintsDir 是必须的
+  if (!sprintsDir) {
+    throw new Error(
+      '缺少必需参数 sprintsDir。用法: Workflow({ name: "sprint-execution-pipeline-unified", args: { sprintsDir: "/path/to/sprints/dir" } })'
+    )
+  }
+
+  log('🚀 启动 Sprint 执行流水线...')
+  log(`📂 Sprint 目录: ${sprintsDir}`)
+
+  // 步骤 1：发现 sprint 文件
+  const sprintFiles = await discoverSprints(sprintsDir)
+  const sprintNums = Object.keys(sprintFiles).map(Number).sort((a, b) => a - b)
+
+  if (sprintNums.length === 0) {
+    throw new Error(`在 ${sprintsDir} 中未找到任何 sprint 文件（需要 plan-sprint-N.md + checklist-sprint-N.md）`)
+  }
+
+  // 步骤 2：解析依赖图
+  const depGraph = await parseDependencyGraph(sprintsDir, sprintNums)
+
+  // 步骤 3：拓扑排序生成执行阶段
+  const executionPhases = buildExecutionPhases(sprintNums, depGraph)
+  log(`\n📋 执行计划（${executionPhases.length} 个阶段）:`)
+  for (const p of executionPhases) {
+    log(`   ${p.phase}: Sprints [${p.sprints.join(', ')}]`)
+  }
+
+  log(`\n📋 配置:`)
   log(`   仓库: ${REPO}`)
   log(`   独立审查: ${REVIEWER_CONFIG.enabled ? '启用' : '禁用'}`)
-  log(`   Plan: ${planPath}`)
-  log(`   Checklist: ${checklistPath}`)
-
   log(`\n📌 Skill 调用链:`)
   log(`   开发: /my-sprint-execute → Git 分支 + 代码 + 测试 + PR`)
   log(`   PR:   /my-pr-skill → PR 管理 (manage-pr.sh)`)
@@ -375,23 +470,13 @@ async function main() {
   const completedSprints = []
   const failedSprints = []
 
-  const sprintConfig = [
-    { phase: 'Sprint-1', sprints: [1] },
-    { phase: 'Sprint-2', sprints: [2] },
-    { phase: 'Sprint-3-4-7-8-10', sprints: [3, 4, 7, 8, 10] },
-    { phase: 'Sprint-5-6-11', sprints: [5, 6, 11] },
-    { phase: 'Sprint-9', sprints: [9] },
-    { phase: 'Sprint-12', sprints: [12] },
-    { phase: 'Sprint-13', sprints: [13] }
-  ]
-
-  for (const config of sprintConfig) {
+  for (const config of executionPhases) {
     log(`\n${'='.repeat(60)}`)
     log(`📋 Phase: ${config.phase}`)
     log(`${'='.repeat(60)}`)
 
     const canExecute = config.sprints.every(s => {
-      if (!checkDependencies(s, completedSprints)) {
+      if (!checkDependencies(s, completedSprints, depGraph)) {
         log(`⚠️ Sprint ${s} 依赖未满足，跳过`)
         return false
       }
@@ -402,13 +487,10 @@ async function main() {
       continue
     }
 
-    // 为每个 Sprint 解析 plan 路径
-    const resolvePlan = (s) => planPath.replace('*', s)
-
     if (config.sprints.length > 1) {
       log(`⚡ 并行执行 Sprints: ${config.sprints.join(', ')}`)
       const results = await parallel(
-        config.sprints.map(s => () => executeSprint(s, resolvePlan(s), checklistPath))
+        config.sprints.map(s => () => executeSprint(s, sprintFiles[s].planPath, sprintFiles[s].checklistPath))
       )
       results.forEach((result, idx) => {
         const s = config.sprints[idx]
@@ -422,7 +504,7 @@ async function main() {
       })
     } else {
       const s = config.sprints[0]
-      const result = await executeSprint(s, resolvePlan(s), checklistPath)
+      const result = await executeSprint(s, sprintFiles[s].planPath, sprintFiles[s].checklistPath)
       if (result.status === 'merged') {
         completedSprints.push(s)
         log(result.skipped ? `⏭️ Sprint ${s} 已完成（跳过）` : `✅ Sprint ${s} 完成`)
