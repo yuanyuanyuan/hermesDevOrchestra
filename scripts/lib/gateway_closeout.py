@@ -111,7 +111,7 @@ def resolve_conflict(ledger_path: Path, conflict_id: str, resolution: str, resol
         raise ValueError(f"invalid resolution: {resolution!r}")
     if resolution in ("accepted_risk", "manual_resolved") and not resolver:
         raise ValueError(f"resolution={resolution} requires resolver")
-    if resolution in ("accepted_risk", "manual_resolved", "auto_resolved") and not resolution_evidence:
+    if resolution in ("accepted_risk", "manual_resolved", "auto_resolved", "superseded") and not resolution_evidence:
         raise ValueError(f"resolution={resolution} requires resolution_evidence")
     ledger = load_conflict_ledger(ledger_path)
     conflicts = ledger.get("conflicts")
