@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Manage Full Contract Readiness Gates for Hermes Orchestra."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+VALID_FAMILIES = {
+    "gateway_authority",
+    "full_debate_package",
+    "worker_execution",
+    "runtime_domain_knowledge",
+    "release_pipeline",
+    "remote_decisions",
+    "closeout_and_self_evolution",
+}
+
+GATE_CONFIG_PATH = "config/readiness-gates.json"
+FULL_GATE_POLICY_PATH = "config/cutover/full-readiness-gates.json"
+
+
+class ReadinessGateError(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def load_gate_config(repo_root: Path) -> dict[str, Any]:
+    path = repo_root / GATE_CONFIG_PATH
+    if not path.exists():
+        raise ReadinessGateError("config_missing", f"{GATE_CONFIG_PATH} not found")
+    with path.open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_gate_config(repo_root: Path, config: dict[str, Any]) -> None:
+    path = repo_root / GATE_CONFIG_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def load_full_gate_policy(repo_root: Path) -> dict[str, Any]:
+    path = repo_root / FULL_GATE_POLICY_PATH
+    if not path.exists():
+        raise ReadinessGateError("policy_missing", f"{FULL_GATE_POLICY_PATH} not found")
+    with path.open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+def check_family(repo_root: Path, family_id: str) -> dict[str, Any]:
+    if family_id not in VALID_FAMILIES:
+        raise ReadinessGateError("invalid_family", f"Unknown family: {family_id}")
+
+    config = load_gate_config(repo_root)
+    family_state = config["families"].get(family_id, {})
+
+    if family_state.get("status") == "active":
+        return {"ok": True, "family": family_id, "status": "active", "message": "Family is active"}
+
+    policy = load_full_gate_policy(repo_root)
+    family_policy = None
+    for fam in policy.get("artifact_families", []):
+        if fam["family_id"] == family_id:
+            family_policy = fam
+            break
+
+    if family_policy is None:
+        raise ReadinessGateError("policy_not_found", f"No policy for family {family_id}")
+
+    return {
+        "ok": False,
+        "family": family_id,
+        "status": family_state.get("status", "pending"),
+        "required_checks": family_policy.get("required_checks", []),
+        "message": f"Family {family_id} is not active. Run validation first.",
+    }
+
+
+def activate_family(repo_root: Path, family_id: str) -> dict[str, Any]:
+    if family_id not in VALID_FAMILIES:
+        raise ReadinessGateError("invalid_family", f"Unknown family: {family_id}")
+
+    config = load_gate_config(repo_root)
+    if family_id not in config["families"]:
+        config["families"][family_id] = {}
+
+    config["families"][family_id]["status"] = "active"
+    config["families"][family_id]["activated_at"] = datetime.now(timezone.utc).isoformat()
+    config["families"][family_id]["validation_passing"] = True
+
+    save_gate_config(repo_root, config)
+
+    return {"ok": True, "family": family_id, "status": "active", "message": f"Family {family_id} activated"}
+
+
+def deactivate_family(repo_root: Path, family_id: str) -> dict[str, Any]:
+    if family_id not in VALID_FAMILIES:
+        raise ReadinessGateError("invalid_family", f"Unknown family: {family_id}")
+
+    config = load_gate_config(repo_root)
+    if family_id not in config["families"]:
+        config["families"][family_id] = {}
+
+    config["families"][family_id]["status"] = "pending"
+    config["families"][family_id]["validation_passing"] = False
+
+    save_gate_config(repo_root, config)
+
+    return {"ok": True, "family": family_id, "status": "pending", "message": f"Family {family_id} deactivated"}
+
+
+def show_status(repo_root: Path) -> dict[str, Any]:
+    config = load_gate_config(repo_root)
+    families = config.get("families", {})
+
+    result = {
+        "ok": True,
+        "families": {},
+    }
+
+    for family_id in sorted(VALID_FAMILIES):
+        state = families.get(family_id, {"status": "pending"})
+        result["families"][family_id] = {
+            "status": state.get("status", "pending"),
+            "activated_at": state.get("activated_at"),
+            "validation_passing": state.get("validation_passing", False),
+        }
+
+    return result
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Manage Full Contract Readiness Gates")
+    parser.add_argument("--repo", type=Path, default=Path("."), help="Repository root")
+
+    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+
+    check_parser = subparsers.add_parser("check", help="Check if a family is ready")
+    check_parser.add_argument("family", help="Family ID to check")
+
+    activate_parser = subparsers.add_parser("activate", help="Activate a family")
+    activate_parser.add_argument("family", help="Family ID to activate")
+
+    deactivate_parser = subparsers.add_parser("deactivate", help="Deactivate a family")
+    deactivate_parser.add_argument("family", help="Family ID to deactivate")
+
+    subparsers.add_parser("status", help="Show status of all families")
+
+    args = parser.parse_args()
+
+    if args.command is None:
+        parser.print_help()
+        sys.exit(1)
+
+    try:
+        if args.command == "check":
+            result = check_family(args.repo, args.family)
+        elif args.command == "activate":
+            result = activate_family(args.repo, args.family)
+        elif args.command == "deactivate":
+            result = deactivate_family(args.repo, args.family)
+        elif args.command == "status":
+            result = show_status(args.repo)
+        else:
+            parser.print_help()
+            sys.exit(1)
+
+        print(json.dumps(result, indent=2))
+        sys.exit(0 if result.get("ok", False) else 1)
+
+    except ReadinessGateError as exc:
+        print(json.dumps({"ok": False, "error": exc.code, "message": exc.message}, indent=2))
+        sys.exit(1)
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": "unexpected", "message": str(exc)}, indent=2))
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -1335,3 +1335,156 @@ PY
     fi
     printf '%s %s project=%s task=%s\n' "$decision" "$approval_id" "$project_id" "$task_id"
 }
+
+# Full Contract Validation Harness Functions
+
+orch_validate_against_full_schema() {
+    local repo_root="${1:-.}"
+    local artifact_path="$2"
+    local definition_name="$3"
+
+    python3 - "$repo_root" "$artifact_path" "$definition_name" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+repo_root = Path(sys.argv[1])
+artifact_path = sys.argv[2]
+definition_name = sys.argv[3]
+
+schema_path = repo_root / "config/schemas/orchestra.full.schema.json"
+target_path = repo_root / artifact_path
+
+try:
+    import jsonschema
+except ImportError:
+    print("jsonschema not installed", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    payload = json.loads(target_path.read_text(encoding="utf-8"))
+except (json.JSONDecodeError, FileNotFoundError) as exc:
+    print(f"Error loading files: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+if definition_name not in schema.get("$defs", {}):
+    print(f"Definition {definition_name} not found in schema", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    jsonschema.validate(
+        instance=payload,
+        schema={
+            "$schema": schema["$schema"],
+            "$ref": f"#/$defs/{definition_name}",
+            "$defs": schema["$defs"],
+        },
+    )
+    print(f"PASS {artifact_path}: {definition_name}")
+except jsonschema.ValidationError as exc:
+    print(f"FAIL {artifact_path}: {exc.message}", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+orch_validate_artifact_identity() {
+    local artifact_path="$1"
+
+    python3 - "$artifact_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+artifact_path = Path(sys.argv[1])
+
+required_fields = ["schema_version", "artifact_type"]
+optional_fields = ["package_status", "policy_authority", "created_at", "updated_at"]
+
+try:
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+except (json.JSONDecodeError, FileNotFoundError) as exc:
+    print(f"Error loading artifact: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+missing = [f for f in required_fields if f not in payload]
+if missing:
+    print(f"FAIL missing required identity fields: {missing}", file=sys.stderr)
+    sys.exit(1)
+
+print(f"PASS identity: {artifact_path.name}")
+for field in required_fields:
+    print(f"  {field}: {payload[field]}")
+PY
+}
+
+orch_validate_guardrail_fields() {
+    local artifact_path="$1"
+
+    python3 - "$artifact_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+artifact_path = Path(sys.argv[1])
+
+guardrail_fields = [
+    "authority",
+    "routing",
+    "evidence",
+    "coverage",
+    "degradation",
+    "freshness",
+    "safety",
+]
+
+try:
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+except (json.JSONDecodeError, FileNotFoundError) as exc:
+    print(f"Error loading artifact: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+present = [f for f in guardrail_fields if f in payload]
+missing = [f for f in guardrail_fields if f not in payload]
+
+print(f"PASS guardrail: {artifact_path.name}")
+print(f"  present: {present}")
+if missing:
+    print(f"  optional missing: {missing}")
+PY
+}
+
+orch_validate_safe_durable_artifact() {
+    local artifact_path="$1"
+
+    python3 - "$artifact_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+artifact_path = Path(sys.argv[1])
+
+forbidden_fields = [
+    "raw_prompt",
+    "raw_stdout",
+    "secret",
+    "api_key",
+    "token",
+    "password",
+    "credential",
+]
+
+try:
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+except (json.JSONDecodeError, FileNotFoundError) as exc:
+    print(f"Error loading artifact: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+found = [f for f in forbidden_fields if f in payload]
+if found:
+    print(f"FAIL forbidden fields found: {found}", file=sys.stderr)
+    sys.exit(1)
+
+print(f"PASS safe-durable: {artifact_path.name}")
+PY
+}
