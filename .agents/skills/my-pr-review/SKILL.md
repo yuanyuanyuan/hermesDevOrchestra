@@ -5,6 +5,7 @@ description: >
   使用 compound-engineering review agents 并行多维度审查，
   聚合发现项后以 PR Review Body 方式发送结构化 review 结果，
   提交 REQUEST_CHANGES 或 review approved comment，并基于证据做出合并/拒绝建议。
+  所有 GitHub 操作通过 my-pr-skill 脚本完成，不直接调用 gh。
   Reviewer 身份：stark-008。
   注意：GitHub 不允许 PR 作者对自己的 PR 提交 REQUEST_CHANGES 或 APPROVE review，
   因此 self-review 场景下所有事件降级为 COMMENT。合并由用户手动执行。
@@ -31,7 +32,8 @@ my-pr-review <PR_NUMBER>
 
 ## 环境要求
 
-- `gh` CLI 已安装且已认证
+- `my-pr-skill` 已加载（所有 GitHub 操作由其 scripts/ 目录下的脚本完成）
+- `gh` CLI 已安装且已认证（由 `my-pr-skill` 底层脚本使用）
 - 当前目录 `${REPO_DIR}` 为项目本地仓库
 - 具有 `repo` 或 `pull_requests:write` 权限的 GitHub Token
 
@@ -42,11 +44,12 @@ my-pr-review <PR_NUMBER>
 | 变量 | 来源 |
 |------|------|
 | `${PR_NUMBER}` | 调用参数 `<PR_NUMBER>` |
-| `${OWNER}` | `gh repo view --json owner --jq '.owner.login'` |
-| `${REPO}` | `gh repo view --json name --jq '.name'` |
+| `${OWNER}` | `${MY_PR_SKILL_SCRIPTS}/get-repo-info.sh --owner` |
+| `${REPO}` | `${MY_PR_SKILL_SCRIPTS}/get-repo-info.sh --repo` |
 | `${REPO_DIR}` | 当前工作目录（`$(pwd)`） |
-| `${PR_URL}` | PR 的 GitHub URL |
+| `${PR_URL}` | `${MY_PR_SKILL_SCRIPTS}/get-pr-metadata.sh --number=${PR_NUMBER} --field=url` |
 | `${REVIEW_DRAFT}` | `${REPO_DIR}/.tmp/pr-review-draft-${PR_NUMBER}.md` |
+| `${MY_PR_SKILL_SCRIPTS}` | `my-pr-skill` 的 scripts 目录路径 |
 | `${IS_SELF_REVIEW}` | 阶段 4 步骤 A 检测：`reviewer == PR author` 时为 `true` |
 | `${DIFF_CONTEXT}` | PR diff + 变更文件列表（阶段 1 收集，供 agent 使用） |
 
@@ -58,14 +61,21 @@ my-pr-review <PR_NUMBER>
 
 **步骤 A — 读取 PR 元数据**
 
+通过 `my-pr-skill` 获取仓库信息和 PR 元数据：
+
 ```bash
-gh pr view ${PR_NUMBER} --json author,title,url,headRefOid,body,baseRefName,mergeable
+OWNER=$(${MY_PR_SKILL_SCRIPTS}/get-repo-info.sh --owner)
+REPO=$(${MY_PR_SKILL_SCRIPTS}/get-repo-info.sh --repo)
+PR_URL=$(${MY_PR_SKILL_SCRIPTS}/get-pr-metadata.sh --number=${PR_NUMBER} --field=url)
+
+# 完整元数据 JSON 写入本地缓存
+${MY_PR_SKILL_SCRIPTS}/get-pr-metadata.sh --number=${PR_NUMBER} --output=${REPO_DIR}/.tmp/pr-${PR_NUMBER}-metadata.json
 ```
 
 **步骤 B — 读取 PR 完整 diff**
 
 ```bash
-gh pr diff ${PR_NUMBER}
+${MY_PR_SKILL_SCRIPTS}/get-pr-diff.sh --number=${PR_NUMBER} --output=${REPO_DIR}/.tmp/pr-${PR_NUMBER}.diff
 ```
 
 提取变更文件列表，统计 diff 行数。若 diff 超过 5000 行，进入止损条件（阶段 7）。
@@ -73,9 +83,12 @@ gh pr diff ${PR_NUMBER}
 **步骤 C — 读取已有 Review Comments（避免重复评论）**
 
 ```bash
-gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews --jq '.[] | {user: .user.login, state: .state, body: .body}'
-gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/comments --jq '.[] | {user: .user.login, path: .path, line: .line, body: .body}'
-gh api repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments --jq '.[] | {user: .user.login, body: .body}'
+${MY_PR_SKILL_SCRIPTS}/get-pr-reviews.sh --number=${PR_NUMBER} \
+  --output=${REPO_DIR}/.tmp/pr-${PR_NUMBER}-reviews.json \
+  --comments-output=${REPO_DIR}/.tmp/pr-${PR_NUMBER}-review-comments.json
+
+${MY_PR_SKILL_SCRIPTS}/get-pr-comments.sh --number=${PR_NUMBER} \
+  --output=${REPO_DIR}/.tmp/pr-${PR_NUMBER}-comments.json
 ```
 
 **步骤 D — 读取相关上下文**
@@ -212,6 +225,8 @@ mode: "default"  # read-only, no edits
 3. 发现项清单（每个 FAIL 的结构化描述）
 4. 合并门控判断
 
+> 注：`submit-review.sh` 会在发送时自动在 body 末尾追加 `@codex review`，无需在 Draft 中手动写入。
+
 ---
 
 ### 阶段 4：REVIEW 提交（REVIEW SUBMISSION）
@@ -219,9 +234,11 @@ mode: "default"  # read-only, no edits
 **步骤 A — 检查 Reviewer 身份**
 
 ```bash
-PR_AUTHOR=$(gh pr view ${PR_NUMBER} --json author --jq '.author.login')
-REVIEWER=$(gh api user --jq '.login')
+PR_AUTHOR=$(${MY_PR_SKILL_SCRIPTS}/get-pr-metadata.sh --number=${PR_NUMBER} --field=author)
 ```
+
+通过 `gh api user --jq '.login'` 获取当前认证用户（reviewer）。
+> 注意：获取当前用户身份是 `my-pr-skill` 未封装的操作，可直接调用 `gh api user`。
 
 如果 `REVIEWER == PR_AUTHOR`，设置 `${IS_SELF_REVIEW} = true`，否则为 `false`。
 
@@ -230,11 +247,13 @@ REVIEWER=$(gh api user --jq '.login')
 
 **步骤 B — 提交 Review**
 
+通过 `my-pr-skill` 的 `submit-review.sh` 提交 review：
+
 ```bash
-gh api repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}/reviews \
-  -f body="$(cat ${REVIEW_DRAFT})" \
-  -f event="${EVENT_TYPE}" \
-  --jq '.id'
+${MY_PR_SKILL_SCRIPTS}/submit-review.sh \
+  --number=${PR_NUMBER} \
+  --event=${EVENT_TYPE} \
+  --body-file=${REVIEW_DRAFT}
 ```
 
 事件类型选择逻辑：
@@ -253,6 +272,8 @@ else:
 > 本次 review 以 COMMENT 事件提交，发现项仍需修复后才能合并。
 ```
 
+> 注：底层 `submit-review.sh` 会自动追加 `@codex review` footer，触发 Codex 外部视觉 review。
+
 ---
 
 ### 阶段 5：合并门控（MERGE GATE）
@@ -268,6 +289,7 @@ else:
 
 **如果允许合并：**
 在 review comment 中明确告知用户："✅ Review approved. 满足所有合并条件，请手动执行合并。"
+通过 `my-pr-skill` 的 `manage-pr.sh --checks` 确认 PR 状态。合并由用户手动执行。
 
 **如果拒绝合并：**
 - 正常 review：通过 `REQUEST_CHANGES` 事件 + review body 中的发现项表达拒绝原因，GitHub 会自动阻塞合并。
@@ -284,6 +306,7 @@ else:
 - 不跳过 Security & Compliance（即使其他项全 PASS）
 - 如果已有其他 reviewer 的 unresolved review comments，在 review body 中引用并纳入评估
 - 所有 compound-engineering agents 必须以只读模式运行（不修改文件）
+- **所有 GitHub 操作必须通过 `my-pr-skill` 脚本完成，禁止直接调用 `gh`**（获取当前用户身份除外）
 
 **只读边界：**
 - PR diff 涉及的所有文件
@@ -295,7 +318,7 @@ else:
 ### 阶段 7：止损条件（BLOCKED STOP）
 
 **立即停止并报告的情况：**
-- `gh` CLI 无法读取 PR 或提交 review（权限不足、token 过期）
+- `my-pr-skill` 脚本无法读取 PR 或提交 review（权限不足、token 过期）
 - PR diff 超过 5000 行（超出合理 review 范围）
 - 测试脚本因环境问题持续失败 3 次
 - 发现敏感信息泄露 → 立即提交 REJECT review（body 直接说明）
