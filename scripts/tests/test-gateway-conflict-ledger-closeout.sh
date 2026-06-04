@@ -668,4 +668,57 @@ assert len(violations) == 0, violations
 print("Test 14 PASSED: validate_conflict_record rejects invalid stage enum")
 PY
 
+# ========================================================================
+# Test 15: validate_conflict_record rejects invalid source refs
+# ========================================================================
+python3 - "$REPO_ROOT" <<'PY'
+import pathlib
+import sys
+
+repo_root = sys.argv[1]
+sys.path.insert(0, str(pathlib.Path(repo_root) / "scripts" / "lib"))
+
+from gateway_closeout import validate_conflict_record
+
+# Invalid source ref (not matching artifact_reference pattern)
+violations = validate_conflict_record({
+    "conflict_id": "c1", "run_id": "r1", "stage": "direction_debate",
+    "type": "intent_vs_inference", "severity": "high", "resolution": "open",
+    "created_at": "2026-01-01T00:00:00Z",
+    "sources": ["not-a-valid-ref"],
+    "resolver": "", "resolution_evidence": "", "resolved_at": None,
+})
+assert any("sources[0] must be a valid artifact_reference" in v for v in violations), violations
+
+# Multiple invalid refs
+violations = validate_conflict_record({
+    "conflict_id": "c1", "run_id": "r1", "stage": "direction_debate",
+    "type": "intent_vs_inference", "severity": "high", "resolution": "open",
+    "created_at": "2026-01-01T00:00:00Z",
+    "sources": ["invalid-1", "state://runs/r1/events.jsonl", "invalid-2"],
+    "resolver": "", "resolution_evidence": "", "resolved_at": None,
+})
+assert any("sources[0]" in v for v in violations), violations
+assert any("sources[2]" in v for v in violations), violations
+# sources[1] is valid, should not appear in violations
+assert not any("sources[1]" in v for v in violations), violations
+
+# Valid source refs pass
+violations = validate_conflict_record({
+    "conflict_id": "c1", "run_id": "r1", "stage": "direction_debate",
+    "type": "intent_vs_inference", "severity": "high", "resolution": "open",
+    "created_at": "2026-01-01T00:00:00Z",
+    "sources": [
+        "state://runs/r1/events.jsonl",
+        "state://knowledge/some-topic",
+        "audit://some-audit",
+        "cache://sha256:abc123",
+    ],
+    "resolver": "", "resolution_evidence": "", "resolved_at": None,
+})
+assert len(violations) == 0, violations
+
+print("Test 15 PASSED: validate_conflict_record rejects invalid source refs")
+PY
+
 test_done

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,9 @@ VALID_STAGES = {
     "global_evaluation",
     "continuous_improvement",
 }
+ARTIFACT_REFERENCE_PATTERN = re.compile(
+    r"^(state://runs/[^/]+/.+|state://knowledge/.+|audit://.+|cache://sha256:[A-Fa-f0-9]+|repo://\.workflow/knowledge/.+)$"
+)
 
 
 def load_conflict_ledger(path: Path) -> dict[str, Any]:
@@ -58,6 +62,10 @@ def validate_conflict_record(record: dict[str, Any]) -> list[str]:
         violations.append("created_at missing or empty")
     if not isinstance(record.get("sources"), list):
         violations.append("sources must be an array")
+    else:
+        for i, ref in enumerate(record["sources"]):
+            if not isinstance(ref, str) or not ARTIFACT_REFERENCE_PATTERN.match(ref):
+                violations.append(f"sources[{i}] must be a valid artifact_reference, got {ref!r}")
     if not isinstance(record.get("resolver"), str):
         violations.append("resolver must be a string")
     if not isinstance(record.get("resolution_evidence"), str):
