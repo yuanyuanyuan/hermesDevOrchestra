@@ -635,4 +635,37 @@ assert any("schema_invalid_conflict:c-missing-type" in b for b in blockers), blo
 print("Test 13 PASSED: closeout blocks schema-invalid ledger")
 PY
 
+# ========================================================================
+# Test 14: validate_conflict_record rejects invalid stage enum
+# ========================================================================
+python3 - "$REPO_ROOT" <<'PY'
+import pathlib
+import sys
+
+repo_root = sys.argv[1]
+sys.path.insert(0, str(pathlib.Path(repo_root) / "scripts" / "lib"))
+
+from gateway_closeout import validate_conflict_record
+
+# Invalid stage
+violations = validate_conflict_record({
+    "conflict_id": "c1", "run_id": "r1", "stage": "bogus",
+    "type": "intent_vs_inference", "severity": "high", "resolution": "open",
+    "created_at": "2026-01-01T00:00:00Z",
+    "sources": [], "resolver": "", "resolution_evidence": "", "resolved_at": None,
+})
+assert any("stage must be one of" in v for v in violations), violations
+
+# Valid stage passes
+violations = validate_conflict_record({
+    "conflict_id": "c1", "run_id": "r1", "stage": "direction_debate",
+    "type": "intent_vs_inference", "severity": "high", "resolution": "open",
+    "created_at": "2026-01-01T00:00:00Z",
+    "sources": [], "resolver": "", "resolution_evidence": "", "resolved_at": None,
+})
+assert len(violations) == 0, violations
+
+print("Test 14 PASSED: validate_conflict_record rejects invalid stage enum")
+PY
+
 test_done

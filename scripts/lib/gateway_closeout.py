@@ -12,6 +12,14 @@ FULL_SCHEMA_VERSION = "orchestra.full.v1"
 VALID_SEVERITIES = {"high", "medium", "low"}
 VALID_RESOLUTIONS = {"open", "auto_resolved", "accepted_risk", "manual_resolved", "superseded"}
 VALID_TYPES = {"intent_vs_inference", "fact_vs_assumption", "cross_team_conflict", "dependency_conflict", "user_override"}
+VALID_STAGES = {
+    "direction_debate",
+    "solution_debate",
+    "implementation",
+    "improvement",
+    "global_evaluation",
+    "continuous_improvement",
+}
 
 
 def load_conflict_ledger(path: Path) -> dict[str, Any]:
@@ -40,8 +48,9 @@ def validate_conflict_record(record: dict[str, Any]) -> list[str]:
     resolution = record.get("resolution")
     if resolution not in VALID_RESOLUTIONS:
         violations.append(f"resolution must be one of {sorted(VALID_RESOLUTIONS)}, got {resolution!r}")
-    if not isinstance(record.get("stage"), str) or not record["stage"]:
-        violations.append("stage missing or empty")
+    stage = record.get("stage")
+    if stage not in VALID_STAGES:
+        violations.append(f"stage must be one of {sorted(VALID_STAGES)}, got {stage!r}")
     conflict_type = record.get("type")
     if conflict_type not in VALID_TYPES:
         violations.append(f"type must be one of {sorted(VALID_TYPES)}, got {conflict_type!r}")
