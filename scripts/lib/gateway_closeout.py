@@ -11,6 +11,7 @@ import uuid
 FULL_SCHEMA_VERSION = "orchestra.full.v1"
 VALID_SEVERITIES = {"high", "medium", "low"}
 VALID_RESOLUTIONS = {"open", "auto_resolved", "accepted_risk", "manual_resolved", "superseded"}
+VALID_TYPES = {"intent_vs_inference", "fact_vs_assumption", "cross_team_conflict", "dependency_conflict", "user_override"}
 
 
 def load_conflict_ledger(path: Path) -> dict[str, Any]:
@@ -41,8 +42,9 @@ def validate_conflict_record(record: dict[str, Any]) -> list[str]:
         violations.append(f"resolution must be one of {sorted(VALID_RESOLUTIONS)}, got {resolution!r}")
     if not isinstance(record.get("stage"), str) or not record["stage"]:
         violations.append("stage missing or empty")
-    if not isinstance(record.get("type"), str) or not record["type"]:
-        violations.append("type missing or empty")
+    conflict_type = record.get("type")
+    if conflict_type not in VALID_TYPES:
+        violations.append(f"type must be one of {sorted(VALID_TYPES)}, got {conflict_type!r}")
     if not isinstance(record.get("created_at"), str) or not record["created_at"]:
         violations.append("created_at missing or empty")
     if not isinstance(record.get("sources"), list):
@@ -66,6 +68,14 @@ def append_conflict(ledger_path: Path, conflict: dict[str, Any]) -> dict[str, An
     violations = validate_conflict_record(conflict)
     if violations:
         raise ValueError(f"invalid conflict record: {'; '.join(violations)}")
+    # Do not silently overwrite a corrupt ledger
+    if ledger_path.exists():
+        try:
+            raw = json.loads(ledger_path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                raise ValueError(f"corrupt conflict ledger at {ledger_path}: not a dict")
+        except (OSError, json.JSONDecodeError) as e:
+            raise ValueError(f"corrupt conflict ledger at {ledger_path}: {e}")
     ledger = load_conflict_ledger(ledger_path)
     conflicts = ledger.get("conflicts")
     if not isinstance(conflicts, list):

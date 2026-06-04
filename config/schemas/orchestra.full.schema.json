@@ -2078,7 +2078,7 @@
         "conflict_id": {"type": "string", "minLength": 1},
         "run_id": {"type": "string", "minLength": 1},
         "stage": {"$ref": "#/$defs/stage"},
-        "type": {"type": "string", "minLength": 1},
+        "type": {"enum": ["intent_vs_inference", "fact_vs_assumption", "cross_team_conflict", "dependency_conflict", "user_override"]},
         "sources": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
         "severity": {"$ref": "#/$defs/conflict_severity"},
         "resolution": {"$ref": "#/$defs/conflict_resolution"},

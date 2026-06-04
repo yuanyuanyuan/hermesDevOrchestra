@@ -238,7 +238,7 @@ conflict = {
     "conflict_id": "c1",
     "run_id": "run-3",
     "stage": "direction_debate",
-    "type": "test",
+    "type": "intent_vs_inference",
     "sources": [],
     "severity": "high",
     "resolution": "open",
@@ -313,7 +313,7 @@ conflict = {
     "conflict_id": "c-runid",
     "run_id": "run-6",
     "stage": "direction_debate",
-    "type": "test",
+    "type": "intent_vs_inference",
     "sources": [],
     "severity": "medium",
     "resolution": "open",
@@ -353,9 +353,9 @@ tmp = pathlib.Path(state_root) / "test-counts" / "runs" / "run-7"
 tmp.mkdir(parents=True, exist_ok=True)
 ledger_path = tmp / "conflict-ledger.json"
 
-append_conflict(ledger_path, {"conflict_id": "c1", "run_id": "run-7", "stage": "direction_debate", "type": "test", "sources": [], "severity": "high", "resolution": "open", "resolver": "", "resolution_evidence": "", "created_at": "2026-06-04T00:00:00Z", "resolved_at": None})
-append_conflict(ledger_path, {"conflict_id": "c2", "run_id": "run-7", "stage": "direction_debate", "type": "test", "sources": [], "severity": "medium", "resolution": "open", "resolver": "", "resolution_evidence": "", "created_at": "2026-06-04T00:00:00Z", "resolved_at": None})
-append_conflict(ledger_path, {"conflict_id": "c3", "run_id": "run-7", "stage": "direction_debate", "type": "test", "sources": [], "severity": "high", "resolution": "auto_resolved", "resolver": "", "resolution_evidence": "auto-detected-and-merged", "created_at": "2026-06-04T00:00:00Z", "resolved_at": None})
+append_conflict(ledger_path, {"conflict_id": "c1", "run_id": "run-7", "stage": "direction_debate", "type": "intent_vs_inference", "sources": [], "severity": "high", "resolution": "open", "resolver": "", "resolution_evidence": "", "created_at": "2026-06-04T00:00:00Z", "resolved_at": None})
+append_conflict(ledger_path, {"conflict_id": "c2", "run_id": "run-7", "stage": "direction_debate", "type": "intent_vs_inference", "sources": [], "severity": "medium", "resolution": "open", "resolver": "", "resolution_evidence": "", "created_at": "2026-06-04T00:00:00Z", "resolved_at": None})
+append_conflict(ledger_path, {"conflict_id": "c3", "run_id": "run-7", "stage": "direction_debate", "type": "intent_vs_inference", "sources": [], "severity": "high", "resolution": "auto_resolved", "resolver": "", "resolution_evidence": "auto-detected-and-merged", "created_at": "2026-06-04T00:00:00Z", "resolved_at": None})
 
 ledger = load_conflict_ledger(ledger_path)
 counts = conflict_counts(ledger)
@@ -462,7 +462,7 @@ assert any("type" in v for v in violations), violations
 
 # Valid record passes
 violations = validate_conflict_record({
-    "conflict_id": "c1", "run_id": "r1", "stage": "direction_debate", "type": "test",
+    "conflict_id": "c1", "run_id": "r1", "stage": "direction_debate", "type": "intent_vs_inference",
     "severity": "high", "resolution": "open", "created_at": "2026-01-01T00:00:00Z",
     "sources": [], "resolver": "", "resolution_evidence": "", "resolved_at": None,
 })
@@ -492,7 +492,7 @@ append_conflict(ledger_path, {
     "conflict_id": "c-medium-open",
     "run_id": "run-11",
     "stage": "direction_debate",
-    "type": "test",
+    "type": "intent_vs_inference",
     "sources": [],
     "severity": "medium",
     "resolution": "open",
@@ -507,7 +507,7 @@ append_conflict(ledger_path, {
     "conflict_id": "c-low-open",
     "run_id": "run-11",
     "stage": "direction_debate",
-    "type": "test",
+    "type": "intent_vs_inference",
     "sources": [],
     "severity": "low",
     "resolution": "open",
