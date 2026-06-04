@@ -3,14 +3,31 @@
 ## 🚀 快速启动
 
 ```bash
-# 默认配置（启用独立审查）
+# 通过 slash command（需传入 sprintsDir）
 /sprint-execution-pipeline-unified
 
-# 通过 Workflow 工具调用
-Workflow({ name: "sprint-execution-pipeline-unified" })
+# 通过 Workflow 工具调用（必须指定 sprintsDir）
+Workflow({
+  name: "sprint-execution-pipeline-unified",
+  args: {
+    sprintsDir: "/data/hermes/docs/sprints/prd-compliance-audit-remediation-full"
+  }
+})
+```
 
-# 指定 plan 和 checklist 路径
-Workflow({ name: "sprint-execution-pipeline-unified", args: { planPath: "/path/to/plan-sprint-*.md", checklistPath: "/path/to/checklist.md" } })
+## 📂 Sprint 目录结构要求
+
+目录中需包含以下文件（自动发现）：
+
+```
+sprints-dir/
+├── plan-sprint-1.md          # Sprint 1 的开发计划（必需）
+├── checklist-sprint-1.md     # Sprint 1 的验收清单（必需）
+├── plan-sprint-2.md
+├── checklist-sprint-2.md
+├── ...
+├── sprint-overview.md        # 依赖关系表（用于自动解析依赖图）
+└── schema.md                 # Schema 说明（可选）
 ```
 
 ## ⚙️ 配置速查
@@ -31,6 +48,9 @@ REVIEWER_CONFIG = {
 
 ```
 Sprint 执行流程
+│
+├─ 步骤 0a: findMergedPR（恢复模式 — 已合并则跳过）
+├─ 步骤 0b: findExistingPR（已有 open PR 则跳过开发）
 │
 ├─ 步骤 1: /my-sprint-execute
 │  ├─ Git 分支 (feat/sprintN)
@@ -74,22 +94,21 @@ Sprint 执行流程
 ✅ Sprint 1 完成
 ```
 
-### Review 反馈自动处理
+### 恢复场景（Sprint 已完成）
 ```
-⏳ 等待 PR #34 合并...
-⚠️ PR #34 有 review 反馈（decision=CHANGES_REQUESTED）
-🔄 调用 /my-pr-review-response 处理...
-✅ Review 反馈处理完成
-✅ PR #34 已合并
+🚀 开始执行 Sprint 1...
+⏭️ Sprint 1 已完成（PR #34 已合并 @ 2026-06-03T10:30:00Z），跳过
 ```
 
 ## 🛠️ 故障排除
 
 | 问题 | 解决方案 |
 |------|---------|
+| `缺少必需参数 sprintsDir` | 传入 `args: { sprintsDir: "/path/to/sprints" }` |
+| `Sprint N 缺少 plan 文件` | 确保目录中有 `plan-sprint-N.md` |
+| `Sprint N 缺少 checklist 文件` | 确保目录中有 `checklist-sprint-N.md` |
 | Reviewer 一直失败 | 降低 `passThreshold` 或禁用 `enabled: false` |
 | PR 轮询超时 | 检查 PR 是否需要手动合并 |
-| 开发找不到 PR | 检查分支命名是否包含 `sprintN` |
 | 依赖未满足 | 确保前序 Sprint 已合并 |
 
 ## 📚 相关文档
