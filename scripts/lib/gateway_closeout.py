@@ -45,6 +45,10 @@ def validate_conflict_record(record: dict[str, Any]) -> list[str]:
         violations.append("type missing or empty")
     if not isinstance(record.get("created_at"), str) or not record["created_at"]:
         violations.append("created_at missing or empty")
+    if resolution != "open":
+        evidence = record.get("resolution_evidence", "")
+        if not isinstance(evidence, str) or not evidence.strip():
+            violations.append("resolution_evidence required for resolved conflicts")
     return violations
 
 
@@ -165,6 +169,18 @@ def closeout_conflict_blockers(ledger: dict[str, Any]) -> list[str]:
     unjustified = query_unjustified_accepted_risk(ledger)
     for c in unjustified:
         blockers.append(f"unjustified_accepted_risk:{c.get('conflict_id', 'unknown')}")
+    # All resolved conflicts must carry non-empty resolution_evidence
+    conflicts = ledger.get("conflicts")
+    if isinstance(conflicts, list):
+        for c in conflicts:
+            if not isinstance(c, dict):
+                continue
+            resolution = c.get("resolution")
+            if resolution == "open":
+                continue
+            evidence = c.get("resolution_evidence", "")
+            if not isinstance(evidence, str) or not evidence.strip():
+                blockers.append(f"missing_resolution_evidence:{c.get('conflict_id', 'unknown')}")
     return sorted(set(blockers))
 
 

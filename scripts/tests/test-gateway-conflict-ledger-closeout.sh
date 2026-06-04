@@ -128,39 +128,50 @@ repo_root, state_root, audit_root = sys.argv[1:]
 sys.path.insert(0, str(pathlib.Path(repo_root) / "scripts" / "lib"))
 
 from gateway_closeout import (
-    append_conflict,
+    load_conflict_ledger,
     query_unjustified_accepted_risk,
     closeout_conflict_blockers,
     resolve_conflict,
+    FULL_SCHEMA_VERSION,
 )
 
 tmp = pathlib.Path(state_root) / "test-accepted-risk" / "runs" / "run-2"
 tmp.mkdir(parents=True, exist_ok=True)
 ledger_path = tmp / "conflict-ledger.json"
 
-# Add accepted_risk without resolver - should block
-conflict = {
-    "conflict_id": "conflict-accepted-no-resolver",
+# Write an accepted_risk conflict without resolver/evidence directly to simulate
+# an imported/corrupted ledger that bypasses append_conflict validation.
+ledger = {
+    "schema_version": FULL_SCHEMA_VERSION,
+    "artifact_type": "conflict_ledger",
     "run_id": "run-2",
-    "stage": "direction_debate",
-    "type": "cross_team_conflict",
-    "severity": "high",
-    "resolution": "accepted_risk",
-    "resolver": "",
-    "resolution_evidence": "",
-    "created_at": "2026-06-04T00:00:00Z",
-    "resolved_at": "2026-06-04T00:01:00Z",
+    "conflicts": [
+        {
+            "conflict_id": "conflict-accepted-no-resolver",
+            "run_id": "run-2",
+            "stage": "direction_debate",
+            "type": "cross_team_conflict",
+            "severity": "high",
+            "resolution": "accepted_risk",
+            "resolver": "",
+            "resolution_evidence": "",
+            "created_at": "2026-06-04T00:00:00Z",
+            "resolved_at": "2026-06-04T00:01:00Z",
+        }
+    ],
 }
-ledger = append_conflict(ledger_path, conflict)
+ledger_path.write_text(json.dumps(ledger, indent=2, ensure_ascii=False), encoding="utf-8")
+ledger = load_conflict_ledger(ledger_path)
 
 # --- Test: query_unjustified_accepted_risk finds it ---
 unjustified = query_unjustified_accepted_risk(ledger)
 assert len(unjustified) == 1
 assert unjustified[0]["conflict_id"] == "conflict-accepted-no-resolver"
 
-# --- Test: closeout_conflict_blockers blocks ---
+# --- Test: closeout_conflict_blockers blocks (both unjustified and missing evidence) ---
 blockers = closeout_conflict_blockers(ledger)
 assert any("unjustified_accepted_risk" in b for b in blockers), blockers
+assert any("missing_resolution_evidence" in b for b in blockers), blockers
 
 # --- Test: resolve with proper evidence unblocks ---
 ledger = resolve_conflict(ledger_path, "conflict-accepted-no-resolver", "accepted_risk", resolver="human-approver", resolution_evidence="risk-assessment-approved-2026-06-04")
@@ -334,7 +345,7 @@ ledger_path = tmp / "conflict-ledger.json"
 
 append_conflict(ledger_path, {"conflict_id": "c1", "run_id": "run-7", "stage": "direction_debate", "type": "test", "severity": "high", "resolution": "open", "created_at": "2026-06-04T00:00:00Z"})
 append_conflict(ledger_path, {"conflict_id": "c2", "run_id": "run-7", "stage": "direction_debate", "type": "test", "severity": "medium", "resolution": "open", "created_at": "2026-06-04T00:00:00Z"})
-append_conflict(ledger_path, {"conflict_id": "c3", "run_id": "run-7", "stage": "direction_debate", "type": "test", "severity": "high", "resolution": "auto_resolved", "created_at": "2026-06-04T00:00:00Z"})
+append_conflict(ledger_path, {"conflict_id": "c3", "run_id": "run-7", "stage": "direction_debate", "type": "test", "severity": "high", "resolution": "auto_resolved", "resolution_evidence": "auto-detected-and-merged", "created_at": "2026-06-04T00:00:00Z"})
 
 ledger = load_conflict_ledger(ledger_path)
 counts = conflict_counts(ledger)
