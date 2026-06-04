@@ -124,6 +124,7 @@ mycodemap analyze     # 统一分析入口（意图驱动）
 - `.mycodemap/dependency-graph.md` — 依赖关系 Mermaid 图
 - `.mycodemap/codemap.json` — 机器可读的完整代码地图
 - `.mycodemap/context/` — 上下文文件（供 AI 代理使用）
+- `docs/solutions/` — 已解决问题知识库（按 category 组织，frontmatter 包含 `module`、`tags`、`problem_type`），在实现、调试或对齐已记录方案时 relevant
 
 ### 规则引用
 
@@ -147,4 +148,7 @@ mycodemap env-contract --for default --json
 
 ### CodeMap 上下文
 
-> 详见 `.mycodemap/assistants/claude-context.md`
+> 详见 `.mycodemap/assistants/agents-context.md`
+
+---
+

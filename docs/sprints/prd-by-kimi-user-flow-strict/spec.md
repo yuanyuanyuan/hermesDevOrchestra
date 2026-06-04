@@ -109,10 +109,10 @@
 
 | 枚举值 | 适用场景 | 回退行为 |
 |--------|----------|----------|
-| `sequential` | 单 worker、无并行写冲突风险 | 无需回退，直接顺序提交 |
-| `branch_merge` | 多 worker、写集已验证为 disjoint | 若合并冲突，回退到 `abort_on_conflict` |
-| `overwrite_with_backup` | 允许覆盖但必须保留备份 | 备份写入失败时回退到 `abort_on_conflict` |
-| `abort_on_conflict` | 任何冲突必须人工介入 | 直接中断任务，路由到 Kimi/用户裁决 |
+| `ordered_merge` | 多 worker 写集已验证为 disjoint，按固定顺序合并 | 按 DAG 顺序合并并记录审计 |
+| `last_writer_wins` | 允许后完成任务覆盖前任务，且目标不是 protected target | 写入覆盖顺序；protected target 禁用 |
+| `manual_conflict_resolution` | write set 可能重叠，或涉及重命名/大范围重构 | 阻塞并路由到 Kimi/用户裁决 |
+| `abort_on_conflict` | 任何冲突必须人工介入 | 直接中断任务，返回冲突原因 |
 
 ### 跨 Sprint 接口契约
 U10（六阶审计沉淀）→ U11（成功指标采集）→ U12（0→6 阶严格回归）之间必须满足以下输出/输入格式约束：
@@ -120,7 +120,7 @@ U10（六阶审计沉淀）→ U11（成功指标采集）→ U12（0→6 阶严
 | 上游 Sprint | 输出产物 | 下游 Sprint | 输入要求 |
 |-------------|----------|-------------|----------|
 | U10 | `audit.jsonl`（含 `source`、`confidence`、`applicability_boundary`、`kimi_review_ref`、`human_approval_ref`） | U11 | 必须读取 U10 的 `audit.jsonl` 作为 success metrics 的事件来源之一；缺少 `human_approval_ref` 的 protected target 变更不得纳入指标计算 |
-| U10 | `self_evolution_queue`（状态：`applied` / `pending` / `rejected`） | U11 | 仅统计 `status=applied` 的建议作为"改进落地率"分子 |
+| U10 | `self_evolution_queue`（状态：`applied` / `pending_review` / `rejected`） | U11 | 仅统计 `status=applied` 的建议作为"改进落地率"分子 |
 | U11 | `success_metrics_summary.json`（含 `metric_id`、`observed_value`、`threshold`、`status`） | U12 | 必须作为回归 gate 的准入数据；任何 `status=fail` 的指标必须阻塞进入严格回归阶段 |
 | U11 | `schema_consistency_report`（`schema.md` vs `schema.json` 差异列表） | U12 | 差异列表非空时必须阻塞回归执行，必须先修复 schema 不一致 |
 
@@ -140,21 +140,21 @@ U10（六阶审计沉淀）→ U11（成功指标采集）→ U12（0→6 阶严
 - 在未审批情况下自动修改 protected target。
 
 ### Protected Target 完整分类
-`protected_targets` 共 11 个类别，任何匹配以下 pattern 的文件或配置变更都必须经过 Kimi review + Human Approval（L4），且不可 auto-merge：
+`protected_targets` 共 11 个类别，任何匹配以下 pattern 的文件或配置变更都必须经过对应审批，且不可 auto-merge：
 
 | 类别 | Pattern 示例 | 审批级别 | 是否允许 auto-merge |
 |------|-------------|----------|-------------------|
 | `k8s_production` | `k8s/production/.*` | L4 | 否 |
-| `database_schema` | `db/migrations/.*` | L4 | 否 |
-| `auth_identity` | `auth/.*`、`iam/.*` | L4 | 否 |
-| `api_contract` | `api/.*`、`openapi/.*` | L4 | 否 |
-| `financial_ledger` | `ledger/.*`、`billing/.*` | L4 | 否 |
-| `legal_compliance` | `compliance/.*`、`legal/.*` | L4 | 否 |
-| `core_business_logic` | `domain/.*`、`core/.*` | L4 | 否 |
-| `iam_secrets` | `secrets/.*`、`\.env.*`、vault 路径 | L4 | 否 |
-| `infrastructure` | `terraform/.*`、`infra/.*`、CI/CD pipeline | L4 | 否 |
-| `payment_compliance` | `payment/.*`、`pci/.*`、`checkout/.*` | L4 | 否 |
-| `gateway_seam` | `gateway/.*`、`orchestra/.*` | L4 | 否 |
+| `db_schema` | `db/migrations/.*` | L4 | 否 |
+| `api_contract` | `docs/api/.*`、`specs/.*` | L3 | 否 |
+| `auth_policy` | `config/auth/.*`、`policies/.*` | L4 | 否 |
+| `iam_secrets` | `config/secrets/.*`、`\.env.*` | L4 | 否 |
+| `infrastructure` | `terraform/.*`、`infrastructure/.*` | L4 | 否 |
+| `payment_compliance` | `src/payment/.*`、`compliance/.*` | L4 | 否 |
+| `ci_cd_pipeline` | `.github/workflows/.*`、`ci/.*` | L3 | 否 |
+| `legal_terms` | `docs/legal/.*`、`terms/.*` | L4 | 否 |
+| `core_business_logic` | `src/core/.*`、`domain/.*` | L3 | 否 |
+| `data_privacy` | `src/pii/.*`、`privacy/.*` | L4 | 否 |
 
 > 注：`auto_merge=true` 仅对非 protected target 的变更生效；任何 protected target 的 PR 必须开启分支保护（require review + status checks）并写入审计日志。
 

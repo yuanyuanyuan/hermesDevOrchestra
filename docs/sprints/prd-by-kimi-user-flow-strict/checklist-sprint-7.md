@@ -79,6 +79,7 @@ rtk bash scripts/tests/test-gateway-config-registries.sh
 - [x] 测试通过（所有 AC 断言通过）
 - [x] Code Review 完成
 - [x] 架构红线合规确认
-- [ ] 合并到 main
+- [x] 合并到 main
 
 [2026-06-02] Verified by Codex — all tests passed
+[2026-06-03] 已合并到 main — PR #25 (`feat/sprint7`), merged 2026-06-02T05:24:00Z

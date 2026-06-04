@@ -75,6 +75,7 @@ rtk bash scripts/tests/test-backpressure-basic.sh
 - [x] 测试通过（所有 AC 断言通过）
 - [x] Code Review 完成
 - [x] 架构红线合规确认
-- [ ] 合并到 main
+- [x] 合并到 main
 
 [2026-06-02] Verified by Codex — all tests passed
+[2026-06-03] 已合并到 main — PR #27 (`feat/sprint9`), merged 2026-06-03T02:24:56Z

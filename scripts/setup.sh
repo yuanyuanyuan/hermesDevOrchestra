@@ -169,9 +169,9 @@ if [ ! -f "$HELPER_LIB_SRC_DIR/orch_gateway.py" ]; then
     log_err "Gateway library missing: $HELPER_LIB_SRC_DIR/orch_gateway.py"
     exit 1
 fi
-cp "$HELPER_LIB_SRC_DIR/orch_gateway.py" "$ORCHESTRA_HOME/lib/orch_gateway.py"
+cp "$HELPER_LIB_SRC_DIR"/*.py "$ORCHESTRA_HOME/lib/"
 chmod +x "$ORCHESTRA_HOME/lib/orch_gateway.py"
-log_ok "Gateway library installed: $ORCHESTRA_HOME/lib/orch_gateway.py"
+log_ok "Gateway Python libraries installed: $ORCHESTRA_HOME/lib"
 
 if [ ! -d "$PROFILE_DIST_SRC/profiles" ]; then
     log_err "Profile distribution missing: $PROFILE_DIST_SRC/profiles"

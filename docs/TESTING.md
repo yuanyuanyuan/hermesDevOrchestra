@@ -12,9 +12,9 @@ The test harness is pure Bash with a shared assertion library.
 |-----------|----------|---------|
 | Test runner | `scripts/tests/run-all.sh` | Discovers and executes every `test-*.sh` script |
 | Assertion library | `scripts/tests/lib/assert.sh` | Provides `assert_eq`, `assert_contains`, `assert_file_exists`, `assert_exit_code`, `assert_jsonl_valid`, etc. |
-| Test scripts | `scripts/tests/test-*.sh` | Individual smoke tests (25 scripts) |
+| Test scripts | `scripts/tests/test-*.sh` | Individual smoke tests; current repository has 147 scripts |
 
-No external test framework (Jest, Vitest, Mocha, pytest) is used. The only runtime dependency is `bash` and `python3` (used by some tests for JSON/JSONL validation).
+No external JavaScript test framework (Jest, Vitest, Mocha) is used. The smoke suite is mostly Bash plus Python helpers; `run-all.sh` dispatches Python shebang tests with `python3`.
 
 ### Writing a New Test
 
@@ -60,7 +60,7 @@ Available assertion helpers from `lib/assert.sh`:
 make test
 ```
 
-This runs `test-unit`, `test-risk`, `lint-json`, `lint-shell`, and `upstream-status`.
+This runs `test-unit`, `test-risk`, `lint-json`, `lint-shell`, and `upstream-status`. `npm test` delegates to this target.
 
 ### Unit / Smoke Tests Only
 
@@ -87,8 +87,8 @@ bash scripts/tests/test-specs.sh
 ### Linting
 
 ```bash
-make lint-json      # validates all *.json files with python3 -m json.tool
-make lint-shell     # runs shellcheck on scripts/*.sh (skipped if shellcheck is missing)
+make lint-json      # validates source *.json files with python3 -m json.tool; ignores local .tmp/ cache
+make lint-shell     # runs shellcheck on scripts/*.sh when shellcheck is installed; otherwise skipped
 ```
 
 ### Upstream Pin Check
@@ -117,4 +117,4 @@ Tests are executed locally via `make test`. If adding CI, the recommended pipeli
 make test
 ```
 
-This ensures the full matrix runs: smoke tests, risk tests, JSON lint, shell lint, and upstream pin verification.
+This ensures the full matrix runs: smoke tests, risk tests, JSON lint, shell lint when available, and upstream pin advisory verification.

@@ -1,6 +1,6 @@
 # Hermes Orchestra Full Capability Authority Matrix
 
-This matrix is the full-target actor capability map. It answers who may request, decide, approve, execute, or advance each major workflow capability.
+This matrix is the full-target actor capability map. It answers who may request, decide, approve, execute, or advance each major workflow capability. It is not a claim that every listed capability is active in the current runtime; runtime status is tracked in `docs/FULL-COVERAGE-MATRIX.md`.
 
 Legend:
 

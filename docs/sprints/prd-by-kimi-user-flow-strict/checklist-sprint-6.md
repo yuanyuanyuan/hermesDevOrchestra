@@ -67,8 +67,9 @@ rtk bash scripts/tests/test-source-isolation-collision.sh
 ## 签核
 - [x] 开发完成
 - [x] 测试通过（所有 AC 断言通过）
-- [ ] Code Review 完成
+- [x] Code Review 完成
 - [x] 架构红线合规确认
-- [ ] 合并到 main
+- [x] 合并到 main
 
 [2026-06-02] Verified by Codex — all tests passed
+[2026-06-03] 已合并到 main — PR #24 (`feat/sprint6-kimi-strict`), merged 2026-06-02T04:34:28Z

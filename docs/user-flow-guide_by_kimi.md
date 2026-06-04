@@ -584,7 +584,7 @@ Kimi 回答：
 | `pending_review` | 已进入 self-evolution queue，等待 Kimi 或 Human 审批 | 可通过 queue 查询回溯 |
 | `rejected` | 明确拒绝并保留理由 | 不删除，保留审计记录 |
 
-Self-evolution queue 持久化在 `.hermes/evolution-queue/`，写入采用临时文件加原子重命名。Gateway 启动或查询时从该目录恢复记录；同一 `proposal_id` 重复 enqueue 只更新时间，不创建重复记录。queue 查询入口为 `GET /orchestra/modules/self-evolution/enqueue`，支持按 `run_id`、`proposal_id`、`status` 过滤。
+Self-evolution queue 的 policy 位于 `config/evolution/self-evolution-review-queue.json`；运行时 queue 持久化在 `.hermes/evolution-queue/`，写入采用临时文件加原子重命名。Gateway 启动或查询时从该目录恢复记录；同一 `proposal_id` 重复 enqueue 只更新时间，不创建重复记录。queue 查询入口为 `GET /orchestra/modules/self-evolution/enqueue`，支持按 `run_id`、`proposal_id`、`status` 过滤。
 
 protected target 审批流程：
 
@@ -596,7 +596,7 @@ proposal target 匹配 protected target
 → 缺失审批引用: closeout 返回 422，audit.jsonl 记录 protected_target_missing_approval
 ```
 
-L4 包括 k8s production、db schema、auth policy、IAM secrets、infrastructure、payment compliance、legal terms、data privacy。L3 包括 api contract、CI/CD pipeline、core business logic。任何从 queue 到 AGENTS.md/SOUL.md 的写入都必须经过 Gateway authority 校验，agent 直写会在后续 audit 中标记为 unauthorized apply。
+当前 protected target category 与 `gateway_closeout.py` 保持一致：L4 包括 `k8s_production`、`db_schema`、`auth_policy`、`iam_secrets`、`infrastructure`、`payment_compliance`、`legal_terms`、`data_privacy`；L3 包括 `api_contract`、`ci_cd_pipeline`、`core_business_logic`。任何从 queue 到 AGENTS.md/SOUL.md 的写入都必须经过 Gateway authority 校验，agent 直写会在后续 audit 中标记为 unauthorized apply。
 
 ---
 
@@ -900,10 +900,10 @@ scripts/bin/orch-schema-doc-sync --repo .
 Staging 严格回归使用隔离目录 `.hermes/staging/`：
 
 ```bash
-scripts/lib/staging\ Harness.sh
-scripts/lib/staging\ inject-data.sh
+bash scripts/lib/staging\ Harness.sh
+bash scripts/lib/staging\ inject-data.sh
 scripts/tests/test-e2e-strict-six-stage-flow.sh
-scripts/lib/staging\ teardown.sh
+bash scripts/lib/staging\ teardown.sh
 ```
 
 注入数据包含 `project-profile.yaml`、protected target mock task 和 conflict intake。回归必须产出 `run.json`、`tasks.json`、`events.jsonl`、`audit.jsonl`、`metrics_summary.json`，并通过 schema 与完整性断言。

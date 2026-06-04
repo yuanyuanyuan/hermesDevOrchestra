@@ -209,10 +209,20 @@ PYEOF
 HTTP_TMP="$(mktemp -d)"
 mkdir -p "$HTTP_TMP/scripts/lib"
 cp -r "$REPO_ROOT/scripts/lib/." "$HTTP_TMP/scripts/lib/"
+mkdir -p "$HTTP_TMP/config/decisions"
+cp "$REPO_ROOT/config/decisions/authority-matrix.json" "$HTTP_TMP/config/decisions/authority-matrix.json"
+cp "$REPO_ROOT/config/decisions/actor-secrets.json.example" "$HTTP_TMP/config/decisions/actor-secrets.json.example"
 rm -f "$HTTP_TMP/scripts/lib/gateway_intake.py"
 HTTP_STATE_ROOT="$(mktemp -d)"
 HTTP_AUDIT_ROOT="$(mktemp -d)"
-PORT=8765
+PORT="$(python3 - <<'PY'
+import socket
+
+with socket.socket() as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+PY
+)"
 STATE_ROOT="$HTTP_STATE_ROOT" AUDIT_ROOT="$HTTP_AUDIT_ROOT" python3 "$HTTP_TMP/scripts/lib/orch_gateway.py" --project-id test-proj --port "$PORT" >/tmp/orch-gateway-http.log 2>&1 &
 HTTP_PID=$!
 for _ in $(seq 1 30); do
