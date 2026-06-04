@@ -282,6 +282,9 @@ class GatewayStore:
     def tasks_path(self, run_id: str) -> Path:
         return self.run_dir(run_id) / "tasks.json"
 
+    def conflict_ledger_path(self, run_id: str) -> Path:
+        return self.run_dir(run_id) / "conflict-ledger.json"
+
     def worker_session_path(self, run_id: str, session_id: str) -> Path:
         return self.run_dir(run_id) / "worker-sessions" / f"{session_id}.json"
 
@@ -1426,6 +1429,7 @@ class GatewayApp:
         lineage_ref = self.store.state_ref(run_id, "lineage.json") if lineage_input else None
         source_run_id = lineage_input.get("source_run_id") if lineage_input else None
         completion_bundle_ref = self.store.state_ref(run_id, "requirement-completion-bundle.json")
+        conflict_ledger_ref = self.store.state_ref(run_id, "conflict-ledger.json")
         completion_bundle = self._requirement_completion_bundle(payload, "create_run", run_id)
         bundle_validation = _completion_bundle_validate(completion_bundle)
         if bundle_validation.get("status") == "blocked":
@@ -1446,6 +1450,7 @@ class GatewayApp:
             "intent": "create_run",
             "planned_side_effects": [
                 "write_requirement_completion_bundle",
+                "write_conflict_ledger",
                 "write_run_state",
                 "create_kanban_stage_tasks",
                 "write_task_projection",
@@ -1462,6 +1467,17 @@ class GatewayApp:
         write_json(command_path, command_record)
 
         write_json(self.store.run_dir(run_id) / "requirement-completion-bundle.json", completion_bundle)
+        write_json(
+            self.store.conflict_ledger_path(run_id),
+            {
+                "schema_version": SCHEMA_VERSION,
+                "artifact_type": "conflict_ledger",
+                "run_id": run_id,
+                "conflicts": [],
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
         stage_tasks = self.create_kanban_stage_tasks(run_id)
         mvp_artifact_refs = self.write_initial_mvp_artifacts(run_id, ticket, stage_tasks, command_id, now, completion_bundle_ref)
         tasks = {
@@ -1521,6 +1537,7 @@ class GatewayApp:
             "artifact_refs": {
                 "command_record": self.store.state_ref(run_id, f"commands/{command_id}.json"),
                 "task_projection": self.store.state_ref(run_id, "tasks.json"),
+                "conflict_ledger": conflict_ledger_ref,
                 **mvp_artifact_refs,
             },
         }
@@ -1720,6 +1737,7 @@ class GatewayApp:
         command_record["updated_at"] = utc_now()
         command_record["steps"] = [
             {"step_id": "write_requirement_completion_bundle", "target_authority": "state", "operation": "write", "status": "completed", "refs": [completion_bundle_ref]},
+            {"step_id": "write_conflict_ledger", "target_authority": "state", "operation": "write", "status": "completed", "refs": [conflict_ledger_ref]},
             {"step_id": "write_run_state", "target_authority": "state", "operation": "write", "status": "completed", "refs": [self.store.state_ref(run_id, "run.json")]},
             {"step_id": "write_task_projection", "target_authority": "state", "operation": "write", "status": "completed", "refs": [self.store.state_ref(run_id, "tasks.json")]},
             {"step_id": "write_mvp_acceptance_artifacts", "target_authority": "state", "operation": "write", "status": "completed", "refs": list(mvp_artifact_refs.values())},
@@ -4252,6 +4270,10 @@ class GatewayApp:
             failure_class = "evidence_missing"
             blocked_reason = "worker_output_evidence_missing"
         if not violations:
+            violations = self.open_high_conflict_ids(run_id)
+            failure_class = "open_conflict"
+            blocked_reason = "open_high_conflict"
+        if not violations:
             return self.accept_worker_output(
                 run_id,
                 task_id,
@@ -4392,6 +4414,8 @@ class GatewayApp:
             "projection_status": "inconsistent" if projection_issue_refs else "consistent",
             "projection_issue_refs": projection_issue_refs,
         }
+        if failure_class == "open_conflict":
+            response["open_conflict_refs"] = violations
         command_record["status"] = "completed"
         command_record["updated_at"] = utc_now()
         command_record["steps"] = [
@@ -4916,6 +4940,28 @@ class GatewayApp:
             if isinstance(item, dict) and item.get("task_id") == task_id:
                 return item
         return None
+
+    def open_high_conflict_ids(self, run_id: str) -> list[str]:
+        path = self.store.conflict_ledger_path(run_id)
+        if not path.exists():
+            return []
+        try:
+            ledger = read_json(path)
+        except (OSError, json.JSONDecodeError):
+            return []
+        conflicts = ledger.get("conflicts")
+        if not isinstance(conflicts, list):
+            return []
+        open_conflicts = []
+        for conflict in conflicts:
+            if not isinstance(conflict, dict):
+                continue
+            if conflict.get("resolution") != "open" or conflict.get("severity") != "high":
+                continue
+            conflict_id = conflict.get("conflict_id")
+            if isinstance(conflict_id, str) and conflict_id:
+                open_conflicts.append(conflict_id)
+        return open_conflicts
 
     def find_stage_task(self, tasks: dict[str, Any], stage: str) -> dict[str, Any] | None:
         items = tasks.get("tasks")

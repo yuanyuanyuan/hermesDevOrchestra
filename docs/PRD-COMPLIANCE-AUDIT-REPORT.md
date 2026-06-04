@@ -1,248 +1,279 @@
-# PRD 合规审计报告
+# PRD 合规审计报告 — Hermes Dev Orchestra
 
-> **生成时间**: 2026-06-03
-> **工作流**: prd-compliance-audit
-> **执行代理数**: 24
-> **总耗时**: ~31 分钟
-
----
-
-## 📋 执行摘要
-
-| 指标 | 结果 |
-|------|------|
-| **整体合规判定** | ❌ FAIL（固定门禁失败，Phase 1 应阻塞） |
-| **覆盖率** | 90.3%（历史运行值；修复后 `not_found` 会计入分母，需重跑确认） |
-| **验证维度** | 18/18 全部完成 |
-| **固定门禁维度** | 5/7 达到阈值，2/7 未达标 |
-| **文档审计** | 工作流称 40 份文档；本报告仅列样例，需补完整清单 |
-| **清理建议** | 1 项需评估；原低风险删除建议已撤回 |
-| **用户手册** | ⚠️ 已生成（旧流程产物；P0/P1 修复后需重跑生成） |
-
-> **口径说明**：本次核查后，`Conflict Ledger` 与 `Override 留痕与审批` 被纳入固定门禁。即使历史覆盖率达到 85% 阈值，只要固定门禁未达标，整体判定仍应为 `FAIL`，并阻塞 Phase 2 / 用户手册生成。
+**审计日期**: 2026-06-04
+**审计依据**: `docs/prd_by_kimi.md` (v1.3) + `docs/user-flow-guide_by_kimi.md`
+**审计范围**: 全部代码实现（scripts/lib/、config/schemas/、config/debate/、scripts/bin/、scripts/tests/）
+**审计方法**: 37 项结构化 checklist，逐条对照源代码验证
 
 ---
 
-## 🔍 Phase 1: 合规验证
+## 📊 总体评估
 
-### 固定门禁维度（5/7 达到阈值，2 项失败）
+| 指标 | 值 |
+|------|-----|
+| **总体得分** | **5.3 / 10** |
+| 审计项数 | 36 / 37（1项子代理输出异常） |
+| ✅ 完全实现 | 8 项 (22%) |
+| ⚠️ 部分实现 | 22 项 (61%) |
+| ❌ 未实现 | 6 项 (17%) |
 
-| 维度 | 得分 | 通过/失败 | 状态 |
-|------|------|-----------|------|
-| 六阶段 Run 状态机与阶段出口门禁 | 100% | 12/12 | ✅ PASS |
-| Gateway 证据门控 | 90% | 9/10 | ✅ PASS（仍需补证据链追踪） |
-| Conflict Ledger 冲突数据结构 | 14% | 3/7 | ❌ FAIL（固定门禁失败） |
-| Override 留痕与审批 | 67% | 4/6 | ❌ FAIL（固定门禁失败） |
-| 16支canonical辩论团队注册表 | 85% | 6/7 | ✅ PASS（阈值通过） |
-| 8种canonical辩论模式注册表 | 100% | 6/6 | ✅ PASS |
-| 三层通道分级与路由 | 100% | 9/9 | ✅ PASS |
-
-### 全部维度详细得分
-
-| 维度 | 得分 | 通过 | 失败 | 部分 | 问题 |
-|------|------|------|------|------|------|
-| 六阶段 Run 状态机与阶段出口门禁 | 100% | 12 | 0 | 0 | - |
-| 0阶需求补全与项目接入 | 94% | 7 | 0 | 1 | - |
-| 一阶方向辩论与二阶方案辩论 | 95% | 9 | 0 | 1 | - |
-| 三阶具体执行 | 100% | 7 | 0 | 0 | - |
-| 四阶改进实现 | 100% | 7 | 0 | 0 | - |
-| 五阶全局评估 | 100% | 7 | 0 | 0 | - |
-| 六阶持续改进 | 100% | 9 | 0 | 0 | - |
-| Gateway 证据门控 | 90% | 9 | 1 | 0 | 缺少证据链路追踪机制 |
-| **Conflict Ledger 冲突数据结构** | **14%** | 3 | 4 | 0 | **需重点修复** |
-| **Override 留痕与审批** | **67%** | 4 | 2 | 0 | **需完善** |
-| 快速通道自动合并安全 | 89% | 8 | 1 | 0 | 缺少合并失败降级流程 |
-| Worker 执行模型 | 90% | 9 | 1 | 0 | 缺少 model_source 验证 |
-| 16支canonical辩论团队注册表 | 85% | 6 | 1 | 0 | 扩展团队规则实现差异 |
-| 8种canonical辩论模式注册表 | 100% | 6 | 0 | 0 | - |
-| 三层通道分级与路由 | 100% | 9 | 0 | 0 | - |
-| 成功指标采集管道 | 100% | 8 | 0 | 0 | - |
-| 项目骨架生成与接入配置 | 75% | 4 | 0 | 2 | - |
-| 变更日志与自演进队列 | 100% | 7 | 0 | 0 | - |
-
-> **统计口径修复**：workflow 已修正为把 `not_found` 检查点计入覆盖率分母，并输出 `not_found_count`。当前表格来自历史运行输出，未单独拆分 `not_found` 数量；重跑审计后应以新口径结果为准。
-
-### ⚠️ 需要关注的问题
-
-#### 1. Conflict Ledger（14%）— 严重
-
-**失败检查点**：
-
-- **cl_01**: PRD 要求 ConflictLedger 记录包含 11 个字段（conflict_id, run_id, stage, type, sources, severity, resolution, resolver, resolution_evidence, created_at, resolved_at）。当前代码中不存在 ConflictLedger 类或任何包含 conflict_id 的数据结构。
-
-- **cl_02**: PRD 要求冲突类型枚举：intent_vs_inference, fact_vs_assumption, cross_team_conflict, dependency_conflict, user_override。实际 schema 中定义的类型为 semantic/version/resource/permission，与 PRD 要求完全不匹配。
-
-- **cl_03**: PRD 要求 Gateway 在阶段推进前查询 open 状态冲突，存在 severity=high 且未解决时禁止推进。当前代码无通用的 open conflict 查询机制，无 severity=high 阻塞推进逻辑。
-
-- **cl_04**: PRD 要求六阶审计读取全部冲突记录并评估 resolution 合理性。gateway_closeout.py 的 closeout_audit_checklist 完全不涉及冲突记录读取或 resolution 评估。
-
-**修复建议**：
-1. 实现 ConflictLedger 数据结构（11 个字段）
-2. 定义 PRD 要求的 5 种冲突类型枚举
-3. 在阶段推进前添加冲突查询和阻塞逻辑
-4. 在六阶审计中添加冲突记录读取和评估
-
-#### 2. Override 留痕（67%）— 中等
-
-**失败检查点**：
-
-- **or_04**: PRD §4.1 要求的 override_id, run_id, correction_rounds, override_category, risk_level, approver_ref, evidence_refs, status 等字段均未实现。record 字典结构与 PRD 规范存在显著差距。
-
-- **or_05**: Gateway 未暴露按 risk_level 和 status=recorded 筛选的 Override 待审批列表，也未实现批量审批接口。审批工作流完全缺失。
-
-**修复建议**：
-1. 扩展 Override 记录结构，添加缺失字段
-2. 实现待审批列表查询接口
-3. 实现批量审批工作流
-
-#### 3. 其他问题
-
-| 维度 | 问题描述 |
-|------|----------|
-| Gateway 证据门控 | 缺少证据链路追踪机制（evidence_chain 数据结构、签名验证） |
-| 快速通道自动合并 | 缺少合并失败降级流程（保留分支 + 三选项通知 + blocked 状态） |
-| Worker 执行模型 | 缺少 model_source 字段验证（review/audit/cross_check 不能使用相同模型） |
-| 辩论团队注册表 | 扩展团队规则实现与 PRD 规范有差异 |
+**结论**: 项目在辩论系统配置、信息溯源、成功指标管道等维度实现较好，但在状态机完整性、冲突管理、通道分级集成、回滚策略等核心编排逻辑上存在显著缺口。
 
 ---
 
-## 📚 Phase 2: 文档审计
-
-### 文档清单（工作流称 40 份，本报告仅列样例）
-
-| 文档 | 状态 | 原因 |
-|------|------|------|
-| prd_by_kimi.md | ✅ 保持 | PRD v1.3，所有引用路径存在 |
-| ARCHITECTURE.md | ✅ 保持 | 所有代码路径已验证 |
-| CONFIGURATION.md | ✅ 保持 | 配置文件格式和路径正确 |
-| COVERAGE-MATRIX.md | ✅ 保持 | MVP 覆盖矩阵准确 |
-| DEVELOPMENT.md | ✅ 保持 | 开发指南路径已验证 |
-| FULL-CAPABILITY-AUTHORITY-MATRIX.md | ✅ 保持 | 能力矩阵与 PRD 对齐 |
-| FULL-COVERAGE-MATRIX.md | ✅ 保持 | 全面就绪矩阵准确 |
-| gateway-integration-architecture.md | ✅ 保持 | Gateway 集成文档正确 |
-| GETTING-STARTED.md | ✅ 保持 | CLI 命令已验证 |
-| ... | ⚠️ 待补证据 | 其余文档未在本报告展开，需从工作流输出补完整清单后才能复核 |
-
-### 清理建议（当前仅保留 1 项需评估）
-
-#### 🟡 中风险（1 项）
-
-| 文件 | 原因 | 建议 |
-|------|------|------|
-| `config/rules.json` | 文档中被描述为规则数据，但当前运行时代码未直接读取；`orch-init` 生成的是 `coding-rules.json`（不同文件） | 不直接删除；先决定接入运行时，或把文档改为“非运行时参考文件” |
-
-
----
-
-
-
----
-
-## 🎯 后续行动建议
-
-### 优先级 P0（必须修复）
-
-1. **实现 Conflict Ledger 数据结构**
-   - 创建 ConflictLedger 类（11 个字段）
-   - 定义 5 种冲突类型枚举
-   - 实现阶段推进前的冲突查询和阻塞逻辑
-   - 在六阶审计中添加冲突记录评估
-
-### 优先级 P1（建议修复）
-
-2. **完善 Override 留痕机制**
-   - 扩展 Override 记录结构
-   - 实现待审批列表查询接口
-   - 实现批量审批工作流
-
-3. **补充 Gateway 证据链路追踪**
-   - 实现 evidence_chain 数据结构
-   - 添加签名验证和完整性校验
-
-4. **实现自动合并失败降级流程**
-   - 保留分支 + 三选项通知 + blocked 状态
-
-### 优先级 P2（可选优化）
-
-5. **重新评估低风险清理项**
-   - 不再建议直接删除 archive、alias mapping、POC 或临时文件
-   - 先补完整依赖/引用证据，再决定是否归档或删除
-   - 评估 `config/rules.json` 是接入运行时还是降级为参考文档
-
-6. **完善 Worker 执行模型**
-   - 添加 model_source 字段验证
-
-7. **统一辩论团队扩展规则**
-   - 对齐实现与 PRD 规范的差异
-
----
-
-## 📊 统计数据
-
-### 验证代理执行情况
+## 📈 维度得分概览
 
 ```
-验证代理返回 - phase0_intake: object
-验证代理返回 - six_stage_state_machine_and_gates: object
-验证代理返回 - phase6_continuous_improvement: object
-验证代理返回 - phase12_debate: object
-验证代理返回 - phase5_global_evaluation: object
-验证代理返回 - phase3_implementation: object
-验证代理返回 - phase4_improvement: object
-验证代理返回 - conflict_ledger: object
-验证代理返回 - evidence_gate: object
-验证代理返回 - auto_merge_safety: object
-验证代理返回 - debate_teams_registry: object
-验证代理返回 - debate_modes_registry: object
-验证代理返回 - worker_execution_model: object
-验证代理返回 - success_metrics_pipeline: object
-验证代理返回 - channel_routing: object
-验证代理返回 - change_logging_and_evolution: object
-验证代理返回 - override_recording: object
-验证代理返回 - project_scaffolding: object
-
-验证完成：18/18 维度已验证
-```
-
-### verifyResults 数组状态
-
-```
-verifyResults[0]: object, dimension_id=six_stage_state_machine_and_gates, score=1
-verifyResults[1]: object, dimension_id=phase0_intake, score=0.94
-verifyResults[2]: object, dimension_id=phase12_debate, score=0.95
-verifyResults[3]: object, dimension_id=phase3_implementation, score=1
-verifyResults[4]: object, dimension_id=phase4_improvement, score=1
-verifyResults[5]: object, dimension_id=phase5_global_evaluation, score=1
-verifyResults[6]: object, dimension_id=phase6_continuous_improvement, score=1
-verifyResults[7]: object, dimension_id=evidence_gate, score=0.9
-verifyResults[8]: object, dimension_id=conflict_ledger, score=0.14
-verifyResults[9]: object, dimension_id=override_recording, score=0.67
-verifyResults[10]: object, dimension_id=auto_merge_safety, score=0.89
-verifyResults[11]: object, dimension_id=worker_execution_model, score=0.9
-verifyResults[12]: object, dimension_id=debate_teams_registry, score=0.85
-verifyResults[13]: object, dimension_id=debate_modes_registry, score=1
-verifyResults[14]: object, dimension_id=channel_routing, score=1
-verifyResults[15]: object, dimension_id=success_metrics_pipeline, score=1
-verifyResults[16]: object, dimension_id=project_scaffolding, score=0.75
-verifyResults[17]: object, dimension_id=change_logging_and_evolution, score=1
+维度              得分        状态分布
+──────────────────────────────────────────────
+工具开发         ██████████ 10.0  (1✅ 0⚠️ 0❌)
+成功指标         █████████░  8.5  (1✅ 1⚠️ 0❌)
+辩论系统         ███████░░░  7.3  (3✅ 0⚠️ 1❌)
+需求补全         ███████░░░  6.7  (1✅ 2⚠️ 0❌)
+持续改进         ███████░░░  6.7  (1✅ 2⚠️ 0❌)
+Worker 执行     ███████░░░  6.5  (0✅ 2⚠️ 0❌)
+状态机           ██████░░░░  6.0  (0✅ 2⚠️ 0❌)
+改进闭环         ██████░░░░  5.7  (1✅ 2⚠️ 0❌)
+执行心跳         █████░░░░░  5.0  (0✅ 1⚠️ 0❌)
+全局评估         █████░░░░░  4.7  (0✅ 2⚠️ 1❌)
+DAG 管理         ████░░░░░░  4.0  (0✅ 2⚠️ 0❌)
+Schema           ████░░░░░░  4.0  (0✅ 1⚠️ 0❌)
+用户纠正         ███░░░░░░░  3.0  (0✅ 2⚠️ 0❌)
+通道分级         ███░░░░░░░  2.6  (0✅ 3⚠️ 2❌)
+冲突管理         █░░░░░░░░░  1.0  (0✅ 0⚠️ 1❌)
+回滚策略         █░░░░░░░░░  1.0  (0✅ 0⚠️ 1❌)
 ```
 
 ---
 
-## 📝 附录
+## 🔴 高危缺口（得分 < 5，需优先修复）
 
-### 相关文件
+### 1. 冲突管理 (1.0/10) — CON-02
 
-- PRD 文档：`/data/hermes/docs/prd_by_kimi.md`
-- 用户流程指南：`/data/hermes/docs/user-flow-guide_by_kimi.md`
-- 用户手册：`/data/hermes/docs/USER-MANUAL.md`
-- 本报告：`/data/hermes/docs/PRD-COMPLIANCE-AUDIT-REPORT.md`
+**PRD 要求**: Conflict Ledger 数据结构 + Gateway 推进前查询 open 冲突 + high severity 阻塞推进
 
-### 工作流配置
+**现状**: 完全未实现。
 
-- 工作流脚本：`/data/hermes/.claude/workflows/prd-compliance-audit.js`
-- 执行日志：`/tmp/claude-1000/-data-hermes/1a596311-0c0a-4154-80bc-83fd9a30e024/tasks/w3cx3wpgb.output`
+**关键证据**:
+- `orch_gateway.py:4875-4894` — `advance_run_stage_projection()` 直接推进，无冲突查询
+- `orch_gateway.py:4436-4437` — `build_parallel_worker_artifacts()` 返回 None
+- `orchestra.full.schema.json:497-510` — severity 枚举为 `blocking/warning/info`，与 PRD 的 `high/medium/low` 不一致
+- 全文无 `conflict_ledger`、`conflict_id`、`resolution=open` 等字段
+
+**风险**: 阶段推进可在高严重性冲突存在时不受阻拦地执行，六阶审计无法读取冲突记录。
+
+**建议**: 新增 Conflict Ledger 数据结构（PRD §3.5 完整字段），在 `advance_run_stage_projection()` 前增加冲突门控。
 
 ---
 
-**报告生成完成** ✅
+### 2. 回滚策略 (1.0/10) — RB-01
+
+**PRD 要求**: 按阶段实现不同回滚范围（丢弃补全包、丢弃辩论报告、git revert、回滚到基线）
+
+**现状**: 完全未实现。仅有 `rollback_checkpoints` 字段引用，无实际回滚执行逻辑。
+
+**建议**: 至少实现 implementation 和 improvement 阶段的 git revert 回滚能力。
+
+---
+
+### 3. 通道分级 (2.6/10) — 5 项审计
+
+**最大缺口**:
+
+| ID | 问题 | 得分 |
+|----|------|------|
+| CH-01 | channel_router 分类结果未传递给 run 创建和阶段推进逻辑，快速/轻量通道实际走全量六阶段 | 4 |
+| CH-02 | 快速通道缺少 PRD §7.2 要求的极简辩论确认（1-2 支团队，1 轮，30 秒） | 2 |
+| CH-03 | 安全逃逸规则完全缺失（敏感词强制升级标准通道） | 1 |
+| CH-04 | 自动合并功能部分实现 | 5 |
+| CH-05 | Rollout Gate 部分实现 | 5 |
+
+**关键发现**:
+- `slo-policy.json` 中 `quick.debate_rounds` 配置为 0，与 PRD 要求的 1 轮辩论直接矛盾
+- `channel_router.py` 的 `classify()` 方法完全缺少 diff 内容感知能力
+- `evidence_scanner.py` 的敏感词列表仅 3 个（password=, secret=, api_key），PRD 要求 6+ 个
+
+---
+
+### 4. 同源隔离检测 (1.0/10) — DEB-04
+
+**PRD 要求**: review/audit/cross_check worker 的 model_source 不得与上层裁决者同源
+
+**现状**: 完全未实现。现有的 `check_source_isolation()` 检测的是任务指纹碰撞，与 model provider 隔离是完全不同的机制。
+
+**关键证据**:
+- `worker_session.py` 的 `create_session()` 无 `model_source` 参数
+- `orchestra.full.schema.json` 的 `worker_session_record` 无 `model_source` 字段
+- 全文搜索 `source_isolation_violation` — 无此错误码
+
+---
+
+### 5. 用户纠正 (3.0/10) — 2 项审计
+
+| ID | 问题 | 得分 |
+|----|------|------|
+| COR-01 | `correction_gate.py` 实现了两轮纠正框架，但缺少渐进式 UX（折叠/展开）、30秒超时、L3/L4 审批触发 | 3 |
+| COR-02 | Override 记录格式部分实现，缺少 `correction_rounds` 详情和 `approver_ref` | 3 |
+
+---
+
+### 6. 全局评估 (4.7/10) — 3 项审计
+
+| ID | 问题 | 得分 |
+|----|------|------|
+| EVAL-01 | 8 维评估框架存在，但维度名称与 PRD 不一致，缺少"一票否决"逻辑 | 5 |
+| EVAL-02 | 残余风险阈值逻辑完全缺失 | 1 |
+| EVAL-03 | 通知级别配置部分实现 | 8 |
+
+---
+
+## 🟡 中等缺口（得分 5-7，需改进）
+
+### 7. 状态机 (6.0/10)
+
+**已实现**: 六阶段枚举完整 (`direction_debate` → `continuous_improvement`)
+
+**缺失**:
+- 缺少 `created`、`intake_complete`、`closed` 生命周期状态
+- 缺少 `paused`、`cancelled`、`rollback_requested` 异常状态
+- `advance_run_stage_projection()` 仅做线性推进，未校验 PRD §3.6 条件表
+- `stop_run()` 使用 `stopped` 而非 `cancelled`，无 resume 能力
+
+### 8. 需求补全 (6.7/10)
+
+**已实现**: `project_discovery.py` 技术栈探测、`gateway_projection.py` 补全包构建、信息溯源字段
+
+**缺失**:
+- CI/CD 配置检测完全缺失
+- `prompt_envelope` 仅含 4 项（PRD 要求 8 项）
+- 缺少独立的"已验证事实"和"未验证假设"分节
+
+### 9. Worker 执行 (6.5/10)
+
+**已实现**: Worker 生命周期管理、心跳处理、僵尸检测
+
+**缺失**:
+- write_scope 两阶段校验未实现
+- DAG 循环依赖检测返回 None
+
+### 10. 改进闭环 (5.7/10)
+
+**已实现**: A-E 分类框架、D 类回归循环计数
+
+**缺失**:
+- E 类 mini-debate 未集成真实辩论引擎
+- 回归预算（3 次上限）的边界测试不足
+
+### 11. 执行心跳 (5.0/10)
+
+**已实现**: SSE 推送、30 秒间隔心跳
+
+**缺失**:
+- 断线重连恢复（5 秒内获取最近 3 条历史心跳）未实现
+- 快照查询接口未实现
+
+---
+
+## 🟢 良好实现（得分 ≥ 7）
+
+### 12. 辩论系统 (7.3/10)
+
+| ID | 项目 | 得分 |
+|----|------|------|
+| DEB-01 | 16 支 canonical 团队注册 | **10** ✅ |
+| DEB-02 | 8 种 canonical 模式 | **9** ✅ |
+| DEB-03 | dynamic_assembly + adversarial_debate | **9** ✅ |
+
+`config/debate/full/teams.json` 和 `config/debate/full/modes.json` 与 PRD §6.1/§6.3 完全对齐。
+
+### 13. 成功指标 (8.5/10)
+
+- `success_metrics.py` 实现了完整的 NDJSON 事件管道
+- `orch-audit` 和 `orch-verify` 脚本存在且功能正确
+
+### 14. 信息溯源 (9.0/10) — INT-03
+
+- `gateway_projection.py` 为所有顶层区块注入 `source_input_hash` 和 `projection_timestamp`
+- 关键结论附带 `source/confidence/verification_method` 三元组
+
+---
+
+## 📋 完整审计结果明细
+
+| ID | 维度 | 需求 | 状态 | 得分 |
+|----|------|------|------|------|
+| SM-01 | 状态机 | 六阶段状态机 + 生命周期状态 | ⚠️ 部分实现 | 5 |
+| SM-02 | 状态机 | 证据完整性校验 | ⚠️ 部分实现 | 7 |
+| INT-01 | 需求补全 | 新项目接入探测 | ⚠️ 部分实现 | 6 |
+| INT-02 | 需求补全 | 0阶输出完整性 | ⚠️ 部分实现 | 5 |
+| INT-03 | 需求补全 | 信息溯源字段 | ✅ 完全实现 | 9 |
+| DEB-01 | 辩论系统 | 16 支 canonical 团队 | ✅ 完全实现 | 10 |
+| DEB-02 | 辩论系统 | 8 种 canonical 模式 | ✅ 完全实现 | 9 |
+| DEB-03 | 辩论系统 | dynamic_assembly + adversarial_debate | ✅ 完全实现 | 9 |
+| DEB-04 | 辩论系统 | 同源隔离检测 | ❌ 未实现 | 1 |
+| CON-02 | 冲突管理 | Conflict Ledger + 推进门控 | ❌ 未实现 | 1 |
+| CH-01 | 通道分级 | 三层通道 + 阶段跳过 | ⚠️ 部分实现 | 4 |
+| CH-02 | 通道分级 | 快速通道辩论确认 | ❌ 未实现 | 2 |
+| CH-03 | 通道分级 | 安全逃逸规则 | ❌ 未实现 | 1 |
+| CH-04 | 通道分级 | 自动合并 + 降级 | ⚠️ 部分实现 | 5 |
+| CH-05 | 通道分级 | Rollout Gate | ⚠️ 部分实现 | 5 |
+| WRK-01 | Worker | 生命周期管理 | ⚠️ 部分实现 | 6 |
+| WRK-02 | Worker | 写入范围校验 | ⚠️ 部分实现 | 7 |
+| HB-01 | 执行心跳 | SSE + 断线恢复 | ⚠️ 部分实现 | 5 |
+| IMP-01 | 改进闭环 | A-E 分类 | ⚠️ 部分实现 | 6 |
+| IMP-02 | 改进闭环 | D 类回归循环 | ✅ 完全实现 | 7 |
+| IMP-03 | 改进闭环 | E 类 mini-debate | ⚠️ 部分实现 | 4 |
+| EVAL-01 | 全局评估 | 8 维评估 | ⚠️ 部分实现 | 5 |
+| EVAL-02 | 全局评估 | 残余风险阈值 | ❌ 未实现 | 1 |
+| EVAL-03 | 全局评估 | 通知级别配置 | ✅ 完全实现 | 8 |
+| CI-01 | 持续改进 | 审计输入完整性校验 | ⚠️ 部分实现 | 6 |
+| CI-02 | 持续改进 | Self-evolution Queue | ✅ 完全实现 | 7 |
+| CI-03 | 持续改进 | Protected Target 审批 | ⚠️ 部分实现 | 7 |
+| COR-01 | 用户纠正 | 两轮渐进式纠正 | ⚠️ 部分实现 | 3 |
+| COR-02 | 用户纠正 | Override 记录格式 | ⚠️ 部分实现 | 3 |
+| MET-01 | 成功指标 | 事件采集管道 | ⚠️ 部分实现 | 7 |
+| MET-02 | 成功指标 | orch-audit / orch-verify | ✅ 完全实现 | 10 |
+| SCH-01 | Schema | schema.json 完整性 | ⚠️ 部分实现 | 4 |
+| DAG-01 | DAG 管理 | DAG 数据格式 | ⚠️ 部分实现 | 5 |
+| DAG-02 | DAG 管理 | 循环依赖检测 | ⚠️ 部分实现 | 3 |
+| RB-01 | 回滚策略 | 多级回滚策略 | ❌ 未实现 | 1 |
+
+---
+
+## 🎯 优先修复建议
+
+### P0 — 阻塞级（影响系统核心正确性）
+
+1. **Conflict Ledger 实现** — 新增数据结构 + 推进门控 + severity 统一
+2. **回滚策略实现** — 至少覆盖 implementation/improvement 阶段的 git revert
+3. **通道分级集成** — 将 channel_router 分类结果传递给 run 创建和阶段推进
+4. **安全逃逸规则** — 在 channel_router 中增加敏感词检测和强制升级
+
+### P1 — 高优（影响功能完整性）
+
+5. **状态机补全** — 增加 created/intake_complete/paused/cancelled/rollback_requested 状态
+6. **同源隔离检测** — 实现 model_source 校验和 source_isolation_violation
+7. **快速通道辩论确认** — 连接 channel_router 与 debate_engine
+8. **全局评估残余风险阈值** — 实现高/中/低风险量化判定
+
+### P2 — 中优（影响质量保障）
+
+9. **证据校验统一** — worker_response 路径补齐 review_evidence/commit_evidence 校验
+10. **CI/CD 配置检测** — 在 project_discovery.py 中新增 detect_ci_config()
+11. **prompt_envelope 扩展** — 补齐 PRD §5.4 要求的 8 项子内容
+12. **E 类 mini-debate 集成** — 连接真实辩论引擎
+
+---
+
+## 📎 附录
+
+### 审计脚本
+
+审计 workflow 脚本位于: `.claude/workflows/prd-compliance-audit.js`
+
+### 数据来源
+
+- PRD: `docs/prd_by_kimi.md` (v1.3, 2026-06-03)
+- 用户流程: `docs/user-flow-guide_by_kimi.md`
+- 代码: `scripts/lib/orch_gateway.py` (303KB 核心)、`config/schemas/orchestra.full.schema.json` (95KB)
+- 配置: `config/debate/full/teams.json`、`config/debate/full/modes.json`、`config/performance/slo-policy.json`
