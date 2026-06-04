@@ -4,6 +4,12 @@
   "title": "Hermes Orchestra Full Schemas",
   "description": "Full-system target schema package. Runs in parallel with the MVP/current-runtime schema until full implementation cutover.",
   "type": "object",
+  "allOf": [
+    {
+      "if": {"properties": {"artifact_type": {"const": "conflict_ledger"}}},
+      "then": {"$ref": "#/$defs/conflict_ledger"}
+    }
+  ],
   "$defs": {
     "schema_version": {
       "const": "orchestra.full.v1"

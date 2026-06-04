@@ -243,4 +243,113 @@ assert len(cl_check["blockers"]) > 0, "should have blockers"
 print("Test 4 PASSED: closeout_audit_checklist includes conflict_ledger check")
 PY
 
+# ========================================================================
+# Test 5: Schema root dispatch validates conflict ledger
+# ========================================================================
+python3 - "$REPO_ROOT" <<'PY'
+import json
+import pathlib
+import sys
+
+repo_root = sys.argv[1]
+schema_path = pathlib.Path(repo_root) / "config" / "schemas" / "orchestra.full.schema.json"
+schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+import jsonschema
+validator = jsonschema.Draft202012Validator(schema)
+
+# Valid conflict ledger should pass
+valid = {"artifact_type": "conflict_ledger", "schema_version": "orchestra.full.v1", "run_id": "r1", "conflicts": []}
+errors = list(validator.iter_errors(valid))
+assert len(errors) == 0, f"valid ledger should pass: {errors}"
+
+# Malformed ledger missing run_id should fail
+bad = {"artifact_type": "conflict_ledger", "schema_version": "orchestra.full.v1", "conflicts": []}
+errors = list(validator.iter_errors(bad))
+assert any("run_id" in str(e.validator_value) or "required" in e.validator for e in errors), f"missing run_id should fail: {errors}"
+
+# Invalid conflict record should fail
+bad_record = {"artifact_type": "conflict_ledger", "schema_version": "orchestra.full.v1", "run_id": "r1", "conflicts": [{"bad": True}]}
+errors = list(validator.iter_errors(bad_record))
+assert len(errors) > 0, "invalid record should fail"
+
+print("Test 5 PASSED: schema root dispatches and rejects malformed conflict ledgers")
+PY
+
+# ========================================================================
+# Test 6: append_conflict populates run_id on empty ledger
+# ========================================================================
+python3 - "$REPO_ROOT" "$STATE_ROOT" <<'PY'
+import pathlib
+import sys
+
+repo_root, state_root = sys.argv[1:]
+sys.path.insert(0, str(pathlib.Path(repo_root) / "scripts" / "lib"))
+
+from gateway_closeout import append_conflict, load_conflict_ledger
+
+tmp = pathlib.Path(state_root) / "test-runid" / "runs" / "run-6"
+tmp.mkdir(parents=True, exist_ok=True)
+ledger_path = tmp / "conflict-ledger.json"
+
+conflict = {
+    "conflict_id": "c-runid",
+    "run_id": "run-6",
+    "stage": "direction_debate",
+    "type": "test",
+    "severity": "medium",
+    "resolution": "open",
+    "created_at": "2026-06-04T00:00:00Z",
+}
+ledger = append_conflict(ledger_path, conflict)
+assert ledger["run_id"] == "run-6", f"run_id should be populated from conflict: {ledger['run_id']}"
+
+# Reload and verify
+reloaded = load_conflict_ledger(ledger_path)
+assert reloaded["run_id"] == "run-6", f"persisted run_id mismatch: {reloaded['run_id']}"
+
+print("Test 6 PASSED: append_conflict populates run_id")
+PY
+
+# ========================================================================
+# Test 7: conflict_counts and enrich_closeout_report_conflict_counts
+# ========================================================================
+python3 - "$REPO_ROOT" "$STATE_ROOT" <<'PY'
+import pathlib
+import sys
+
+repo_root, state_root = sys.argv[1:]
+sys.path.insert(0, str(pathlib.Path(repo_root) / "scripts" / "lib"))
+
+from gateway_closeout import (
+    append_conflict,
+    conflict_counts,
+    enrich_closeout_report_conflict_counts,
+    load_conflict_ledger,
+)
+
+tmp = pathlib.Path(state_root) / "test-counts" / "runs" / "run-7"
+tmp.mkdir(parents=True, exist_ok=True)
+ledger_path = tmp / "conflict-ledger.json"
+
+append_conflict(ledger_path, {"conflict_id": "c1", "run_id": "run-7", "stage": "direction_debate", "type": "test", "severity": "high", "resolution": "open", "created_at": "2026-06-04T00:00:00Z"})
+append_conflict(ledger_path, {"conflict_id": "c2", "run_id": "run-7", "stage": "direction_debate", "type": "test", "severity": "medium", "resolution": "open", "created_at": "2026-06-04T00:00:00Z"})
+append_conflict(ledger_path, {"conflict_id": "c3", "run_id": "run-7", "stage": "direction_debate", "type": "test", "severity": "high", "resolution": "auto_resolved", "created_at": "2026-06-04T00:00:00Z"})
+
+ledger = load_conflict_ledger(ledger_path)
+counts = conflict_counts(ledger)
+assert counts["total"] == 3
+assert counts["by_severity"]["high"] == 2
+assert counts["by_severity"]["medium"] == 1
+assert counts["by_resolution"]["open"] == 2
+assert counts["by_resolution"]["auto_resolved"] == 1
+
+closeout_report = {}
+enriched = enrich_closeout_report_conflict_counts(closeout_report, ledger)
+assert enriched["conflict_counts"]["total"] == 3
+assert enriched["conflict_counts"]["by_severity"]["high"] == 2
+
+print("Test 7 PASSED: conflict_counts and enrichment work correctly")
+PY
+
 test_done

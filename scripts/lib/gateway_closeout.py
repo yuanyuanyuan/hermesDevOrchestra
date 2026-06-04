@@ -57,6 +57,8 @@ def append_conflict(ledger_path: Path, conflict: dict[str, Any]) -> dict[str, An
     ledger["conflicts"] = conflicts
     ledger["schema_version"] = FULL_SCHEMA_VERSION
     ledger["artifact_type"] = "conflict_ledger"
+    if not ledger.get("run_id"):
+        ledger["run_id"] = conflict.get("run_id", "")
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     ledger_path.write_text(json.dumps(ledger, indent=2, ensure_ascii=False), encoding="utf-8")
     return ledger
@@ -121,6 +123,33 @@ def resolve_conflict(ledger_path: Path, conflict_id: str, resolution: str, resol
         raise ValueError(f"conflict_id {conflict_id!r} not found in ledger")
     ledger_path.write_text(json.dumps(ledger, indent=2, ensure_ascii=False), encoding="utf-8")
     return ledger
+
+
+def conflict_counts(ledger: dict[str, Any]) -> dict[str, Any]:
+    """Return conflict counts aggregated by severity and resolution."""
+    conflicts = ledger.get("conflicts")
+    if not isinstance(conflicts, list):
+        return {"by_severity": {}, "by_resolution": {}, "total": 0}
+    by_severity: dict[str, int] = {}
+    by_resolution: dict[str, int] = {}
+    total = 0
+    for c in conflicts:
+        if not isinstance(c, dict):
+            continue
+        total += 1
+        severity = c.get("severity")
+        if isinstance(severity, str):
+            by_severity[severity] = by_severity.get(severity, 0) + 1
+        resolution = c.get("resolution")
+        if isinstance(resolution, str):
+            by_resolution[resolution] = by_resolution.get(resolution, 0) + 1
+    return {"by_severity": by_severity, "by_resolution": by_resolution, "total": total}
+
+
+def enrich_closeout_report_conflict_counts(closeout_report: dict[str, Any], ledger: dict[str, Any]) -> dict[str, Any]:
+    """Inject conflict counts into closeout_report and return it."""
+    closeout_report["conflict_counts"] = conflict_counts(ledger)
+    return closeout_report
 
 
 def closeout_conflict_blockers(ledger: dict[str, Any]) -> list[str]:

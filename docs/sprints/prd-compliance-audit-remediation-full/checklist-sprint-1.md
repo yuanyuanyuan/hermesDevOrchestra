@@ -33,3 +33,11 @@
 - [ ] 合并到 main
 
 [2026-06-04] Verified by Codex — all tests passed. PR #33 created.
+
+[2026-06-04] Review Response — PR #33:
+- Fixed schema root dispatch for `conflict_ledger` in `orchestra.full.schema.json`.
+- Updated `schema.md` to reflect `orchestra.full.v1` and correct resolution enum.
+- Aligned initial `conflict-ledger.json` schema version in `orch_gateway.py` with full schema.
+- Fixed `append_conflict()` to populate `run_id` from conflict record when ledger is created.
+- Added `conflict_counts()` and `enrich_closeout_report_conflict_counts()` to closeout pipeline.
+- Added tests 5–7: schema root negative validation, run_id population, conflict counts enrichment.
