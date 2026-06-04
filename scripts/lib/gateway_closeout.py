@@ -6,7 +6,6 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-import uuid
 
 
 FULL_SCHEMA_VERSION = "orchestra.full.v1"
@@ -160,7 +159,7 @@ def resolve_conflict(ledger_path: Path, conflict_id: str, resolution: str, resol
             c["resolution"] = resolution
             c["resolver"] = resolver
             c["resolution_evidence"] = resolution_evidence
-            c["resolved_at"] = now
+            c["resolved_at"] = None if resolution == "open" else now
             found = True
             break
     if not found:

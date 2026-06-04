@@ -1,6 +1,6 @@
 # PRD 合规审计报告 — Hermes Dev Orchestra
 
-**审计日期**: 2026-06-04
+**审计日期**: 2026-06-05
 **审计依据**: `docs/prd_by_kimi.md` (v1.3) + `docs/user-flow-guide_by_kimi.md`
 **审计范围**: 全部代码实现（scripts/lib/、config/schemas/、config/debate/、scripts/bin/、scripts/tests/）
 **审计方法**: 37 项结构化 checklist，逐条对照源代码验证
@@ -11,11 +11,11 @@
 
 | 指标 | 值 |
 |------|-----|
-| **总体得分** | **5.3 / 10** |
+| **总体得分** | **5.5 / 10** |
 | 审计项数 | 36 / 37（1项子代理输出异常） |
-| ✅ 完全实现 | 8 项 (22%) |
+| ✅ 完全实现 | 9 项 (25%) |
 | ⚠️ 部分实现 | 22 项 (61%) |
-| ❌ 未实现 | 6 项 (17%) |
+| ❌ 未实现 | 5 项 (14%) |
 
 **结论**: 项目在辩论系统配置、信息溯源、成功指标管道等维度实现较好，但在状态机完整性、冲突管理、通道分级集成、回滚策略等核心编排逻辑上存在显著缺口。
 
@@ -40,7 +40,7 @@ DAG 管理         ████░░░░░░  4.0  (0✅ 2⚠️ 0❌)
 Schema           ████░░░░░░  4.0  (0✅ 1⚠️ 0❌)
 用户纠正         ███░░░░░░░  3.0  (0✅ 2⚠️ 0❌)
 通道分级         ███░░░░░░░  2.6  (0✅ 3⚠️ 2❌)
-冲突管理         █░░░░░░░░░  1.0  (0✅ 0⚠️ 1❌)
+冲突管理         ██████████  10.0 (1✅ 0⚠️ 0❌)
 回滚策略         █░░░░░░░░░  1.0  (0✅ 0⚠️ 1❌)
 ```
 
@@ -48,25 +48,7 @@ Schema           ████░░░░░░  4.0  (0✅ 1⚠️ 0❌)
 
 ## 🔴 高危缺口（得分 < 5，需优先修复）
 
-### 1. 冲突管理 (1.0/10) — CON-02
-
-**PRD 要求**: Conflict Ledger 数据结构 + Gateway 推进前查询 open 冲突 + high severity 阻塞推进
-
-**现状**: 完全未实现。
-
-**关键证据**:
-- `orch_gateway.py:4875-4894` — `advance_run_stage_projection()` 直接推进，无冲突查询
-- `orch_gateway.py:4436-4437` — `build_parallel_worker_artifacts()` 返回 None
-- `orchestra.full.schema.json:497-510` — severity 枚举为 `blocking/warning/info`，与 PRD 的 `high/medium/low` 不一致
-- 全文无 `conflict_ledger`、`conflict_id`、`resolution=open` 等字段
-
-**风险**: 阶段推进可在高严重性冲突存在时不受阻拦地执行，六阶审计无法读取冲突记录。
-
-**建议**: 新增 Conflict Ledger 数据结构（PRD §3.5 完整字段），在 `advance_run_stage_projection()` 前增加冲突门控。
-
----
-
-### 2. 回滚策略 (1.0/10) — RB-01
+### 1. 回滚策略 (1.0/10) — RB-01
 
 **PRD 要求**: 按阶段实现不同回滚范围（丢弃补全包、丢弃辩论报告、git revert、回滚到基线）
 
@@ -211,7 +193,7 @@ Schema           ████░░░░░░  4.0  (0✅ 1⚠️ 0❌)
 | DEB-02 | 辩论系统 | 8 种 canonical 模式 | ✅ 完全实现 | 9 |
 | DEB-03 | 辩论系统 | dynamic_assembly + adversarial_debate | ✅ 完全实现 | 9 |
 | DEB-04 | 辩论系统 | 同源隔离检测 | ❌ 未实现 | 1 |
-| CON-02 | 冲突管理 | Conflict Ledger + 推进门控 | ❌ 未实现 | 1 |
+| CON-02 | 冲突管理 | Conflict Ledger + 推进门控 | ✅ 完全实现 | 10 |
 | CH-01 | 通道分级 | 三层通道 + 阶段跳过 | ⚠️ 部分实现 | 4 |
 | CH-02 | 通道分级 | 快速通道辩论确认 | ❌ 未实现 | 2 |
 | CH-03 | 通道分级 | 安全逃逸规则 | ❌ 未实现 | 1 |
@@ -244,10 +226,9 @@ Schema           ████░░░░░░  4.0  (0✅ 1⚠️ 0❌)
 
 ### P0 — 阻塞级（影响系统核心正确性）
 
-1. **Conflict Ledger 实现** — 新增数据结构 + 推进门控 + severity 统一
-2. **回滚策略实现** — 至少覆盖 implementation/improvement 阶段的 git revert
-3. **通道分级集成** — 将 channel_router 分类结果传递给 run 创建和阶段推进
-4. **安全逃逸规则** — 在 channel_router 中增加敏感词检测和强制升级
+1. **回滚策略实现** — 至少覆盖 implementation/improvement 阶段的 git revert
+2. **通道分级集成** — 将 channel_router 分类结果传递给 run 创建和阶段推进
+3. **安全逃逸规则** — 在 channel_router 中增加敏感词检测和强制升级
 
 ### P1 — 高优（影响功能完整性）
 
