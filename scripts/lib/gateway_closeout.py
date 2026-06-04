@@ -45,6 +45,15 @@ def validate_conflict_record(record: dict[str, Any]) -> list[str]:
         violations.append("type missing or empty")
     if not isinstance(record.get("created_at"), str) or not record["created_at"]:
         violations.append("created_at missing or empty")
+    if not isinstance(record.get("sources"), list):
+        violations.append("sources must be an array")
+    if not isinstance(record.get("resolver"), str):
+        violations.append("resolver must be a string")
+    if not isinstance(record.get("resolution_evidence"), str):
+        violations.append("resolution_evidence must be a string")
+    resolved_at = record.get("resolved_at")
+    if resolved_at is not None and (not isinstance(resolved_at, str) or not resolved_at):
+        violations.append("resolved_at must be null or a non-empty string")
     if resolution != "open":
         evidence = record.get("resolution_evidence", "")
         if not isinstance(evidence, str) or not evidence.strip():

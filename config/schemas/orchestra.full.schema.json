@@ -2073,7 +2073,7 @@
     },
     "conflict_record": {
       "type": "object",
-      "required": ["conflict_id", "run_id", "stage", "type", "severity", "resolution", "created_at"],
+      "required": ["conflict_id", "run_id", "stage", "type", "sources", "severity", "resolution", "resolver", "resolution_evidence", "created_at", "resolved_at"],
       "properties": {
         "conflict_id": {"type": "string", "minLength": 1},
         "run_id": {"type": "string", "minLength": 1},

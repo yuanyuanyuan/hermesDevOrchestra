@@ -83,6 +83,7 @@ conflict = {
     "run_id": "run-1",
     "stage": "direction_debate",
     "type": "cross_team_conflict",
+    "sources": [],
     "severity": "high",
     "resolution": "open",
     "resolver": "",
@@ -151,6 +152,7 @@ ledger = {
             "run_id": "run-2",
             "stage": "direction_debate",
             "type": "cross_team_conflict",
+            "sources": [],
             "severity": "high",
             "resolution": "accepted_risk",
             "resolver": "",
@@ -237,9 +239,13 @@ conflict = {
     "run_id": "run-3",
     "stage": "direction_debate",
     "type": "test",
+    "sources": [],
     "severity": "high",
     "resolution": "open",
+    "resolver": "",
+    "resolution_evidence": "",
     "created_at": "2026-06-04T00:00:00Z",
+    "resolved_at": None,
 }
 append_conflict(tmp / "conflict-ledger.json", conflict)
 
@@ -308,9 +314,13 @@ conflict = {
     "run_id": "run-6",
     "stage": "direction_debate",
     "type": "test",
+    "sources": [],
     "severity": "medium",
     "resolution": "open",
+    "resolver": "",
+    "resolution_evidence": "",
     "created_at": "2026-06-04T00:00:00Z",
+    "resolved_at": None,
 }
 ledger = append_conflict(ledger_path, conflict)
 assert ledger["run_id"] == "run-6", f"run_id should be populated from conflict: {ledger['run_id']}"
@@ -343,9 +353,9 @@ tmp = pathlib.Path(state_root) / "test-counts" / "runs" / "run-7"
 tmp.mkdir(parents=True, exist_ok=True)
 ledger_path = tmp / "conflict-ledger.json"
 
-append_conflict(ledger_path, {"conflict_id": "c1", "run_id": "run-7", "stage": "direction_debate", "type": "test", "severity": "high", "resolution": "open", "created_at": "2026-06-04T00:00:00Z"})
-append_conflict(ledger_path, {"conflict_id": "c2", "run_id": "run-7", "stage": "direction_debate", "type": "test", "severity": "medium", "resolution": "open", "created_at": "2026-06-04T00:00:00Z"})
-append_conflict(ledger_path, {"conflict_id": "c3", "run_id": "run-7", "stage": "direction_debate", "type": "test", "severity": "high", "resolution": "auto_resolved", "resolution_evidence": "auto-detected-and-merged", "created_at": "2026-06-04T00:00:00Z"})
+append_conflict(ledger_path, {"conflict_id": "c1", "run_id": "run-7", "stage": "direction_debate", "type": "test", "sources": [], "severity": "high", "resolution": "open", "resolver": "", "resolution_evidence": "", "created_at": "2026-06-04T00:00:00Z", "resolved_at": None})
+append_conflict(ledger_path, {"conflict_id": "c2", "run_id": "run-7", "stage": "direction_debate", "type": "test", "sources": [], "severity": "medium", "resolution": "open", "resolver": "", "resolution_evidence": "", "created_at": "2026-06-04T00:00:00Z", "resolved_at": None})
+append_conflict(ledger_path, {"conflict_id": "c3", "run_id": "run-7", "stage": "direction_debate", "type": "test", "sources": [], "severity": "high", "resolution": "auto_resolved", "resolver": "", "resolution_evidence": "auto-detected-and-merged", "created_at": "2026-06-04T00:00:00Z", "resolved_at": None})
 
 ledger = load_conflict_ledger(ledger_path)
 counts = conflict_counts(ledger)
@@ -437,21 +447,24 @@ from gateway_closeout import validate_conflict_record
 # Missing stage
 violations = validate_conflict_record({
     "conflict_id": "c1", "run_id": "r1", "severity": "high",
-    "resolution": "open", "created_at": "2026-01-01T00:00:00Z"
+    "resolution": "open", "created_at": "2026-01-01T00:00:00Z",
+    "sources": [], "resolver": "", "resolution_evidence": "", "resolved_at": None,
 })
 assert any("stage" in v for v in violations), violations
 
 # Missing type
 violations = validate_conflict_record({
     "conflict_id": "c1", "run_id": "r1", "stage": "direction_debate",
-    "severity": "high", "resolution": "open", "created_at": "2026-01-01T00:00:00Z"
+    "severity": "high", "resolution": "open", "created_at": "2026-01-01T00:00:00Z",
+    "sources": [], "resolver": "", "resolution_evidence": "", "resolved_at": None,
 })
 assert any("type" in v for v in violations), violations
 
 # Valid record passes
 violations = validate_conflict_record({
     "conflict_id": "c1", "run_id": "r1", "stage": "direction_debate", "type": "test",
-    "severity": "high", "resolution": "open", "created_at": "2026-01-01T00:00:00Z"
+    "severity": "high", "resolution": "open", "created_at": "2026-01-01T00:00:00Z",
+    "sources": [], "resolver": "", "resolution_evidence": "", "resolved_at": None,
 })
 assert len(violations) == 0, violations
 
@@ -480,9 +493,13 @@ append_conflict(ledger_path, {
     "run_id": "run-11",
     "stage": "direction_debate",
     "type": "test",
+    "sources": [],
     "severity": "medium",
     "resolution": "open",
+    "resolver": "",
+    "resolution_evidence": "",
     "created_at": "2026-06-04T00:00:00Z",
+    "resolved_at": None,
 })
 
 # Append a low severity open conflict
@@ -491,9 +508,13 @@ append_conflict(ledger_path, {
     "run_id": "run-11",
     "stage": "direction_debate",
     "type": "test",
+    "sources": [],
     "severity": "low",
     "resolution": "open",
+    "resolver": "",
+    "resolution_evidence": "",
     "created_at": "2026-06-04T00:00:00Z",
+    "resolved_at": None,
 })
 
 blockers = closeout_conflict_blockers(load_conflict_ledger(ledger_path))
