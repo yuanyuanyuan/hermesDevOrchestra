@@ -163,9 +163,9 @@ def enrich_closeout_report_conflict_counts(closeout_report: dict[str, Any], ledg
 def closeout_conflict_blockers(ledger: dict[str, Any]) -> list[str]:
     """Check conflict ledger for closeout blockers. Returns list of blocker reasons."""
     blockers = []
-    open_high = query_open_high_conflicts(ledger)
-    for c in open_high:
-        blockers.append(f"open_high_conflict:{c.get('conflict_id', 'unknown')}")
+    open_conflicts = query_open_conflicts(ledger)
+    for c in open_conflicts:
+        blockers.append(f"open_conflict:{c.get('conflict_id', 'unknown')}")
     unjustified = query_unjustified_accepted_risk(ledger)
     for c in unjustified:
         blockers.append(f"unjustified_accepted_risk:{c.get('conflict_id', 'unknown')}")

@@ -102,7 +102,7 @@ assert open_high[0]["conflict_id"] == "conflict-high-open"
 # --- Test: closeout_conflict_blockers blocks on open high ---
 blockers = closeout_conflict_blockers(ledger)
 assert len(blockers) == 1
-assert "open_high_conflict:conflict-high-open" in blockers[0], blockers
+assert "open_conflict:conflict-high-open" in blockers[0], blockers
 
 # --- Test: resolve_conflict with auto_resolved ---
 ledger = resolve_conflict(ledger_path, "conflict-high-open", "auto_resolved", resolver="system", resolution_evidence="auto-detected and merged")
@@ -456,6 +456,58 @@ violations = validate_conflict_record({
 assert len(violations) == 0, violations
 
 print("Test 10 PASSED: validate_conflict_record checks stage and type")
+PY
+
+# ========================================================================
+# Test 11: All open severities block closeout (not just high)
+# ========================================================================
+python3 - "$REPO_ROOT" "$STATE_ROOT" <<'PY'
+import pathlib
+import sys
+
+repo_root, state_root = sys.argv[1:]
+sys.path.insert(0, str(pathlib.Path(repo_root) / "scripts" / "lib"))
+
+from gateway_closeout import append_conflict, closeout_conflict_blockers, resolve_conflict, load_conflict_ledger
+
+tmp = pathlib.Path(state_root) / "test-all-open" / "runs" / "run-11"
+tmp.mkdir(parents=True, exist_ok=True)
+ledger_path = tmp / "conflict-ledger.json"
+
+# Append a medium severity open conflict
+append_conflict(ledger_path, {
+    "conflict_id": "c-medium-open",
+    "run_id": "run-11",
+    "stage": "direction_debate",
+    "type": "test",
+    "severity": "medium",
+    "resolution": "open",
+    "created_at": "2026-06-04T00:00:00Z",
+})
+
+# Append a low severity open conflict
+append_conflict(ledger_path, {
+    "conflict_id": "c-low-open",
+    "run_id": "run-11",
+    "stage": "direction_debate",
+    "type": "test",
+    "severity": "low",
+    "resolution": "open",
+    "created_at": "2026-06-04T00:00:00Z",
+})
+
+blockers = closeout_conflict_blockers(load_conflict_ledger(ledger_path))
+assert any("open_conflict:c-medium-open" in b for b in blockers), blockers
+assert any("open_conflict:c-low-open" in b for b in blockers), blockers
+
+# Resolve both
+resolve_conflict(ledger_path, "c-medium-open", "auto_resolved", resolver="system", resolution_evidence="merged")
+resolve_conflict(ledger_path, "c-low-open", "auto_resolved", resolver="system", resolution_evidence="merged")
+
+blockers = closeout_conflict_blockers(load_conflict_ledger(ledger_path))
+assert len(blockers) == 0, blockers
+
+print("Test 11 PASSED: all open severities block closeout, resolved passes")
 PY
 
 test_done

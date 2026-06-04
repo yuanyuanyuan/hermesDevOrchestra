@@ -9,7 +9,7 @@
 ## Functional Acceptance
 
 - [x] `conflict-ledger.json` validates with `orchestra.full.schema.json`.
-- [x] Open high conflicts block closeout with `blocked_reason=open_high_conflict`.
+- [x] Open conflicts block closeout with `blocked_reason=open_conflict`.
 - [x] Resolved conflicts require non-empty `resolution_evidence`.
 - [x] Closeout report includes conflict counts by severity and resolution.
 
