@@ -1420,13 +1420,15 @@ PY
 
 orch_validate_guardrail_fields() {
     local artifact_path="$1"
+    local required_mode="${2:-required}"  # "required" or "diagnostic"
 
-    python3 - "$artifact_path" <<'PY'
+    python3 - "$artifact_path" "$required_mode" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 artifact_path = Path(sys.argv[1])
+required_mode = sys.argv[2] if len(sys.argv) > 2 else "required"
 
 guardrail_fields = [
     "authority",
@@ -1447,10 +1449,21 @@ except (json.JSONDecodeError, FileNotFoundError) as exc:
 present = [f for f in guardrail_fields if f in payload]
 missing = [f for f in guardrail_fields if f not in payload]
 
-print(f"PASS guardrail: {artifact_path.name}")
-print(f"  present: {present}")
-if missing:
-    print(f"  optional missing: {missing}")
+if required_mode == "diagnostic":
+    # Diagnostic mode: just report what's present/missing
+    print(f"DIAGNOSTIC guardrail: {artifact_path.name}")
+    print(f"  present: {present}")
+    if missing:
+        print(f"  missing: {missing}")
+else:
+    # Required mode: fail if any guardrail fields are missing
+    if missing:
+        print(f"FAIL guardrail: {artifact_path.name}", file=sys.stderr)
+        print(f"  present: {present}", file=sys.stderr)
+        print(f"  missing required: {missing}", file=sys.stderr)
+        sys.exit(1)
+    print(f"PASS guardrail: {artifact_path.name}")
+    print(f"  present: {present}")
 PY
 }
 

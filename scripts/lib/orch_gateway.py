@@ -1401,7 +1401,8 @@ class GatewayApp:
         if tasks_path.exists():
             tasks_data = read_json(tasks_path)
             if isinstance(tasks_data, dict):
-                kanban_tasks = set(tasks_data.keys())
+                task_list = tasks_data.get("tasks", [])
+                kanban_tasks = {t.get("task_id") for t in task_list if isinstance(t, dict) and t.get("task_id")}
             elif isinstance(tasks_data, list):
                 kanban_tasks = {t.get("task_id") for t in tasks_data if isinstance(t, dict) and t.get("task_id")}
 
@@ -1481,21 +1482,86 @@ class GatewayApp:
                 "stop_run",
             ]
 
+        # Map divergence_type to schema's divergence_class
+        divergence_class_map = {
+            "none": "none",
+            "kanban_audit_mismatch": "kanban_side_effect_without_audit",
+            "missing_source": "artifact_ref_missing",
+        }
+        divergence_class = divergence_class_map.get(divergence_type, "unclassified")
+
+        # Determine reconciliation_status
+        if divergence_type == "none" and not missing_sources:
+            reconciliation_status = "resolved"
+        elif divergence_type != "none":
+            reconciliation_status = "blocked"
+        else:
+            reconciliation_status = "failed"
+
+        # Build observations for each source
+        state_observation = {
+            "present": bool(state_refs),
+            "count": len(state_refs),
+            "task_ids": list(state_refs)[:10],  # Limit for readability
+        }
+
+        audit_observation = {
+            "present": bool(audit_tasks),
+            "count": len(audit_tasks),
+            "task_ids": list(audit_tasks)[:10],
+        }
+
+        kanban_observation = {
+            "present": bool(kanban_tasks),
+            "count": len(kanban_tasks),
+            "task_ids": list(kanban_tasks)[:10],
+        }
+
+        artifact_observation = {
+            "present": bool(artifact_files),
+            "count": len(artifact_files),
+            "file_paths": list(artifact_files)[:10],
+        }
+
+        # Generate a synthetic command_id for this reconciliation
+        command_id = f"reconcile-{uuid.uuid4().hex[:16]}"
+
+        # Build authority_refs_checked
+        authority_refs_checked = []
+        for source_name, tasks in [
+            ("kanban", kanban_tasks),
+            ("audit", audit_tasks),
+        ]:
+            for task_id in list(tasks)[:5]:  # Limit to first 5
+                authority_refs_checked.append({
+                    "ref_type": "task",
+                    "ref_id": task_id,
+                    "source": source_name,
+                })
+
         report = {
             "schema_version": SCHEMA_VERSION,
             "artifact_type": "command_reconciliation_report",
+            "command_id": command_id,
             "run_id": run_id,
-            "recovery_result": "divergence_detected" if divergence_type != "none" else "consistent",
-            "divergence_type": divergence_type,
+            "reconciliation_status": reconciliation_status,
+            "authority_refs_checked": authority_refs_checked,
+            "journal_step_status": {
+                "kanban_tasks": len(kanban_tasks),
+                "audit_tasks": len(audit_tasks),
+                "state_refs": len(state_refs),
+                "artifact_files": len(artifact_files),
+            },
+            "state_observation": state_observation,
+            "audit_observation": audit_observation,
+            "kanban_observation": kanban_observation,
+            "artifact_observation": artifact_observation,
+            "divergence_class": divergence_class,
+            "side_effect_replay_allowed": False,
+            "synthetic_audit_allowed": False,
+            "recommended_repair_options": repair_options,
             "divergent_tasks": divergent_tasks,
             "missing_sources": missing_sources,
-            "repair_options": repair_options,
-            "source_summary": {
-                "kanban_count": len(kanban_tasks),
-                "audit_count": len(audit_tasks),
-                "state_ref_count": len(state_refs),
-                "artifact_file_count": len(artifact_files),
-            },
             "created_at": now,
         }
 

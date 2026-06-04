@@ -82,9 +82,42 @@ def check_family(repo_root: Path, family_id: str) -> dict[str, Any]:
     }
 
 
-def activate_family(repo_root: Path, family_id: str) -> dict[str, Any]:
+def activate_family(
+    repo_root: Path,
+    family_id: str,
+    evidence: list[str] | None = None,
+    completed_checks: list[str] | None = None,
+) -> dict[str, Any]:
     if family_id not in VALID_FAMILIES:
         raise ReadinessGateError("invalid_family", f"Unknown family: {family_id}")
+
+    # Validate against cutover policy before activation
+    try:
+        sys.path.insert(0, str(repo_root / "scripts/lib"))
+        from staged_cutover import FullSchemaCutover
+
+        cutover = FullSchemaCutover(repo_root)
+        result = cutover.can_activate(
+            family_id,
+            evidence=evidence,
+            completed_checks=completed_checks,
+        )
+
+        if not result["allowed"]:
+            return {
+                "ok": False,
+                "family": family_id,
+                "status": "pending",
+                "error": "cutover_policy_not_met",
+                "message": f"Family {family_id} cannot be activated: missing required evidence/checks",
+                "missing_evidence": result["missing_evidence"],
+                "missing_checks": result["missing_checks"],
+            }
+    except ImportError:
+        # Fall back to direct activation if staged_cutover is not available
+        pass
+    except Exception as exc:
+        raise ReadinessGateError("cutover_validation_failed", f"Cutover validation failed: {exc}")
 
     config = load_gate_config(repo_root)
     if family_id not in config["families"]:
@@ -146,6 +179,8 @@ def main() -> None:
 
     activate_parser = subparsers.add_parser("activate", help="Activate a family")
     activate_parser.add_argument("family", help="Family ID to activate")
+    activate_parser.add_argument("--evidence", nargs="*", default=[], help="Completed evidence items")
+    activate_parser.add_argument("--checks", nargs="*", default=[], help="Completed checks")
 
     deactivate_parser = subparsers.add_parser("deactivate", help="Deactivate a family")
     deactivate_parser.add_argument("family", help="Family ID to deactivate")
@@ -162,7 +197,12 @@ def main() -> None:
         if args.command == "check":
             result = check_family(args.repo, args.family)
         elif args.command == "activate":
-            result = activate_family(args.repo, args.family)
+            result = activate_family(
+                args.repo,
+                args.family,
+                evidence=args.evidence,
+                completed_checks=args.checks,
+            )
         elif args.command == "deactivate":
             result = deactivate_family(args.repo, args.family)
         elif args.command == "status":

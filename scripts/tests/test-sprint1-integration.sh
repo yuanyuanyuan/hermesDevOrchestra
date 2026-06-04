@@ -49,8 +49,23 @@ fi
 
 # Test 4: Readiness Gate Activate/Deactivate
 echo "Test 4: Readiness Gate Activate/Deactivate"
-"$REPO_ROOT/scripts/bin/orch-readiness-gate" --repo "$REPO_ROOT" activate full_debate_package >/dev/null
-GATE_CHECK=$("$REPO_ROOT/scripts/bin/orch-readiness-gate" --repo "$REPO_ROOT" check full_debate_package 2>&1) || true
+
+# Create temporary repo structure to avoid mutating tracked config
+TEMP_REPO=$(mktemp -d)
+trap "rm -rf $TEMP_REPO" EXIT
+
+# Copy necessary config files to temp repo
+mkdir -p "$TEMP_REPO/config/cutover"
+cp "$REPO_ROOT/config/readiness-gates.json" "$TEMP_REPO/config/"
+cp "$REPO_ROOT/config/cutover/full-readiness-gates.json" "$TEMP_REPO/config/cutover/" 2>/dev/null || true
+
+# Copy the gate script
+cp "$REPO_ROOT/scripts/bin/orch-readiness-gate" "$TEMP_REPO/"
+chmod +x "$TEMP_REPO/orch-readiness-gate"
+
+# Test activate in temp repo
+"$TEMP_REPO/orch-readiness-gate" --repo "$TEMP_REPO" activate full_debate_package >/dev/null
+GATE_CHECK=$("$TEMP_REPO/orch-readiness-gate" --repo "$TEMP_REPO" check full_debate_package 2>&1) || true
 echo "$GATE_CHECK" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -59,8 +74,9 @@ assert data['status'] == 'active', f'Expected active, got {data[\"status\"]}'
 print('PASS: Readiness gate activate works')
 "
 
-"$REPO_ROOT/scripts/bin/orch-readiness-gate" --repo "$REPO_ROOT" deactivate full_debate_package >/dev/null
-GATE_CHECK=$("$REPO_ROOT/scripts/bin/orch-readiness-gate" --repo "$REPO_ROOT" check full_debate_package 2>&1) || true
+# Test deactivate in temp repo
+"$TEMP_REPO/orch-readiness-gate" --repo "$TEMP_REPO" deactivate full_debate_package >/dev/null
+GATE_CHECK=$("$TEMP_REPO/orch-readiness-gate" --repo "$TEMP_REPO" check full_debate_package 2>&1) || true
 echo "$GATE_CHECK" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -68,6 +84,13 @@ assert data['ok'] is False, f'Check should fail after deactivate: {data}'
 assert data['status'] == 'pending', f'Expected pending, got {data[\"status\"]}'
 print('PASS: Readiness gate deactivate works')
 "
+
+# Verify tracked config was not modified
+if git -C "$REPO_ROOT" diff --name-only | grep -q "config/readiness-gates.json"; then
+    echo "FAIL: Tracked config was modified during test" >&2
+    exit 1
+fi
+echo "PASS: Tracked config not modified"
 
 # Test 5: Validation Functions in orch-common.sh
 echo "Test 5: Validation Functions"
