@@ -48,7 +48,7 @@ ${MY_PR_SKILL_DIR}/scripts/
 | `get-repo-info.sh` | 获取仓库 owner / repo / JSON | `${SCRIPTS}/get-repo-info.sh --owner` |
 | `get-pr-metadata.sh` | 获取 PR 元数据（标题、分支、SHA、状态等） | `${SCRIPTS}/get-pr-metadata.sh --number=8 --field=url` |
 | `get-pr-diff.sh` | 获取 PR diff 补丁 | `${SCRIPTS}/get-pr-diff.sh --number=8 --output=/tmp/pr.diff` |
-| `get-pr-reviews.sh` | 获取 PR reviews 和 review comments | `${SCRIPTS}/get-pr-reviews.sh --number=8 --output=/tmp/reviews.json` |
+| `get-pr-reviews.sh` | 获取 PR reviews 和 review comments | `${SCRIPTS}/get-pr-reviews.sh --number=8 --output=/tmp/reviews.json --state=CHANGES_REQUESTED` |
 | `get-pr-comments.sh` | 获取 PR 下方 issue comments | `${SCRIPTS}/get-pr-comments.sh --number=8 --output=/tmp/comments.json` |
 | `submit-review.sh` | 提交 PR review（REQUEST_CHANGES / COMMENT / APPROVE） | `${SCRIPTS}/submit-review.sh --number=8 --event=COMMENT --body-file=/tmp/review.md` |
 | `post-comment.sh` | 在 PR 下发送普通 comment | `${SCRIPTS}/post-comment.sh --number=8 --body-file=/tmp/comment.md` |
