@@ -12,33 +12,31 @@ export const meta = {
   ]
 }
 
-// Sprint 依赖关系图
+// ── Sprint 依赖关系图 ──
 const DEPENDENCY_GRAPH = {
-  1: [],           // 无依赖
-  2: [1],          // 依赖 Sprint 1
-  3: [2],          // 依赖 Sprint 2
-  4: [2],          // 依赖 Sprint 2
-  5: [4],          // 依赖 Sprint 4
-  6: [4],          // 依赖 Sprint 4
-  7: [2],          // 依赖 Sprint 2
-  8: [2],          // 依赖 Sprint 2
-  9: [6, 8],       // 依赖 Sprint 6 和 8
-  10: [2],         // 依赖 Sprint 2
-  11: [10],        // 依赖 Sprint 10
-  12: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],  // 依赖所有前面的 sprint
-  13: [12]         // 依赖 Sprint 12
+  1: [],
+  2: [1],
+  3: [2],
+  4: [2],
+  5: [4],
+  6: [4],
+  7: [2],
+  8: [2],
+  9: [6, 8],
+  10: [2],
+  11: [10],
+  12: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  13: [12]
 }
 
-// 轮询配置
-const POLL_INTERVAL_SECONDS = 60  // 1分钟
-const MAX_POLL_COUNT = 240        // 最多轮询 240 次 ≈ 4 小时
-const REVIEW_MAX_ROUNDS = 5       // 最多处理 5 轮 review
-
-// 独立 Reviewer 配置
+// ── 配置 ──
+const REPO = 'yuanyuanyuan/hermesDevOrchestra'
+const POLL_INTERVAL_SECONDS = 60
+const MAX_POLL_MINUTES = 240
 const REVIEWER_CONFIG = {
-  enabled: true,                     // 是否启用独立审查（默认启用）
-  maxAttempts: 3,                    // 最多尝试 3 次 reviewer 审查
-  reviewCriteria: [                  // 审查标准
+  enabled: true,
+  maxAttempts: 3,
+  reviewCriteria: [
     '代码质量和可维护性',
     '架构设计合理性',
     '测试覆盖率充分性',
@@ -48,450 +46,335 @@ const REVIEWER_CONFIG = {
     '错误处理健壮性',
     '向后兼容性'
   ],
-  passThreshold: 0.8,               // 通过阈值：80% 的标准满足
-  autoFixEnabled: true              // 是否启用自动修复
+  passThreshold: 0.8,
+  softPassThreshold: 0.70,
+  autoFixEnabled: true
 }
 
-// 状态文件路径
-const STATE_FILE = '/tmp/sprint-pipeline-state.json'
+// ── 辅助函数 ──
 
-// 辅助函数：检查 PR 是否已合并
-async function checkPRMerged(repo, prNumber) {
+function tryParseJSON(text) {
   try {
-    const result = await bash(`gh pr view ${prNumber} --repo ${repo} --json state,mergedAt`, {
-      label: `检查 PR #${prNumber} 状态`
-    })
-    const prData = JSON.parse(result)
-    return {
-      merged: prData.mergedAt !== null,
-      state: prData.state,
-      mergedAt: prData.mergedAt
+    const match = (text || '').match(/\{[\s\S]*\}/)
+    if (match) return JSON.parse(match[0])
+  } catch (_) {}
+  return null
+}
+
+function extractNumber(text) {
+  const match = (text || '').match(/\d+/)
+  return match ? parseInt(match[0], 10) : null
+}
+
+function hasCriticalIssues(issues) {
+  return issues && issues.some(i => i.severity === 'critical')
+}
+
+function parseReviewerTextResponse(text) {
+  const passed = /passed|通过/i.test(text)
+  const scoreMatch = text.match(/(\d+(?:\.\d+)?)\s*\/\s*1\.0/)
+  const score = scoreMatch ? parseFloat(scoreMatch[1]) : (passed ? 0.9 : 0.5)
+  const issues = []
+  const patterns = [
+    [/严重|critical/gi, 'critical'],
+    [/重要|major/gi, 'major'],
+    [/次要|minor/gi, 'minor']
+  ]
+  for (const [pat, sev] of patterns) {
+    const re = new RegExp(`(?:${pat.source})[:\\s]+(.+)`, 'gi')
+    let m
+    while ((m = re.exec(text)) !== null) {
+      issues.push({ severity: sev, description: m[1].trim() })
     }
-  } catch (error) {
-    log(`检查 PR #${prNumber} 状态失败: ${error.message}`)
-    return { merged: false, state: 'unknown', error: error.message }
+  }
+  return { passed, score, issues, summary: text.substring(0, 200) + '...' }
+}
+
+// ── Skill 调用封装 ──
+
+/**
+ * 调用 /my-sprint-execute 执行 Sprint 开发
+ * Skill 接口: my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
+ */
+async function callSprintExecute(sprintNum, planPath, checklistPath) {
+  log(`📝 调用 /my-sprint-execute 执行 Sprint ${sprintNum} 开发...`)
+
+  const result = await agent(
+    `Execute Sprint ${sprintNum} development using the /my-sprint-execute skill.\n\n` +
+    `Call: /my-sprint-execute ${planPath} ${checklistPath} ${sprintNum}\n\n` +
+    `The skill will handle:\n` +
+    `- Git branch workflow (feat/sprint${sprintNum})\n` +
+    `- Sequential task execution from the plan\n` +
+    `- Verification against checklist\n` +
+    `- PR creation via my-pr-skill's manage-pr.sh\n\n` +
+    `After completion, report:\n` +
+    `1. What was done (summary)\n` +
+    `2. The PR number (format: "PR #NNN")\n` +
+    `3. Any blockers encountered`,
+    { label: `Sprint ${sprintNum} 开发`, phase: `Sprint-${sprintNum}` }
+  )
+
+  // 提取 PR 号
+  const prMatch = (result || '').match(/PR\s*#(\d+)/i)
+  return {
+    prNumber: prMatch ? parseInt(prMatch[1], 10) : null,
+    summary: result || ''
   }
 }
 
-// 辅助函数：执行独立 Reviewer 审查（可选）
+/**
+ * 调用 /my-pr-skill 查询 PR 状态
+ * 使用 manage-pr.sh 的查询功能
+ */
+async function callPRStatus(prNumber) {
+  const result = await agent(
+    `Use the /my-pr-skill to check the status of PR #${prNumber} in repo ${REPO}.\n\n` +
+    `Run: gh pr view ${prNumber} --repo ${REPO} --json state,mergedAt,reviewDecision,reviews\n\n` +
+    `Return a JSON object with these fields:\n` +
+    `{"merged": true/false, "state": "OPEN/CLOSED/MERGED", "reviewDecision": "APPROVED/CHANGES_REQUESTED/REVIEW_REQUIRED/none", "reviewCount": N, "hasChangeRequests": true/false}\n\n` +
+    `Where hasChangeRequests = true if reviewDecision is CHANGES_REQUESTED OR any review has state CHANGES_REQUESTED.`,
+    { label: `PR #${prNumber} 状态`, phase: 'Sprint-1' }
+  )
+
+  const parsed = tryParseJSON(result)
+  if (parsed) return parsed
+
+  // 降级解析
+  const text = (result || '').toUpperCase()
+  return {
+    merged: text.includes('MERGED'),
+    state: 'OPEN',
+    reviewDecision: text.includes('CHANGES_REQUESTED') ? 'CHANGES_REQUESTED' : 'none',
+    reviewCount: 0,
+    hasChangeRequests: text.includes('CHANGES_REQUESTED')
+  }
+}
+
+/**
+ * 调用 /my-pr-review-response 处理 PR review 反馈
+ * Skill 接口: /my-pr-review-response (交互式，读取当前 PR 上下文)
+ */
+async function callPRReviewResponse(prNumber, sprintNum) {
+  log(`🔄 调用 /my-pr-review-response 处理 PR #${prNumber} review 反馈...`)
+
+  const result = await agent(
+    `PR #${prNumber} in repo ${REPO} has review feedback that needs to be addressed.\n\n` +
+    `Please use the /my-pr-review-response skill to:\n` +
+    `1. Read the PR review comments\n` +
+    `2. Understand what changes are requested\n` +
+    `3. Make the necessary code fixes\n` +
+    `4. Push the fixes to the PR branch\n` +
+    `5. Reply to each review comment explaining what was fixed\n\n` +
+    `After completion, report whether all review feedback was successfully addressed.`,
+    { label: `处理 PR #${prNumber} review (Sprint ${sprintNum})`, phase: `Sprint-${sprintNum}` }
+  )
+
+  return result || ''
+}
+
+/**
+ * 独立 Reviewer 审查（workflow 自带的质量门禁）
+ */
 async function executeReviewerReview(sprintNum, prNumber) {
-  // 如果未启用独立审查，直接返回通过
   if (!REVIEWER_CONFIG.enabled) {
-    log(`⏭️ 独立审查未启用，跳过 Reviewer 审查`)
+    log(`⏭️ 独立审查未启用，跳过`)
     return { passed: true, status: 'disabled' }
   }
 
-  log(`🔍 开始独立 Reviewer 审查（Sprint ${sprintNum}）...`)
+  log(`🔍 开始独立 Reviewer 审查（Sprint ${sprintNum} PR #${prNumber}）...`)
 
-  let attempt = 0
-  let reviewPassed = false
-  let reviewResult = null
+  const criteriaList = REVIEWER_CONFIG.reviewCriteria.map((c, i) => `${i + 1}. ${c}`).join('\n')
 
-  while (attempt < REVIEWER_CONFIG.maxAttempts && !reviewPassed) {
-    attempt++
+  for (let attempt = 1; attempt <= REVIEWER_CONFIG.maxAttempts; attempt++) {
     log(`📝 Reviewer 审查尝试 ${attempt}/${REVIEWER_CONFIG.maxAttempts}...`)
 
-    try {
-      // 调用独立的 reviewer agent
-      const reviewerPrompt = `
-请对 Sprint ${sprintNum} 的代码进行独立审查。
+    const reviewResponse = await agent(
+      `请对 Sprint ${sprintNum} 的 PR #${prNumber}（仓库 ${REPO}）代码进行独立审查。\n\n` +
+      `审查标准：\n${criteriaList}\n\n` +
+      `请查看 PR 的代码变更，评估是否满足所有标准。\n\n` +
+      `请严格返回以下 JSON 格式（不要添加其他文字）：\n` +
+      `{"passed": true/false, "score": 0.0-1.0, "issues": [{"severity": "critical/major/minor", "category": "类别", "description": "描述", "suggestion": "建议"}], "summary": "总体评价"}`,
+      { label: `Reviewer Sprint ${sprintNum} #${prNumber} (${attempt}/${REVIEWER_CONFIG.maxAttempts})`, phase: `Sprint-${sprintNum}` }
+    )
 
-审查标准：
-${REVIEWER_CONFIG.reviewCriteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}
+    const reviewResult = tryParseJSON(reviewResponse) || parseReviewerTextResponse(reviewResponse)
+    const hasCriticals = hasCriticalIssues(reviewResult.issues)
+    const scoreOk = reviewResult.passed && reviewResult.score >= REVIEWER_CONFIG.passThreshold
+    const softOk = reviewResult.score >= REVIEWER_CONFIG.softPassThreshold && !hasCriticals
 
-请评估：
-1. 代码是否满足所有审查标准
-2. 是否有严重问题需要修复
-3. 改进建议
-
-输出格式：
-{
-  "passed": true/false,
-  "score": 0.0-1.0,
-  "issues": [
-    {
-      "severity": "critical/major/minor",
-      "category": "审查标准类别",
-      "description": "问题描述",
-      "suggestion": "修复建议"
+    if (scoreOk) {
+      log(`✅ Reviewer 审查通过（得分: ${reviewResult.score}）`)
+      return { passed: true, result: reviewResult, attempt, status: 'passed' }
     }
-  ],
-  "summary": "总体评价"
-}
-`
+    if (softOk) {
+      log(`⚠️ Reviewer 得分 ${reviewResult.score} 略低于阈值，但无严重问题，勉强通过`)
+      return { passed: true, result: reviewResult, attempt, status: 'soft_passed' }
+    }
 
-      // 调用 reviewer agent
-      const reviewResponse = await agent(reviewerPrompt, {
-        label: `Reviewer 审查 Sprint ${sprintNum}（尝试 ${attempt}）`,
-        phase: `Sprint-${sprintNum}`
-      })
+    log(`⚠️ Reviewer 审查未通过（得分: ${reviewResult.score}，有严重问题: ${hasCriticals}）`)
 
-      // 解析 reviewer 的响应
-      try {
-        reviewResult = JSON.parse(reviewResponse)
-      } catch (parseError) {
-        // 如果 reviewer 返回的不是 JSON，尝试从文本中提取信息
-        log(`⚠️ Reviewer 返回格式非 JSON，尝试解析...`)
-        reviewResult = parseReviewerTextResponse(reviewResponse)
+    if (REVIEWER_CONFIG.autoFixEnabled && hasCriticals) {
+      log(`🔧 尝试自动修复严重问题...`)
+      for (const issue of reviewResult.issues.filter(i => i.severity === 'critical')) {
+        await agent(
+          `请修复以下代码问题：\n问题描述：${issue.description}\nSprint：${sprintNum}\n仓库：${REPO}\n请分析原因、实施修复、验证修复。`,
+          { label: `修复: ${issue.description.substring(0, 40)}`, phase: `Sprint-${sprintNum}` }
+        )
       }
-
-      // 检查是否通过
-      if (reviewResult.passed && reviewResult.score >= REVIEWER_CONFIG.passThreshold) {
-        reviewPassed = true
-        log(`✅ Reviewer 审查通过（得分: ${reviewResult.score}）`)
-      } else {
-        log(`⚠️ Reviewer 审查未通过（得分: ${reviewResult.score}）`)
-
-        // 如果有严重问题，尝试自动修复
-        if (REVIEWER_CONFIG.autoFixEnabled && hasCriticalIssues(reviewResult.issues)) {
-          log(`🔧 尝试自动修复严重问题...`)
-          const fixed = await autoFixReviewerIssues(reviewResult.issues, sprintNum)
-
-          if (fixed) {
-            log(`✅ 自动修复完成，重新审查...`)
-            // 继续下一次循环，重新审查
-          } else {
-            log(`❌ 自动修复失败`)
-            return {
-              passed: false,
-              result: reviewResult,
-              attempt,
-              status: 'auto_fix_failed'
-            }
-          }
-        } else {
-          // 没有严重问题或未启用自动修复，直接返回
-          return {
-            passed: false,
-            result: reviewResult,
-            attempt,
-            status: 'review_failed'
-          }
-        }
-      }
-    } catch (error) {
-      log(`❌ Reviewer 审查失败: ${error.message}`)
-      return {
-        passed: false,
-        error: error.message,
-        attempt,
-        status: 'reviewer_error'
-      }
+      log(`✅ 自动修复完成，下一轮重新审查`)
+    } else {
+      return { passed: false, result: reviewResult, attempt, status: 'review_failed' }
     }
   }
 
-  if (!reviewPassed) {
-    log(`❌ Reviewer 审查在 ${REVIEWER_CONFIG.maxAttempts} 次尝试后仍失败`)
-    return {
-      passed: false,
-      result: reviewResult,
-      attempt,
-      status: 'max_attempts_exceeded'
-    }
-  }
-
-  return {
-    passed: true,
-    result: reviewResult,
-    attempt,
-    status: 'passed'
-  }
+  return { passed: false, status: 'max_attempts_exceeded' }
 }
 
-// 辅助函数：解析 reviewer 文本响应
-function parseReviewerTextResponse(text) {
-  // 尝试从文本中提取关键信息
-  const passed = text.toLowerCase().includes('passed') || text.toLowerCase().includes('通过')
-  const scoreMatch = text.match(/(\d+(\.\d+)?)\s*\/\s*1\.0/)
-  const score = scoreMatch ? parseFloat(scoreMatch[1]) : (passed ? 0.9 : 0.5)
+/**
+ * 等待 PR 合并 — 单个 agent 内部轮询
+ * 检测到 review 反馈时自动调用 /my-pr-review-response
+ */
+async function waitForPRMerge(prNumber, sprintNum) {
+  log(`⏳ 开始等待 PR #${prNumber} 合并（Sprint ${sprintNum}）...`)
 
-  // 提取问题列表
-  const issues = []
-  const issuePatterns = [
-    /(?:严重|critical)[:\s]+(.+)/gi,
-    /(?:重要|major)[:\s]+(.+)/gi,
-    /(?:次要|minor)[:\s]+(.+)/gi
-  ]
+  const result = await agent(
+    `You are monitoring PR #${prNumber} in repo ${REPO} for merge.\n\n` +
+    `Do the following in a loop:\n\n` +
+    `1. Run: gh pr view ${prNumber} --repo ${REPO} --json state,mergedAt,reviewDecision,reviews\n` +
+    `2. If mergedAt is not null → return "MERGED"\n` +
+    `3. If reviewDecision is "CHANGES_REQUESTED" or reviews contain comments that need addressing →\n` +
+    `   a. Use the /my-pr-review-response skill to handle the review feedback\n` +
+    `   b. The skill will read comments, make fixes, push, and reply to reviewers\n` +
+    `   c. Wait 30 seconds after the skill completes, then re-check PR status\n` +
+    `4. If still open with no issues → wait ${POLL_INTERVAL_SECONDS} seconds, then re-check\n` +
+    `5. After ${MAX_POLL_MINUTES} minutes total → return "TIMEOUT"\n\n` +
+    `IMPORTANT: When handling review feedback, you MUST use the /my-pr-review-response skill. ` +
+    `Do NOT try to handle review comments manually.\n\n` +
+    `Return ONLY one of: "MERGED", "TIMEOUT", or "REVIEW_FAILED: <reason>"`,
+    { label: `等待 PR #${prNumber} 合并 (Sprint ${sprintNum})`, phase: `Sprint-${sprintNum}` }
+  )
 
-  issuePatterns.forEach(pattern => {
-    let match
-    while ((match = pattern.exec(text)) !== null) {
-      issues.push({
-        severity: pattern.source.includes('严重') || pattern.source.includes('critical') ? 'critical' :
-                  pattern.source.includes('重要') || pattern.source.includes('major') ? 'major' : 'minor',
-        description: match[1].trim()
-      })
-    }
-  })
-
-  return {
-    passed,
-    score,
-    issues,
-    summary: text.substring(0, 200) + '...'
-  }
+  const text = (result || '').toUpperCase()
+  if (text.includes('MERGED')) return { status: 'merged', prNumber }
+  if (text.includes('TIMEOUT')) return { status: 'timeout', prNumber }
+  return { status: 'review_failed', prNumber, error: result }
 }
 
-// 辅助函数：检查是否有严重问题
-function hasCriticalIssues(issues) {
-  return issues.some(issue => issue.severity === 'critical')
+/** 查找 Sprint 对应的已有 PR（open） */
+async function findExistingPR(sprintNum) {
+  const result = await agent(
+    `Find any open PR in repo ${REPO} that belongs to Sprint ${sprintNum}.\n\n` +
+    `Run: gh pr list --repo ${REPO} --state open --json number,title,headRefName\n\n` +
+    `Look for a PR whose title or branch name contains "sprint" and "${sprintNum}" (case insensitive).\n` +
+    `If found, return ONLY the PR number. If not found, return "NONE".`,
+    { label: `查找 Sprint ${sprintNum} PR`, phase: `Sprint-${sprintNum}` }
+  )
+  if (!result || /none/i.test(result)) return null
+  return extractNumber(result)
 }
 
-// 辅助函数：自动修复 reviewer 发现的问题
-async function autoFixReviewerIssues(issues, sprintNum) {
-  log(`🔧 开始自动修复 ${issues.length} 个问题...`)
-
-  try {
-    // 过滤出严重问题
-    const criticalIssues = issues.filter(issue => issue.severity === 'critical')
-
-    if (criticalIssues.length === 0) {
-      log(`✅ 没有严重问题需要修复`)
-      return true
-    }
-
-    // 针对每个严重问题调用修复
-    for (const issue of criticalIssues) {
-      log(`修复问题: ${issue.description}`)
-
-      // 调用修复 agent
-      const fixPrompt = `
-请修复以下代码问题：
-
-问题描述：${issue.description}
-Sprint：${sprintNum}
-
-请：
-1. 分析问题原因
-2. 实施修复
-3. 验证修复是否成功
-`
-
-      await agent(fixPrompt, {
-        label: `修复 Sprint ${sprintNum} 问题`,
-        phase: `Sprint-${sprintNum}`
-      })
-    }
-
-    log(`✅ 自动修复完成`)
-    return true
-  } catch (error) {
-    log(`❌ 自动修复失败: ${error.message}`)
-    return false
-  }
+/** 查找 Sprint 对应的已合并 PR（用于恢复/跳过已完成 Sprint） */
+async function findMergedPR(sprintNum) {
+  const result = await agent(
+    `Find any merged PR in repo ${REPO} that belongs to Sprint ${sprintNum}.\n\n` +
+    `Run: gh pr list --repo ${REPO} --state merged --json number,title,headRefName,mergedAt --limit 30\n\n` +
+    `Look for a PR whose title or branch name contains "sprint" and "${sprintNum}" (case insensitive).\n` +
+    `If found, return a JSON object: {"prNumber": N, "mergedAt": "ISO date"}\n` +
+    `If not found, return "NONE".`,
+    { label: `检查 Sprint ${sprintNum} 已合并 PR`, phase: `Sprint-${sprintNum}` }
+  )
+  if (!result || /none/i.test(result)) return null
+  const parsed = tryParseJSON(result)
+  if (parsed && parsed.prNumber) return parsed
+  const num = extractNumber(result)
+  return num ? { prNumber: num, mergedAt: null } : null
 }
 
-// 辅助函数：等待 PR 合并（轮询模式）
-async function waitForPRMerge(repo, prNumber, sprintNum) {
-  log(`开始等待 PR #${prNumber} 合并（Sprint ${sprintNum}）...`)
-
-  let pollCount = 0
-  let merged = false
-
-  while (!merged && pollCount < MAX_POLL_COUNT) {
-    // 轮询等待
-    await sleep(POLL_INTERVAL_SECONDS * 1000)
-    pollCount++
-
-    // 检查 PR 状态
-    const status = await checkPRMerged(repo, prNumber)
-
-    if (status.merged) {
-      merged = true
-      log(`✅ PR #${prNumber} 已合并（轮询 ${pollCount} 次）`)
-      break
-    }
-
-    // 检查是否有 review 反馈需要处理
-    if (status.state === 'CHANGES_REQUESTED') {
-      log(`⚠️ PR #${prNumber} 有 review 反馈，开始处理...`)
-      const reviewHandled = await handleReviewFeedback(repo, prNumber, sprintNum)
-
-      if (!reviewHandled) {
-        log(`❌ Review 反馈处理失败，暂停 workflow`)
-        await saveState({ sprintNum, prNumber, status: 'review_failed', pollCount })
-        return { status: 'review_failed', prNumber, pollCount }
-      }
-    }
-
-    // 进度日志
-    if (pollCount % 10 === 0) {
-      log(`⏳ 等待 PR #${prNumber} 合并...（已轮询 ${pollCount}/${MAX_POLL_COUNT} 次）`)
-    }
-  }
-
-  // 超时处理
-  if (!merged) {
-    log(`⏰ 轮询超时（${MAX_POLL_COUNT} 次），暂停 workflow`)
-    await saveState({ sprintNum, prNumber, status: 'timeout', pollCount })
-    return { status: 'timeout', prNumber, pollCount }
-  }
-
-  return { status: 'merged', prNumber, pollCount }
+/** 检查依赖是否满足 */
+function checkDependencies(sprintNum, completedSprints) {
+  const deps = DEPENDENCY_GRAPH[sprintNum] || []
+  return deps.every(d => completedSprints.includes(d))
 }
 
-// 辅助函数：处理 review 反馈
-async function handleReviewFeedback(repo, prNumber, sprintNum) {
-  log(`开始处理 PR #${prNumber} 的 review 反馈...`)
-
-  let reviewRound = 0
-  let allReviewsResolved = false
-
-  while (reviewRound < REVIEW_MAX_ROUNDS && !allReviewsResolved) {
-    reviewRound++
-    log(`📝 处理第 ${reviewRound} 轮 review 反馈...`)
-
-    try {
-      // 调用 /my-pr-review-response 处理 review 反馈
-      await agent('/my-pr-review-response', {
-        label: `处理 PR #${prNumber} review 反馈（第 ${reviewRound} 轮）`,
-        phase: `Sprint-${sprintNum}`
-      })
-
-      // 等待一下让 GitHub 更新状态
-      await sleep(5000)
-
-      // 检查是否还有未处理的 review
-      const status = await checkPRMerged(repo, prNumber)
-
-      if (status.state !== 'CHANGES_REQUESTED') {
-        allReviewsResolved = true
-        log(`✅ Review 反馈处理完成`)
-      } else {
-        log(`⚠️ 仍有 review 反馈，继续处理...`)
-      }
-    } catch (error) {
-      log(`❌ Review 反馈处理失败: ${error.message}`)
-      return false
-    }
-  }
-
-  if (!allReviewsResolved) {
-    log(`⚠️ 达到最大 review 轮次（${REVIEW_MAX_ROUNDS}）`)
-    return false
-  }
-
-  return true
-}
-
-// 辅助函数：保存状态（用于 resume）
-async function saveState(state) {
-  const stateData = {
-    ...state,
-    timestamp: new Date().toISOString(),
-    runId: process.env.WORKFLOW_RUN_ID || 'unknown'
-  }
-
-  await write(STATE_FILE, JSON.stringify(stateData, null, 2))
-  log(`💾 状态已保存到 ${STATE_FILE}`)
-}
-
-// 辅助函数：加载状态（用于 resume）
-async function loadState() {
-  try {
-    const state = await read(STATE_FILE)
-    return JSON.parse(state)
-  } catch (error) {
-    return null
-  }
-}
-
-// 辅助函数：执行单个 Sprint
-async function executeSprint(sprintNum, repo) {
+/** 执行单个 Sprint 完整流程 */
+async function executeSprint(sprintNum, planPath, checklistPath) {
   log(`🚀 开始执行 Sprint ${sprintNum}...`)
 
   try {
-    // 步骤 1：调用 /my-sprint-execute 执行开发
-    log(`📝 步骤 1/3：执行开发任务...`)
-    await agent('/my-sprint-execute', {
-      label: `执行 Sprint ${sprintNum}`,
-      phase: `Sprint-${sprintNum}`
-    })
-
-    // 获取创建的 PR 号
-    const prResult = await bash(`gh pr list --repo ${repo} --head branch-sprint-${sprintNum} --json number --jq '.[0].number'`, {
-      label: `获取 Sprint ${sprintNum} 的 PR 号`
-    })
-
-    const prNumber = parseInt(prResult.trim())
-
-    if (!prNumber) {
-      throw new Error(`未找到 Sprint ${sprintNum} 的 PR`)
+    // 步骤 0a：检查是否已合并（恢复模式 — 跳过已完成 Sprint）
+    const mergedPR = await findMergedPR(sprintNum)
+    if (mergedPR) {
+      log(`⏭️ Sprint ${sprintNum} 已完成（PR #${mergedPR.prNumber} 已合并${mergedPR.mergedAt ? ' @ ' + mergedPR.mergedAt : ''}），跳过`)
+      return { sprintNum, prNumber: mergedPR.prNumber, status: 'merged', skipped: true }
     }
 
-    log(`✅ 开发完成，PR #${prNumber} 已创建`)
+    // 步骤 0b：检查已有 open PR
+    let prNumber = await findExistingPR(sprintNum)
+    let devSummary = ''
 
-    // 步骤 2：执行独立 Reviewer 审查（可选）
+    if (prNumber) {
+      log(`ℹ️ Sprint ${sprintNum} 已有 PR #${prNumber}，跳过开发`)
+    } else {
+      // 步骤 1：调用 /my-sprint-execute 执行开发
+      log(`📝 步骤 1/3：调用 /my-sprint-execute 执行开发任务...`)
+      const devResult = await callSprintExecute(sprintNum, planPath, checklistPath)
+      prNumber = devResult.prNumber
+      devSummary = devResult.summary
+
+      // 降级：如果 skill 没返回 PR 号，查 GitHub
+      if (!prNumber) {
+        log(`⚠️ 开发结果中未找到 PR 号，查询 GitHub...`)
+        const fallback = await agent(
+          `Run: gh pr list --repo ${REPO} --state open --json number,createdAt --jq 'sort_by(.createdAt) | reverse | .[0].number'\nReturn ONLY the number.`,
+          { label: `查询最近 PR`, phase: `Sprint-${sprintNum}` }
+        )
+        prNumber = extractNumber(fallback)
+      }
+
+      if (!prNumber) throw new Error(`未找到 Sprint ${sprintNum} 的 PR`)
+    }
+    log(`✅ PR #${prNumber} 已确认`)
+
+    // 步骤 2：独立 Reviewer 审查（workflow 质量门禁）
     log(`🔍 步骤 2/3：执行独立 Reviewer 审查...`)
     const reviewerResult = await executeReviewerReview(sprintNum, prNumber)
-
     if (!reviewerResult.passed) {
       log(`❌ Reviewer 审查未通过: ${reviewerResult.status}`)
-
-      // 如果 reviewer 审查失败，暂停 workflow
-      await saveState({
-        sprintNum,
-        prNumber,
-        status: 'reviewer_failed',
-        reviewerResult,
-        pollCount: 0
-      })
-
-      return {
-        sprintNum,
-        prNumber,
-        status: 'reviewer_failed',
-        reviewerResult
-      }
+      return { sprintNum, prNumber, status: 'reviewer_failed', reviewerResult }
     }
 
-    log(`✅ Reviewer 审查通过`)
-
-    // 步骤 3：等待 PR 合并（包括 GitHub reviewer 的 review）
+    // 步骤 3：等待 PR 合并（含 /my-pr-review-response 自动处理 review）
     log(`⏳ 步骤 3/3：等待 PR 合并...`)
-    const mergeResult = await waitForPRMerge(repo, prNumber, sprintNum)
+    const mergeResult = await waitForPRMerge(prNumber, sprintNum)
 
-    return {
-      sprintNum,
-      prNumber,
-      reviewerResult,
-      ...mergeResult
-    }
+    return { sprintNum, prNumber, ...mergeResult }
   } catch (error) {
-    log(`❌ Sprint ${sprintNum} 执行失败: ${error.message}`)
-    return {
-      sprintNum,
-      status: 'failed',
-      error: error.message
-    }
+    log(`❌ Sprint ${sprintNum} 执行失败: ${error.message || error}`)
+    return { sprintNum, status: 'failed', error: String(error) }
   }
 }
 
-// 辅助函数：检查依赖是否满足
-function checkDependencies(sprintNum, completedSprints) {
-  const dependencies = DEPENDENCY_GRAPH[sprintNum] || []
-  return dependencies.every(dep => completedSprints.includes(dep))
-}
-
-// 主 workflow 逻辑
+// ── 主逻辑 ──
 async function main() {
+  const safeArgs = args || {}
+  const planPath = safeArgs.planPath || '/home/stark/.claude/plans/plan-sprint-*.md'
+  const checklistPath = safeArgs.checklistPath || '/data/hermes/docs/execution-checklist.md'
+
   log('🚀 启动统一版 Sprint 执行流水线...')
-  log(`📋 配置信息：`)
-  log(`   - 独立审查: ${REVIEWER_CONFIG.enabled ? '启用' : '禁用'}`)
-  if (REVIEWER_CONFIG.enabled) {
-    log(`   - 最大尝试次数: ${REVIEWER_CONFIG.maxAttempts}`)
-    log(`   - 通过阈值: ${REVIEWER_CONFIG.passThreshold * 100}%`)
-    log(`   - 自动修复: ${REVIEWER_CONFIG.autoFixEnabled ? '启用' : '禁用'}`)
-  }
+  log(`📋 配置：`)
+  log(`   仓库: ${REPO}`)
+  log(`   独立审查: ${REVIEWER_CONFIG.enabled ? '启用' : '禁用'}`)
+  log(`   Plan: ${planPath}`)
+  log(`   Checklist: ${checklistPath}`)
 
-  // 获取仓库信息
-  const repo = args.repo || 'stark/hermes'  // 默认仓库，可通过 args 传入
+  log(`\n📌 Skill 调用链:`)
+  log(`   开发: /my-sprint-execute → Git 分支 + 代码 + 测试 + PR`)
+  log(`   PR:   /my-pr-skill → PR 管理 (manage-pr.sh)`)
+  log(`   Review: /my-pr-review-response → 读评论 + 修复 + 回复`)
 
-  // 记录已完成的 sprint
   const completedSprints = []
   const failedSprints = []
 
-  // Sprint 执行配置
   const sprintConfig = [
     { phase: 'Sprint-1', sprints: [1] },
     { phase: 'Sprint-2', sprints: [2] },
@@ -502,99 +385,64 @@ async function main() {
     { phase: 'Sprint-13', sprints: [13] }
   ]
 
-  // 执行每个 phase
   for (const config of sprintConfig) {
     log(`\n${'='.repeat(60)}`)
     log(`📋 Phase: ${config.phase}`)
     log(`${'='.repeat(60)}`)
 
-    // 检查依赖
-    const canExecute = config.sprints.every(sprintNum => {
-      const depsSatisfied = checkDependencies(sprintNum, completedSprints)
-      if (!depsSatisfied) {
-        log(`⚠️ Sprint ${sprintNum} 依赖未满足，跳过`)
+    const canExecute = config.sprints.every(s => {
+      if (!checkDependencies(s, completedSprints)) {
+        log(`⚠️ Sprint ${s} 依赖未满足，跳过`)
         return false
       }
       return true
     })
-
     if (!canExecute) {
       log(`❌ Phase ${config.phase} 依赖未满足，跳过`)
       continue
     }
 
-    // 并行执行多个 sprint
+    // 为每个 Sprint 解析 plan 路径
+    const resolvePlan = (s) => planPath.replace('*', s)
+
     if (config.sprints.length > 1) {
       log(`⚡ 并行执行 Sprints: ${config.sprints.join(', ')}`)
-
       const results = await parallel(
-        config.sprints.map(sprintNum => () => executeSprint(sprintNum, repo))
+        config.sprints.map(s => () => executeSprint(s, resolvePlan(s), checklistPath))
       )
-
-      // 处理结果
-      results.forEach((result, index) => {
-        const sprintNum = config.sprints[index]
-        if (result.status === 'merged') {
-          completedSprints.push(sprintNum)
-          log(`✅ Sprint ${sprintNum} 完成并合并`)
+      results.forEach((result, idx) => {
+        const s = config.sprints[idx]
+        if (result && result.status === 'merged') {
+          completedSprints.push(s)
+          log(result.skipped ? `⏭️ Sprint ${s} 已完成（跳过）` : `✅ Sprint ${s} 完成`)
         } else {
-          failedSprints.push(sprintNum)
-          log(`❌ Sprint ${sprintNum} 失败: ${result.status}`)
-
-          // 如果有超时或失败，保存状态并提示 resume
-          if (result.status === 'timeout' || result.status === 'review_failed' || result.status === 'reviewer_failed') {
-            log(`\n⏸️ Workflow 暂停，请处理后调用 resume`)
-            log(`   命令: workflow resume ${process.env.WORKFLOW_RUN_ID}`)
-            return {
-              status: 'paused',
-              completedSprints,
-              failedSprints,
-              pausedSprint: sprintNum,
-              prNumber: result.prNumber,
-              failureReason: result.status
-            }
-          }
+          failedSprints.push(s)
+          log(`❌ Sprint ${s} 失败: ${result ? result.status : 'unknown'}`)
         }
       })
     } else {
-      // 串行执行单个 sprint
-      const sprintNum = config.sprints[0]
-      const result = await executeSprint(sprintNum, repo)
-
+      const s = config.sprints[0]
+      const result = await executeSprint(s, resolvePlan(s), checklistPath)
       if (result.status === 'merged') {
-        completedSprints.push(sprintNum)
-        log(`✅ Sprint ${sprintNum} 完成并合并`)
+        completedSprints.push(s)
+        log(result.skipped ? `⏭️ Sprint ${s} 已完成（跳过）` : `✅ Sprint ${s} 完成`)
       } else {
-        failedSprints.push(sprintNum)
-        log(`❌ Sprint ${sprintNum} 失败: ${result.status}`)
-
-        // 如果有超时或失败，保存状态并提示 resume
-        if (result.status === 'timeout' || result.status === 'review_failed' || result.status === 'reviewer_failed') {
-          log(`\n⏸️ Workflow 暂停，请处理后调用 resume`)
-          log(`   命令: workflow resume ${process.env.WORKFLOW_RUN_ID}`)
-          return {
-            status: 'paused',
-            completedSprints,
-            failedSprints,
-            pausedSprint: sprintNum,
-            prNumber: result.prNumber,
-            failureReason: result.status
-          }
-        }
+        failedSprints.push(s)
+        log(`❌ Sprint ${s} 失败: ${result.status}`)
       }
+    }
+
+    if (failedSprints.length > 0) {
+      log(`⚠️ 有失败的 Sprint，停止后续 Phase`)
+      break
     }
   }
 
-  // 完成总结
   log(`\n${'='.repeat(60)}`)
   log(`📊 执行总结`)
   log(`${'='.repeat(60)}`)
-  log(`✅ 完成: ${completedSprints.length} 个 sprints`)
-  log(`❌ 失败: ${failedSprints.length} 个 sprints`)
-
-  if (failedSprints.length > 0) {
-    log(`失败的 sprints: ${failedSprints.join(', ')}`)
-  }
+  log(`✅ 完成: ${completedSprints.length} — ${completedSprints.join(', ') || '无'}`)
+  log(`❌ 失败: ${failedSprints.length} — ${failedSprints.join(', ') || '无'}`)
 
   return {
     status: failedSprints.length > 0 ? 'partial' : 'completed',
@@ -603,53 +451,4 @@ async function main() {
   }
 }
 
-// Resume 逻辑（从暂停点恢复）
-async function resume() {
-  log('🔄 恢复 workflow 执行...')
-
-  const state = await loadState()
-
-  if (!state) {
-    log('❌ 未找到保存的状态，无法恢复')
-    return { status: 'no_state' }
-  }
-
-  log(`📋 从 Sprint ${state.sprintNum} 恢复，PR #${state.prNumber}`)
-  log(`   失败原因: ${state.status || 'unknown'}`)
-
-  // 根据失败原因决定恢复策略
-  if (state.status === 'reviewer_failed') {
-    log(`🔍 重新执行 Reviewer 审查...`)
-    const reviewerResult = await executeReviewerReview(state.sprintNum, state.prNumber)
-
-    if (!reviewerResult.passed) {
-      log(`❌ Reviewer 审查仍然失败`)
-      return { status: 'reviewer_failed', reviewerResult }
-    }
-
-    log(`✅ Reviewer 审查通过，继续等待 PR 合并...`)
-  }
-
-  // 继续等待 PR 合并
-  const repo = args.repo || 'stark/hermes'
-  const mergeResult = await waitForPRMerge(repo, state.prNumber, state.sprintNum)
-
-  if (mergeResult.status === 'merged') {
-    log(`✅ PR #${state.prNumber} 已合并，继续执行后续 sprints`)
-
-    // 重新执行主流程（从当前点开始）
-    return await main()
-  } else {
-    log(`❌ PR #${state.prNumber} 仍未合并，状态: ${mergeResult.status}`)
-    return mergeResult
-  }
-}
-
-// 入口点
-const command = args.command || 'start'
-
-if (command === 'resume') {
-  return await resume()
-} else {
-  return await main()
-}
+return await main()
