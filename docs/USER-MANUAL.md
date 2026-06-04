@@ -579,7 +579,7 @@ orch-stop my-app
 |------|------|
 | `orch-mvp-wizard --project-id <id> --project-dir <dir>` | 一键引导安装/配置/启动/验收 |
 | `orch-profile-sync` | 编译 profile catalog |
-| `orch-doctor` | 诊断安装和配置问题 |
+| `bash scripts/orch-doctor.sh` | 诊断安装和配置问题 |
 
 ### 9.5 GSD 简化命令（在 hermes chat 中使用）
 

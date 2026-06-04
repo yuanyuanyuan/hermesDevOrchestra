@@ -32,7 +32,7 @@ const TESTS_DIR = `${PROJECT_ROOT}/scripts/tests`
 const BIN_DIR = `${PROJECT_ROOT}/scripts/bin`
 
 function isVetoDimension(dim) {
-  return Boolean(dim.is_veto) || VETO_DIMENSION_IDS.has(dim.id)
+  return VETO_DIMENSION_IDS.has(dim.id)
 }
 
 function countResultStatuses(results) {
