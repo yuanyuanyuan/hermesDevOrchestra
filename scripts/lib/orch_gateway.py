@@ -5178,6 +5178,11 @@ class GatewayApp:
         if not self.closeout_test_execution_refs_valid(run_id, closeout_report.get("test_execution_refs")):
             blockers.append("test_execution_refs")
 
+        from gateway_closeout import closeout_conflict_blockers, load_conflict_ledger
+        conflict_ledger = load_conflict_ledger(self.store.conflict_ledger_path(run_id))
+        conflict_blockers = closeout_conflict_blockers(conflict_ledger)
+        blockers.extend(conflict_blockers)
+
         run = read_json(self.store.run_path(run_id))
         artifact_refs = run.get("artifact_refs") if isinstance(run.get("artifact_refs"), dict) else {}
         if not artifact_refs.get("global_evaluation_report"):

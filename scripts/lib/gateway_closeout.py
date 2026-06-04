@@ -2,8 +2,137 @@ from __future__ import annotations
 
 import fnmatch
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import uuid
+
+
+FULL_SCHEMA_VERSION = "orchestra.full.v1"
+VALID_SEVERITIES = {"high", "medium", "low"}
+VALID_RESOLUTIONS = {"open", "auto_resolved", "accepted_risk", "manual_resolved", "superseded"}
+
+
+def load_conflict_ledger(path: Path) -> dict[str, Any]:
+    """Load conflict ledger from disk. Returns empty ledger if missing."""
+    if not path.exists():
+        return {"schema_version": FULL_SCHEMA_VERSION, "artifact_type": "conflict_ledger", "run_id": "", "conflicts": []}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"schema_version": FULL_SCHEMA_VERSION, "artifact_type": "conflict_ledger", "run_id": "", "conflicts": []}
+    if not isinstance(data, dict):
+        return {"schema_version": FULL_SCHEMA_VERSION, "artifact_type": "conflict_ledger", "run_id": "", "conflicts": []}
+    return data
+
+
+def validate_conflict_record(record: dict[str, Any]) -> list[str]:
+    """Validate a single conflict record. Returns list of violations."""
+    violations = []
+    if not isinstance(record.get("conflict_id"), str) or not record["conflict_id"]:
+        violations.append("conflict_id missing or empty")
+    if not isinstance(record.get("run_id"), str) or not record["run_id"]:
+        violations.append("run_id missing or empty")
+    severity = record.get("severity")
+    if severity not in VALID_SEVERITIES:
+        violations.append(f"severity must be one of {sorted(VALID_SEVERITIES)}, got {severity!r}")
+    resolution = record.get("resolution")
+    if resolution not in VALID_RESOLUTIONS:
+        violations.append(f"resolution must be one of {sorted(VALID_RESOLUTIONS)}, got {resolution!r}")
+    if not isinstance(record.get("created_at"), str) or not record["created_at"]:
+        violations.append("created_at missing or empty")
+    return violations
+
+
+def append_conflict(ledger_path: Path, conflict: dict[str, Any]) -> dict[str, Any]:
+    """Append a conflict record to the ledger. Returns updated ledger."""
+    violations = validate_conflict_record(conflict)
+    if violations:
+        raise ValueError(f"invalid conflict record: {'; '.join(violations)}")
+    ledger = load_conflict_ledger(ledger_path)
+    conflicts = ledger.get("conflicts")
+    if not isinstance(conflicts, list):
+        conflicts = []
+    conflicts.append(conflict)
+    ledger["conflicts"] = conflicts
+    ledger["schema_version"] = FULL_SCHEMA_VERSION
+    ledger["artifact_type"] = "conflict_ledger"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(json.dumps(ledger, indent=2, ensure_ascii=False), encoding="utf-8")
+    return ledger
+
+
+def query_open_conflicts(ledger: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return all conflicts with resolution=open."""
+    conflicts = ledger.get("conflicts")
+    if not isinstance(conflicts, list):
+        return []
+    return [c for c in conflicts if isinstance(c, dict) and c.get("resolution") == "open"]
+
+
+def query_open_high_conflicts(ledger: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return conflicts with resolution=open and severity=high."""
+    return [c for c in query_open_conflicts(ledger) if c.get("severity") == "high"]
+
+
+def query_unjustified_accepted_risk(ledger: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return accepted_risk conflicts missing resolver or resolution_evidence."""
+    conflicts = ledger.get("conflicts")
+    if not isinstance(conflicts, list):
+        return []
+    results = []
+    for c in conflicts:
+        if not isinstance(c, dict):
+            continue
+        if c.get("resolution") != "accepted_risk":
+            continue
+        resolver = c.get("resolver", "")
+        evidence = c.get("resolution_evidence", "")
+        if not isinstance(resolver, str) or not resolver.strip():
+            results.append(c)
+        elif not isinstance(evidence, str) or not evidence.strip():
+            results.append(c)
+    return results
+
+
+def resolve_conflict(ledger_path: Path, conflict_id: str, resolution: str, resolver: str = "", resolution_evidence: str = "") -> dict[str, Any]:
+    """Resolve a conflict in the ledger. Returns updated ledger."""
+    if resolution not in VALID_RESOLUTIONS:
+        raise ValueError(f"invalid resolution: {resolution!r}")
+    if resolution in ("accepted_risk", "manual_resolved") and not resolver:
+        raise ValueError(f"resolution={resolution} requires resolver")
+    if resolution in ("accepted_risk", "manual_resolved", "auto_resolved") and not resolution_evidence:
+        raise ValueError(f"resolution={resolution} requires resolution_evidence")
+    ledger = load_conflict_ledger(ledger_path)
+    conflicts = ledger.get("conflicts")
+    if not isinstance(conflicts, list):
+        raise ValueError("ledger has no conflicts list")
+    found = False
+    now = datetime.now(timezone.utc).isoformat()
+    for c in conflicts:
+        if isinstance(c, dict) and c.get("conflict_id") == conflict_id:
+            c["resolution"] = resolution
+            c["resolver"] = resolver
+            c["resolution_evidence"] = resolution_evidence
+            c["resolved_at"] = now
+            found = True
+            break
+    if not found:
+        raise ValueError(f"conflict_id {conflict_id!r} not found in ledger")
+    ledger_path.write_text(json.dumps(ledger, indent=2, ensure_ascii=False), encoding="utf-8")
+    return ledger
+
+
+def closeout_conflict_blockers(ledger: dict[str, Any]) -> list[str]:
+    """Check conflict ledger for closeout blockers. Returns list of blocker reasons."""
+    blockers = []
+    open_high = query_open_high_conflicts(ledger)
+    for c in open_high:
+        blockers.append(f"open_high_conflict:{c.get('conflict_id', 'unknown')}")
+    unjustified = query_unjustified_accepted_risk(ledger)
+    for c in unjustified:
+        blockers.append(f"unjustified_accepted_risk:{c.get('conflict_id', 'unknown')}")
+    return sorted(set(blockers))
 
 
 PROTECTED_TARGETS = [
@@ -45,6 +174,7 @@ def closeout_audit_checklist(run_dir: Path, audit_path: Path, closeout_report: d
         _event_query_check("error_stack", "error_stack", events, "error", allow_empty=True),
         _review_check(closeout_report),
         _closeout_artifact_check(closeout_report, proposals),
+        _conflict_ledger_check(run_dir),
     ]
     missing = [item["id"] for item in checks if not item["passed"]]
     return {
@@ -200,6 +330,20 @@ def _closeout_artifact_check(closeout_report: dict[str, Any], proposals: dict[st
     has_proposals = isinstance(proposals.get("proposals"), list)
     passed = exists and has_summary and has_metrics and has_proposals
     return {"id": "closeout_artifacts", "category": "closeout_artifacts", "exists": exists, "non_empty": passed, "passed": passed}
+
+
+def _conflict_ledger_check(run_dir: Path) -> dict[str, Any]:
+    ledger_path = run_dir / "conflict-ledger.json"
+    ledger = load_conflict_ledger(ledger_path)
+    blockers = closeout_conflict_blockers(ledger)
+    return {
+        "id": "conflict_ledger",
+        "category": "conflict_ledger",
+        "exists": ledger_path.exists(),
+        "non_empty": True,
+        "passed": len(blockers) == 0,
+        "blockers": blockers,
+    }
 
 
 def _intake_package(run_dir: Path, run: dict[str, Any]) -> dict[str, Any] | None:

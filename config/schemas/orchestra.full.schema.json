@@ -2058,6 +2058,41 @@
         "remote_decisions": {"type": "object"}
       },
       "additionalProperties": true
+    },
+    "conflict_severity": {
+      "enum": ["high", "medium", "low"]
+    },
+    "conflict_resolution": {
+      "enum": ["open", "auto_resolved", "accepted_risk", "manual_resolved", "superseded"]
+    },
+    "conflict_record": {
+      "type": "object",
+      "required": ["conflict_id", "run_id", "stage", "type", "severity", "resolution", "created_at"],
+      "properties": {
+        "conflict_id": {"type": "string", "minLength": 1},
+        "run_id": {"type": "string", "minLength": 1},
+        "stage": {"$ref": "#/$defs/stage"},
+        "type": {"type": "string", "minLength": 1},
+        "sources": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "severity": {"$ref": "#/$defs/conflict_severity"},
+        "resolution": {"$ref": "#/$defs/conflict_resolution"},
+        "resolver": {"type": "string"},
+        "resolution_evidence": {"type": "string"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "resolved_at": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "conflict_ledger": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "conflicts"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "conflict_ledger"},
+        "run_id": {"type": "string", "minLength": 1},
+        "conflicts": {"type": "array", "items": {"$ref": "#/$defs/conflict_record"}}
+      },
+      "additionalProperties": true
     }
   }
 }
