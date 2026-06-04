@@ -6,7 +6,7 @@
   "type": "object",
   "allOf": [
     {
-      "if": {"properties": {"artifact_type": {"const": "conflict_ledger"}}},
+      "if": {"required": ["artifact_type"], "properties": {"artifact_type": {"const": "conflict_ledger"}}},
       "then": {"$ref": "#/$defs/conflict_ledger"}
     }
   ],

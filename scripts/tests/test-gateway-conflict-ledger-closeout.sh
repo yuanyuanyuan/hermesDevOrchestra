@@ -352,4 +352,99 @@ assert enriched["conflict_counts"]["by_severity"]["high"] == 2
 print("Test 7 PASSED: conflict_counts and enrichment work correctly")
 PY
 
+# ========================================================================}
+# Test 8: Schema dispatch does not affect objects without artifact_type}
+# ========================================================================}
+python3 - "$REPO_ROOT" <<'PY'
+import json
+import pathlib
+import sys
+
+repo_root = sys.argv[1]
+schema_path = pathlib.Path(repo_root) / "config" / "schemas" / "orchestra.full.schema.json"
+schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+import jsonschema
+validator = jsonschema.Draft202012Validator(schema)
+
+# Object without artifact_type should pass as generic object
+doc = {"schema_version": "orchestra.full.v1", "run_id": "r1", "some_field": "value"}
+errors = list(validator.iter_errors(doc))
+assert len(errors) == 0, f"object without artifact_type should pass: {errors}"
+
+print("Test 8 PASSED: schema dispatch guarded by required artifact_type")
+PY
+
+# ========================================================================}
+# Test 9: Unreadable conflict ledger blocks closeout}
+# ========================================================================}
+python3 - "$REPO_ROOT" "$STATE_ROOT" <<'PY'
+import pathlib
+import sys
+
+repo_root, state_root = sys.argv[1:]
+sys.path.insert(0, str(pathlib.Path(repo_root) / "scripts" / "lib"))
+
+from gateway_closeout import closeout_audit_checklist
+
+tmp = pathlib.Path(state_root) / "test-unreadable" / "runs" / "run-9"
+(tmp / "worker-sessions").mkdir(parents=True, exist_ok=True)
+audit_path = pathlib.Path(state_root) / "test-unreadable" / "audit.jsonl"
+audit_path.parent.mkdir(parents=True, exist_ok=True)
+audit_path.write_text("", encoding="utf-8")
+
+(tmp / "run.json").write_text('{"intake_package": {"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8}}', encoding="utf-8")
+(tmp / "events.jsonl").write_text("", encoding="utf-8")
+
+# Write corrupted conflict ledger
+(tmp / "conflict-ledger.json").write_text("this is not json{!", encoding="utf-8")
+
+closeout_report = {"schema_version": "orchestra.v1", "run_id": "run-9", "closeout_summary": {}, "metrics_summary": {}, "final_acceptance": {}, "completion_gate": {}}
+proposals = {"proposals": []}
+
+result = closeout_audit_checklist(tmp, audit_path, closeout_report, proposals)
+cl_check = next(c for c in result["checks"] if c["id"] == "conflict_ledger")
+assert cl_check["exists"], "conflict ledger should exist"
+assert not cl_check["passed"], "should fail with unreadable ledger"
+assert any("unreadable_conflict_ledger" in b for b in cl_check["blockers"]), cl_check["blockers"]
+
+print("Test 9 PASSED: unreadable conflict ledger blocks closeout")
+PY
+
+# ========================================================================}
+# Test 10: validate_conflict_record rejects missing stage and type}
+# ========================================================================}
+python3 - "$REPO_ROOT" <<'PY'
+import pathlib
+import sys
+
+repo_root = sys.argv[1]
+sys.path.insert(0, str(pathlib.Path(repo_root) / "scripts" / "lib"))
+
+from gateway_closeout import validate_conflict_record
+
+# Missing stage
+violations = validate_conflict_record({
+    "conflict_id": "c1", "run_id": "r1", "severity": "high",
+    "resolution": "open", "created_at": "2026-01-01T00:00:00Z"
+})
+assert any("stage" in v for v in violations), violations
+
+# Missing type
+violations = validate_conflict_record({
+    "conflict_id": "c1", "run_id": "r1", "stage": "direction_debate",
+    "severity": "high", "resolution": "open", "created_at": "2026-01-01T00:00:00Z"
+})
+assert any("type" in v for v in violations), violations
+
+# Valid record passes
+violations = validate_conflict_record({
+    "conflict_id": "c1", "run_id": "r1", "stage": "direction_debate", "type": "test",
+    "severity": "high", "resolution": "open", "created_at": "2026-01-01T00:00:00Z"
+})
+assert len(violations) == 0, violations
+
+print("Test 10 PASSED: validate_conflict_record checks stage and type")
+PY
+
 test_done

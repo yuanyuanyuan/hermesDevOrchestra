@@ -39,6 +39,10 @@ def validate_conflict_record(record: dict[str, Any]) -> list[str]:
     resolution = record.get("resolution")
     if resolution not in VALID_RESOLUTIONS:
         violations.append(f"resolution must be one of {sorted(VALID_RESOLUTIONS)}, got {resolution!r}")
+    if not isinstance(record.get("stage"), str) or not record["stage"]:
+        violations.append("stage missing or empty")
+    if not isinstance(record.get("type"), str) or not record["type"]:
+        violations.append("type missing or empty")
     if not isinstance(record.get("created_at"), str) or not record["created_at"]:
         violations.append("created_at missing or empty")
     return violations
@@ -363,6 +367,27 @@ def _closeout_artifact_check(closeout_report: dict[str, Any], proposals: dict[st
 
 def _conflict_ledger_check(run_dir: Path) -> dict[str, Any]:
     ledger_path = run_dir / "conflict-ledger.json"
+    if ledger_path.exists():
+        try:
+            raw = json.loads(ledger_path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return {
+                    "id": "conflict_ledger",
+                    "category": "conflict_ledger",
+                    "exists": True,
+                    "non_empty": False,
+                    "passed": False,
+                    "blockers": ["unreadable_conflict_ledger:invalid_structure"],
+                }
+        except (OSError, json.JSONDecodeError):
+            return {
+                "id": "conflict_ledger",
+                "category": "conflict_ledger",
+                "exists": True,
+                "non_empty": False,
+                "passed": False,
+                "blockers": ["unreadable_conflict_ledger:json_decode_error"],
+            }
     ledger = load_conflict_ledger(ledger_path)
     blockers = closeout_conflict_blockers(ledger)
     return {
