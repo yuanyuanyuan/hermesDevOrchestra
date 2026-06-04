@@ -358,6 +358,8 @@ log("验证完成：" + validResults.length + "/" + extractResult.dimensions.len
 // 构建 id -> index 映射，用于 veto_status 和 critical_gaps 查找
 const dimIdToIndex = {}
 extractResult.dimensions.forEach((dim, idx) => { dimIdToIndex[dim.id] = idx })
+const dimById = {}
+extractResult.dimensions.forEach(dim => { dimById[dim.id] = dim })
 
 // 直接用索引匹配，处理 null 值
 const complianceReport = {
@@ -380,10 +382,17 @@ const complianceReport = {
       issues,
     }
   }),
-  veto_status: extractResult.dimensions
-    .filter(dim => isVetoDimension(dim))
-    .map(dim => {
-      const idx = dimIdToIndex[dim.id]
+  veto_status: VETO_DIMENSIONS
+    .map(vetoId => {
+      const dim = dimById[vetoId]
+      if (!dim) {
+        return {
+          dimension: vetoId,
+          passed: false,
+          reason: "固定一票否决维度未被提取，按失败处理",
+        }
+      }
+      const idx = dimIdToIndex[vetoId]
       const vr = verifyResults[idx]
       const score = vr ? vr.dimension_score : 0
       const counts = countResultStatuses(vr && vr.results)
@@ -396,15 +405,18 @@ const complianceReport = {
           : `${counts.pass}/${counts.total} 通过，score ${(score * 100).toFixed(0)}%`,
       }
     }),
-  critical_gaps: extractResult.dimensions
-    .filter(dim => isVetoDimension(dim))
-    .filter(dim => {
-      const idx = dimIdToIndex[dim.id]
+  critical_gaps: VETO_DIMENSIONS
+    .filter(vetoId => {
+      const dim = dimById[vetoId]
+      if (!dim) return true
+      const idx = dimIdToIndex[vetoId]
       const vr = verifyResults[idx]
       return !vr || vr.dimension_score < PASS_THRESHOLD
     })
-    .map(dim => {
-      const idx = dimIdToIndex[dim.id]
+    .map(vetoId => {
+      const dim = dimById[vetoId]
+      if (!dim) return `${vetoId}: 固定一票否决维度未被提取`
+      const idx = dimIdToIndex[vetoId]
       const vr = verifyResults[idx]
       const score = vr ? vr.dimension_score : 0
       const counts = countResultStatuses(vr && vr.results)
