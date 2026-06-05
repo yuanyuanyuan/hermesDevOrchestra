@@ -29,7 +29,7 @@ from dispatch_gate import dispatch_task, submit_completion_payload
 from gateway_improvement import improvement_cycles_endpoint, normalize_classification, reject_unknown_classification, review_verdict_budget_exceeded, submit_improvement_endpoint, write_regression_decision
 from gateway_evaluation import append_side_events as append_global_evaluation_side_events
 from gateway_evaluation import normalize_global_evaluation
-from gateway_closeout import closeout_audit_checklist, enrich_proposals, protected_target_approval_blockers, protected_target_rejection
+from gateway_closeout import closeout_audit_checklist, enrich_proposals, protected_target_approval_blockers, protected_target_rejection, FULL_SCHEMA_VERSION as CONFLICT_LEDGER_SCHEMA_VERSION
 from run_projection import PROJECTION_SCHEMA_VERSION, projection_response, refresh_projection_response
 from runtime_activation import RuntimeActivation, RuntimeActivationError
 
@@ -1656,7 +1656,7 @@ class GatewayApp:
         write_json(
             self.store.conflict_ledger_path(run_id),
             {
-                "schema_version": SCHEMA_VERSION,
+                "schema_version": CONFLICT_LEDGER_SCHEMA_VERSION,
                 "artifact_type": "conflict_ledger",
                 "run_id": run_id,
                 "conflicts": [],
@@ -5363,6 +5363,12 @@ class GatewayApp:
 
         if not self.closeout_test_execution_refs_valid(run_id, closeout_report.get("test_execution_refs")):
             blockers.append("test_execution_refs")
+
+        from gateway_closeout import closeout_conflict_blockers, conflict_counts, load_conflict_ledger
+        conflict_ledger = load_conflict_ledger(self.store.conflict_ledger_path(run_id))
+        conflict_blockers = closeout_conflict_blockers(conflict_ledger)
+        blockers.extend(conflict_blockers)
+        closeout_report["conflict_counts"] = conflict_counts(conflict_ledger)
 
         run = read_json(self.store.run_path(run_id))
         artifact_refs = run.get("artifact_refs") if isinstance(run.get("artifact_refs"), dict) else {}

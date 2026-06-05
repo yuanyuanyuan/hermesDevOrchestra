@@ -8,7 +8,7 @@ Required fields:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `schema_version` | string | `orchestra.v1` initially; full schema definition must be synchronized. |
+| `schema_version` | string | `orchestra.full.v1`. |
 | `artifact_type` | string | `conflict_ledger` |
 | `run_id` | string | Owner run. |
 | `conflicts[]` | array | Items use PRD §3.5 fields. |
@@ -18,7 +18,7 @@ Conflict item required fields: `conflict_id`, `run_id`, `stage`, `type`, `source
 Enums:
 - `type`: `intent_vs_inference`, `fact_vs_assumption`, `cross_team_conflict`, `dependency_conflict`, `user_override`
 - `severity`: `high`, `medium`, `low`
-- `resolution`: `open`, `auto_resolved`, `escalated`, `overridden`, `accepted_risk`
+- `resolution`: `open`, `auto_resolved`, `accepted_risk`, `manual_resolved`, `superseded`
 
 ### `run.lifecycle_status`
 

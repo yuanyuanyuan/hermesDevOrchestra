@@ -2,8 +2,9 @@
 name: my-pr-review
 description: >
   对指定 GitHub PR 执行完整的结构化 Code Review。
-  收集情报、按维度逐项检查、以 PR Review Body 方式发送结构化 review 结果，
-  提交 REQUEST_CHANGES 或 review approved comment，并基于证据做出合并/拒绝建议。
+  情报收集通过 my-pr-skill 完成，代码审查委托给 ce-code-review 技能，
+  最终以 PR Review Body 方式提交结构化 review 结果。
+  所有 GitHub 操作通过 my-pr-skill 脚本完成，不直接调用 gh。
   Reviewer 身份：stark-008。
   注意：GitHub 不允许 PR 作者对自己的 PR 提交 REQUEST_CHANGES 或 APPROVE review，
   因此 self-review 场景下所有事件降级为 COMMENT。合并由用户手动执行。
@@ -31,6 +32,7 @@ my-pr-review <PR_NUMBER>
 ## 环境要求
 
 - `my-pr-skill` 已加载（所有 GitHub 操作由其 scripts/ 目录下的脚本完成）
+- `ce-code-review` 技能可用（compound-engineering 插件提供）
 - `gh` CLI 已安装且已认证（由 `my-pr-skill` 底层脚本使用）
 - 当前目录 `${REPO_DIR}` 为项目本地仓库
 - 具有 `repo` 或 `pull_requests:write` 权限的 GitHub Token
@@ -42,13 +44,13 @@ my-pr-review <PR_NUMBER>
 | 变量 | 来源 |
 |------|------|
 | `${PR_NUMBER}` | 调用参数 `<PR_NUMBER>` |
-| `${OWNER}` | `my-pr-skill` 脚本 `get-repo-info.sh --owner` |
-| `${REPO}` | `my-pr-skill` 脚本 `get-repo-info.sh --repo` |
+| `${OWNER}` | `${MY_PR_SKILL_SCRIPTS}/get-repo-info.sh --owner` |
+| `${REPO}` | `${MY_PR_SKILL_SCRIPTS}/get-repo-info.sh --repo` |
 | `${REPO_DIR}` | 当前工作目录（`$(pwd)`） |
-| `${PR_URL}` | `my-pr-skill` 脚本 `get-pr-metadata.sh --number=N --field=url` |
+| `${PR_URL}` | `${MY_PR_SKILL_SCRIPTS}/get-pr-metadata.sh --number=${PR_NUMBER} --field=url` |
 | `${REVIEW_DRAFT}` | `${REPO_DIR}/.tmp/pr-review-draft-${PR_NUMBER}.md` |
 | `${MY_PR_SKILL_SCRIPTS}` | `my-pr-skill` 的 scripts 目录路径 |
-| `${IS_SELF_REVIEW}` | 阶段 4 步骤 A 检测：`reviewer == PR author` 时为 `true` |
+| `${IS_SELF_REVIEW}` | 阶段 3 步骤 A 检测：`reviewer == PR author` 时为 `true` |
 
 ---
 
@@ -56,134 +58,100 @@ my-pr-review <PR_NUMBER>
 
 ### 阶段 1：情报收集（INTELLIGENCE GATHERING）
 
-**步骤 A — 加载技能并读取 PR 元数据**
+通过 `my-pr-skill` 获取 PR 元数据和已有 review 信息。
 
-通过 `my-pr-skill` 获取仓库信息（`${OWNER}`、`${REPO}`）和 PR 元数据（`${PR_URL}`、完整 metadata JSON）。
+**步骤 A — 获取仓库信息和 PR 元数据**
 
-**步骤 B — 读取 PR 完整 diff**
+```bash
+OWNER=$(${MY_PR_SKILL_SCRIPTS}/get-repo-info.sh --owner)
+REPO=$(${MY_PR_SKILL_SCRIPTS}/get-repo-info.sh --repo)
+PR_URL=$(${MY_PR_SKILL_SCRIPTS}/get-pr-metadata.sh --number=${PR_NUMBER} --field=url)
+HEAD_SHA=$(${MY_PR_SKILL_SCRIPTS}/get-pr-metadata.sh --number=${PR_NUMBER} --field=headRefOid)
+MERGEABLE=$(${MY_PR_SKILL_SCRIPTS}/get-pr-metadata.sh --number=${PR_NUMBER} --field=mergeable)
+PR_AUTHOR=$(${MY_PR_SKILL_SCRIPTS}/get-pr-metadata.sh --number=${PR_NUMBER} --field=author)
+```
 
-通过 `my-pr-skill` 的 `get-pr-diff.sh` 获取 PR diff 及变更文件列表。
+**步骤 B — 获取已有 Review Comments（用于去重和 self-review 检测）**
 
-**步骤 C — 读取已有 Review Comments（避免重复评论）**
+```bash
+${MY_PR_SKILL_SCRIPTS}/get-pr-reviews.sh --number=${PR_NUMBER} \
+  --output=${REPO_DIR}/.tmp/pr-${PR_NUMBER}-reviews.json \
+  --comments-output=${REPO_DIR}/.tmp/pr-${PR_NUMBER}-review-comments.json
 
-通过 `my-pr-skill` 的 `get-pr-reviews.sh` 和 `get-pr-comments.sh` 获取已有 reviews 和 issue comments。
+${MY_PR_SKILL_SCRIPTS}/get-pr-comments.sh --number=${PR_NUMBER} \
+  --output=${REPO_DIR}/.tmp/pr-${PR_NUMBER}-comments.json
+```
 
-**步骤 D — 读取相关上下文**
+**步骤 C — 检查 Reviewer 身份**
 
-从 PR body 中提取引用的文档路径和关联 issue，保存到本地引用列表。
+```bash
+REVIEWER=$(gh api user --jq '.login')
+```
+
+> 注意：获取当前用户身份是 `my-pr-skill` 未封装的操作，可直接调用 `gh api user`。
+
+如果 `REVIEWER == PR_AUTHOR`，设置 `${IS_SELF_REVIEW} = true`，否则为 `false`。
 
 ---
 
-### 阶段 2：REVIEW 执行标准（REVIEW CRITERIA）
+### 阶段 2：代码审查（CODE REVIEW — 委托 ce-code-review）
 
-遍历每个变更文件，逐项检查：
+> **核心设计**：本阶段不自行调度 reviewer agents，而是委托给 `ce-code-review` 技能。
+> 该技能是 compound-engineering 插件提供的多 agent 编排器，负责：
+> - 根据 diff 内容自动选择 reviewer personas（always-on + conditional）
+> - 并行 spawn sub-agents 执行多维度审查
+> - Merge/dedup findings + confidence gating
+> - 生成结构化 review 报告
 
-#### A. 代码质量（Code Quality）
-- [ ] **命名规范**：函数/类/变量名符合项目约定
-- [ ] **复杂度**：无过度嵌套，无超长函数（>50行）
-- [ ] **重复代码**：DRY 原则，无 copy-paste 块
-- [ ] **错误处理**：异常路径有处理，不裸 `except`
-- [ ] **类型安全**：Python 有类型注解，JSON 有 schema 验证
+**调用方式：**
 
-#### B. 架构合规（Architecture Compliance）
-- [ ] **ADR 引用**：实现与引用的 ADR 一致
-- [ ] **边界遵守**：未修改 PR 范围外的文件
-- [ ] **依赖控制**：未引入不必要的新依赖
-- [ ] **接口契约**：新增 API 有明确输入/输出/异常定义
+使用 `Skill` tool 调用 `ce-code-review`：
 
-#### C. 测试覆盖（Test Coverage）
-- [ ] **测试存在**：新增代码有对应测试
-- [ ] **测试通过**：运行对应 `test-*.sh` exit 0
-- [ ] **负向测试**：有错误路径/边界条件测试
-- [ ] **无回归**：完整测试套件通过
+```
+skill: "ce-code-review"
+args: "${PR_NUMBER} mode:headless"
+```
 
-#### D. 安全与合规（Security & Compliance）
-- [ ] **无注入风险**：无 `shell=True`、无字符串拼接命令
-- [ ] **无密钥硬编码**：无 API key/password 明文
-- [ ] **权限正确**：文件权限 0600/0700，无过度授权
-- [ ] **输入验证**：外部输入有校验/转义
+- `${PR_NUMBER}`：告诉 `ce-code-review` review 哪个 PR
+- `mode:headless`：程序化模式，返回结构化 findings，不交互、不修改文件
 
-#### E. 文档完整（Documentation）
-- [ ] **代码注释**：复杂逻辑有注释，公共函数有 docstring
-- [ ] **ADR 更新**：架构变更有对应 ADR 记录
-- [ ] **PR Body**：需求来源、背景、测试证据齐全
-- [ ] **配置文档**：新增配置项有说明和示例
+> `ce-code-review` 会自动：
+> 1. checkout PR branch
+> 2. 计算 diff（against PR base branch）
+> 3. 分析 diff 内容选择 reviewer agents
+> 4. 并行 spawn agents 审查
+> 5. Merge findings + confidence gating
+> 6. 返回结构化报告
+
+**降级策略：**
+
+如果 `ce-code-review` 不可用或执行失败：
+1. 在 review body 中注明："⚠️ ce-code-review 不可用，降级为手动审查"
+2. 手动读取 diff 文件（阶段 1 已收集），按 A-E 维度逐项检查
+3. 使用传统检查清单作为替代
 
 ---
 
-### 阶段 3：发现项清单构建（FINDING LIST）
+### 阶段 3：REVIEW 提交（REVIEW SUBMISSION）
 
-对每一个 **FAIL** 项，在 Review Draft 中构建一条结构化发现项。
+**步骤 A — 映射 Findings 到 Review 格式**
 
-**发现项 Markdown 格式：**
-```markdown
-### [维度-序号] 检查项名称 — FAIL
+将 `ce-code-review` 返回的结构化 findings 映射到 GitHub PR Review 格式：
 
-- **文件**: `文件相对路径` （行号范围或具体行）
-- **问题描述**: 具体说明发现了什么问题
-- **证据**:
-  - 代码片段：[粘贴相关代码]
-  - 命令输出：[如果有测试/lint失败，粘贴输出]
-  - 规范引用：[引用 ADR/SPEC 相关段落]
-- **建议修复**: 给出具体修改建议或替代方案
-```
+1. 从 `ce-code-review` 的输出中提取：
+   - Findings 列表（含 severity, file, line, title, description, suggestion）
+   - Verdict（Ready to merge / Ready with fixes / Not ready）
+   - Coverage 数据
 
-**示例：**
-```markdown
-### [D-03] Security — 命令注入风险
+2. 生成 Review Draft（`${REVIEW_DRAFT}`），包含：
+   - 元数据（reviewer, timestamp, commit SHA, self-review 标记）
+   - Findings 按 severity 分组（P0 → P3）
+   - 合并门控判断
 
-- **文件**: `scripts/lib/release_executor.py:120`
-- **问题描述**: 此处使用 `subprocess.run(cmd, shell=True)`，存在命令注入风险。
-- **证据**:
-  - 代码：`subprocess.run(command_str, shell=True)`（line 120）
-  - 规范：ADR-0013 要求 `arbitrary_shell_allowed: false`
-- **建议修复**: 改用 `subprocess.run(command_list, shell=False)`，并将输入解析为列表。
-```
+> 注：`submit-review.sh` 会在发送时自动在 body 末尾追加 `@codex review`，无需在 Draft 中手动写入。
 
-**去重规则：**
-- 如果已有 comments/reviews 中对相同问题有相似评论，跳过
-- 同一问题跨多行，在发现项中标注核心行号，并在描述中引用行范围
+**步骤 B — 事件类型选择**
 
----
-
-### 阶段 4：REVIEW 提交（REVIEW SUBMISSION）
-
-**步骤 A — 检查 Reviewer 身份**
-
-通过 `gh pr view ${PR_NUMBER} --json author --jq '.author.login'` 获取 PR 作者。
-通过 `gh api user --jq '.login'` 获取当前认证用户（reviewer）。
-
-如果 `reviewer == PR author`，设置 `${IS_SELF_REVIEW} = true`，否则为 `false`。
-
-> ⚠️ **GitHub 限制**：PR 作者不能对自己的 PR 提交 `REQUEST_CHANGES` 或 `APPROVE` review。
-> 当 `IS_SELF_REVIEW == true` 时，所有 review 事件必须降级为 `COMMENT`。
-
-**步骤 B — 生成本地 Review Draft**
-
-写入 `${REVIEW_DRAFT}`，内容模板如下：
-```markdown
-# PR Review: ${PR_URL}
-- Reviewer: stark-008
-- Timestamp: [ISO 8601 时间戳]
-- Commit Reviewed: [PR head commit SHA]
-- Self-Review: ${IS_SELF_REVIEW}（若为 true，事件类型降级为 COMMENT）
-
-## 摘要
-- 检查项总计: N | PASS: X | FAIL: Y | N/A: Z
-- 发现项数量: Y（每个 FAIL 对应一条）
-- 建议决策: [review approved / REQUEST_CHANGES]
-
-## 发现项清单
-[列出每个 FAIL 的文件:行号 + 问题摘要]
-```
-
-> 注：`submit-review.sh` 会在发送 review 时自动在 body 末尾追加 `@codex review`，无需在 Draft 中手动写入。
-
-**步骤 C — 提交 Review**
-
-通过 `my-pr-skill` 的 `submit-review.sh` 提交 review。
-
-事件类型选择逻辑：
 ```
 if IS_SELF_REVIEW:
     event = "COMMENT"  # GitHub 限制，无论 PASS/FAIL 都只能用 COMMENT
@@ -199,18 +167,27 @@ else:
 > 本次 review 以 COMMENT 事件提交，发现项仍需修复后才能合并。
 ```
 
-> 注：底层 `submit-review.sh` 会自动追加 `@codex review` footer，触发 Codex 外部视觉 review。
+**步骤 C — 提交 Review**
+
+通过 `my-pr-skill` 的 `submit-review.sh` 提交：
+
+```bash
+${MY_PR_SKILL_SCRIPTS}/submit-review.sh \
+  --number=${PR_NUMBER} \
+  --event=${EVENT_TYPE} \
+  --body-file=${REVIEW_DRAFT}
+```
 
 ---
 
-### 阶段 5：合并门控（MERGE GATE）
+### 阶段 4：合并门控（MERGE GATE）
 
 > ⚠️ 本 Skill 不执行实际合并操作。合并由用户手动完成。
 
 **必要条件（缺一不可）：**
-- [ ] 本次 review 所有检查项 PASS 或 N/A（无 FAIL）
-- [ ] 测试套件全部通过（有命令输出证据）
-- [ ] Security & Compliance 全 PASS
+- [ ] `ce-code-review` verdict 为 "Ready to merge"（无 P0/P1 findings）
+- [ ] 测试套件全部通过（`ce-code-review` 的 testing reviewer 已验证）
+- [ ] Security reviewer 无 P0/P1 findings
 - [ ] PR `mergeable == true`
 - [ ] 本次 review 的 commit 与 PR head 一致
 
@@ -222,11 +199,9 @@ else:
 - 正常 review：通过 `REQUEST_CHANGES` 事件 + review body 中的发现项表达拒绝原因，GitHub 会自动阻塞合并。
 - Self-review：通过 `COMMENT` 事件 + review body 中的发现项表达拒绝原因。由于 GitHub 不会自动阻塞合并，需在 body 中明确标注 "🚫 合并阻塞：发现 N 个问题需修复"。
 
-在 review body 中说明：阻塞问题数量、修复后重新请求 review 的方式。
-
 ---
 
-### 阶段 6：约束与边界（CONSTRAINTS）
+### 阶段 5：约束与边界（CONSTRAINTS）
 
 **硬性约束：**
 - 不修改 PR 中的任何代码（纯 reviewer 角色）
@@ -234,6 +209,8 @@ else:
 - 不基于主观偏好提出阻塞意见（必须有规范或 ADR 支撑）
 - 不跳过 Security & Compliance（即使其他项全 PASS）
 - 如果已有其他 reviewer 的 unresolved review comments，在 review body 中引用并纳入评估
+- **所有 GitHub 操作必须通过 `my-pr-skill` 脚本完成，禁止直接调用 `gh`**（获取当前用户身份除外）
+- **代码审查必须委托给 `ce-code-review` 技能，禁止自行调度 reviewer agents**
 
 **只读边界：**
 - PR diff 涉及的所有文件
@@ -242,15 +219,57 @@ else:
 
 ---
 
-### 阶段 7：止损条件（BLOCKED STOP）
+### 阶段 6：止损条件（BLOCKED STOP）
 
 **立即停止并报告的情况：**
 - `my-pr-skill` 脚本无法读取 PR 或提交 review（权限不足、token 过期）
-- PR diff 超过 5000 行（超出合理 review 范围）
-- 测试脚本因环境问题持续失败 3 次
+- `ce-code-review` 执行失败且降级审查也失败
 - 发现敏感信息泄露 → 立即提交 REJECT review（body 直接说明）
 
 **报告格式：**
-- Blocker 类型：`tool-unavailable` / `pr-too-large` / `env-failure` / `security-leak`
+- Blocker 类型：`tool-unavailable` / `review-engine-failed` / `security-leak`
 - 已收集的证据摘要
 - 建议的人类介入方式
+
+---
+
+## Review Draft 模板
+
+```markdown
+# PR Review: ${PR_URL}
+- Reviewer: ${REVIEWER}
+- Timestamp: ${ISO8601}
+- Commit Reviewed: ${HEAD_SHA}
+- Self-Review: ${IS_SELF_REVIEW}
+- Review Engine: ce-code-review (compound-engineering)
+
+## 摘要
+- Verdict: ${VERDICT}
+- Findings: P0: ${P0_COUNT} | P1: ${P1_COUNT} | P2: ${P2_COUNT} | P3: ${P3_COUNT}
+- 建议决策: [review approved / REQUEST_CHANGES]
+
+## Findings
+
+### P0 — Critical
+| # | File | Issue | Reviewer | Confidence |
+|---|------|-------|----------|------------|
+| ... | ... | ... | ... | ... |
+
+### P1 — High
+| # | File | Issue | Reviewer | Confidence |
+|---|------|-------|----------|------------|
+| ... | ... | ... | ... | ... |
+
+### P2 — Moderate
+...
+
+### P3 — Low
+...
+
+## Coverage
+- Suppressed: ${SUPPRESSED_COUNT} findings below confidence threshold
+- Failed reviewers: ${FAILED_REVIEWERS}
+
+## 合并门控
+- ✅/🚫 合并条件评估...
+```

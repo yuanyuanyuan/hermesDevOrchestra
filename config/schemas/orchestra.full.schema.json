@@ -4,6 +4,12 @@
   "title": "Hermes Orchestra Full Schemas",
   "description": "Full-system target schema package. Runs in parallel with the MVP/current-runtime schema until full implementation cutover.",
   "type": "object",
+  "allOf": [
+    {
+      "if": {"required": ["artifact_type"], "properties": {"artifact_type": {"const": "conflict_ledger"}}},
+      "then": {"$ref": "#/$defs/conflict_ledger"}
+    }
+  ],
   "$defs": {
     "schema_version": {
       "const": "orchestra.full.v1"
@@ -2056,6 +2062,41 @@
         "runtime_knowledge": {"type": "object"},
         "release": {"type": "object"},
         "remote_decisions": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "conflict_severity": {
+      "enum": ["high", "medium", "low"]
+    },
+    "conflict_resolution": {
+      "enum": ["open", "auto_resolved", "accepted_risk", "manual_resolved", "superseded"]
+    },
+    "conflict_record": {
+      "type": "object",
+      "required": ["conflict_id", "run_id", "stage", "type", "sources", "severity", "resolution", "resolver", "resolution_evidence", "created_at", "resolved_at"],
+      "properties": {
+        "conflict_id": {"type": "string", "minLength": 1},
+        "run_id": {"type": "string", "minLength": 1},
+        "stage": {"$ref": "#/$defs/stage"},
+        "type": {"enum": ["intent_vs_inference", "fact_vs_assumption", "cross_team_conflict", "dependency_conflict", "user_override"]},
+        "sources": {"type": "array", "items": {"$ref": "#/$defs/artifact_reference"}},
+        "severity": {"$ref": "#/$defs/conflict_severity"},
+        "resolution": {"$ref": "#/$defs/conflict_resolution"},
+        "resolver": {"type": "string"},
+        "resolution_evidence": {"type": "string"},
+        "created_at": {"$ref": "#/$defs/timestamp"},
+        "resolved_at": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "conflict_ledger": {
+      "type": "object",
+      "required": ["schema_version", "artifact_type", "run_id", "conflicts"],
+      "properties": {
+        "schema_version": {"$ref": "#/$defs/schema_version"},
+        "artifact_type": {"const": "conflict_ledger"},
+        "run_id": {"type": "string", "minLength": 1},
+        "conflicts": {"type": "array", "items": {"$ref": "#/$defs/conflict_record"}}
       },
       "additionalProperties": true
     }
