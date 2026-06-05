@@ -21,6 +21,7 @@ RISK_LEVELS = {
 # Override statuses
 OVERRIDE_STATUSES = {
     "pending",
+    "pending_approval",
     "approved",
     "rejected",
     "cancelled",
@@ -96,7 +97,8 @@ def create_override_record(
     evidence_refs: list[str] | None = None,
 ) -> dict[str, Any]:
     """Create an override record."""
-    override_id = f"override-{run_id}-{task_id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    now = datetime.now(timezone.utc)
+    override_id = f"override-{run_id}-{task_id}-{now.strftime('%Y%m%d%H%M%S')}"
 
     # Validate risk level
     if risk_level not in RISK_LEVELS:
@@ -124,7 +126,7 @@ def create_override_record(
         "evidence_refs": evidence_refs or [],
         "status": status,
         "requires_approval": requires_approval,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now.isoformat(),
         "resolved_at": None,
     }
 
@@ -147,6 +149,10 @@ def approve_override(
     # Check if approval is required
     if override.get("requires_approval") and not approver_ref:
         raise MissingApproverRefError(run_id, override_id)
+
+    status = override.get("status")
+    if status not in ("pending", "pending_approval"):
+        raise InvalidOverrideStatusError(run_id, override_id, status)
 
     # Update override
     override["status"] = "approved"

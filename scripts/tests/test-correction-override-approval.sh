@@ -48,8 +48,8 @@ echo ""
 echo "Test 2: Create correction round"
 RESULT=$(python3 -c "
 from correction_override import create_correction_round
-round = create_correction_round('run-1', 'task-1', 'user_override', 'compact', 'Fix typo', ['ref-1'])
-print(round['status'] == 'pending' and round['evidence_mode'] == 'compact')
+correction_round = create_correction_round('run-1', 'task-1', 'user_override', 'compact', 'Fix typo', ['ref-1'])
+print(correction_round['status'] == 'pending' and correction_round['evidence_mode'] == 'compact')
 ")
 if [ "$RESULT" = "True" ]; then
     pass "Correction round created correctly"
@@ -199,8 +199,8 @@ echo ""
 echo "Test 12: Correction round with full evidence mode"
 RESULT=$(python3 -c "
 from correction_override import create_correction_round
-round = create_correction_round('run-10', 'task-10', 'user_override', 'full', 'Major correction', ['ref-1', 'ref-2'])
-print(round['evidence_mode'] == 'full' and len(round['evidence_refs']) == 2)
+correction_round = create_correction_round('run-10', 'task-10', 'user_override', 'full', 'Major correction', ['ref-1', 'ref-2'])
+print(correction_round['evidence_mode'] == 'full' and len(correction_round['evidence_refs']) == 2)
 ")
 if [ "$RESULT" = "True" ]; then
     pass "Correction round with full evidence mode created"
@@ -222,16 +222,36 @@ else
     fail "Override with approver ref creation failed"
 fi
 
-# Test 14: Multiple correction rounds in override
+# Test 14: Reject repeated approval
 echo ""
-echo "Test 14: Multiple correction rounds in override"
+echo "Test 14: Reject repeated approval"
+RESULT=$(python3 -c "
+from correction_override import create_override_record, approve_override, InvalidOverrideStatusError
+run = {'run_id': 'run-12', 'override_records': [create_override_record('run-12', 'task-12', [], 'major_change', 'L3')]}
+override_id = run['override_records'][0]['override_id']
+approve_override(run, override_id, 'human-approver-1')
+try:
+    approve_override(run, override_id, 'human-approver-2')
+    print('False')
+except InvalidOverrideStatusError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Repeated approval rejected"
+else
+    fail "Repeated approval was not rejected"
+fi
+
+# Test 15: Multiple correction rounds in override
+echo ""
+echo "Test 15: Multiple correction rounds in override"
 RESULT=$(python3 -c "
 from correction_override import create_correction_round, create_override_record
-rounds = [
+correction_rounds = [
     create_correction_round('run-12', 'task-12', 'user_override', 'compact', 'First attempt', ['ref-1']),
     create_correction_round('run-12', 'task-12', 'user_override', 'full', 'Second attempt', ['ref-2'])
 ]
-override = create_override_record('run-12', 'task-12', rounds, 'major_change', 'L3')
+override = create_override_record('run-12', 'task-12', correction_rounds, 'major_change', 'L3')
 print(len(override['correction_rounds']) == 2)
 ")
 if [ "$RESULT" = "True" ]; then
