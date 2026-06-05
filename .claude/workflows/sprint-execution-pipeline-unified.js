@@ -1,7 +1,11 @@
 export const meta = {
   name: 'sprint-execution-pipeline-unified',
-  description: 'Execute sprints from a directory with dynamic discovery, dependency resolution, and resume support',
-  phases: [] // 动态生成，由 discoverSprints() + buildExecutionPhases() 决定
+  description: 'Execute sprints with auto-discovery and resume support',
+  phases: [
+    { title: 'Discover', detail: '扫描目录发现 sprints' },
+    { title: 'Execute', detail: '按拓扑顺序执行开发' },
+    { title: 'Review', detail: '代码审查和 PR 合并' },
+  ]
 }
 
 // ── 配置 ──
@@ -57,8 +61,8 @@ function parseReviewerTextResponse(text) {
   ]
   for (const [pat, sev] of patterns) {
     const re = new RegExp(`(?:${pat.source})[:\\s]+(.+)`, 'gi')
-    let m
-    while ((m = re.exec(text)) !== null) {
+    const matches = [...text.matchAll(re)]
+    for (const m of matches) {
       issues.push({ severity: sev, description: m[1].trim() })
     }
   }
@@ -268,7 +272,11 @@ async function executeReviewerReview(sprintNum, prNumber) {
       `请查看 PR 的代码变更，评估是否满足所有标准。\n\n` +
       `请严格返回以下 JSON 格式（不要添加其他文字）：\n` +
       `{"passed": true/false, "score": 0.0-1.0, "issues": [{"severity": "critical/major/minor", "category": "类别", "description": "描述", "suggestion": "建议"}], "summary": "总体评价"}`,
-      { label: `Reviewer Sprint ${sprintNum} #${prNumber} (${attempt}/${REVIEWER_CONFIG.maxAttempts})`, phase: `Sprint-${sprintNum}` }
+      {
+        agentType: 'compound-engineering:ce-correctness-reviewer',
+        label: `Reviewer Sprint ${sprintNum} #${prNumber} (${attempt}/${REVIEWER_CONFIG.maxAttempts})`,
+        phase: `Sprint-${sprintNum}`
+      }
     )
 
     const reviewResult = tryParseJSON(reviewResponse) || parseReviewerTextResponse(reviewResponse)
@@ -292,7 +300,11 @@ async function executeReviewerReview(sprintNum, prNumber) {
       for (const issue of reviewResult.issues.filter(i => i.severity === 'critical')) {
         await agent(
           `请修复以下代码问题：\n问题描述：${issue.description}\nSprint：${sprintNum}\n仓库：${REPO}\n请分析原因、实施修复、验证修复。`,
-          { label: `修复: ${issue.description.substring(0, 40)}`, phase: `Sprint-${sprintNum}` }
+          {
+            agentType: 'bugfix',
+            label: `修复: ${issue.description.substring(0, 40)}`,
+            phase: `Sprint-${sprintNum}`
+          }
         )
       }
       log(`✅ 自动修复完成，下一轮重新审查`)
@@ -428,7 +440,8 @@ async function executeSprint(sprintNum, planPath, checklistPath) {
 
 // ── 主逻辑 ──
 async function main() {
-  const safeArgs = args || {}
+  const rawArgs = args || {}
+  const safeArgs = typeof rawArgs === 'string' ? tryParseJSON(rawArgs) || {} : rawArgs
   const sprintsDir = safeArgs.sprintsDir
 
   // sprintsDir 是必须的

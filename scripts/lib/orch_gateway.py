@@ -31,6 +31,15 @@ from gateway_evaluation import append_side_events as append_global_evaluation_si
 from gateway_evaluation import normalize_global_evaluation
 from gateway_closeout import closeout_audit_checklist, enrich_proposals, protected_target_approval_blockers, protected_target_rejection, FULL_SCHEMA_VERSION as CONFLICT_LEDGER_SCHEMA_VERSION
 from run_projection import PROJECTION_SCHEMA_VERSION, projection_response, refresh_projection_response
+from run_lifecycle import (
+    LIFECYCLE_STATES,
+    TRANSITION_GUARD_TABLE,
+    can_transition,
+    get_lifecycle_status,
+    validate_transition,
+    transition as lifecycle_transition,
+    InvalidTransitionError,
+)
 from runtime_activation import RuntimeActivation, RuntimeActivationError
 from worker_evidence_harden import validate_worker_advancement
 
