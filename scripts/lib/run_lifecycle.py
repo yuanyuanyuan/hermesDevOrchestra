@@ -6,6 +6,7 @@ Implements explicit lifecycle states and guarded transitions for runs.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 # PRD Lifecycle States
@@ -131,5 +132,4 @@ def can_resume(run: dict[str, Any]) -> bool:
 
 def _now_iso() -> str:
     """Get current time in ISO format."""
-    from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()

@@ -217,9 +217,37 @@ else
     fail "Missing forced_standard_reasons not detected"
 fi
 
-# Test 14: Database pattern detected
+# Test 14: Documentation content does not force security escape
 echo ""
-echo "Test 14: Database pattern detected"
+echo "Test 14: Documentation content does not force security escape"
+RESULT=$(python3 -c "
+from security_escape import detect_security_escape
+matched = detect_security_escape(['README.md'], {'README.md': 'Document TLS proxy certificate setup'})
+print(len(matched) == 0)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Documentation content ignored for broad security terms"
+else
+    fail "Documentation content caused broad security false positive"
+fi
+
+# Test 15: Test code content does not force security escape
+echo ""
+echo "Test 15: Test code content does not force security escape"
+RESULT=$(python3 -c "
+from security_escape import detect_security_escape
+matched = detect_security_escape(['scripts/tests/test_security.py'], {'scripts/tests/test_security.py': 'assert hash(value)'})
+print(len(matched) == 0)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Test code content ignored for broad security terms"
+else
+    fail "Test code content caused broad security false positive"
+fi
+
+# Test 16: Database pattern detected
+echo ""
+echo "Test 16: Database pattern detected"
 RESULT=$(python3 -c "
 from security_escape import detect_security_escape
 matched = detect_security_escape(['migrations/001.sql'], {'migrations/001.sql': 'DROP TABLE users;'})

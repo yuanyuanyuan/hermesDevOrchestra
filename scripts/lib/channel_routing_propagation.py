@@ -83,7 +83,9 @@ def classify_and_persist(
 
     Returns updated run dict with channel_decision persisted.
     """
-    run_id = run.get("run_id", "unknown")
+    run_id = run.get("run_id")
+    if not run_id:
+        raise ValueError("run_id required")
 
     # If forced to Standard, use Standard channel
     if force_standard:
@@ -106,13 +108,14 @@ def classify_and_persist(
             "files": files_changed,
         }
         result = router.classify(intent, project_age_weeks)
+        selected_channel = result.get("channel", "standard")
         decision = {
-            "channel": result.get("channel", "standard"),
+            "channel": selected_channel,
             "reason": result.get("reason", "default"),
             "project_age_weeks": project_age_weeks,
             "files_count": len(files_changed),
-            "required_debate_rounds": CHANNEL_CONFIGS[result.get("channel", "standard")]["required_debate_rounds"],
-            "required_evidence": CHANNEL_CONFIGS[result.get("channel", "standard")]["required_evidence"],
+            "required_debate_rounds": CHANNEL_CONFIGS[selected_channel]["required_debate_rounds"],
+            "required_evidence": CHANNEL_CONFIGS[selected_channel]["required_evidence"],
             "forced_standard": False,
             "forced_standard_reasons": [],
         }

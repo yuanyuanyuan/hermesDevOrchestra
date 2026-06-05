@@ -3,6 +3,10 @@
 
 Implements rollback request handling, execution, and reporting with
 current-run scope protection and protected target approval gates.
+
+This module is report-only: execute_rollback validates rollback requests and
+produces an auditable rollback report, but it does not run destructive git or
+filesystem rollback commands.
 """
 
 from __future__ import annotations
@@ -131,7 +135,8 @@ def execute_rollback(
     Args:
         run: Current run state
         request: Rollback request
-        dry_run: If True, only report what would be done
+        dry_run: If True, mark the report as dry-run. If False, still produces
+            a report-only simulated rollback; no destructive commands are run.
 
     Returns:
         Rollback report dict
@@ -167,8 +172,8 @@ def execute_rollback(
     result = "success" if not dry_run else "dry_run"
 
     if not dry_run:
-        # In real implementation, would execute rollback commands
-        # For now, we just report what would be done
+        # Report-only rollback: destructive git/file operations are deliberately
+        # out of scope for this module.
         pass
 
     # Create rollback report

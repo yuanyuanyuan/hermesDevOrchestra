@@ -233,9 +233,26 @@ else
     fail "Valid channel decision fails validation"
 fi
 
-# Test 14: Validate channel decision - missing
+# Test 14: Missing run_id is rejected
 echo ""
-echo "Test 14: Validate channel decision - missing"
+echo "Test 14: Missing run_id is rejected"
+RESULT=$(python3 -c "
+from channel_routing_propagation import classify_and_persist
+try:
+    classify_and_persist({}, 'Fix typo', ['README.md'], 24)
+    print('False')
+except ValueError as error:
+    print(str(error) == 'run_id required')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Missing run_id rejected"
+else
+    fail "Missing run_id not rejected"
+fi
+
+# Test 15: Validate channel decision - missing
+echo ""
+echo "Test 15: Validate channel decision - missing"
 RESULT=$(python3 -c "
 from channel_routing_propagation import validate_channel_decision
 run = {'run_id': 'run-13'}

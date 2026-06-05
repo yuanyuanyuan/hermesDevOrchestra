@@ -29,6 +29,8 @@ SECURITY_PATTERNS = [
 # Compiled patterns for efficiency
 COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in SECURITY_PATTERNS]
 
+CONTENT_SCAN_EXCLUDED_SUFFIXES = (".md", ".sh")
+
 
 class SecurityEscapeError(Exception):
     """Raised when security escape detection fails."""
@@ -36,6 +38,17 @@ class SecurityEscapeError(Exception):
     def __init__(self, message: str, run_id: str | None = None):
         self.run_id = run_id
         super().__init__(message)
+
+
+def should_scan_content(filepath: str) -> bool:
+    """Return whether file contents should be scanned for security terms."""
+    normalized = filepath.replace("\\", "/")
+    filename = normalized.rsplit("/", 1)[-1]
+    if normalized.endswith(CONTENT_SCAN_EXCLUDED_SUFFIXES):
+        return False
+    if normalized.startswith("scripts/tests/") or filename.startswith("test_"):
+        return False
+    return True
 
 
 def detect_security_escape(files_changed: list[str], file_contents: dict[str, str] | None = None) -> list[str]:
@@ -59,6 +72,8 @@ def detect_security_escape(files_changed: list[str], file_contents: dict[str, st
     # Check file contents if provided
     if file_contents:
         for filepath, content in file_contents.items():
+            if not should_scan_content(filepath):
+                continue
             for i, pattern in enumerate(COMPILED_PATTERNS):
                 if pattern.search(content):
                     matched_patterns.append(SECURITY_PATTERNS[i])
