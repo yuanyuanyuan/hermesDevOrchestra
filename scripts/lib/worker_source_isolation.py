@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-# Valid model sources
+# Valid model sources. Provider names ("openai", "anthropic") and product
+# aliases ("codex", "claude") are both accepted so callers can record either
+# the vendor-level source or the concrete worker surface.
 VALID_MODEL_SOURCES = {
     "kimi", "claude", "codex", "human", "openai", "anthropic", "other"
 }
@@ -102,6 +104,9 @@ def create_worker_session(
     task: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a worker session with source isolation validation.
+
+    Isolation failures raise before session creation; failed sessions are not
+    returned with source_isolation_status="failed".
 
     Raises:
         MissingModelSourceError: If model_source missing for isolated role

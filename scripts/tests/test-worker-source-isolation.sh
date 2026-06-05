@@ -246,6 +246,21 @@ else
     fail "Missing fields not detected"
 fi
 
+# Test 15: Validate worker session - invalid role
+echo ""
+echo "Test 15: Validate worker session - invalid role"
+RESULT=$(python3 -c "
+from worker_source_isolation import validate_worker_session
+session = {'session_id': 's1', 'run_id': 'r1', 'task_id': 't1', 'worker_id': 'w1', 'role': 'planner', 'model_source': 'claude'}
+errors = validate_worker_session(session)
+print('Invalid role: planner' in errors)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid role detected"
+else
+    fail "Invalid role not detected"
+fi
+
 # Summary
 echo ""
 echo "=========================================="
