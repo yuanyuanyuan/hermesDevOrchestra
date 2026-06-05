@@ -45,6 +45,23 @@
     "run_status": {
       "enum": ["queued", "running", "blocked", "failed", "completed", "stopped"]
     },
+    "lifecycle_status": {
+      "enum": [
+        "created",
+        "intake_complete",
+        "direction_debate",
+        "solution_debate",
+        "implementation",
+        "improvement",
+        "global_evaluation",
+        "continuous_improvement",
+        "closed",
+        "paused",
+        "blocked",
+        "cancelled",
+        "rollback_requested"
+      ]
+    },
     "authority_required": {
       "enum": ["none", "kimi", "human"]
     },

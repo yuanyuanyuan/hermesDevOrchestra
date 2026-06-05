@@ -24,6 +24,21 @@ Enums:
 
 Allowed values: `created`, `intake_complete`, `direction_debate`, `solution_debate`, `implementation`, `improvement`, `global_evaluation`, `continuous_improvement`, `closed`, `paused`, `blocked`, `cancelled`, `rollback_requested`.
 
+Transition Guard Table:
+- `created` → `intake_complete`, `cancelled`
+- `intake_complete` → `direction_debate`, `cancelled`, `blocked`
+- `direction_debate` → `solution_debate`, `cancelled`, `blocked`, `rollback_requested`
+- `solution_debate` → `implementation`, `cancelled`, `blocked`, `rollback_requested`
+- `implementation` → `improvement`, `cancelled`, `blocked`, `rollback_requested`
+- `improvement` → `global_evaluation`, `cancelled`, `blocked`, `rollback_requested`
+- `global_evaluation` → `continuous_improvement`, `closed`, `cancelled`, `blocked`, `rollback_requested`
+- `continuous_improvement` → `closed`, `cancelled`, `blocked`, `rollback_requested`
+- `closed` → (terminal)
+- `paused` → `cancelled`; resume requires an explicit `resume_lifecycle_status` or `previous_lifecycle_status` active target
+- `blocked` → `cancelled`; resume requires resolved blockers and an explicit `resume_lifecycle_status` or `previous_lifecycle_status` active target
+- `cancelled` → (terminal)
+- `rollback_requested` → `implementation`, `cancelled`, `blocked`
+
 ### `rollback_report`
 
 Required fields: `run_id`, `request_id`, `requested_stage`, `baseline_ref`, `rollback_strategy`, `affected_refs[]`, `protected_target_check`, `result`, `created_at`, `completed_at`.
@@ -52,4 +67,3 @@ All new artifacts are written under `state://runs/{run_id}/` and referenced from
 - `scripts/bin/orch-full-contract-validate` validates all new artifact definitions.
 - `scripts/tests/test-schema-doc-sync.sh` verifies schema docs stay synchronized.
 - Final sprint must run strict e2e replay and success metrics validation together.
-
