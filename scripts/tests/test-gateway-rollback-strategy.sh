@@ -263,6 +263,39 @@ else
     fail "Default rollback strategy incorrect"
 fi
 
+# Test 15: Non-dry-run rollback is report-only simulation
+echo ""
+echo "Test 15: Non-dry-run rollback is report-only simulation"
+RESULT=$(python3 -c "
+from rollback_executor import execute_rollback
+run = {'run_id': 'run-1', 'baseline_ref': 'abc123', 'changed_refs': ['state://runs/run-1/tasks/task-1']}
+request = {'request_id': 'req-1', 'requested_stage': 'implementation', 'baseline_ref': 'abc123'}
+report = execute_rollback(run, request, dry_run=False)
+print(report['result'] == 'simulated' and report['completed_at'] is not None)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Non-dry-run rollback reports simulated result"
+else
+    fail "Non-dry-run rollback result is not explicit simulation"
+fi
+
+# Test 16: Corrupt rollback report returns None
+echo ""
+echo "Test 16: Corrupt rollback report returns None"
+RESULT=$(python3 -c "
+import tempfile
+from pathlib import Path
+from rollback_executor import load_rollback_report
+with tempfile.TemporaryDirectory() as tmp:
+    Path(tmp, 'rollback_report.json').write_text('{bad json')
+    print(load_rollback_report(tmp) is None)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Corrupt rollback report handled safely"
+else
+    fail "Corrupt rollback report was not handled safely"
+fi
+
 # Summary
 echo ""
 echo "=========================================="

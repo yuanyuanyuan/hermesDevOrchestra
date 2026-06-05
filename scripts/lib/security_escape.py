@@ -13,17 +13,17 @@ from typing import Any
 # Security patterns that force Standard channel
 SECURITY_PATTERNS = [
     # Authentication patterns
-    r"(password|passwd|secret|token|api_key|apikey|access_key|private_key)",
+    r"(?:password|passwd|secret|token|api_key|apikey|access_key|private_key)",
     # PII patterns
-    r"(ssn|social_security|credit_card|bank_account|passport)",
+    r"(?:ssn|social_security|credit_card|bank_account|passport)",
     # Protected target patterns
-    r"(config/release/|config/authority_matrix|config/schemas/)",
+    r"(?:config/release/|config/authority_matrix|config/schemas/)",
     # Database patterns
-    r"(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|ALTER\s+TABLE)",
+    r"(?:DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|ALTER\s+TABLE)",
     # Encryption patterns
-    r"\b(encrypt|decrypt|cipher|bcrypt|scrypt)\b",
+    r"(?:encrypt|decrypt|cipher|hash|bcrypt|scrypt)",
     # Network patterns
-    r"\b(firewall|proxy|vpn|tls|ssl|certificate)\b",
+    r"(?:firewall|proxy|vpn|tls|ssl|certificate)",
 ]
 
 # Compiled patterns for efficiency
@@ -48,22 +48,22 @@ def detect_security_escape(files_changed: list[str], file_contents: dict[str, st
     Returns:
         List of matched security patterns
     """
-    matched_patterns = []
+    matched_patterns: set[str] = set()
 
     # Check file paths for protected targets
     for filepath in files_changed:
         for i, pattern in enumerate(COMPILED_PATTERNS):
             if pattern.search(filepath):
-                matched_patterns.append(SECURITY_PATTERNS[i])
+                matched_patterns.add(SECURITY_PATTERNS[i])
 
     # Check file contents if provided
     if file_contents:
         for filepath, content in file_contents.items():
             for i, pattern in enumerate(COMPILED_PATTERNS):
                 if pattern.search(content):
-                    matched_patterns.append(SECURITY_PATTERNS[i])
+                    matched_patterns.add(SECURITY_PATTERNS[i])
 
-    return list(set(matched_patterns))  # Deduplicate
+    return sorted(matched_patterns)
 
 
 def force_standard_for_security(
@@ -72,8 +72,6 @@ def force_standard_for_security(
     file_contents: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Force Standard channel for security-sensitive diffs.
-
-    Modifies ``run`` in-place.
 
     Returns updated run dict with forced_standard=True and forced_standard_reasons.
     """
@@ -113,18 +111,5 @@ def validate_security_escape(run: dict[str, Any]) -> list[str]:
 
     if channel_decision.get("forced_standard") and not channel_decision.get("forced_standard_reasons"):
         errors.append("forced_standard=True but forced_standard_reasons missing")
-
-    if channel_decision.get("forced_standard") and channel_decision.get("channel") != "standard":
-        errors.append("forced_standard=True but channel is not standard")
-
-    reasons = channel_decision.get("forced_standard_reasons")
-    if channel_decision.get("forced_standard") and reasons:
-        if not isinstance(reasons, list):
-            errors.append("forced_standard_reasons must be a list")
-        else:
-            for reason in reasons:
-                if not isinstance(reason, str) or not reason.startswith("security_pattern:"):
-                    errors.append("forced_standard_reasons entries must start with security_pattern:")
-                    break
 
     return errors

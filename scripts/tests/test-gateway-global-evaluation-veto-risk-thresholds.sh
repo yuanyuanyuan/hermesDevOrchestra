@@ -251,6 +251,23 @@ else
     fail "Global evaluation report creation failed"
 fi
 
+# Test 15: Veto dimension error keeps caller run_id
+echo ""
+echo "Test 15: Veto dimension error keeps caller run_id"
+RESULT=$(python3 -c "
+from global_evaluation_veto import validate_veto_dimension, VetoDimensionError
+try:
+    validate_veto_dimension('security_compliance', 0.4, 0.6, run_id='run-15')
+    print('False')
+except VetoDimensionError as e:
+    print(e.run_id == 'run-15')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "VetoDimensionError preserves run_id"
+else
+    fail "VetoDimensionError did not preserve run_id"
+fi
+
 # Summary
 echo ""
 echo "=========================================="

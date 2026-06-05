@@ -284,6 +284,23 @@ else
     fail "Missing review evidence not detected"
 fi
 
+# Test 15: Write scope rejects sibling path prefix
+echo ""
+echo "Test 15: Write scope rejects sibling path prefix"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_write_scope, WriteScopeViolationError
+try:
+    validate_write_scope('run-14', ['scripts/lib'], ['scripts/libary/module.py'])
+    print('False')
+except WriteScopeViolationError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Sibling path prefix rejected"
+else
+    fail "Sibling path prefix incorrectly accepted"
+fi
+
 # Summary
 echo ""
 echo "=========================================="
