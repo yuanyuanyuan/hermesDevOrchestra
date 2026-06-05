@@ -239,6 +239,85 @@ else
     fail "Mini-debate report missing required fields"
 fi
 
+# Test 15: Mini-debate degraded report structure
+echo ""
+echo "Test 15: Mini-debate degraded report structure"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate
+run = {'run_id': 'run-10'}
+request = {'run_id': 'run-10', 'task_id': 'task-10', 'channel': 'quick'}
+report = execute_mini_debate(run, request, debate_backend_available=False)
+required_keys = ['run_id', 'task_id', 'channel', 'debate_type', 'status', 'degradation_reason', 'consensus_score', 'required_consensus', 'rounds_completed', 'max_rounds', 'timeout_minutes', 'started_at', 'completed_at', 'debate_refs']
+print(all(k in report for k in required_keys) and report['status'] == 'degraded' and report['degradation_reason'] == 'debate_backend_unavailable' and report['consensus_score'] == 0.0 and report['completed_at'] is None and report['debate_refs'] == [])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Mini-debate degraded report has all expected fields"
+else
+    fail "Mini-debate degraded report missing expected fields"
+fi
+
+# Test 16: Validate mini-debate - invalid status
+echo ""
+echo "Test 16: Validate mini-debate - invalid status"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import validate_mini_debate
+run = {'run_id': 'run-11', 'mini_debate_status': {'status': 'pending', 'consensus_score': 0.9}}
+errors = validate_mini_debate(run)
+print('status must be completed or degraded' in errors)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid mini-debate status detected"
+else
+    fail "Invalid mini-debate status not detected"
+fi
+
+# Test 17: Validate mini-debate - invalid consensus score
+echo ""
+echo "Test 17: Validate mini-debate - invalid consensus score"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import validate_mini_debate
+run = {'run_id': 'run-12', 'mini_debate_status': {'status': 'completed', 'consensus_score': 1.5}}
+errors = validate_mini_debate(run)
+print('consensus_score must be between 0 and 1' in errors)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid consensus score detected"
+else
+    fail "Invalid consensus score not detected"
+fi
+
+# Test 18: Auto-merge blocked when channel decision missing
+echo ""
+echo "Test 18: Auto-merge blocked when channel decision missing"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import check_auto_merge_blocked
+run = {'run_id': 'run-13'}
+blocked = check_auto_merge_blocked(run)
+print(blocked == True)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Auto-merge blocked when channel decision missing"
+else
+    fail "Auto-merge not blocked when channel decision missing"
+fi
+
+# Test 19: Mini-debate refs are unique
+echo ""
+echo "Test 19: Mini-debate refs are unique"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate
+run = {'run_id': 'run-14'}
+request = {'run_id': 'run-14', 'task_id': 'task-14', 'channel': 'quick'}
+first = execute_mini_debate(run, request, debate_backend_available=True)
+second = execute_mini_debate(run, request, debate_backend_available=True)
+print(first['debate_refs'][0] != second['debate_refs'][0])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Mini-debate refs are unique"
+else
+    fail "Mini-debate refs are not unique"
+fi
+
 # Summary
 echo ""
 echo "=========================================="

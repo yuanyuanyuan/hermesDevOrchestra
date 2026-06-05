@@ -6,8 +6,9 @@ Connects channel routing to bounded debate execution for Quick and Light channel
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 
 # Mini-debate configurations per channel
@@ -119,11 +120,11 @@ def execute_mini_debate(
     Raises:
         MiniDebateTimeoutError: If debate times out
         MiniDebateConsensusError: If consensus not reached
-        MissingDebateReportError: If backend unavailable and no report
     """
     run_id = run.get("run_id", "unknown")
     channel = request.get("channel", "standard")
     config = get_mini_debate_config(channel)
+    now = datetime.now(timezone.utc)
 
     # Check if debate backend is available
     if not debate_backend_available:
@@ -140,13 +141,14 @@ def execute_mini_debate(
             "rounds_completed": 0,
             "max_rounds": config["max_rounds"],
             "timeout_minutes": config["timeout_minutes"],
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": now.isoformat(),
             "completed_at": None,
             "debate_refs": [],
         }
         return report
 
     # Execute debate (simplified for now - in real implementation would call debate engine)
+    # TODO: Replace fallback consensus simulation with actual debate backend call.
     # Simulate consensus based on channel
     if channel == "quick":
         consensus_score = 0.9  # High consensus for quick tasks
@@ -171,9 +173,9 @@ def execute_mini_debate(
         "rounds_completed": config["max_rounds"],
         "max_rounds": config["max_rounds"],
         "timeout_minutes": config["timeout_minutes"],
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "completed_at": datetime.now(timezone.utc).isoformat(),
-        "debate_refs": [f"debate://run/{run_id}/mini/{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"],
+        "started_at": now.isoformat(),
+        "completed_at": now.isoformat(),
+        "debate_refs": [f"debate://run/{run_id}/mini/{uuid4().hex}"],
     }
 
     return report
@@ -216,16 +218,27 @@ def validate_mini_debate(run: dict[str, Any]) -> list[str]:
 
     if "status" not in mini_debate_status:
         errors.append("status missing from mini_debate_status")
+    elif mini_debate_status.get("status") not in ("completed", "degraded"):
+        errors.append("status must be completed or degraded")
 
     if "consensus_score" not in mini_debate_status:
         errors.append("consensus_score missing from mini_debate_status")
+    else:
+        consensus_score = mini_debate_status.get("consensus_score")
+        if isinstance(consensus_score, bool) or not isinstance(consensus_score, (int, float)):
+            errors.append("consensus_score must be numeric")
+        elif not 0 <= consensus_score <= 1:
+            errors.append("consensus_score must be between 0 and 1")
 
     return errors
 
 
 def check_auto_merge_blocked(run: dict[str, Any]) -> bool:
     """Check if auto-merge is blocked due to missing debate report."""
-    channel_decision = run.get("channel_decision", {})
+    channel_decision = run.get("channel_decision")
+    if not channel_decision:
+        return True
+
     channel = channel_decision.get("channel", "standard")
 
     # For non-standard channels, check if mini-debate is required
