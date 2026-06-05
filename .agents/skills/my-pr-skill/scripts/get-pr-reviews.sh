@@ -54,6 +54,7 @@ main() {
   owner=$(gh repo view --json owner --jq '.owner.login')
   repo=$(gh repo view --json name --jq '.name')
 
+  # Reviews: output to file or stdout
   if [[ -n "$output" ]]; then
     mkdir -p "$(dirname "$output")"
     local jq_filter
@@ -65,13 +66,20 @@ main() {
     gh api "repos/${owner}/${repo}/pulls/${number}/reviews" \
       --jq "$jq_filter" \
       > "$output"
+  else
+    gh api "repos/${owner}/${repo}/pulls/${number}/reviews" \
+      --jq '.[] | {id: .id, state: .state, body: .body, user: .user.login, submitted_at: .submitted_at}'
   fi
 
+  # Line-level comments: output to file or stdout (separated by a header)
   if [[ -n "$comments_output" ]]; then
     mkdir -p "$(dirname "$comments_output")"
     gh api "repos/${owner}/${repo}/pulls/${number}/comments" \
       --jq '[.[] | {id: .id, path: .path, line: .line, body: .body, user: .user.login}]' \
       > "$comments_output"
+  else
+    gh api "repos/${owner}/${repo}/pulls/${number}/comments" \
+      --jq '.[] | {id: .id, path: .path, line: .line, body: .body, user: .user.login}'
   fi
 }
 

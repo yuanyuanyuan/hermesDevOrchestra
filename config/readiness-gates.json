@@ -1,0 +1,41 @@
+{
+  "schema_version": "orchestra.v1",
+  "artifact_type": "readiness_gate_state",
+  "families": {
+    "gateway_authority": {
+      "status": "pending",
+      "activated_at": null,
+      "validation_passing": false
+    },
+    "full_debate_package": {
+      "status": "pending",
+      "activated_at": "2026-06-04T05:08:41.501729+00:00",
+      "validation_passing": false
+    },
+    "worker_execution": {
+      "status": "pending",
+      "activated_at": null,
+      "validation_passing": false
+    },
+    "runtime_domain_knowledge": {
+      "status": "pending",
+      "activated_at": null,
+      "validation_passing": false
+    },
+    "release_pipeline": {
+      "status": "pending",
+      "activated_at": null,
+      "validation_passing": false
+    },
+    "remote_decisions": {
+      "status": "pending",
+      "activated_at": null,
+      "validation_passing": false
+    },
+    "closeout_and_self_evolution": {
+      "status": "pending",
+      "activated_at": null,
+      "validation_passing": false
+    }
+  }
+}

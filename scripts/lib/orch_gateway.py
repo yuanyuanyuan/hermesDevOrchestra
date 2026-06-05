@@ -1381,6 +1381,192 @@ class GatewayApp:
             },
         )
 
+    def detect_authority_chain_divergence(self, run_id: str) -> dict[str, Any]:
+        """Detect Authority Chain Divergence by comparing four sources.
+
+        Sources:
+        1. Kanban side effects (tasks.json)
+        2. Audit records (audit.jsonl)
+        3. State references (run.json artifact_refs)
+        4. Artifact references (actual files on disk)
+
+        Returns a reconciliation report with divergence type and repair options.
+        """
+        now = utc_now()
+        run_dir = self.store.run_dir(run_id)
+
+        # Source 1: Kanban side effects
+        tasks_path = self.store.tasks_path(run_id)
+        kanban_tasks = set()
+        if tasks_path.exists():
+            tasks_data = read_json(tasks_path)
+            if isinstance(tasks_data, dict):
+                task_list = tasks_data.get("tasks", [])
+                kanban_tasks = {t.get("task_id") for t in task_list if isinstance(t, dict) and t.get("task_id")}
+            elif isinstance(tasks_data, list):
+                kanban_tasks = {t.get("task_id") for t in tasks_data if isinstance(t, dict) and t.get("task_id")}
+
+        # Source 2: Audit records
+        audit_tasks = set()
+        try:
+            audit_path = self.store.audit_path()
+            if audit_path.exists():
+                with audit_path.open(encoding="utf-8") as f:
+                    for line in f:
+                        try:
+                            record = json.loads(line.strip())
+                            if record.get("run_id") == run_id and record.get("task_id"):
+                                audit_tasks.add(record["task_id"])
+                        except json.JSONDecodeError:
+                            continue
+        except Exception:
+            pass
+
+        # Source 3: State references
+        run_path = self.store.run_path(run_id)
+        state_refs = set()
+        if run_path.exists():
+            run_data = read_json(run_path)
+            artifact_refs = run_data.get("artifact_refs", {})
+            if isinstance(artifact_refs, dict):
+                state_refs = set(artifact_refs.keys())
+
+        # Source 4: Artifact references (actual files)
+        artifact_files = set()
+        if run_dir.exists():
+            for path in run_dir.rglob("*.json"):
+                rel_path = path.relative_to(run_dir)
+                artifact_files.add(str(rel_path))
+
+        # Detect divergence
+        all_sources = {
+            "kanban": kanban_tasks,
+            "audit": audit_tasks,
+            "state_refs": state_refs,
+            "artifact_files": artifact_files,
+        }
+
+        # Check for missing sources
+        missing_sources = []
+        if not kanban_tasks:
+            missing_sources.append("kanban")
+        if not audit_tasks:
+            missing_sources.append("audit")
+
+        # Check for divergence between sources
+        divergence_type = "none"
+        divergent_tasks = []
+
+        if kanban_tasks and audit_tasks:
+            kanban_only = kanban_tasks - audit_tasks
+            audit_only = audit_tasks - kanban_tasks
+            if kanban_only or audit_only:
+                divergence_type = "kanban_audit_mismatch"
+                divergent_tasks = list(kanban_only | audit_only)
+
+        if missing_sources and divergence_type == "none":
+            divergence_type = "missing_source"
+
+        # Determine repair options
+        repair_options = []
+        if divergence_type != "none":
+            repair_options = [
+                "accept_orphaned_side_effects",
+                "create_revised_work",
+                "stop_run",
+            ]
+        elif missing_sources:
+            repair_options = [
+                "accept_missing_source",
+                "create_revised_work",
+                "stop_run",
+            ]
+
+        # Map divergence_type to schema's divergence_class
+        divergence_class_map = {
+            "none": "none",
+            "kanban_audit_mismatch": "kanban_side_effect_without_audit",
+            "missing_source": "artifact_ref_missing",
+        }
+        divergence_class = divergence_class_map.get(divergence_type, "unclassified")
+
+        # Determine reconciliation_status
+        if divergence_type == "none" and not missing_sources:
+            reconciliation_status = "resolved"
+        elif divergence_type != "none":
+            reconciliation_status = "blocked"
+        else:
+            reconciliation_status = "failed"
+
+        # Build observations for each source
+        state_observation = {
+            "present": bool(state_refs),
+            "count": len(state_refs),
+            "task_ids": list(state_refs)[:10],  # Limit for readability
+        }
+
+        audit_observation = {
+            "present": bool(audit_tasks),
+            "count": len(audit_tasks),
+            "task_ids": list(audit_tasks)[:10],
+        }
+
+        kanban_observation = {
+            "present": bool(kanban_tasks),
+            "count": len(kanban_tasks),
+            "task_ids": list(kanban_tasks)[:10],
+        }
+
+        artifact_observation = {
+            "present": bool(artifact_files),
+            "count": len(artifact_files),
+            "file_paths": list(artifact_files)[:10],
+        }
+
+        # Generate a synthetic command_id for this reconciliation
+        command_id = f"reconcile-{uuid.uuid4().hex[:16]}"
+
+        # Build authority_refs_checked
+        authority_refs_checked = []
+        for source_name, tasks in [
+            ("kanban", kanban_tasks),
+            ("audit", audit_tasks),
+        ]:
+            for task_id in list(tasks)[:5]:  # Limit to first 5
+                authority_refs_checked.append({
+                    "ref_type": "task",
+                    "ref_id": task_id,
+                    "source": source_name,
+                })
+
+        report = {
+            "schema_version": "orchestra.full.v1",
+            "artifact_type": "command_reconciliation_report",
+            "command_id": command_id,
+            "run_id": run_id,
+            "reconciliation_status": reconciliation_status,
+            "authority_refs_checked": authority_refs_checked,
+            "journal_step_status": {
+                "kanban_tasks": len(kanban_tasks),
+                "audit_tasks": len(audit_tasks),
+                "state_refs": len(state_refs),
+                "artifact_files": len(artifact_files),
+            },
+            "state_observation": state_observation,
+            "audit_observation": audit_observation,
+            "kanban_observation": kanban_observation,
+            "artifact_observation": artifact_observation,
+            "divergence_class": divergence_class,
+            "side_effect_replay_allowed": False,
+            "synthetic_audit_allowed": False,
+            "recommended_repair_options": repair_options,
+            "divergent_tasks": divergent_tasks,
+            "missing_sources": missing_sources,
+            "created_at": now,
+        }
+
+        return report
+
     def create_run(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         if self._run_intake_pipeline(payload, "create_run"):
             return self._fallback_response()
