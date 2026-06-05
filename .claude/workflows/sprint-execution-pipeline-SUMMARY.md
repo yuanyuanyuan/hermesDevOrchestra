@@ -1,227 +1,163 @@
-# Sprint Execution Pipeline - 文件结构总结
+# Sprint Execution Pipeline - 项目总结
 
-## 📁 最终文件结构
+## 📁 文件结构
 
 ```
 .claude/workflows/
-├── sprint-execution-pipeline-unified.js          # 统一版 workflow（推荐）
-├── sprint-execution-pipeline-unified-README.md   # 完整文档
-├── sprint-execution-pipeline-unified-QUICKSTART.md  # 快速参考
-└── sprint-execution-pipeline-test.js             # 测试版（调试用）
+├── sprint-execution-pipeline-unified.js              # 主 workflow（推荐）
+├── sprint-execution-pipeline-unified-README.md       # 完整文档
+├── sprint-execution-pipeline-unified-QUICKSTART.md   # 快速参考
+├── sprint-execution-pipeline-SUMMARY.md              # 本文件
+├── sprint-execution-pipeline-test.js                 # 测试版（调试用）
+└── prd-compliance-audit.js                           # PRD 合规审计
 ```
 
-## 🎯 文件说明
+## 🎯 核心设计
 
-### 1. `sprint-execution-pipeline-unified.js` (19.2K)
-**统一版 workflow** - 推荐使用
+### 动态发现架构
 
-**功能**：
-- ✅ 执行 13 个 Sprint
-- ✅ 可配置的独立 Reviewer 审查
-- ✅ 自动修复严重问题
-- ✅ PR 轮询等待合并
-- ✅ 处理 GitHub Review 反馈
-- ✅ 超时暂停和 Resume 恢复
+workflow 不再硬编码 Sprint 列表，而是从目录动态发现：
 
-**配置**：
+```
+main(sprintsDir)
+│
+├─ discoverSprints(dir)
+│   扫描 plan-sprint-N.md + checklist-sprint-N.md
+│   → { 1: {planPath, checklistPath}, 2: {...}, ... }
+│
+├─ parseDependencyGraph(dir, sprintNums)
+│   解析 sprint-overview.md 表格
+│   → { 1: [], 2: [1], 9: [6,8], ... }
+│
+├─ buildExecutionPhases(sprintNums, depGraph)
+│   拓扑排序 → 可并行的执行阶段
+│   → [{phase, sprints}, ...]
+│
+└─ 逐 Phase 执行（支持并行 + 恢复）
+```
+
+### Skill 驱动架构
+
+workflow 严格通过三个 Skill 执行所有操作，不重复实现已有能力：
+
+```
+workflow script
+│
+├─ callSprintExecute()     → /my-sprint-execute
+│   └─ Git + 代码 + 测试 + PR（via /my-pr-skill）
+│
+├─ executeReviewerReview() → workflow 内置质量门禁
+│   └─ 评分 + 自动修复
+│
+└─ waitForPRMerge()        → 单 agent 内部轮询
+    ├─ gh pr view（状态检查）
+    └─ /my-pr-review-response（review 反馈处理）
+```
+
+### 恢复机制
+
+支持中断后恢复，不重复执行已完成的 Sprint：
+
+| 状态 | 检测方式 | 行为 |
+|------|---------|------|
+| PR 已合并 | `findMergedPR()` 查 `gh pr list --state merged` | 跳过，日志 `⏭️` |
+| PR 已创建（open） | `findExistingPR()` 查 `gh pr list --state open` | 跳过开发，直接审查 |
+| 全新 | 无匹配 PR | 执行完整流程 |
+
+### 性能优化
+
+| 优化点 | 旧方案 | 新方案 | 收益 |
+|--------|--------|--------|------|
+| Sprint 发现 | 硬编码 13 个 Sprint | 目录扫描 + 自动解析 | 适配任意 Sprint 集合 |
+| 依赖图 | 硬编码 `DEPENDENCY_GRAPH` | 从 `sprint-overview.md` 解析 | 依赖变更无需改代码 |
+| 执行阶段 | 固定 7 个 Phase | 拓扑排序动态生成 | 自动最大化并行度 |
+| PR 轮询 | 每轮 spawn 2 agent | 单 agent 内部循环 | ~480 → 1 agent 调用 |
+| 恢复 | 无 | 检测已合并 PR 跳过 | 中断后无缝继续 |
+
+## ⚙️ 配置参考
+
+### 调用参数
+
+| 参数 | 必需 | 说明 |
+|------|------|------|
+| `sprintsDir` | ✅ | Sprint 文件目录路径 |
+
+### 脚本常量
+
+| 常量 | 值 | 说明 |
+|------|-----|------|
+| `REPO` | `yuanyuanyuan/hermesDevOrchestra` | 目标仓库 |
+| `POLL_INTERVAL_SECONDS` | `60` | 轮询间隔 |
+| `MAX_POLL_MINUTES` | `240` | 最大等待时间 |
+
+### Reviewer 配置
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `enabled` | `true` | 启用独立审查 |
+| `maxAttempts` | `3` | 最大审查尝试 |
+| `passThreshold` | `0.8` | 通过阈值 |
+| `softPassThreshold` | `0.70` | 无 critical 时最低分 |
+| `autoFixEnabled` | `true` | 启用自动修复 |
+
+## 📊 Sprint 目录示例
+
+```
+docs/sprints/prd-compliance-audit-remediation-full/
+├── plan-sprint-1.md          # Sprint 1 开发计划
+├── checklist-sprint-1.md     # Sprint 1 验收清单
+├── plan-sprint-2.md
+├── checklist-sprint-2.md
+├── ...                       # Sprint 3-13 同理
+├── sprint-overview.md        # 依赖关系表（自动解析）
+├── schema.md                 # Schema 说明
+└── spec.md                   # 规格说明
+```
+
+## 🔧 维护指南
+
+### 修改仓库
+
 ```javascript
-const REVIEWER_CONFIG = {
-  enabled: true,          // 是否启用独立审查
-  maxAttempts: 3,         // 最多尝试次数
-  passThreshold: 0.8,     // 通过阈值
-  autoFixEnabled: true    // 启用自动修复
-}
+// sprint-execution-pipeline-unified.js
+const REPO = 'your-org/your-repo'
 ```
 
-**使用**：
-```bash
-# 默认配置（启用独立审查）
-workflow sprint-execution-pipeline-unified
+### 禁用独立审查
 
-# 禁用独立审查
-workflow sprint-execution-pipeline-unified --args '{"enableReviewer": false}'
-```
-
-### 2. `sprint-execution-pipeline-unified-README.md` (8.4K)
-**完整文档** - 详细说明
-
-**内容**：
-- 功能概述
-- 配置参数详解
-- 执行流程说明
-- 使用场景示例
-- 性能对比
-- 自定义配置
-- 故障排除
-- 最佳实践
-
-### 3. `sprint-execution-pipeline-unified-QUICKSTART.md` (3.7K)
-**快速参考** - 快速上手
-
-**内容**：
-- 快速启动命令
-- 配置速查
-- 执行流程图
-- 使用场景表
-- 性能对比表
-- 自定义配置示例
-- 日志输出示例
-- 故障排除速查
-
-### 4. `sprint-execution-pipeline-test.js` (4.8K)
-**测试版** - 调试用
-
-**功能**：
-- ✅ 执行前 2 个 Sprint
-- ✅ 10 秒轮询间隔
-- ✅ 最多 10 次轮询
-- ✅ 简化的 Reviewer 逻辑
-
-**使用**：
-```bash
-# 测试版本（快速验证）
-workflow sprint-execution-pipeline-test
-```
-
-**适用场景**：
-- 验证 workflow 逻辑
-- 测试轮询机制
-- 调试 Reviewer 审查
-- 快速验证配置
-
-## 🚀 使用建议
-
-### 首次使用
-```bash
-# 1. 先运行测试版本验证
-workflow sprint-execution-pipeline-test
-
-# 2. 确认逻辑正确后，使用统一版
-workflow sprint-execution-pipeline-unified
-```
-
-### 生产环境
-```bash
-# 启用独立审查（推荐）
-workflow sprint-execution-pipeline-unified --args '{"repo": "stark/hermes"}'
-
-# 或禁用独立审查（加快速度）
-workflow sprint-execution-pipeline-unified --args '{"repo": "stark/hermes", "enableReviewer": false}'
-```
-
-### 调试模式
-```bash
-# 使用测试版本快速验证
-workflow sprint-execution-pipeline-test
-
-# 或禁用独立审查
-workflow sprint-execution-pipeline-unified --args '{"enableReviewer": false}'
-```
-
-## 📊 功能对比
-
-| 功能 | 统一版 | 测试版 |
-|------|--------|--------|
-| Sprint 数量 | 13 | 2 |
-| 轮询间隔 | 60 秒 | 10 秒 |
-| 最大轮询 | 240 次 | 10 次 |
-| 独立审查 | 可配置 | 简化版 |
-| 自动修复 | 支持 | 不支持 |
-| Resume 支持 | 支持 | 不支持 |
-
-## 🎨 配置示例
-
-### 示例 1：新项目（推荐）
 ```javascript
-// 启用独立审查，确保代码质量
-const REVIEWER_CONFIG = {
-  enabled: true,
-  maxAttempts: 3,
-  passThreshold: 0.8,
-  autoFixEnabled: true
-}
+REVIEWER_CONFIG.enabled = false
 ```
 
-### 示例 2：成熟项目
+### 调整通过阈值
+
 ```javascript
-// 禁用独立审查，加快执行速度
-const REVIEWER_CONFIG = {
-  enabled: false
-}
+REVIEWER_CONFIG.passThreshold = 0.9     // 更严格
+REVIEWER_CONFIG.softPassThreshold = 0.80 // 提高软阈值
 ```
 
-### 示例 3：严格质量要求
-```javascript
-// 提高通过阈值，禁用自动修复
-const REVIEWER_CONFIG = {
-  enabled: true,
-  maxAttempts: 5,
-  passThreshold: 0.9,
-  autoFixEnabled: false
-}
-```
+## 🚨 已知限制
 
-### 示例 4：宽松质量要求
-```javascript
-// 降低通过阈值，启用自动修复
-const REVIEWER_CONFIG = {
-  enabled: true,
-  maxAttempts: 3,
-  passThreshold: 0.6,
-  autoFixEnabled: true
-}
-```
-
-## 🔧 维护说明
-
-### 更新 workflow
-1. 编辑 `sprint-execution-pipeline-unified.js`
-2. 测试修改：`workflow sprint-execution-pipeline-test`
-3. 验证无误后使用统一版
-
-### 添加新功能
-1. 在 `REVIEWER_CONFIG` 中添加配置项
-2. 在 `executeReviewerReview` 中实现逻辑
-3. 更新文档说明
-
-### 修复问题
-1. 使用测试版本复现问题
-2. 修复 `sprint-execution-pipeline-unified.js`
-3. 验证修复：`workflow sprint-execution-pipeline-test`
-4. 更新文档说明
+1. **并行 Sprint 共享仓库**：并行执行的 Sprint 会各自创建分支，但 PR 创建可能冲突
+2. **轮询 agent 时长**：单个轮询 agent 最长运行 4 小时，受 agent 超时限制
+3. **依赖图解析**：依赖 `sprint-overview.md` 表格格式，非标准格式会降级为无依赖模式
+4. **Review 评论处理**：`COMMENTED` 状态首次处理后标记跳过，不会重复处理
 
 ## 📚 文档导航
 
-### 快速上手
-- **快速参考**：`sprint-execution-pipeline-unified-QUICKSTART.md`
-- **测试版本**：`sprint-execution-pipeline-test.js`
-
-### 详细文档
-- **完整文档**：`sprint-execution-pipeline-unified-README.md`
-- **配置说明**：查看 `REVIEWER_CONFIG` 部分
-
-### 故障排除
-- **常见问题**：查看快速参考的"故障排除"部分
-- **详细排查**：查看完整文档的"故障排除"部分
+| 文档 | 用途 |
+|------|------|
+| `sprint-execution-pipeline-unified-QUICKSTART.md` | 快速上手 |
+| `sprint-execution-pipeline-unified-README.md` | 完整文档 |
+| `sprint-execution-pipeline-SUMMARY.md` | 本文件（项目总结） |
+| `sprint-execution-pipeline-test.js` | 测试版（调试用） |
 
 ## 🎉 成功标志
 
-当看到以下输出时，表示执行成功：
-
 ```
 📊 执行总结
-✅ 完成: 13 个 sprints
-❌ 失败: 0 个 sprints
-
-📊 Reviewer 审查统计：
-   - 总审查次数: 13
-   - 首次通过: 10 (77%)
-   - 修复后通过: 3 (23%)
-   - 最终失败: 0 (0%)
+✅ 完成: 13 — 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+❌ 失败: 无
 
 状态: completed
 ```
-
----
-
-**提示**：统一版 workflow 提供了最大的灵活性，可以根据项目需求选择是否启用独立审查！
