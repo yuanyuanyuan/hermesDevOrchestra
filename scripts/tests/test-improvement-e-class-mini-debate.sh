@@ -247,6 +247,20 @@ else
     fail "E-class debate unavailable not blocking"
 fi
 
+# Test 15: E-class dispute with empty evidence refs
+echo ""
+echo "Test 15: E-class dispute with empty evidence refs"
+RESULT=$(python3 -c "
+from e_class_mini_debate import create_e_class_dispute
+dispute = create_e_class_dispute('run-13', 'task-13', 'imp-13', 'low_priority', 'Test dispute', [])
+print(dispute['evidence_refs'] == [] and dispute['status'] == 'pending')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "E-class dispute handles empty evidence refs"
+else
+    fail "E-class dispute does not handle empty evidence refs"
+fi
+
 # Summary
 echo ""
 echo "=========================================="

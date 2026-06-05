@@ -3,6 +3,14 @@
 
 Routes E-class improvement disputes into two-round mini-debate
 and blocks if consensus score remains below 0.60.
+
+Integration:
+    intake_completeness builds the PRD intake bundle and separates verified
+    facts from assumptions. When an improvement is classified as E-class or
+    remains disputed after intake/implementation evidence is reviewed, callers
+    create an E-class dispute with the relevant evidence refs, execute this
+    bounded mini-debate, persist the returned debate refs on run state, and
+    block auto-merge until a completed debate status is present.
 """
 
 from __future__ import annotations
