@@ -248,6 +248,85 @@ else
     fail "Missing channel decision not detected"
 fi
 
+# Test 15: classify_and_persist resolves repo root outside cwd
+echo ""
+echo "Test 15: classify_and_persist resolves repo root outside cwd"
+RESULT=$(python3 -c "
+import os
+import tempfile
+from channel_routing_propagation import classify_and_persist
+with tempfile.TemporaryDirectory() as tmp:
+    os.chdir(tmp)
+    run = {'run_id': 'run-14', 'rollout_evidence': ['rollout_approval']}
+    updated = classify_and_persist(run, 'Fix typo', ['README.md'], 24)
+    print(updated['channel_decision']['channel'] == 'light')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Default repo root works outside repository cwd"
+else
+    fail "Default repo root failed outside repository cwd"
+fi
+
+# Test 16: task_type parameter affects channel routing
+echo ""
+echo "Test 16: task_type parameter affects channel routing"
+RESULT=$(python3 -c "
+from channel_routing_propagation import classify_and_persist
+run = {'run_id': 'run-15', 'rollout_evidence': ['rollout_approval', 'risk_assessment']}
+updated = classify_and_persist(run, 'Run lint', ['README.md'], 24, task_type='lint')
+print(updated['channel_decision']['channel'] == 'quick')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "task_type parameter affects routing"
+else
+    fail "task_type parameter did not affect routing"
+fi
+
+# Test 17: Validate channel decision - invalid channel value
+echo ""
+echo "Test 17: Validate channel decision - invalid channel value"
+RESULT=$(python3 -c "
+from channel_routing_propagation import validate_channel_decision
+run = {'run_id': 'run-16', 'channel_decision': {'channel': 'fast', 'required_debate_rounds': 1, 'required_evidence': []}}
+errors = validate_channel_decision(run)
+print('channel invalid in channel_decision' in errors)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid channel decision detected"
+else
+    fail "Invalid channel decision not detected"
+fi
+
+# Test 18: ChannelPolicyInvalidError lists valid channels
+echo ""
+echo "Test 18: ChannelPolicyInvalidError lists valid channels"
+RESULT=$(python3 -c "
+from channel_routing_propagation import ChannelPolicyInvalidError
+message = str(ChannelPolicyInvalidError('fast'))
+print('quick' in message and 'light' in message and 'standard' in message)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "ChannelPolicyInvalidError includes valid channels"
+else
+    fail "ChannelPolicyInvalidError lacks valid channels"
+fi
+
+# Test 19: Default channel requirements returns a copy
+echo ""
+echo "Test 19: Default channel requirements returns a copy"
+RESULT=$(python3 -c "
+from channel_routing_propagation import get_channel_requirements
+requirements = get_channel_requirements({'run_id': 'run-17'})
+requirements['max_files'] = 999
+fresh = get_channel_requirements({'run_id': 'run-18'})
+print(fresh['max_files'] == 50)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Default channel requirements returns a copy"
+else
+    fail "Default channel requirements did not return a copy"
+fi
+
 # Summary
 echo ""
 echo "=========================================="
