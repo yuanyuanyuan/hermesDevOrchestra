@@ -47,11 +47,11 @@ fi
 echo ""
 echo "Test 2: Veto dimension validation - pass"
 RESULT=$(python3 -c "
-from global_evaluation_veto import validate_veto_dimension
+from global_evaluation_veto import validate_veto_dimension, VetoDimensionError
 try:
     validate_veto_dimension('security_compliance', 0.8, 0.6)
     print('True')
-except:
+except VetoDimensionError:
     print('False')
 ")
 if [ "$RESULT" = "True" ]; then
@@ -77,9 +77,26 @@ else
     fail "VetoDimensionError not raised"
 fi
 
-# Test 4: Residual risk validation - high risk
+# Test 4: Veto dimension error preserves run_id
 echo ""
-echo "Test 4: Residual risk validation - high risk"
+echo "Test 4: Veto dimension error preserves run_id"
+RESULT=$(python3 -c "
+from global_evaluation_veto import validate_veto_dimension, VetoDimensionError
+try:
+    validate_veto_dimension('security_compliance', 0.4, 0.6, 'run-42')
+    print('False')
+except VetoDimensionError as error:
+    print(error.run_id == 'run-42')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "VetoDimensionError preserves run_id"
+else
+    fail "VetoDimensionError does not preserve run_id"
+fi
+
+# Test 5: Residual risk validation - high risk
+echo ""
+echo "Test 5: Residual risk validation - high risk"
 RESULT=$(python3 -c "
 from global_evaluation_veto import validate_residual_risks
 risks = [{'risk_id': 'r1', 'severity': 'high', 'description': 'Test risk'}]
@@ -92,9 +109,9 @@ else
     fail "High residual risk not detected"
 fi
 
-# Test 5: Residual risk validation - low risk
+# Test 6: Residual risk validation - low risk
 echo ""
-echo "Test 5: Residual risk validation - low risk"
+echo "Test 6: Residual risk validation - low risk"
 RESULT=$(python3 -c "
 from global_evaluation_veto import validate_residual_risks
 risks = [{'risk_id': 'r2', 'severity': 'low', 'description': 'Test risk'}]
@@ -107,9 +124,9 @@ else
     fail "Low residual risk incorrectly flagged"
 fi
 
-# Test 6: Unknown risk severity
+# Test 7: Unknown risk severity
 echo ""
-echo "Test 6: Unknown risk severity"
+echo "Test 7: Unknown risk severity"
 RESULT=$(python3 -c "
 from global_evaluation_veto import validate_residual_risks, UnknownRiskSeverityError
 try:
@@ -125,9 +142,9 @@ else
     fail "UnknownRiskSeverityError not raised"
 fi
 
-# Test 7: Authority approval check - approved
+# Test 8: Authority approval check - approved
 echo ""
-echo "Test 7: Authority approval check - approved"
+echo "Test 8: Authority approval check - approved"
 RESULT=$(python3 -c "
 from global_evaluation_veto import check_authority_approval
 run = {'authority_route': {'approved_risks': ['r1']}}
@@ -141,9 +158,9 @@ else
     fail "Authority approval check failed"
 fi
 
-# Test 8: Authority approval check - not approved
+# Test 9: Authority approval check - not approved
 echo ""
-echo "Test 8: Authority approval check - not approved"
+echo "Test 9: Authority approval check - not approved"
 RESULT=$(python3 -c "
 from global_evaluation_veto import check_authority_approval
 run = {'authority_route': {'approved_risks': []}}
@@ -157,9 +174,9 @@ else
     fail "Authority approval check incorrectly passed"
 fi
 
-# Test 9: Sort residual risks by severity
+# Test 10: Sort residual risks by severity
 echo ""
-echo "Test 9: Sort residual risks by severity"
+echo "Test 10: Sort residual risks by severity"
 RESULT=$(python3 -c "
 from global_evaluation_veto import sort_residual_risks_by_severity
 risks = [{'severity': 'low'}, {'severity': 'high'}, {'severity': 'medium'}]
@@ -172,14 +189,18 @@ else
     fail "Residual risks not sorted correctly"
 fi
 
-# Test 10: Attach required action
+# Test 11: Attach required action
 echo ""
-echo "Test 10: Attach required action"
+echo "Test 11: Attach required action"
 RESULT=$(python3 -c "
 from global_evaluation_veto import attach_required_action
 risks = [{'severity': 'high'}, {'severity': 'medium'}, {'severity': 'low'}]
 risks_with_actions = attach_required_action(risks)
-print(risks_with_actions[0]['required_action'] == 'human_approval_required' and risks_with_actions[2]['required_action'] == 'accept')
+print(
+    risks_with_actions[0]['required_action'] == 'human_approval_required'
+    and risks_with_actions[2]['required_action'] == 'accept'
+    and 'required_action' not in risks[0]
+)
 ")
 if [ "$RESULT" = "True" ]; then
     pass "Required actions attached correctly"
@@ -187,9 +208,9 @@ else
     fail "Required actions not attached correctly"
 fi
 
-# Test 11: Validate global evaluation - valid
+# Test 12: Validate global evaluation - valid
 echo ""
-echo "Test 11: Validate global evaluation - valid"
+echo "Test 12: Validate global evaluation - valid"
 RESULT=$(python3 -c "
 from global_evaluation_veto import validate_global_evaluation
 veto_scores = {'security_compliance': 0.8, 'completion_correctness': 0.9}
@@ -203,9 +224,9 @@ else
     fail "Valid global evaluation fails validation"
 fi
 
-# Test 12: Validate global evaluation - veto block
+# Test 13: Validate global evaluation - veto block
 echo ""
-echo "Test 12: Validate global evaluation - veto block"
+echo "Test 13: Validate global evaluation - veto block"
 RESULT=$(python3 -c "
 from global_evaluation_veto import validate_global_evaluation
 veto_scores = {'security_compliance': 0.4}
@@ -219,9 +240,9 @@ else
     fail "Veto dimension block not detected"
 fi
 
-# Test 13: Validate global evaluation - high residual risk
+# Test 14: Validate global evaluation - high residual risk
 echo ""
-echo "Test 13: Validate global evaluation - high residual risk"
+echo "Test 14: Validate global evaluation - high residual risk"
 RESULT=$(python3 -c "
 from global_evaluation_veto import validate_global_evaluation
 veto_scores = {'security_compliance': 0.8}
@@ -235,9 +256,9 @@ else
     fail "High residual risk not detected in validation"
 fi
 
-# Test 14: Create global evaluation report
+# Test 15: Create global evaluation report
 echo ""
-echo "Test 14: Create global evaluation report"
+echo "Test 15: Create global evaluation report"
 RESULT=$(python3 -c "
 from global_evaluation_veto import create_global_evaluation_report
 veto_scores = {'security_compliance': 0.8, 'completion_correctness': 0.9}
