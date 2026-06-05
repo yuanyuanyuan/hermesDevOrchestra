@@ -55,6 +55,7 @@ ${MY_PR_SKILL_DIR}/scripts/
 | `manage-pr.sh` | 创建 PR / 编辑标签 / 检查状态 | `${SCRIPTS}/manage-pr.sh --create --title="..." --body-file=... --head=...` |
 | `update-pr-branch.sh` | 用 base 最新代码更新 PR branch | `${SCRIPTS}/update-pr-branch.sh --number=8` |
 | `search.sh` | 搜索代码或 issues | `${SCRIPTS}/search.sh --type=code --query="..."` |
+| `resolve-thread.sh` | Resolve/unresolve PR review thread | `${SCRIPTS}/resolve-thread.sh --thread-id=123 --resolve` |
 
 ---
 
