@@ -3,11 +3,15 @@
 
 Makes Gateway consume computed write scope, actual changes, DAG validation,
 review evidence, and commit evidence before stage advancement.
+
+This module is a worker advancement gate. It intentionally complements the
+gateway-level write_scope_validator and completion-level evidence_gate modules:
+those validate dispatch/completion payloads, while this module validates the
+stage advancement evidence bundle assembled from worker output and task state.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 
@@ -82,6 +86,10 @@ def validate_write_scope(
 ) -> None:
     """Validate that actual changed files are within expected write scope.
 
+    An empty expected_scope is intentionally permissive and means no scope was
+    configured for this task; callers that require strict scoping must provide
+    at least one scope prefix.
+
     Raises WriteScopeViolationError if any file is outside expected scope.
     """
     if not expected_scope:
@@ -115,9 +123,9 @@ def validate_dag_evidence(
     if not dag_validation_result:
         raise MissingDAGValidationError(run_id, stage)
 
-    # Check for cycles
+    # Check for cycles or an explicit invalid DAG result.
     cycles = dag_validation_result.get("cycles", [])
-    if cycles:
+    if cycles or dag_validation_result.get("valid", True) is False:
         raise DAGCycleDetectedError(run_id, cycles)
 
 
@@ -159,6 +167,9 @@ def validate_worker_advancement(
     actual_changed_files: list[str],
 ) -> list[str]:
     """Validate all worker advancement evidence.
+
+    Error strings are the API contract for shell/gateway callers. Typed
+    exceptions remain available from the lower-level validation functions.
 
     Returns list of validation errors. Empty list means valid.
     """

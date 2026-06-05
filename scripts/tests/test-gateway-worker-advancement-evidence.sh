@@ -284,6 +284,23 @@ else
     fail "Missing review evidence not detected"
 fi
 
+# Test 15: DAG validation - invalid result without cycles
+echo ""
+echo "Test 15: DAG validation - invalid result without cycles"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_dag_evidence, DAGCycleDetectedError
+try:
+    validate_dag_evidence('run-14', 'implementation', {'valid': False, 'cycles': []})
+    print('False')
+except DAGCycleDetectedError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid DAG result without cycles detected"
+else
+    fail "Invalid DAG result without cycles not detected"
+fi
+
 # Summary
 echo ""
 echo "=========================================="
