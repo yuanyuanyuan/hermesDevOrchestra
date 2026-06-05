@@ -1540,7 +1540,7 @@ class GatewayApp:
                 })
 
         report = {
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": "orchestra.full.v1",
             "artifact_type": "command_reconciliation_report",
             "command_id": command_id,
             "run_id": run_id,

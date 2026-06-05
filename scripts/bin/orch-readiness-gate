@@ -91,12 +91,18 @@ def activate_family(
     if family_id not in VALID_FAMILIES:
         raise ReadinessGateError("invalid_family", f"Unknown family: {family_id}")
 
-    # Validate against cutover policy before activation
+    # Validate against cutover policy before activation (fail-closed)
+    sys.path.insert(0, str(repo_root / "scripts/lib"))
     try:
-        sys.path.insert(0, str(repo_root / "scripts/lib"))
         from staged_cutover import FullSchemaCutover
+    except ImportError as exc:
+        raise ReadinessGateError(
+            "cutover_module_missing",
+            f"Cannot activate without cutover validation module: {exc}",
+        )
 
-        cutover = FullSchemaCutover(repo_root)
+    try:
+        cutover = FullSchemaCutover(repo_root, allow_staged=True)
         result = cutover.can_activate(
             family_id,
             evidence=evidence,
@@ -113,11 +119,11 @@ def activate_family(
                 "missing_evidence": result["missing_evidence"],
                 "missing_checks": result["missing_checks"],
             }
-    except ImportError:
-        # Fall back to direct activation if staged_cutover is not available
-        pass
+    except ReadinessGateError:
+        raise
     except Exception as exc:
-        raise ReadinessGateError("cutover_validation_failed", f"Cutover validation failed: {exc}")
+        # StagedCutoverError and other cutover errors mean policy not met
+        raise ReadinessGateError("cutover_policy_not_met", f"Cutover validation failed: {exc}")
 
     config = load_gate_config(repo_root)
     if family_id not in config["families"]:

@@ -59,19 +59,37 @@ mkdir -p "$TEMP_REPO/config/cutover"
 cp "$REPO_ROOT/config/readiness-gates.json" "$TEMP_REPO/config/"
 cp "$REPO_ROOT/config/cutover/full-readiness-gates.json" "$TEMP_REPO/config/cutover/" 2>/dev/null || true
 
-# Copy the gate script
+# Copy the gate script and required Python modules
 cp "$REPO_ROOT/scripts/bin/orch-readiness-gate" "$TEMP_REPO/"
 chmod +x "$TEMP_REPO/orch-readiness-gate"
+mkdir -p "$TEMP_REPO/scripts/lib"
+cp "$REPO_ROOT/scripts/lib/staged_cutover.py" "$TEMP_REPO/scripts/lib/"
+cp "$REPO_ROOT/scripts/lib/debate_report.py" "$TEMP_REPO/scripts/lib/"
+cp "$REPO_ROOT/scripts/lib/dag_validator.py" "$TEMP_REPO/scripts/lib/"
+mkdir -p "$TEMP_REPO/config/schemas"
+cp "$REPO_ROOT/config/schemas/orchestra.full.schema.json" "$TEMP_REPO/config/schemas/"
 
-# Test activate in temp repo
-"$TEMP_REPO/orch-readiness-gate" --repo "$TEMP_REPO" activate full_debate_package >/dev/null
+# Test activate fails without evidence (B-01: cutover validation required)
+ACTIVATE_RESULT=$("$TEMP_REPO/orch-readiness-gate" --repo "$TEMP_REPO" activate full_debate_package 2>&1) || true
+echo "$ACTIVATE_RESULT" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+assert data['ok'] is False, f'Activation should fail without evidence: {data}'
+assert 'cutover_policy_not_met' in data.get('error', ''), f'Expected cutover_policy_not_met error: {data}'
+print('PASS: Readiness gate activate fails without evidence (B-01)')
+"
+
+# Test activate succeeds with all required evidence and checks
+"$TEMP_REPO/orch-readiness-gate" --repo "$TEMP_REPO" activate full_debate_package \
+    --evidence full_contract_validation_report mvp_compatibility_report runtime_consumption_test_report projection_compatibility_report rollback_or_disable_plan explicit_cutover_decision \
+    --checks canonical_team_mode_validation legacy_alias_mapping_report assembly_policy_fixture_report backend_policy_degradation_fixture_report runtime_consumption_tests explicit_cutover_decision >/dev/null
 GATE_CHECK=$("$TEMP_REPO/orch-readiness-gate" --repo "$TEMP_REPO" check full_debate_package 2>&1) || true
 echo "$GATE_CHECK" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-assert data['ok'] is True, f'Check failed after activate: {data}'
+assert data['ok'] is True, f'Check failed after activate with evidence: {data}'
 assert data['status'] == 'active', f'Expected active, got {data[\"status\"]}'
-print('PASS: Readiness gate activate works')
+print('PASS: Readiness gate activate works with evidence')
 "
 
 # Test deactivate in temp repo
@@ -85,12 +103,12 @@ assert data['status'] == 'pending', f'Expected pending, got {data[\"status\"]}'
 print('PASS: Readiness gate deactivate works')
 "
 
-# Verify tracked config was not modified
+# Verify tracked config was not modified (C-03)
 if git -C "$REPO_ROOT" diff --name-only | grep -q "config/readiness-gates.json"; then
     echo "FAIL: Tracked config was modified during test" >&2
     exit 1
 fi
-echo "PASS: Tracked config not modified"
+echo "PASS: Tracked config not modified (C-03)"
 
 # Test 5: Validation Functions in orch-common.sh
 echo "Test 5: Validation Functions"
