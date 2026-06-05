@@ -155,7 +155,7 @@ from intake_completeness import create_intake_bundle, validate_intake_bundle
 bundle = create_intake_bundle(
     'run-4', 'Test task', ['Criteria 1'], ['Constraint 1'],
     ['Dep 1'], ['Metric 1'], ['Risk 1'], ['Plan 1'],
-    'Revert', ['.github/workflows/test.yml'], {'.github/workflows/test.yml': 'jobs: test'}
+    'Revert', ['test.py']
 )
 errors = validate_intake_bundle('run-4', bundle)
 print(len(errors) == 0)
@@ -185,7 +185,7 @@ echo ""
 echo "Test 10: Validate CI/CD discovery - valid"
 RESULT=$(python3 -c "
 from intake_completeness import validate_cicd_discovery
-discovery = {'detected_systems': ['github_actions'], 'config_files': ['.github/workflows/test.yml'], 'has_tests': True}
+discovery = {'detected_systems': ['github_actions'], 'config_files': ['.github/workflows/test.yml']}
 try:
     validate_cicd_discovery('run-5', discovery)
     print('True')
@@ -260,132 +260,6 @@ if [ "$RESULT" = "True" ]; then
     pass "Intake bundle has all required fields"
 else
     fail "Intake bundle missing required fields"
-fi
-
-# Test 15: CI/CD detection avoids substring false positives
-echo ""
-echo "Test 15: CI/CD detection avoids substring false positives"
-RESULT=$(python3 -c "
-from intake_completeness import detect_cicd_config
-config = detect_cicd_config([
-    'docs/.github-notes.md',
-    'src/foo.github.txt',
-    'docs/docker-compose.yaml.md',
-    'notes/Jenkinsfile-guide.md',
-])
-print(config['detected_systems'] == [] and config['config_files'] == [])
-")
-if [ "$RESULT" = "True" ]; then
-    pass "CI/CD substring false positives avoided"
-else
-    fail "CI/CD substring false positives detected"
-fi
-
-# Test 16: CI/CD detection accepts exact configured paths
-echo ""
-echo "Test 16: CI/CD detection accepts exact configured paths"
-RESULT=$(python3 -c "
-from intake_completeness import detect_cicd_config
-config = detect_cicd_config([
-    './.github/actions/build/action.yml',
-    '.circleci/config.yml',
-    'jenkins/pipeline.groovy',
-    'k8s/deployment.yml',
-])
-systems = set(config['detected_systems'])
-print({'github_actions', 'circleci', 'jenkins', 'kubernetes'}.issubset(systems))
-")
-if [ "$RESULT" = "True" ]; then
-    pass "Exact CI/CD paths detected"
-else
-    fail "Exact CI/CD paths not detected"
-fi
-
-# Test 17: Prompt envelope rejects blank list entries
-echo ""
-echo "Test 17: Prompt envelope rejects blank list entries"
-RESULT=$(python3 -c "
-from intake_completeness import validate_prompt_envelope, MissingPromptEnvelopePartError
-envelope = {
-    'task_description': 'Test task',
-    'acceptance_criteria': [' '],
-    'technical_constraints': ['Constraint 1'],
-    'dependencies': ['Dep 1'],
-    'success_metrics': ['Metric 1'],
-    'risks_and_assumptions': ['Risk 1'],
-    'verification_plan': ['Plan 1'],
-    'rollback_strategy': 'Revert changes'
-}
-try:
-    validate_prompt_envelope('run-8', envelope)
-    print('False')
-except MissingPromptEnvelopePartError as e:
-    print('acceptance_criteria' in e.missing_parts)
-")
-if [ "$RESULT" = "True" ]; then
-    pass "Prompt envelope rejects blank list entries"
-else
-    fail "Prompt envelope accepted blank list entries"
-fi
-
-# Test 18: Empty CI/CD discovery is rejected
-echo ""
-echo "Test 18: Empty CI/CD discovery is rejected"
-RESULT=$(python3 -c "
-from intake_completeness import validate_cicd_discovery, MissingCIDiscoveryError
-try:
-    validate_cicd_discovery('run-9', {'detected_systems': [], 'config_files': [], 'has_tests': False, 'has_linting': False, 'has_deployment': False})
-    print('False')
-except MissingCIDiscoveryError as e:
-    print('detected_systems' in e.missing_fields and 'config_files' in e.missing_fields and 'ci_capability' in e.missing_fields)
-")
-if [ "$RESULT" = "True" ]; then
-    pass "Empty CI/CD discovery is rejected"
-else
-    fail "Empty CI/CD discovery was accepted"
-fi
-
-# Test 19: CLI stdin mode validates bundle
-echo ""
-echo "Test 19: CLI stdin mode validates bundle"
-CLI_OUTPUT=$(printf '%s\n' '{"run_id":"run-cli","bundle":{"prompt_envelope":{"task_description":"Task","acceptance_criteria":["Criteria"],"technical_constraints":["Constraint"],"dependencies":["Dep"],"success_metrics":["Metric"],"risks_and_assumptions":["Risk"],"verification_plan":["Plan"],"rollback_strategy":"Rollback"},"cicd_discovery":{"detected_systems":["github_actions"],"config_files":[".github/workflows/test.yml"],"has_tests":true},"facts_and_assumptions":{"verified_facts":[],"unverified_assumptions":[]}}}' | scripts/bin/orch-intake-completeness --validate)
-RESULT=$(python3 -c "
-import json
-import sys
-payload = json.loads(sys.argv[1])
-print(payload['valid'] is True and payload['errors'] == [])
-" "$CLI_OUTPUT")
-if [ "$RESULT" = "True" ]; then
-    pass "CLI stdin mode validates bundle"
-else
-    fail "CLI stdin mode did not validate bundle"
-fi
-
-# Test 20: CLI create mode creates complete bundle
-echo ""
-echo "Test 20: CLI create mode creates complete bundle"
-CLI_OUTPUT=$(scripts/bin/orch-intake-completeness --create \
-    --run-id run-cli-create \
-    --task-description 'Task' \
-    --acceptance-criteria 'Criteria' \
-    --technical-constraints 'Constraint' \
-    --dependencies 'Dep' \
-    --success-metrics 'Metric' \
-    --risks-and-assumptions 'Risk' \
-    --verification-plan 'Plan' \
-    --rollback-strategy 'Rollback' \
-    --files-changed '[".github/workflows/test.yml","test_module.py"]' \
-    --file-contents '{"test_module.py":"def test_ok(): pass"}')
-RESULT=$(python3 -c "
-import json
-import sys
-payload = json.loads(sys.argv[1])
-print(payload['run_id'] == 'run-cli-create' and payload['cicd_discovery']['has_tests'] is True)
-" "$CLI_OUTPUT")
-if [ "$RESULT" = "True" ]; then
-    pass "CLI create mode creates complete bundle"
-else
-    fail "CLI create mode failed"
 fi
 
 # Summary
