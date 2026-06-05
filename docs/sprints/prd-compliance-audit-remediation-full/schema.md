@@ -24,6 +24,21 @@ Enums:
 
 Allowed values: `created`, `intake_complete`, `direction_debate`, `solution_debate`, `implementation`, `improvement`, `global_evaluation`, `continuous_improvement`, `closed`, `paused`, `blocked`, `cancelled`, `rollback_requested`.
 
+Transition Guard Table:
+- `created` → `intake_complete`, `cancelled`
+- `intake_complete` → `direction_debate`, `cancelled`, `blocked`
+- `direction_debate` → `solution_debate`, `cancelled`, `blocked`, `rollback_requested`
+- `solution_debate` → `implementation`, `cancelled`, `blocked`, `rollback_requested`
+- `implementation` → `improvement`, `cancelled`, `blocked`, `rollback_requested`
+- `improvement` → `global_evaluation`, `cancelled`, `blocked`, `rollback_requested`
+- `global_evaluation` → `continuous_improvement`, `closed`, `cancelled`, `blocked`, `rollback_requested`
+- `continuous_improvement` → `closed`, `cancelled`, `blocked`, `rollback_requested`
+- `closed` → (terminal)
+- `paused` → `created`, `intake_complete`, `direction_debate`, `solution_debate`, `implementation`, `improvement`, `global_evaluation`, `continuous_improvement`, `cancelled`
+- `blocked` → `created`, `intake_complete`, `direction_debate`, `solution_debate`, `implementation`, `improvement`, `global_evaluation`, `continuous_improvement`, `cancelled`
+- `cancelled` → (terminal)
+- `rollback_requested` → `implementation`, `cancelled`, `blocked`
+
 ### `rollback_report`
 
 Required fields: `run_id`, `request_id`, `requested_stage`, `baseline_ref`, `rollback_strategy`, `affected_refs[]`, `protected_target_check`, `result`, `created_at`, `completed_at`.
