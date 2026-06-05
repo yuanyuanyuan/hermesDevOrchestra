@@ -21,9 +21,9 @@ SECURITY_PATTERNS = [
     # Database patterns
     r"(DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|ALTER\s+TABLE)",
     # Encryption patterns
-    r"(encrypt|decrypt|cipher|hash|bcrypt|scrypt)",
+    r"\b(encrypt|decrypt|cipher|bcrypt|scrypt)\b",
     # Network patterns
-    r"(firewall|proxy|vpn|tls|ssl|certificate)",
+    r"\b(firewall|proxy|vpn|tls|ssl|certificate)\b",
 ]
 
 # Compiled patterns for efficiency
@@ -73,6 +73,8 @@ def force_standard_for_security(
 ) -> dict[str, Any]:
     """Force Standard channel for security-sensitive diffs.
 
+    Modifies ``run`` in-place.
+
     Returns updated run dict with forced_standard=True and forced_standard_reasons.
     """
     run_id = run.get("run_id", "unknown")
@@ -111,5 +113,18 @@ def validate_security_escape(run: dict[str, Any]) -> list[str]:
 
     if channel_decision.get("forced_standard") and not channel_decision.get("forced_standard_reasons"):
         errors.append("forced_standard=True but forced_standard_reasons missing")
+
+    if channel_decision.get("forced_standard") and channel_decision.get("channel") != "standard":
+        errors.append("forced_standard=True but channel is not standard")
+
+    reasons = channel_decision.get("forced_standard_reasons")
+    if channel_decision.get("forced_standard") and reasons:
+        if not isinstance(reasons, list):
+            errors.append("forced_standard_reasons must be a list")
+        else:
+            for reason in reasons:
+                if not isinstance(reason, str) or not reason.startswith("security_pattern:"):
+                    errors.append("forced_standard_reasons entries must start with security_pattern:")
+                    break
 
     return errors
