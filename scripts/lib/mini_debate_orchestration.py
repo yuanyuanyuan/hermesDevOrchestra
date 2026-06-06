@@ -162,26 +162,40 @@ def execute_mini_debate(
     if not isinstance(backend_report, dict):
         raise MissingDebateReportError(run_id, "malformed")
 
-    elapsed_minutes = backend_report.get("elapsed_minutes", 0)
+    if "elapsed_minutes" not in backend_report:
+        raise MissingDebateReportError(run_id, "missing elapsed_minutes")
+
+    elapsed_minutes = backend_report["elapsed_minutes"]
     if not _is_number(elapsed_minutes):
-        raise MissingDebateReportError(run_id, "malformed")
-    if elapsed_minutes > config["timeout_minutes"]:
+        raise MissingDebateReportError(run_id, "malformed elapsed_minutes")
+    if elapsed_minutes < 0:
+        raise MissingDebateReportError(run_id, "malformed elapsed_minutes")
+    if elapsed_minutes >= config["timeout_minutes"]:
         raise MiniDebateTimeoutError(run_id, config["timeout_minutes"])
 
     consensus_score = backend_report.get("consensus_score")
     if not _is_number(consensus_score) or not math.isfinite(consensus_score):
         raise MissingDebateReportError(run_id, "missing consensus_score")
+    if not 0 <= consensus_score <= 1:
+        raise MissingDebateReportError(run_id, "out-of-range consensus_score")
 
     # Check consensus
     if consensus_score < config["required_consensus"]:
         raise MiniDebateConsensusError(run_id, consensus_score, config["required_consensus"])
 
     rounds_completed = backend_report.get("rounds_completed", 0)
-    if not _is_number(rounds_completed):
+    if (
+        not _is_number(rounds_completed)
+        or not math.isfinite(rounds_completed)
+        or rounds_completed < 0
+        or rounds_completed > config["max_rounds"]
+    ):
         raise MissingDebateReportError(run_id, "malformed rounds_completed")
 
     debate_refs = backend_report.get("debate_refs")
-    if not isinstance(debate_refs, list) or not debate_refs:
+    if isinstance(debate_refs, list):
+        debate_refs = [ref for ref in debate_refs if isinstance(ref, str) and ref]
+    if not debate_refs:
         debate_refs = [f"debate://run/{run_id}/mini/{uuid4().hex}"]
 
     completed = datetime.now(timezone.utc)
@@ -207,7 +221,10 @@ def execute_mini_debate(
 
 
 def attach_mini_debate_to_run(run: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
-    """Attach mini-debate refs and status to run state."""
+    """Return a run state with mini-debate refs and status attached."""
+    if not isinstance(run, dict) or not isinstance(report, dict):
+        raise TypeError("run and report must be dicts")
+
     existing_refs = run.get("mini_debate_refs", [])
     report_refs = report.get("debate_refs", [])
     if not isinstance(existing_refs, list):
@@ -215,10 +232,11 @@ def attach_mini_debate_to_run(run: dict[str, Any], report: dict[str, Any]) -> di
     if not isinstance(report_refs, list):
         report_refs = []
 
-    run["mini_debate_refs"] = list(dict.fromkeys(existing_refs + report_refs))
+    new_run = dict(run)
+    new_run["mini_debate_refs"] = list(dict.fromkeys(existing_refs + report_refs))
 
     # Update run with debate status
-    run["mini_debate_status"] = {
+    new_run["mini_debate_status"] = {
         "channel": report.get("channel"),
         "debate_type": report.get("debate_type"),
         "status": report.get("status"),
@@ -227,7 +245,7 @@ def attach_mini_debate_to_run(run: dict[str, Any], report: dict[str, Any]) -> di
         "completed_at": report.get("completed_at"),
     }
 
-    return run
+    return new_run
 
 
 def persist_mini_debate_refs(run: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
@@ -258,7 +276,9 @@ def validate_mini_debate(run: dict[str, Any]) -> list[str]:
         consensus_score = mini_debate_status["consensus_score"]
         if not _is_number(consensus_score):
             errors.append("consensus_score must be numeric")
-        elif not math.isfinite(consensus_score) or not 0 <= consensus_score <= 1:
+        elif not math.isfinite(consensus_score):
+            errors.append("consensus_score must be finite")
+        elif not 0 <= consensus_score <= 1:
             errors.append("consensus_score must be between 0 and 1")
 
     return errors

@@ -106,7 +106,7 @@ RESULT=$(python3 -c "
 from mini_debate_orchestration import execute_mini_debate
 run = {'run_id': 'run-1'}
 request = {'run_id': 'run-1', 'task_id': 'task-1', 'channel': 'quick'}
-backend_report = {'consensus_score': 0.91, 'rounds_completed': 1, 'debate_refs': ['debate://backend/run-1/mini/1']}
+backend_report = {'consensus_score': 0.91, 'rounds_completed': 1, 'elapsed_minutes': 3, 'debate_refs': ['debate://backend/run-1/mini/1']}
 report = execute_mini_debate(run, request, debate_backend_available=True, backend_report=backend_report)
 print(report['status'] == 'completed' and report['consensus_score'] >= 0.8)
 ")
@@ -230,7 +230,7 @@ RESULT=$(python3 -c "
 from mini_debate_orchestration import execute_mini_debate
 run = {'run_id': 'run-9'}
 request = {'run_id': 'run-9', 'task_id': 'task-9', 'channel': 'light'}
-backend_report = {'consensus_score': 0.76, 'rounds_completed': 2, 'debate_refs': ['debate://backend/run-9/mini/1']}
+backend_report = {'consensus_score': 0.76, 'rounds_completed': 2, 'elapsed_minutes': 5, 'debate_refs': ['debate://backend/run-9/mini/1']}
 report = execute_mini_debate(run, request, debate_backend_available=True, backend_report=backend_report)
 required_keys = ['run_id', 'task_id', 'channel', 'debate_type', 'status', 'consensus_score', 'required_consensus', 'rounds_completed', 'max_rounds', 'timeout_minutes', 'started_at', 'completed_at', 'debate_refs']
 print(all(k in report for k in required_keys) and report['consensus_score'] == 0.76 and report['debate_refs'] == backend_report['debate_refs'])
@@ -310,8 +310,8 @@ RESULT=$(python3 -c "
 from mini_debate_orchestration import execute_mini_debate
 run = {'run_id': 'run-14'}
 request = {'run_id': 'run-14', 'task_id': 'task-14', 'channel': 'quick'}
-first = execute_mini_debate(run, request, debate_backend_available=True, backend_report={'consensus_score': 0.9})
-second = execute_mini_debate(run, request, debate_backend_available=True, backend_report={'consensus_score': 0.9})
+first = execute_mini_debate(run, request, debate_backend_available=True, backend_report={'consensus_score': 0.9, 'elapsed_minutes': 1})
+second = execute_mini_debate(run, request, debate_backend_available=True, backend_report={'consensus_score': 0.9, 'elapsed_minutes': 1})
 print(first['debate_refs'][0] != second['debate_refs'][0])
 ")
 if [ "$RESULT" = "True" ]; then
@@ -380,7 +380,7 @@ from mini_debate_orchestration import execute_mini_debate, MissingDebateReportEr
 run = {'run_id': 'run-18'}
 request = {'run_id': 'run-18', 'task_id': 'task-18', 'channel': 'quick'}
 try:
-    execute_mini_debate(run, request, backend_report={'rounds_completed': 1})
+    execute_mini_debate(run, request, backend_report={'rounds_completed': 1, 'elapsed_minutes': 1})
     print('False')
 except MissingDebateReportError as exc:
     print(exc.reason == 'missing consensus_score')
@@ -419,7 +419,7 @@ run = {'run_id': 'run-20'}
 request = {'run_id': 'run-20', 'task_id': 'task-20', 'channel': 'quick'}
 for score in (float('nan'), float('inf')):
     try:
-        execute_mini_debate(run, request, backend_report={'consensus_score': score})
+        execute_mini_debate(run, request, backend_report={'consensus_score': score, 'elapsed_minutes': 1})
         print('False')
         break
     except MissingDebateReportError:
@@ -497,12 +497,213 @@ echo "Test 30: Validate non-finite consensus score"
 RESULT=$(python3 -c "
 from mini_debate_orchestration import validate_mini_debate
 run = {'run_id': 'run-25', 'mini_debate_status': {'status': 'completed', 'consensus_score': float('nan')}}
-print('consensus_score must be between 0 and 1' in validate_mini_debate(run))
+print('consensus_score must be finite' in validate_mini_debate(run))
 ")
 if [ "$RESULT" = "True" ]; then
     pass "Non-finite consensus score detected in validation"
 else
     fail "Non-finite consensus score was not detected in validation"
+fi
+
+# Test 31: Missing elapsed minutes raises missing report error
+echo ""
+echo "Test 31: Missing elapsed minutes raises missing report error"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate, MissingDebateReportError
+run = {'run_id': 'run-26'}
+request = {'run_id': 'run-26', 'task_id': 'task-26', 'channel': 'quick'}
+try:
+    execute_mini_debate(run, request, backend_report={'consensus_score': 0.9})
+    print('False')
+except MissingDebateReportError as exc:
+    print(exc.reason == 'missing elapsed_minutes')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Missing elapsed minutes raises missing report error"
+else
+    fail "Missing elapsed minutes did not raise expected error"
+fi
+
+# Test 32: Negative elapsed minutes is rejected
+echo ""
+echo "Test 32: Negative elapsed minutes is rejected"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate, MissingDebateReportError
+run = {'run_id': 'run-27'}
+request = {'run_id': 'run-27', 'task_id': 'task-27', 'channel': 'quick'}
+try:
+    execute_mini_debate(run, request, backend_report={'consensus_score': 0.9, 'elapsed_minutes': -1})
+    print('False')
+except MissingDebateReportError as exc:
+    print(exc.reason == 'malformed elapsed_minutes')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Negative elapsed minutes rejected"
+else
+    fail "Negative elapsed minutes was accepted"
+fi
+
+# Test 33: Boolean consensus score is rejected
+echo ""
+echo "Test 33: Boolean consensus score is rejected"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate, MissingDebateReportError
+run = {'run_id': 'run-28'}
+request = {'run_id': 'run-28', 'task_id': 'task-28', 'channel': 'quick'}
+for score in (True, False):
+    try:
+        execute_mini_debate(run, request, backend_report={'consensus_score': score, 'elapsed_minutes': 1})
+        print('False')
+        break
+    except MissingDebateReportError:
+        pass
+else:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Boolean consensus score rejected"
+else
+    fail "Boolean consensus score was accepted"
+fi
+
+# Test 34: String consensus score is rejected
+echo ""
+echo "Test 34: String consensus score is rejected"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate, MissingDebateReportError
+run = {'run_id': 'run-29'}
+request = {'run_id': 'run-29', 'task_id': 'task-29', 'channel': 'quick'}
+try:
+    execute_mini_debate(run, request, backend_report={'consensus_score': '0.9', 'elapsed_minutes': 1})
+    print('False')
+except MissingDebateReportError as exc:
+    print(exc.reason == 'missing consensus_score')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "String consensus score rejected"
+else
+    fail "String consensus score was accepted"
+fi
+
+# Test 35: Out-of-range consensus score is rejected in execute
+echo ""
+echo "Test 35: Out-of-range consensus score is rejected in execute"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate, MissingDebateReportError
+run = {'run_id': 'run-30'}
+request = {'run_id': 'run-30', 'task_id': 'task-30', 'channel': 'quick'}
+try:
+    execute_mini_debate(run, request, backend_report={'consensus_score': 1.5, 'elapsed_minutes': 1})
+    print('False')
+except MissingDebateReportError as exc:
+    print(exc.reason == 'out-of-range consensus_score')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Out-of-range consensus score rejected in execute"
+else
+    fail "Out-of-range consensus score was accepted in execute"
+fi
+
+# Test 36: Rounds completed range is validated
+echo ""
+echo "Test 36: Rounds completed range is validated"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate, MissingDebateReportError
+run = {'run_id': 'run-31'}
+request = {'run_id': 'run-31', 'task_id': 'task-31', 'channel': 'quick'}
+for rounds in (-1, 2, float('nan'), float('inf')):
+    try:
+        execute_mini_debate(run, request, backend_report={'consensus_score': 0.9, 'elapsed_minutes': 1, 'rounds_completed': rounds})
+        print('False')
+        break
+    except MissingDebateReportError as exc:
+        if exc.reason != 'malformed rounds_completed':
+            print('False')
+            break
+else:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Rounds completed range validated"
+else
+    fail "Rounds completed range was not validated"
+fi
+
+# Test 37: Empty debate refs fallback generates ref
+echo ""
+echo "Test 37: Empty debate refs fallback generates ref"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate
+run = {'run_id': 'run-32'}
+request = {'run_id': 'run-32', 'task_id': 'task-32', 'channel': 'quick'}
+report = execute_mini_debate(run, request, backend_report={'consensus_score': 0.9, 'elapsed_minutes': 1, 'rounds_completed': 1, 'debate_refs': []})
+print(len(report['debate_refs']) == 1 and report['debate_refs'][0].startswith('debate://run/run-32/mini/'))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Empty debate refs fallback generates ref"
+else
+    fail "Empty debate refs fallback did not generate ref"
+fi
+
+# Test 38: Light channel auto-merge behavior
+echo ""
+echo "Test 38: Light channel auto-merge behavior"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import check_auto_merge_blocked
+without_debate = {'run_id': 'run-33', 'channel_decision': {'channel': 'light'}}
+with_debate = {'run_id': 'run-34', 'channel_decision': {'channel': 'light'}, 'mini_debate_status': {'status': 'completed'}}
+print(check_auto_merge_blocked(without_debate) == True and check_auto_merge_blocked(with_debate) == False)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Light channel auto-merge behavior correct"
+else
+    fail "Light channel auto-merge behavior incorrect"
+fi
+
+# Test 39: Degraded mini-debate blocks auto-merge
+echo ""
+echo "Test 39: Degraded mini-debate blocks auto-merge"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import check_auto_merge_blocked
+run = {'run_id': 'run-35', 'channel_decision': {'channel': 'quick'}, 'mini_debate_status': {'status': 'degraded'}}
+print(check_auto_merge_blocked(run) == True)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Degraded mini-debate blocks auto-merge"
+else
+    fail "Degraded mini-debate did not block auto-merge"
+fi
+
+# Test 40: Attach mini-debate returns new run
+echo ""
+echo "Test 40: Attach mini-debate returns new run"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import attach_mini_debate_to_run
+run = {'run_id': 'run-36'}
+report = {'debate_refs': ['debate://run-36/mini/a'], 'channel': 'quick', 'debate_type': 'confirmation', 'status': 'completed', 'consensus_score': 0.9, 'required_consensus': 0.8, 'completed_at': '2026-01-01T00:00:00Z'}
+updated = attach_mini_debate_to_run(run, report)
+print(updated is not run and 'mini_debate_refs' not in run and updated['mini_debate_refs'] == ['debate://run-36/mini/a'])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Attach mini-debate returns new run"
+else
+    fail "Attach mini-debate mutated original run"
+fi
+
+# Test 41: Invalid debate refs are filtered
+echo ""
+echo "Test 41: Invalid debate refs are filtered"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate
+run = {'run_id': 'run-37'}
+request = {'run_id': 'run-37', 'task_id': 'task-37', 'channel': 'quick'}
+report = execute_mini_debate(run, request, backend_report={'consensus_score': 0.9, 'elapsed_minutes': 1, 'rounds_completed': 1, 'debate_refs': [None, '', 0, 'debate://run-37/mini/a']})
+print(report['debate_refs'] == ['debate://run-37/mini/a'])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid debate refs are filtered"
+else
+    fail "Invalid debate refs were not filtered"
 fi
 
 # Summary
