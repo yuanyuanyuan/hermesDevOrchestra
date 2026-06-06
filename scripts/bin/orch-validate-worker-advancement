@@ -11,6 +11,7 @@ Payload stdin format:
   {"run": {...}, "task": {...}, "actual_changed_files": ["path"]}
 
 Prints {"errors": [...], "valid": bool}. Exits 0 when valid, 1 when errors exist.
+Usage or JSON parse errors exit 2 with {"errors": [...], "valid": false}.
 EOF
 }
 
@@ -20,6 +21,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUN_JSON=""
 TASK_JSON=""
 ACTUAL_CHANGED_FILES="[]"
+MAX_JSON_BYTES=1048576
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -49,6 +51,11 @@ done
 STDIN_PAYLOAD=""
 if [ -z "$RUN_JSON" ] && [ -z "$TASK_JSON" ]; then
     STDIN_PAYLOAD="$(cat)"
+    STDIN_BYTES="$(printf '%s' "$STDIN_PAYLOAD" | wc -c | tr -d ' ')"
+    if [ "$STDIN_BYTES" -gt "$MAX_JSON_BYTES" ]; then
+        printf '%s\n' '{"errors":["usage_error: stdin_payload_too_large"],"valid":false}'
+        exit 2
+    fi
 fi
 
 PYTHONPATH="$REPO_ROOT/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$RUN_JSON" "$TASK_JSON" "$ACTUAL_CHANGED_FILES" "$STDIN_PAYLOAD" <<'PY'
@@ -57,19 +64,36 @@ import sys
 
 from worker_evidence_harden import validate_worker_advancement
 
+MAX_JSON_BYTES = 1048576
 run_arg, task_arg, files_arg, stdin_payload = sys.argv[1:]
+
+def fail_usage(message):
+    print(json.dumps({"errors": [f"usage_error: {message}"], "valid": False}, sort_keys=True))
+    raise SystemExit(2)
+
+def parse_json(label, value):
+    if len(value.encode("utf-8")) > MAX_JSON_BYTES:
+        fail_usage(f"{label}_too_large")
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        fail_usage(f"{label}_invalid_json:{exc.msg}")
 
 if run_arg or task_arg:
     if not run_arg or not task_arg:
-        print("orch-validate-worker-advancement requires both --run and --task", file=sys.stderr)
-        raise SystemExit(2)
+        fail_usage("run_and_task_required")
     payload = {
-        "run": json.loads(run_arg),
-        "task": json.loads(task_arg),
-        "actual_changed_files": json.loads(files_arg),
+        "run": parse_json("run", run_arg),
+        "task": parse_json("task", task_arg),
+        "actual_changed_files": parse_json("actual_changed_files", files_arg),
     }
 else:
-    payload = json.loads(stdin_payload)
+    if not stdin_payload.strip():
+        fail_usage("stdin_payload_required")
+    payload = parse_json("stdin_payload", stdin_payload)
+
+if not isinstance(payload, dict):
+    fail_usage("payload_must_be_object")
 
 run = payload.get("run", {})
 task = payload.get("task", {})

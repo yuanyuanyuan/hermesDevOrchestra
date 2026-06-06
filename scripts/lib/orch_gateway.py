@@ -32,6 +32,7 @@ from gateway_evaluation import normalize_global_evaluation
 from gateway_closeout import closeout_audit_checklist, enrich_proposals, protected_target_approval_blockers, protected_target_rejection, FULL_SCHEMA_VERSION as CONFLICT_LEDGER_SCHEMA_VERSION
 from run_projection import PROJECTION_SCHEMA_VERSION, projection_response, refresh_projection_response
 from runtime_activation import RuntimeActivation, RuntimeActivationError
+from worker_evidence_harden import validate_worker_advancement
 
 try:
     from gateway_evidence import gather as _evidence_gather
@@ -4456,6 +4457,11 @@ class GatewayApp:
             failure_class = "evidence_missing"
             blocked_reason = "worker_output_evidence_missing"
         if not violations:
+            run = read_json(run_path)
+            violations = self.worker_advancement_evidence_violations(run, task, worker_response)
+            failure_class = "worker_advancement_evidence"
+            blocked_reason = "worker_advancement_evidence_invalid"
+        if not violations:
             violations = self.open_high_conflict_ids(run_id)
             failure_class = "open_conflict"
             blocked_reason = "open_high_conflict"
@@ -5570,6 +5576,20 @@ class GatewayApp:
             if not isinstance(test_refs, list) or not test_refs:
                 return ["test_evidence_refs"]
         return []
+
+    def worker_advancement_evidence_violations(self, run: dict[str, Any], task: dict[str, Any], worker_response: dict[str, Any]) -> list[str]:
+        role_payload = worker_response.get("role_specific_payload")
+        if not isinstance(role_payload, dict):
+            return ["role_specific_payload"]
+        gate_task = {
+            "current_stage": task.get("stage") or run.get("current_stage"),
+            "write_scope": task.get("write_scope", []),
+            "dag_validation_result": role_payload.get("dag_validation_result"),
+            "review_evidence": role_payload.get("review_evidence"),
+            "commit_evidence": role_payload.get("commit_evidence"),
+        }
+        changed_files = role_payload.get("changed_files", [])
+        return validate_worker_advancement(run, gate_task, changed_files)
 
     def next_event_seq(self, run_id: str) -> int:
         path = self.store.events_path(run_id)

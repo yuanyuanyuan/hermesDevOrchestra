@@ -12,8 +12,18 @@ stage advancement evidence bundle assembled from worker output and task state.
 
 from __future__ import annotations
 
+import json
 from pathlib import PurePosixPath
 from typing import Any
+
+KNOWN_STAGES = {
+    "direction_debate",
+    "solution_debate",
+    "implementation",
+    "improvement",
+    "global_evaluation",
+    "continuous_improvement",
+}
 
 
 class WorkerEvidenceError(Exception):
@@ -101,6 +111,16 @@ COMMIT_EVIDENCE_STAGES = {"implementation"}
 SCOPE_REQUIRED_STAGES = DAG_VALIDATION_STAGES | REVIEW_EVIDENCE_STAGES | COMMIT_EVIDENCE_STAGES
 
 
+def _canonical_stage(stage: Any) -> str:
+    return stage.strip().lower() if isinstance(stage, str) else ""
+
+
+def _error_payload(payload: Any) -> str:
+    if isinstance(payload, (list, dict)):
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return str(payload)
+
+
 def validate_write_scope(
     run_id: str,
     expected_scope: list[str],
@@ -122,10 +142,13 @@ def validate_write_scope(
     if not expected_scope:
         return  # No scope defined, allow all
 
-    normalized_scope = [_normalize_relative_path(scope) for scope in expected_scope]
+    normalized_scope = [_normalize_scope_path(run_id, scope) for scope in expected_scope]
     violating = []
     for filepath in actual_changed_files:
-        normalized = _normalize_relative_path(filepath)
+        normalized = _normalize_changed_path(filepath)
+        if normalized is None:
+            violating.append(filepath)
+            continue
         # Check if file is in expected scope
         if not any(_path_in_scope(normalized, scope) for scope in normalized_scope):
             violating.append(filepath)
@@ -134,10 +157,30 @@ def validate_write_scope(
         raise WriteScopeViolationError(run_id, violating, expected_scope)
 
 
-def _normalize_relative_path(path: str) -> str:
+def _normalize_scope_path(run_id: str, path: str) -> str:
+    if path == "":
+        raise InvalidEvidenceInputError(run_id, "expected_scope", "relative paths without traversal")
+    if path.endswith("/**"):
+        path = path[:-3]
+    normalized = _normalize_relative_path(path)
+    if normalized is None or normalized == "":
+        raise InvalidEvidenceInputError(run_id, "expected_scope", "relative paths without traversal")
+    return normalized
+
+
+def _normalize_changed_path(path: str) -> str | None:
+    normalized = _normalize_relative_path(path)
+    if normalized in {"", "."}:
+        return None
+    return normalized
+
+
+def _normalize_relative_path(path: str) -> str | None:
+    if "\x00" in path or "\\" in path:
+        return None
     parts = PurePosixPath(path).parts
     if path.startswith("/") or ".." in parts:
-        return "__invalid_path__"
+        return None
     normalized = PurePosixPath(path).as_posix()
     while normalized.startswith("./"):
         normalized = normalized[2:]
@@ -145,6 +188,8 @@ def _normalize_relative_path(path: str) -> str:
 
 
 def _path_in_scope(path: str, scope: str) -> bool:
+    if scope == ".":
+        return path != ""
     return path == scope or path.startswith(f"{scope}/")
 
 
@@ -159,6 +204,7 @@ def validate_dag_evidence(
     Raises DAGCycleDetectedError if cycles detected.
     Raises DAGValidationFailedError if DAG validation failed without cycles.
     """
+    stage = _canonical_stage(stage)
     if stage not in DAG_VALIDATION_STAGES:
         return  # DAG validation not required for this stage
 
@@ -176,11 +222,11 @@ def validate_dag_evidence(
         raise DAGCycleDetectedError(run_id, cycles)
 
     result_valid = dag_validation_result.get("valid", dag_validation_result.get("passed", True))
-    if result_valid is False:
-        errors = dag_validation_result.get("errors") or ["invalid_dag_result"]
-        if not isinstance(errors, list):
-            errors = [str(errors)]
-        raise DAGValidationFailedError(run_id, [str(error) for error in errors])
+    errors = dag_validation_result.get("errors") or []
+    if not isinstance(errors, list):
+        errors = [str(errors)]
+    if not bool(result_valid) or errors:
+        raise DAGValidationFailedError(run_id, [str(error) for error in (errors or ["invalid_dag_result"])])
 
 
 def validate_review_evidence(
@@ -192,6 +238,7 @@ def validate_review_evidence(
 
     Raises MissingReviewEvidenceError if evidence missing for required stage.
     """
+    stage = _canonical_stage(stage)
     if stage not in REVIEW_EVIDENCE_STAGES:
         return  # Review evidence not required for this stage
 
@@ -208,6 +255,7 @@ def validate_commit_evidence(
 
     Raises MissingCommitEvidenceError if evidence missing for required stage.
     """
+    stage = _canonical_stage(stage)
     if stage not in COMMIT_EVIDENCE_STAGES:
         return  # Commit evidence not required for this stage
 
@@ -226,25 +274,39 @@ def validate_worker_advancement(
     exceptions remain available from the lower-level validation functions.
 
     Error strings use the stable format "<code>: <payload>", where code is one
-    of: missing_current_stage, invalid_evidence_input, missing_write_scope,
-    write_scope_violation, missing_dag_validation, dag_cycle_detected,
-    dag_validation_failed, missing_review_evidence, missing_commit_evidence.
-    Payloads are human-readable strings; list payloads use Python list repr.
+    of: missing_current_stage, unknown_stage, invalid_evidence_input,
+    missing_write_scope, write_scope_violation, write_scope_unrestricted_engaged,
+    missing_dag_validation, dag_cycle_detected, dag_validation_failed,
+    missing_review_evidence, missing_commit_evidence.
+    Payloads are human-readable strings; list and dict payloads use JSON.
 
     Returns list of validation errors. Empty list means valid.
     """
+    if not isinstance(run, dict):
+        return ["invalid_evidence_input: run"]
+    if not isinstance(task, dict):
+        return ["invalid_evidence_input: task"]
+
     run_id = run.get("run_id", "unknown")
-    stage = task.get("current_stage", run.get("current_stage", ""))
+    raw_stage = task.get("current_stage", run.get("current_stage", ""))
+    stage = _canonical_stage(raw_stage)
     expected_scope = task.get("write_scope", [])
-    scope_unrestricted = task.get("write_scope_unrestricted") is True
+    privilege_grants = run.get("privilege_grants") if isinstance(run.get("privilege_grants"), dict) else {}
+    scope_unrestricted = privilege_grants.get("write_scope_unrestricted") is True
     dag_result = task.get("dag_validation_result")
     review_evidence = task.get("review_evidence")
     commit_evidence = task.get("commit_evidence")
 
     errors = []
 
-    if not isinstance(stage, str) or not stage:
-        return ["missing_current_stage: current_stage"]
+    if not stage:
+        errors.append("missing_current_stage: current_stage")
+    elif stage not in KNOWN_STAGES:
+        errors.append(f"unknown_stage: {raw_stage}")
+    if task.get("write_scope_unrestricted") is True:
+        errors.append("invalid_evidence_input: write_scope_unrestricted")
+    if scope_unrestricted:
+        errors.append(f"write_scope_unrestricted_engaged: {stage or 'unknown'}")
 
     # Validate write scope
     if not expected_scope and stage in SCOPE_REQUIRED_STAGES and not scope_unrestricted:
@@ -255,7 +317,7 @@ def validate_worker_advancement(
         except InvalidEvidenceInputError as e:
             errors.append(f"invalid_evidence_input: {e.field}")
         except WriteScopeViolationError as e:
-            errors.append(f"write_scope_violation: files={e.violating_files}; expected_scope={e.expected_scope}")
+            errors.append(f"write_scope_violation: {_error_payload({'files': e.violating_files, 'expected_scope': e.expected_scope})}")
 
     # Validate DAG evidence
     try:
@@ -265,9 +327,9 @@ def validate_worker_advancement(
     except MissingDAGValidationError as e:
         errors.append(f"missing_dag_validation: {e.stage}")
     except DAGCycleDetectedError as e:
-        errors.append(f"dag_cycle_detected: {e.cycles}")
+        errors.append(f"dag_cycle_detected: {_error_payload(e.cycles)}")
     except DAGValidationFailedError as e:
-        errors.append(f"dag_validation_failed: {e.errors}")
+        errors.append(f"dag_validation_failed: {_error_payload(e.errors)}")
 
     # Validate review evidence
     try:

@@ -375,9 +375,9 @@ else
     fail "Full worker advancement permitted empty write scope"
 fi
 
-# Test 20: Explicit unrestricted write scope permits empty scope
+# Test 20: Task-level unrestricted write scope is rejected
 echo ""
-echo "Test 20: Explicit unrestricted write scope permits empty scope"
+echo "Test 20: Task-level unrestricted write scope is rejected"
 RESULT=$(python3 -c "
 from worker_evidence_harden import validate_worker_advancement
 run = {'run_id': 'run-19'}
@@ -390,12 +390,12 @@ task = {
     'commit_evidence': {'commit_sha': 'abc123'}
 }
 errors = validate_worker_advancement(run, task, ['outside/scope.py'])
-print(len(errors) == 0)
+print(any('invalid_evidence_input: write_scope_unrestricted' in error for error in errors))
 ")
 if [ "$RESULT" = "True" ]; then
-    pass "Explicit unrestricted write scope permits empty scope"
+    pass "Task-level unrestricted write scope is rejected"
 else
-    fail "Explicit unrestricted write scope did not permit empty scope"
+    fail "Task-level unrestricted write scope was permitted"
 fi
 
 # Test 21: Leading traversal path violates matching scope
@@ -476,21 +476,21 @@ else
     fail "Invalid DAG type did not return typed aggregator error"
 fi
 
-# Test 25: DAG validator schema with back edges detects cycle
+# Test 25: DAG validator schema with back_edges list[dict] detects cycle
 echo ""
-echo "Test 25: DAG validator schema with back edges detects cycle"
+echo "Test 25: DAG validator schema with back_edges list[dict] detects cycle"
 RESULT=$(python3 -c "
 from worker_evidence_harden import validate_dag_evidence, DAGCycleDetectedError
 try:
-    validate_dag_evidence('run-24', 'implementation', {'passed': False, 'cycle_detected': True, 'back_edges': [['a', 'b']]})
+    validate_dag_evidence('run-24', 'implementation', {'passed': False, 'cycle_detected': True, 'back_edges': [{'from': 'a', 'to': 'b'}]})
     print('False')
 except DAGCycleDetectedError:
     print('True')
 ")
 if [ "$RESULT" = "True" ]; then
-    pass "DAG validator back_edges cycle detected"
+    pass "DAG validator back_edges list[dict] cycle detected"
 else
-    fail "DAG validator back_edges cycle not detected"
+    fail "DAG validator back_edges list[dict] cycle not detected"
 fi
 
 # Test 26: DAG validator schema failed without cycle
@@ -555,12 +555,12 @@ task = {
     'commit_evidence': {'commit_sha': 'abc123'}
 }
 errors = validate_worker_advancement(run, task, ['config/secret.txt'])
-print(any('expected_scope' in error for error in errors))
+print(any('\"expected_scope\": [\"scripts/lib\"]' in error for error in errors))
 ")
 if [ "$RESULT" = "True" ]; then
-    pass "Write scope error includes expected scope"
+    pass "Write scope error includes concrete expected scope"
 else
-    fail "Write scope error omitted expected scope"
+    fail "Write scope error omitted concrete expected scope"
 fi
 
 # Test 30: CLI stdin mode reports validation errors
@@ -585,20 +585,263 @@ fi
 # Test 31: CLI argv mode reports valid advancement
 echo ""
 echo "Test 31: CLI argv mode reports valid advancement"
+set +e
 CLI_OUTPUT=$(scripts/bin/orch-validate-worker-advancement \
     --run '{"run_id":"run-30"}' \
     --task '{"current_stage":"implementation","write_scope":["scripts/lib"],"dag_validation_result":{"valid":true,"cycles":[]},"review_evidence":{"approved":true},"commit_evidence":{"commit_sha":"abc123"}}' \
     --actual-changed-files '["scripts/lib/worker_evidence_harden.py"]')
+CLI_STATUS=$?
+set -e
 RESULT=$(python3 -c "
 import json
 import sys
 payload = json.loads(sys.argv[1])
-print(payload['valid'] is True and payload['errors'] == [])
-" "$CLI_OUTPUT")
+print(sys.argv[2] == '0' and payload['valid'] is True and payload['errors'] == [])
+" "$CLI_OUTPUT" "$CLI_STATUS")
 if [ "$RESULT" = "True" ]; then
     pass "CLI argv mode reports valid advancement"
 else
     fail "CLI argv mode did not report valid advancement"
+fi
+
+# Test 32: Sentinel-looking scope does not match traversal path
+echo ""
+echo "Test 32: Sentinel-looking scope does not match traversal path"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_write_scope, WriteScopeViolationError
+try:
+    validate_write_scope('run-31', ['__invalid_path__'], ['../escape.py'])
+    print('False')
+except WriteScopeViolationError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Sentinel-looking scope does not match traversal path"
+else
+    fail "Sentinel-looking scope matched traversal path"
+fi
+
+# Test 33: Invalid scope path is rejected as input
+echo ""
+echo "Test 33: Invalid scope path is rejected as input"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_write_scope, InvalidEvidenceInputError
+try:
+    validate_write_scope('run-32', ['/etc'], ['etc/passwd'])
+    print('False')
+except InvalidEvidenceInputError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid scope path is rejected as input"
+else
+    fail "Invalid scope path was not rejected"
+fi
+
+# Test 34: Empty scope string is rejected as input
+echo ""
+echo "Test 34: Empty scope string is rejected as input"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_write_scope, InvalidEvidenceInputError
+try:
+    validate_write_scope('run-33', [''], ['scripts/lib/module.py'])
+    print('False')
+except InvalidEvidenceInputError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Empty scope string is rejected as input"
+else
+    fail "Empty scope string was not rejected"
+fi
+
+# Test 35: Dot scope explicitly covers repository root
+echo ""
+echo "Test 35: Dot scope explicitly covers repository root"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_write_scope
+try:
+    validate_write_scope('run-34', ['.'], ['scripts/lib/module.py'])
+    print('True')
+except:
+    print('False')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Dot scope explicitly covers repository root"
+else
+    fail "Dot scope did not cover repository root"
+fi
+
+# Test 36: Stage canonicalization blocks case-spoof bypass
+echo ""
+echo "Test 36: Stage canonicalization blocks case-spoof bypass"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+run = {'run_id': 'run-35'}
+task = {'current_stage': 'Implementation', 'write_scope': ['scripts/lib']}
+errors = validate_worker_advancement(run, task, ['scripts/lib/module.py'])
+print(any('missing_dag_validation: implementation' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Stage canonicalization blocks case-spoof bypass"
+else
+    fail "Stage case spoof bypassed evidence gates"
+fi
+
+# Test 37: Unknown stage fails closed
+echo ""
+echo "Test 37: Unknown stage fails closed"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+errors = validate_worker_advancement({'run_id': 'run-36'}, {'current_stage': 'impl', 'write_scope': ['scripts/lib']}, ['scripts/lib/module.py'])
+print(any('unknown_stage: impl' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Unknown stage fails closed"
+else
+    fail "Unknown stage did not fail closed"
+fi
+
+# Test 38: DAG falsy valid value fails validation
+echo ""
+echo "Test 38: DAG falsy valid value fails validation"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_dag_evidence, DAGValidationFailedError
+try:
+    validate_dag_evidence('run-37', 'implementation', {'valid': 0, 'cycles': []})
+    print('False')
+except DAGValidationFailedError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "DAG falsy valid value fails validation"
+else
+    fail "DAG falsy valid value bypassed validation"
+fi
+
+# Test 39: DAG errors fail even when passed is true
+echo ""
+echo "Test 39: DAG errors fail even when passed is true"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_dag_evidence, DAGValidationFailedError
+try:
+    validate_dag_evidence('run-38', 'implementation', {'passed': True, 'errors': ['orphan_task']})
+    print('False')
+except DAGValidationFailedError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "DAG errors fail even when passed is true"
+else
+    fail "DAG errors were ignored when passed is true"
+fi
+
+# Test 40: Missing stage does not hide other evidence errors
+echo ""
+echo "Test 40: Missing stage does not hide other evidence errors"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+errors = validate_worker_advancement({'run_id': 'run-39'}, {'write_scope': ['/abs']}, ['anywhere/x.py'])
+print(any('missing_current_stage' in error for error in errors) and any('invalid_evidence_input: expected_scope' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Missing stage does not hide other evidence errors"
+else
+    fail "Missing stage hid other evidence errors"
+fi
+
+# Test 41: Run and task type guards return typed errors
+echo ""
+echo "Test 41: Run and task type guards return typed errors"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+print(
+    validate_worker_advancement(None, {}, []) == ['invalid_evidence_input: run']
+    and validate_worker_advancement({'run_id': 'run-40'}, None, []) == ['invalid_evidence_input: task']
+)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Run and task type guards return typed errors"
+else
+    fail "Run and task type guards did not return typed errors"
+fi
+
+# Test 42: Null byte changed path violates write scope
+echo ""
+echo "Test 42: Null byte changed path violates write scope"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_write_scope, WriteScopeViolationError
+try:
+    validate_write_scope('run-41', ['scripts/lib'], ['scripts/lib/module.py\x00'])
+    print('False')
+except WriteScopeViolationError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Null byte changed path violates write scope"
+else
+    fail "Null byte changed path was accepted"
+fi
+
+# Test 43: CLI malformed JSON exits 2 with structured error
+echo ""
+echo "Test 43: CLI malformed JSON exits 2 with structured error"
+set +e
+CLI_OUTPUT=$(printf '%s\n' '{bad json' | scripts/bin/orch-validate-worker-advancement)
+CLI_STATUS=$?
+set -e
+RESULT=$(python3 -c "
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(sys.argv[2] == '2' and payload['valid'] is False and payload['errors'][0].startswith('usage_error: stdin_payload_invalid_json'))
+" "$CLI_OUTPUT" "$CLI_STATUS")
+if [ "$RESULT" = "True" ]; then
+    pass "CLI malformed JSON exits 2 with structured error"
+else
+    fail "CLI malformed JSON did not return structured usage error"
+fi
+
+# Test 44: CLI empty stdin exits 2 with structured error
+echo ""
+echo "Test 44: CLI empty stdin exits 2 with structured error"
+set +e
+CLI_OUTPUT=$(printf '' | scripts/bin/orch-validate-worker-advancement)
+CLI_STATUS=$?
+set -e
+RESULT=$(python3 -c "
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(sys.argv[2] == '2' and payload == {'errors': ['usage_error: stdin_payload_required'], 'valid': False})
+" "$CLI_OUTPUT" "$CLI_STATUS")
+if [ "$RESULT" = "True" ]; then
+    pass "CLI empty stdin exits 2 with structured error"
+else
+    fail "CLI empty stdin did not return structured usage error"
+fi
+
+# Test 45: CLI oversized JSON exits 2 with structured error
+echo ""
+echo "Test 45: CLI oversized JSON exits 2 with structured error"
+set +e
+CLI_OUTPUT=$(python3 - <<'PY' | scripts/bin/orch-validate-worker-advancement
+import sys
+sys.stdout.write('{"run":{"run_id":"' + ('x' * 1048577) + '"},"task":{},"actual_changed_files":[]}')
+PY
+)
+CLI_STATUS=$?
+set -e
+RESULT=$(python3 -c "
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(sys.argv[2] == '2' and payload == {'errors': ['usage_error: stdin_payload_too_large'], 'valid': False})
+" "$CLI_OUTPUT" "$CLI_STATUS")
+if [ "$RESULT" = "True" ]; then
+    pass "CLI oversized JSON exits 2 with structured error"
+else
+    fail "CLI oversized JSON did not return structured usage error"
 fi
 
 # Summary
