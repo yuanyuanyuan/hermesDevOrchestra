@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat >&2 <<'EOF'
+Usage:
+  orch-validate-worker-advancement --run RUN_JSON --task TASK_JSON [--actual-changed-files FILES_JSON]
+  orch-validate-worker-advancement < payload.json
+
+Payload stdin format:
+  {"run": {...}, "task": {...}, "actual_changed_files": ["path"]}
+
+Prints {"errors": [...], "valid": bool}. Exits 0 when valid, 1 when errors exist.
+EOF
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+RUN_JSON=""
+TASK_JSON=""
+ACTUAL_CHANGED_FILES="[]"
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --run)
+            RUN_JSON="${2:-}"
+            shift 2
+            ;;
+        --task)
+            TASK_JSON="${2:-}"
+            shift 2
+            ;;
+        --actual-changed-files)
+            ACTUAL_CHANGED_FILES="${2:-}"
+            shift 2
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *)
+            usage
+            exit 2
+            ;;
+    esac
+done
+
+STDIN_PAYLOAD=""
+if [ -z "$RUN_JSON" ] && [ -z "$TASK_JSON" ]; then
+    STDIN_PAYLOAD="$(cat)"
+fi
+
+PYTHONPATH="$REPO_ROOT/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$RUN_JSON" "$TASK_JSON" "$ACTUAL_CHANGED_FILES" "$STDIN_PAYLOAD" <<'PY'
+import json
+import sys
+
+from worker_evidence_harden import validate_worker_advancement
+
+run_arg, task_arg, files_arg, stdin_payload = sys.argv[1:]
+
+if run_arg or task_arg:
+    if not run_arg or not task_arg:
+        print("orch-validate-worker-advancement requires both --run and --task", file=sys.stderr)
+        raise SystemExit(2)
+    payload = {
+        "run": json.loads(run_arg),
+        "task": json.loads(task_arg),
+        "actual_changed_files": json.loads(files_arg),
+    }
+else:
+    payload = json.loads(stdin_payload)
+
+run = payload.get("run", {})
+task = payload.get("task", {})
+actual_changed_files = payload.get("actual_changed_files", [])
+
+errors = validate_worker_advancement(run, task, actual_changed_files)
+print(json.dumps({"errors": errors, "valid": not errors}, ensure_ascii=False, sort_keys=True))
+raise SystemExit(1 if errors else 0)
+PY

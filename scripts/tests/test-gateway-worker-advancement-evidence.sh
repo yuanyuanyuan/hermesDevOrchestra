@@ -37,7 +37,7 @@ echo ""
 
 # Test 1: Import worker evidence module
 echo "Test 1: Import worker evidence module"
-if python3 -c "from worker_evidence_harden import validate_write_scope, validate_dag_evidence, validate_review_evidence, validate_commit_evidence, validate_worker_advancement, WriteScopeViolationError, MissingDAGValidationError, DAGCycleDetectedError, MissingReviewEvidenceError, MissingCommitEvidenceError; print('OK')"; then
+if python3 -c "from worker_evidence_harden import validate_write_scope, validate_dag_evidence, validate_review_evidence, validate_commit_evidence, validate_worker_advancement, WriteScopeViolationError, InvalidEvidenceInputError, MissingDAGValidationError, DAGCycleDetectedError, DAGValidationFailedError, MissingReviewEvidenceError, MissingCommitEvidenceError; print('OK')"; then
     pass "Module imports successfully"
 else
     fail "Module import failed"
@@ -288,11 +288,11 @@ fi
 echo ""
 echo "Test 15: DAG validation - invalid result without cycles"
 RESULT=$(python3 -c "
-from worker_evidence_harden import validate_dag_evidence, DAGCycleDetectedError
+from worker_evidence_harden import validate_dag_evidence, DAGValidationFailedError
 try:
     validate_dag_evidence('run-14', 'implementation', {'valid': False, 'cycles': []})
     print('False')
-except DAGCycleDetectedError:
+except DAGValidationFailedError:
     print('True')
 ")
 if [ "$RESULT" = "True" ]; then
@@ -353,9 +353,9 @@ else
     fail "Non-required stages incorrectly required evidence"
 fi
 
-# Test 19: Full worker advancement permits empty write scope
+# Test 19: Full worker advancement blocks empty write scope unless explicit
 echo ""
-echo "Test 19: Full worker advancement permits empty write scope"
+echo "Test 19: Full worker advancement blocks empty write scope unless explicit"
 RESULT=$(python3 -c "
 from worker_evidence_harden import validate_worker_advancement
 run = {'run_id': 'run-18'}
@@ -367,12 +367,238 @@ task = {
     'commit_evidence': {'commit_sha': 'abc123'}
 }
 errors = validate_worker_advancement(run, task, ['outside/scope.py'])
+print(any('missing_write_scope' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Full worker advancement blocks empty write scope"
+else
+    fail "Full worker advancement permitted empty write scope"
+fi
+
+# Test 20: Explicit unrestricted write scope permits empty scope
+echo ""
+echo "Test 20: Explicit unrestricted write scope permits empty scope"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+run = {'run_id': 'run-19'}
+task = {
+    'current_stage': 'implementation',
+    'write_scope': [],
+    'write_scope_unrestricted': True,
+    'dag_validation_result': {'valid': True, 'cycles': []},
+    'review_evidence': {'approved': True},
+    'commit_evidence': {'commit_sha': 'abc123'}
+}
+errors = validate_worker_advancement(run, task, ['outside/scope.py'])
 print(len(errors) == 0)
 ")
 if [ "$RESULT" = "True" ]; then
-    pass "Full worker advancement permits empty write scope"
+    pass "Explicit unrestricted write scope permits empty scope"
 else
-    fail "Full worker advancement did not permit empty write scope"
+    fail "Explicit unrestricted write scope did not permit empty scope"
+fi
+
+# Test 21: Leading traversal path violates matching scope
+echo ""
+echo "Test 21: Leading traversal path violates matching scope"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_write_scope, WriteScopeViolationError
+try:
+    validate_write_scope('run-20', ['foo'], ['../foo'])
+    print('False')
+except WriteScopeViolationError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Leading traversal path violates matching scope"
+else
+    fail "Leading traversal path was accepted"
+fi
+
+# Test 22: Scope prefix requires path boundary
+echo ""
+echo "Test 22: Scope prefix requires path boundary"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_write_scope, WriteScopeViolationError
+try:
+    validate_write_scope('run-21', ['scripts'], ['scripts_evil/file.py'])
+    print('False')
+except WriteScopeViolationError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Scope prefix escape rejected"
+else
+    fail "Scope prefix escape accepted"
+fi
+
+# Test 23: Invalid path type returns typed error through aggregator
+echo ""
+echo "Test 23: Invalid path type returns typed error through aggregator"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+run = {'run_id': 'run-22'}
+task = {
+    'current_stage': 'implementation',
+    'write_scope': ['scripts/lib'],
+    'dag_validation_result': {'valid': True, 'cycles': []},
+    'review_evidence': {'approved': True},
+    'commit_evidence': {'commit_sha': 'abc123'}
+}
+errors = validate_worker_advancement(run, task, [None])
+print(any('invalid_evidence_input' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid path type returns typed aggregator error"
+else
+    fail "Invalid path type did not return typed aggregator error"
+fi
+
+# Test 24: Invalid DAG type returns typed error through aggregator
+echo ""
+echo "Test 24: Invalid DAG type returns typed error through aggregator"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+run = {'run_id': 'run-23'}
+task = {
+    'current_stage': 'implementation',
+    'write_scope': ['scripts/lib'],
+    'dag_validation_result': 'invalid',
+    'review_evidence': {'approved': True},
+    'commit_evidence': {'commit_sha': 'abc123'}
+}
+errors = validate_worker_advancement(run, task, ['scripts/lib/module.py'])
+print(any('invalid_evidence_input: dag_validation_result' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid DAG type returns typed aggregator error"
+else
+    fail "Invalid DAG type did not return typed aggregator error"
+fi
+
+# Test 25: DAG validator schema with back edges detects cycle
+echo ""
+echo "Test 25: DAG validator schema with back edges detects cycle"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_dag_evidence, DAGCycleDetectedError
+try:
+    validate_dag_evidence('run-24', 'implementation', {'passed': False, 'cycle_detected': True, 'back_edges': [['a', 'b']]})
+    print('False')
+except DAGCycleDetectedError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "DAG validator back_edges cycle detected"
+else
+    fail "DAG validator back_edges cycle not detected"
+fi
+
+# Test 26: DAG validator schema failed without cycle
+echo ""
+echo "Test 26: DAG validator schema failed without cycle"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_dag_evidence, DAGValidationFailedError
+try:
+    validate_dag_evidence('run-25', 'implementation', {'passed': False, 'cycle_detected': False, 'back_edges': [], 'errors': ['orphan_task']})
+    print('False')
+except DAGValidationFailedError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "DAG validator non-cycle failure detected"
+else
+    fail "DAG validator non-cycle failure not detected"
+fi
+
+# Test 27: global_evaluation requires review evidence
+echo ""
+echo "Test 27: global_evaluation requires review evidence"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_review_evidence, MissingReviewEvidenceError
+try:
+    validate_review_evidence('run-26', 'global_evaluation', None)
+    print('False')
+except MissingReviewEvidenceError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "global_evaluation requires review evidence"
+else
+    fail "global_evaluation did not require review evidence"
+fi
+
+# Test 28: Missing current_stage fails closed
+echo ""
+echo "Test 28: Missing current_stage fails closed"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+errors = validate_worker_advancement({'run_id': 'run-27'}, {}, ['anywhere/x.py'])
+print(any('missing_current_stage' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Missing current_stage fails closed"
+else
+    fail "Missing current_stage did not fail closed"
+fi
+
+# Test 29: Write scope error includes expected scope
+echo ""
+echo "Test 29: Write scope error includes expected scope"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+run = {'run_id': 'run-28'}
+task = {
+    'current_stage': 'implementation',
+    'write_scope': ['scripts/lib'],
+    'dag_validation_result': {'valid': True, 'cycles': []},
+    'review_evidence': {'approved': True},
+    'commit_evidence': {'commit_sha': 'abc123'}
+}
+errors = validate_worker_advancement(run, task, ['config/secret.txt'])
+print(any('expected_scope' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Write scope error includes expected scope"
+else
+    fail "Write scope error omitted expected scope"
+fi
+
+# Test 30: CLI stdin mode reports validation errors
+echo ""
+echo "Test 30: CLI stdin mode reports validation errors"
+set +e
+CLI_OUTPUT=$(printf '%s\n' '{"run":{"run_id":"run-29"},"task":{},"actual_changed_files":["anywhere/x.py"]}' | scripts/bin/orch-validate-worker-advancement)
+CLI_STATUS=$?
+set -e
+RESULT=$(python3 -c "
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(sys.argv[2] == '1' and payload['valid'] is False and any('missing_current_stage' in error for error in payload['errors']))
+" "$CLI_OUTPUT" "$CLI_STATUS")
+if [ "$RESULT" = "True" ]; then
+    pass "CLI stdin mode reports validation errors"
+else
+    fail "CLI stdin mode did not report validation errors"
+fi
+
+# Test 31: CLI argv mode reports valid advancement
+echo ""
+echo "Test 31: CLI argv mode reports valid advancement"
+CLI_OUTPUT=$(scripts/bin/orch-validate-worker-advancement \
+    --run '{"run_id":"run-30"}' \
+    --task '{"current_stage":"implementation","write_scope":["scripts/lib"],"dag_validation_result":{"valid":true,"cycles":[]},"review_evidence":{"approved":true},"commit_evidence":{"commit_sha":"abc123"}}' \
+    --actual-changed-files '["scripts/lib/worker_evidence_harden.py"]')
+RESULT=$(python3 -c "
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(payload['valid'] is True and payload['errors'] == [])
+" "$CLI_OUTPUT")
+if [ "$RESULT" = "True" ]; then
+    pass "CLI argv mode reports valid advancement"
+else
+    fail "CLI argv mode did not report valid advancement"
 fi
 
 # Summary

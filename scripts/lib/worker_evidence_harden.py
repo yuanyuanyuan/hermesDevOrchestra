@@ -34,6 +34,16 @@ class WriteScopeViolationError(WorkerEvidenceError):
         super().__init__(msg, run_id)
 
 
+class InvalidEvidenceInputError(WorkerEvidenceError):
+    """Raised when evidence input has an invalid shape or type."""
+
+    def __init__(self, run_id: str, field: str, expected: str):
+        self.field = field
+        self.expected = expected
+        msg = f"Invalid evidence input: {field} must be {expected}"
+        super().__init__(msg, run_id)
+
+
 class MissingDAGValidationError(WorkerEvidenceError):
     """Raised when DAG validation result is missing."""
 
@@ -49,6 +59,15 @@ class DAGCycleDetectedError(WorkerEvidenceError):
     def __init__(self, run_id: str, cycles: list[list[str]]):
         self.cycles = cycles
         msg = f"DAG cycle detected: {cycles}"
+        super().__init__(msg, run_id)
+
+
+class DAGValidationFailedError(WorkerEvidenceError):
+    """Raised when DAG validation reports a non-cycle failure."""
+
+    def __init__(self, run_id: str, errors: list[str]):
+        self.errors = errors
+        msg = f"DAG validation failed: {errors}"
         super().__init__(msg, run_id)
 
 
@@ -74,10 +93,12 @@ class MissingCommitEvidenceError(WorkerEvidenceError):
 DAG_VALIDATION_STAGES = {"solution_debate", "implementation"}
 
 # Stages that require review evidence
-REVIEW_EVIDENCE_STAGES = {"implementation", "improvement"}
+REVIEW_EVIDENCE_STAGES = {"implementation", "improvement", "global_evaluation"}
 
 # Stages that require commit evidence
 COMMIT_EVIDENCE_STAGES = {"implementation"}
+
+SCOPE_REQUIRED_STAGES = DAG_VALIDATION_STAGES | REVIEW_EVIDENCE_STAGES | COMMIT_EVIDENCE_STAGES
 
 
 def validate_write_scope(
@@ -93,6 +114,11 @@ def validate_write_scope(
 
     Raises WriteScopeViolationError if any file is outside expected scope.
     """
+    if not isinstance(expected_scope, list) or not all(isinstance(scope, str) for scope in expected_scope):
+        raise InvalidEvidenceInputError(run_id, "expected_scope", "a list of strings")
+    if not isinstance(actual_changed_files, list) or not all(isinstance(path, str) for path in actual_changed_files):
+        raise InvalidEvidenceInputError(run_id, "actual_changed_files", "a list of strings")
+
     if not expected_scope:
         return  # No scope defined, allow all
 
@@ -101,7 +127,7 @@ def validate_write_scope(
     for filepath in actual_changed_files:
         normalized = _normalize_relative_path(filepath)
         # Check if file is in expected scope
-        if not any(normalized.startswith(scope) for scope in normalized_scope):
+        if not any(_path_in_scope(normalized, scope) for scope in normalized_scope):
             violating.append(filepath)
 
     if violating:
@@ -109,11 +135,17 @@ def validate_write_scope(
 
 
 def _normalize_relative_path(path: str) -> str:
-    normalized = PurePosixPath(path).as_posix().lstrip("./")
-    parts = PurePosixPath(normalized).parts
+    parts = PurePosixPath(path).parts
     if path.startswith("/") or ".." in parts:
         return "__invalid_path__"
-    return normalized
+    normalized = PurePosixPath(path).as_posix()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized.rstrip("/")
+
+
+def _path_in_scope(path: str, scope: str) -> bool:
+    return path == scope or path.startswith(f"{scope}/")
 
 
 def validate_dag_evidence(
@@ -125,17 +157,30 @@ def validate_dag_evidence(
 
     Raises MissingDAGValidationError if result missing for required stage.
     Raises DAGCycleDetectedError if cycles detected.
+    Raises DAGValidationFailedError if DAG validation failed without cycles.
     """
     if stage not in DAG_VALIDATION_STAGES:
         return  # DAG validation not required for this stage
 
     if not dag_validation_result:
         raise MissingDAGValidationError(run_id, stage)
+    if not isinstance(dag_validation_result, dict):
+        raise InvalidEvidenceInputError(run_id, "dag_validation_result", "a dictionary")
 
-    # Check for cycles or an explicit invalid DAG result.
-    cycles = dag_validation_result.get("cycles", [])
-    if cycles or dag_validation_result.get("valid", True) is False:
+    # Accept both this module's original schema and dag_validator.validate_dag output.
+    cycles = dag_validation_result.get("cycles") or dag_validation_result.get("back_edges") or []
+    if not isinstance(cycles, list):
+        raise InvalidEvidenceInputError(run_id, "dag_validation_result.cycles", "a list")
+    cycle_detected = dag_validation_result.get("cycle_detected", bool(cycles))
+    if cycle_detected or cycles:
         raise DAGCycleDetectedError(run_id, cycles)
+
+    result_valid = dag_validation_result.get("valid", dag_validation_result.get("passed", True))
+    if result_valid is False:
+        errors = dag_validation_result.get("errors") or ["invalid_dag_result"]
+        if not isinstance(errors, list):
+            errors = [str(errors)]
+        raise DAGValidationFailedError(run_id, [str(error) for error in errors])
 
 
 def validate_review_evidence(
@@ -180,30 +225,49 @@ def validate_worker_advancement(
     Error strings are the API contract for shell/gateway callers. Typed
     exceptions remain available from the lower-level validation functions.
 
+    Error strings use the stable format "<code>: <payload>", where code is one
+    of: missing_current_stage, invalid_evidence_input, missing_write_scope,
+    write_scope_violation, missing_dag_validation, dag_cycle_detected,
+    dag_validation_failed, missing_review_evidence, missing_commit_evidence.
+    Payloads are human-readable strings; list payloads use Python list repr.
+
     Returns list of validation errors. Empty list means valid.
     """
     run_id = run.get("run_id", "unknown")
     stage = task.get("current_stage", run.get("current_stage", ""))
     expected_scope = task.get("write_scope", [])
+    scope_unrestricted = task.get("write_scope_unrestricted") is True
     dag_result = task.get("dag_validation_result")
     review_evidence = task.get("review_evidence")
     commit_evidence = task.get("commit_evidence")
 
     errors = []
 
+    if not isinstance(stage, str) or not stage:
+        return ["missing_current_stage: current_stage"]
+
     # Validate write scope
-    try:
-        validate_write_scope(run_id, expected_scope, actual_changed_files)
-    except WriteScopeViolationError as e:
-        errors.append(f"write_scope_violation: {e.violating_files}")
+    if not expected_scope and stage in SCOPE_REQUIRED_STAGES and not scope_unrestricted:
+        errors.append(f"missing_write_scope: {stage}")
+    else:
+        try:
+            validate_write_scope(run_id, expected_scope, actual_changed_files)
+        except InvalidEvidenceInputError as e:
+            errors.append(f"invalid_evidence_input: {e.field}")
+        except WriteScopeViolationError as e:
+            errors.append(f"write_scope_violation: files={e.violating_files}; expected_scope={e.expected_scope}")
 
     # Validate DAG evidence
     try:
         validate_dag_evidence(run_id, stage, dag_result)
+    except InvalidEvidenceInputError as e:
+        errors.append(f"invalid_evidence_input: {e.field}")
     except MissingDAGValidationError as e:
         errors.append(f"missing_dag_validation: {e.stage}")
     except DAGCycleDetectedError as e:
         errors.append(f"dag_cycle_detected: {e.cycles}")
+    except DAGValidationFailedError as e:
+        errors.append(f"dag_validation_failed: {e.errors}")
 
     # Validate review evidence
     try:
