@@ -13,7 +13,7 @@ from typing import Any
 # Security patterns that force Standard channel
 SECURITY_PATTERNS = [
     # Authentication patterns
-    r"(password|passwd|secret|token|api_key|apikey|access_key|private_key)",
+    r"\b(password|passwd|secrets?|token|api_key|apikey|access_key|private_key)\b",
     # PII patterns
     r"(ssn|social_security|credit_card|bank_account|passport)",
     # Protected target patterns
@@ -32,6 +32,7 @@ COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in SECURITY_PATTERNS]
 
 class SecurityEscapeError(Exception):
     """Raised when security escape detection fails."""
+    # Reserved for future validation failures in this module's public API.
 
     def __init__(self, message: str, run_id: str | None = None):
         self.run_id = run_id
@@ -77,8 +78,6 @@ def force_standard_for_security(
 
     Returns updated run dict with forced_standard=True and forced_standard_reasons.
     """
-    run_id = run.get("run_id", "unknown")
-
     # Detect security escape patterns
     matched = detect_security_escape(files_changed, file_contents)
 

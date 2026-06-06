@@ -331,6 +331,33 @@ else
     fail "Invalid reason prefix not detected"
 fi
 
+# Test 22: No false positive for auth substrings
+echo ""
+echo "Test 22: No false positive for auth substrings"
+RESULT=$(python3 -c "
+from security_escape import detect_security_escape
+matched = detect_security_escape(['test_tokenizer.py', 'docs/authentication_password_flow.md'])
+print(len(matched) == 0)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Auth substrings do not force standard"
+else
+    fail "Auth substrings incorrectly force standard"
+fi
+
+# Test 23: Empty input returns no matches
+echo ""
+echo "Test 23: Empty input returns no matches"
+RESULT=$(python3 -c "
+from security_escape import detect_security_escape
+print(detect_security_escape([]) == [] and detect_security_escape([], {}) == [])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Empty input returns no matches"
+else
+    fail "Empty input did not return no matches"
+fi
+
 # Summary
 echo ""
 echo "=========================================="
