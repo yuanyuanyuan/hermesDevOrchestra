@@ -148,7 +148,7 @@ args: "${PR_NUMBER} mode:headless"
    - Findings 按 severity 分组（P0 → P3）
    - 合并门控判断
 
-> 注：`submit-review.sh` 会在发送时自动在 body 末尾追加 `@codex review`，无需在 Draft 中手动写入。
+> 注：`submit-review.sh` 原样传递 Draft 内容，不会追加额外 footer。
 
 **步骤 B — 事件类型选择**
 

@@ -148,7 +148,7 @@ my-pr-review-response <PR_NUMBER>
 
 通过 `my-pr-skill` 的 `post-comment.sh` 发送修复结果 comment，包含文件路径、修改摘要、验证结果和 commit SHA。
 
-> 注：`post-comment.sh` 会自动在 comment body 末尾追加 `@codex review`，触发 Codex 外部视觉 review，无需手动添加。
+> 注：`post-comment.sh` 原样发送 comment body，不会追加额外 footer。
 
 **步骤 D — 提交代码**
 
@@ -197,7 +197,7 @@ my-pr-review-response <PR_NUMBER>
 
 通过 `my-pr-skill` 的 `post-comment.sh` 发送反驳 comment，包含理由和证据。
 
-> 注：`post-comment.sh` 会自动在 comment body 末尾追加 `@codex review`，触发 Codex 外部视觉 review，无需手动添加。
+> 注：`post-comment.sh` 原样发送 comment body，不会追加额外 footer。
 
 **步骤 C — 标记响应**
 
@@ -253,13 +253,13 @@ my-pr-review-response <PR_NUMBER>
 请 reviewer 重新 review。如有需要，可点击 "Re-request review" 按钮。
 ```
 
-> 注：`post-comment.sh` 会自动在汇总 comment body 末尾追加 `@codex review`，触发 Codex 外部视觉 review。
+> 注：`post-comment.sh` 原样发送汇总 comment body，不会追加额外 footer。
 
 **步骤 B — 发送 Review Response 汇总报告（PR Comment）并更新标签**
 
 通过 `my-pr-skill` 的 `post-comment.sh` 发送汇总报告，并通过 `manage-pr.sh` 更新标签为 `awaiting-review`。
 
-> 注：`post-comment.sh` 会自动追加 `@codex review` footer，确保 Codex 外部视觉 review 被触发。
+> 注：`post-comment.sh` 原样发送 comment body，不会追加额外 footer。
 
 注意：PR 作者无法通过 API 触发 "Re-request review" 按钮（这是 GitHub UI 功能），但可以在汇总评论中 @ 原 reviewer。
 
