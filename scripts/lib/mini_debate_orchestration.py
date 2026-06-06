@@ -6,6 +6,7 @@ Connects channel routing to bounded debate execution for Quick and Light channel
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -67,9 +68,14 @@ class MiniDebateConsensusError(MiniDebateError):
 class MissingDebateReportError(MiniDebateError):
     """Raised when debate report is missing for auto-merge."""
 
-    def __init__(self, run_id: str):
-        msg = f"Debate report missing for run {run_id}, blocks auto-merge"
+    def __init__(self, run_id: str, reason: str = "missing"):
+        self.reason = reason
+        msg = f"Debate report {reason} for run {run_id}, blocks auto-merge"
         super().__init__(msg, run_id)
+
+
+def _is_number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float))
 
 
 def get_mini_debate_config(channel: str) -> dict[str, Any]:
@@ -124,6 +130,7 @@ def execute_mini_debate(
 
     Raises:
         MiniDebateTimeoutError: If debate times out
+        MissingDebateReportError: If backend report data is missing or malformed
         MiniDebateConsensusError: If consensus not reached
     """
     run_id = run.get("run_id", "unknown")
@@ -152,13 +159,32 @@ def execute_mini_debate(
         }
         return report
 
+    if not isinstance(backend_report, dict):
+        raise MissingDebateReportError(run_id, "malformed")
+
+    elapsed_minutes = backend_report.get("elapsed_minutes", 0)
+    if not _is_number(elapsed_minutes):
+        raise MissingDebateReportError(run_id, "malformed")
+    if elapsed_minutes > config["timeout_minutes"]:
+        raise MiniDebateTimeoutError(run_id, config["timeout_minutes"])
+
     consensus_score = backend_report.get("consensus_score")
-    if isinstance(consensus_score, bool) or not isinstance(consensus_score, (int, float)):
-        raise MiniDebateConsensusError(run_id, 0.0, config["required_consensus"])
+    if not _is_number(consensus_score) or not math.isfinite(consensus_score):
+        raise MissingDebateReportError(run_id, "missing consensus_score")
 
     # Check consensus
     if consensus_score < config["required_consensus"]:
         raise MiniDebateConsensusError(run_id, consensus_score, config["required_consensus"])
+
+    rounds_completed = backend_report.get("rounds_completed", 0)
+    if not _is_number(rounds_completed):
+        raise MissingDebateReportError(run_id, "malformed rounds_completed")
+
+    debate_refs = backend_report.get("debate_refs")
+    if not isinstance(debate_refs, list) or not debate_refs:
+        debate_refs = [f"debate://run/{run_id}/mini/{uuid4().hex}"]
+
+    completed = datetime.now(timezone.utc)
 
     # Create report
     report = {
@@ -169,26 +195,27 @@ def execute_mini_debate(
         "status": "completed",
         "consensus_score": consensus_score,
         "required_consensus": config["required_consensus"],
-        "rounds_completed": backend_report.get("rounds_completed", config["max_rounds"]),
+        "rounds_completed": rounds_completed,
         "max_rounds": config["max_rounds"],
         "timeout_minutes": config["timeout_minutes"],
         "started_at": now.isoformat(),
-        "completed_at": now.isoformat(),
-        "debate_refs": backend_report.get("debate_refs") or [f"debate://run/{run_id}/mini/{uuid4().hex}"],
+        "completed_at": completed.isoformat(),
+        "debate_refs": debate_refs,
     }
 
     return report
 
 
-def persist_mini_debate_refs(run: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
-    """Persist mini-debate refs on run state."""
-    run_id = run.get("run_id", "unknown")
+def attach_mini_debate_to_run(run: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+    """Attach mini-debate refs and status to run state."""
+    existing_refs = run.get("mini_debate_refs", [])
+    report_refs = report.get("debate_refs", [])
+    if not isinstance(existing_refs, list):
+        existing_refs = []
+    if not isinstance(report_refs, list):
+        report_refs = []
 
-    # Add debate refs to run
-    if "mini_debate_refs" not in run:
-        run["mini_debate_refs"] = []
-
-    run["mini_debate_refs"].extend(report.get("debate_refs", []))
+    run["mini_debate_refs"] = list(dict.fromkeys(existing_refs + report_refs))
 
     # Update run with debate status
     run["mini_debate_status"] = {
@@ -201,6 +228,11 @@ def persist_mini_debate_refs(run: dict[str, Any], report: dict[str, Any]) -> dic
     }
 
     return run
+
+
+def persist_mini_debate_refs(run: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+    """Persist mini-debate refs on run state."""
+    return attach_mini_debate_to_run(run, report)
 
 
 def validate_mini_debate(run: dict[str, Any]) -> list[str]:
@@ -223,10 +255,10 @@ def validate_mini_debate(run: dict[str, Any]) -> list[str]:
     if "consensus_score" not in mini_debate_status:
         errors.append("consensus_score missing from mini_debate_status")
     else:
-        consensus_score = mini_debate_status.get("consensus_score")
-        if isinstance(consensus_score, bool) or not isinstance(consensus_score, (int, float)):
+        consensus_score = mini_debate_status["consensus_score"]
+        if not _is_number(consensus_score):
             errors.append("consensus_score must be numeric")
-        elif not 0 <= consensus_score <= 1:
+        elif not math.isfinite(consensus_score) or not 0 <= consensus_score <= 1:
             errors.append("consensus_score must be between 0 and 1")
 
     return errors
@@ -235,7 +267,7 @@ def validate_mini_debate(run: dict[str, Any]) -> list[str]:
 def check_auto_merge_blocked(run: dict[str, Any]) -> bool:
     """Check if auto-merge is blocked due to missing debate report."""
     channel_decision = run.get("channel_decision")
-    if not channel_decision:
+    if not isinstance(channel_decision, dict) or not channel_decision:
         return True
 
     channel = channel_decision.get("channel", "standard")

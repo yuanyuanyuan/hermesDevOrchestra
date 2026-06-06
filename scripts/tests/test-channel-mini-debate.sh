@@ -37,7 +37,7 @@ echo ""
 
 # Test 1: Import mini-debate module
 echo "Test 1: Import mini-debate module"
-if python3 -c "from mini_debate_orchestration import create_mini_debate_request, execute_mini_debate, persist_mini_debate_refs, validate_mini_debate, check_auto_merge_blocked, MiniDebateTimeoutError, MiniDebateConsensusError, MissingDebateReportError; print('OK')"; then
+if python3 -c "from mini_debate_orchestration import create_mini_debate_request, execute_mini_debate, attach_mini_debate_to_run, persist_mini_debate_refs, validate_mini_debate, check_auto_merge_blocked, MiniDebateTimeoutError, MiniDebateConsensusError, MissingDebateReportError; print('OK')"; then
     pass "Module imports successfully"
 else
     fail "Module import failed"
@@ -351,6 +351,158 @@ if [ "$RESULT" = "True" ]; then
     pass "Mini-debate request rejects missing channel"
 else
     fail "Mini-debate request did not reject missing channel"
+fi
+
+# Test 22: Mini-debate timeout raises explicit error
+echo ""
+echo "Test 22: Mini-debate timeout raises explicit error"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate, MiniDebateTimeoutError
+run = {'run_id': 'run-17'}
+request = {'run_id': 'run-17', 'task_id': 'task-17', 'channel': 'quick'}
+try:
+    execute_mini_debate(run, request, backend_report={'consensus_score': 0.9, 'elapsed_minutes': 11})
+    print('False')
+except MiniDebateTimeoutError as exc:
+    print(exc.timeout_minutes == 10)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Mini-debate timeout raises explicit error"
+else
+    fail "Mini-debate timeout did not raise expected error"
+fi
+
+# Test 23: Missing consensus score raises missing report error
+echo ""
+echo "Test 23: Missing consensus score raises missing report error"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate, MissingDebateReportError
+run = {'run_id': 'run-18'}
+request = {'run_id': 'run-18', 'task_id': 'task-18', 'channel': 'quick'}
+try:
+    execute_mini_debate(run, request, backend_report={'rounds_completed': 1})
+    print('False')
+except MissingDebateReportError as exc:
+    print(exc.reason == 'missing consensus_score')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Missing consensus score raises missing report error"
+else
+    fail "Missing consensus score did not raise expected error"
+fi
+
+# Test 24: Malformed backend report raises missing report error
+echo ""
+echo "Test 24: Malformed backend report raises missing report error"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate, MissingDebateReportError
+run = {'run_id': 'run-19'}
+request = {'run_id': 'run-19', 'task_id': 'task-19', 'channel': 'quick'}
+try:
+    execute_mini_debate(run, request, backend_report='not-a-dict')
+    print('False')
+except MissingDebateReportError as exc:
+    print(exc.reason == 'malformed')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Malformed backend report raises missing report error"
+else
+    fail "Malformed backend report did not raise expected error"
+fi
+
+# Test 25: Non-finite consensus score is rejected
+echo ""
+echo "Test 25: Non-finite consensus score is rejected"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate, MissingDebateReportError
+run = {'run_id': 'run-20'}
+request = {'run_id': 'run-20', 'task_id': 'task-20', 'channel': 'quick'}
+for score in (float('nan'), float('inf')):
+    try:
+        execute_mini_debate(run, request, backend_report={'consensus_score': score})
+        print('False')
+        break
+    except MissingDebateReportError:
+        pass
+else:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Non-finite consensus score rejected"
+else
+    fail "Non-finite consensus score was accepted"
+fi
+
+# Test 26: Non-dict channel decision blocks auto-merge
+echo ""
+echo "Test 26: Non-dict channel decision blocks auto-merge"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import check_auto_merge_blocked
+run = {'run_id': 'run-21', 'channel_decision': ['quick']}
+print(check_auto_merge_blocked(run) == True)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Non-dict channel decision blocks auto-merge"
+else
+    fail "Non-dict channel decision did not block auto-merge"
+fi
+
+# Test 27: Attach mini-debate refs deduplicates stale refs
+echo ""
+echo "Test 27: Attach mini-debate refs deduplicates stale refs"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import attach_mini_debate_to_run
+run = {'run_id': 'run-22', 'mini_debate_refs': ['debate://run-22/mini/a']}
+report = {'debate_refs': ['debate://run-22/mini/a', 'debate://run-22/mini/b'], 'channel': 'quick', 'debate_type': 'confirmation', 'status': 'completed', 'consensus_score': 0.9, 'required_consensus': 0.8, 'completed_at': '2026-01-01T00:00:00Z'}
+updated = attach_mini_debate_to_run(run, report)
+print(updated['mini_debate_refs'] == ['debate://run-22/mini/a', 'debate://run-22/mini/b'])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Attach mini-debate refs deduplicates stale refs"
+else
+    fail "Attach mini-debate refs did not deduplicate stale refs"
+fi
+
+# Test 28: Validate degraded status is accepted
+echo ""
+echo "Test 28: Validate degraded status is accepted"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import validate_mini_debate
+run = {'run_id': 'run-23', 'mini_debate_status': {'status': 'degraded', 'consensus_score': 0.0}}
+print(validate_mini_debate(run) == [])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Degraded mini-debate status passes validation"
+else
+    fail "Degraded mini-debate status failed validation"
+fi
+
+# Test 29: Validate missing consensus score
+echo ""
+echo "Test 29: Validate missing consensus score"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import validate_mini_debate
+run = {'run_id': 'run-24', 'mini_debate_status': {'status': 'completed'}}
+print('consensus_score missing from mini_debate_status' in validate_mini_debate(run))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Missing consensus score detected in validation"
+else
+    fail "Missing consensus score was not detected in validation"
+fi
+
+# Test 30: Validate non-finite consensus score
+echo ""
+echo "Test 30: Validate non-finite consensus score"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import validate_mini_debate
+run = {'run_id': 'run-25', 'mini_debate_status': {'status': 'completed', 'consensus_score': float('nan')}}
+print('consensus_score must be between 0 and 1' in validate_mini_debate(run))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Non-finite consensus score detected in validation"
+else
+    fail "Non-finite consensus score was not detected in validation"
 fi
 
 # Summary
