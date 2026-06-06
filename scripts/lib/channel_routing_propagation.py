@@ -7,6 +7,7 @@ run creation, required evidence, and stage behavior.
 
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -124,10 +125,6 @@ def classify_and_persist(
             "forced_standard_reasons": [],
         }
 
-    # Validate channel configuration
-    if decision["channel"] not in CHANNEL_CONFIGS:
-        raise ChannelPolicyInvalidError(decision["channel"], run_id)
-
     # Check rollout evidence for non-standard channels
     if decision["channel"] != "standard":
         required_evidence = ROLLOUT_EVIDENCE_REQUIRED.get(decision["channel"], [])
@@ -167,7 +164,7 @@ def classify_and_persist(
 
 def get_channel_requirements(run: dict[str, Any]) -> dict[str, Any]:
     """Get channel requirements for a run."""
-    return run.get("channel_requirements", CHANNEL_CONFIGS["standard"].copy())
+    return run.get("channel_requirements", copy.deepcopy(CHANNEL_CONFIGS["standard"]))
 
 
 def can_skip_stage(run: dict[str, Any], stage: str) -> bool:

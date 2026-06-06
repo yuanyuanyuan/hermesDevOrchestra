@@ -318,13 +318,19 @@ RESULT=$(python3 -c "
 from channel_routing_propagation import get_channel_requirements
 requirements = get_channel_requirements({'run_id': 'run-17'})
 requirements['max_files'] = 999
+requirements['required_evidence'].append('mutated_evidence')
+requirements['allowed_stage_skips'].append('mutated_stage')
 fresh = get_channel_requirements({'run_id': 'run-18'})
-print(fresh['max_files'] == 50)
+print(
+    fresh['max_files'] == 50
+    and 'mutated_evidence' not in fresh['required_evidence']
+    and 'mutated_stage' not in fresh['allowed_stage_skips']
+)
 ")
 if [ "$RESULT" = "True" ]; then
-    pass "Default channel requirements returns a copy"
+    pass "Default channel requirements returns a deep copy"
 else
-    fail "Default channel requirements did not return a copy"
+    fail "Default channel requirements did not return a deep copy"
 fi
 
 # Summary
