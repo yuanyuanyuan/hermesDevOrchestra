@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat >&2 <<'EOF'
+Usage:
+  orch-e-class-debate < payload.json
+  orch-e-class-debate --validate --run RUN_JSON --dispute-id DISPUTE_ID
+
+Payload stdin format:
+  {"run": {...}, "dispute": {...}, "backend_report": {...}, "debate_backend_available": true}
+
+Prints a debate report in execute mode. Prints {"errors": [...], "valid": bool,
+"auto_merge_blocked": bool} in validate mode.
+EOF
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+VALIDATE=""
+RUN_JSON=""
+DISPUTE_ID=""
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --validate)
+            VALIDATE="1"
+            shift
+            ;;
+        --run)
+            RUN_JSON="${2:-}"
+            shift 2
+            ;;
+        --dispute-id)
+            DISPUTE_ID="${2:-}"
+            shift 2
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *)
+            usage
+            exit 2
+            ;;
+    esac
+done
+
+STDIN_PAYLOAD=""
+if [ -z "$RUN_JSON" ]; then
+    STDIN_PAYLOAD="$(cat)"
+fi
+
+PYTHONPATH="$REPO_ROOT/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - "$VALIDATE" "$RUN_JSON" "$DISPUTE_ID" "$STDIN_PAYLOAD" <<'PY'
+import json
+import sys
+
+from e_class_mini_debate import (
+    check_e_class_auto_merge_blocked,
+    execute_e_class_debate,
+    validate_e_class_dispute,
+)
+
+validate_mode, run_arg, dispute_id, stdin_payload = sys.argv[1:]
+
+if validate_mode:
+    if not run_arg or not dispute_id:
+        print("orch-e-class-debate --validate requires --run and --dispute-id", file=sys.stderr)
+        raise SystemExit(2)
+    run = json.loads(run_arg)
+    errors = validate_e_class_dispute(run, dispute_id)
+    body = {
+        "errors": errors,
+        "valid": not errors,
+        "auto_merge_blocked": check_e_class_auto_merge_blocked(run, dispute_id),
+    }
+    print(json.dumps(body, ensure_ascii=False, sort_keys=True))
+    raise SystemExit(1 if errors else 0)
+
+payload = json.loads(stdin_payload)
+report = execute_e_class_debate(
+    payload.get("run", {}),
+    payload.get("dispute", {}),
+    debate_backend_available=payload.get("debate_backend_available", True),
+    backend_report=payload.get("backend_report"),
+)
+print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+PY

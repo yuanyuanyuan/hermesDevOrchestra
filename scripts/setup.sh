@@ -205,7 +205,7 @@ if [ -d "$PLUGINS_SRC_DIR" ]; then
     log_ok "Hermes plugin assets installed: $ORCHESTRA_HOME/plugins"
 fi
 
-for helper in orch-init orch-start orch-stop orch-status orch-bus-loop orch-profile-sync orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify orch-gateway orch-mvp-wizard; do
+for helper in orch-init orch-start orch-stop orch-status orch-bus-loop orch-profile-sync orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify orch-gateway orch-mvp-wizard orch-e-class-debate orch-intake-completeness; do
     if [ ! -f "$HELPER_SRC_DIR/$helper" ]; then
         log_err "Helper source missing: $HELPER_SRC_DIR/$helper"
         exit 1
@@ -214,7 +214,7 @@ for helper in orch-init orch-start orch-stop orch-status orch-bus-loop orch-prof
     cp "$HELPER_SRC_DIR/$helper" "$ORCHESTRA_BIN_DIR/$helper"
 done
 
-for helper in orch-init orch-start orch-stop orch-status orch-profile-sync orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify orch-gateway orch-mvp-wizard; do
+for helper in orch-init orch-start orch-stop orch-status orch-profile-sync orch-risk-check orch-audit orch-decisions orch-approve orch-reject orch-verify orch-gateway orch-mvp-wizard orch-e-class-debate orch-intake-completeness; do
     install_helper_link "$helper"
 done
 

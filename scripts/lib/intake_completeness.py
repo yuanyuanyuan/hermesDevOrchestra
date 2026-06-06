@@ -3,6 +3,11 @@
 
 Completes PRD intake bundle fields with CI/CD detection, 8-part prompt envelope,
 and verified facts vs unverified assumptions separation.
+
+Integration:
+    Gateway/project discovery callers use this module to create and validate
+    PRD intake bundles before stage advancement. The CLI wrapper
+    scripts/bin/orch-intake-completeness exposes the same validation to agents.
 """
 
 from __future__ import annotations
@@ -132,7 +137,7 @@ def validate_prompt_envelope(
     """
     missing = []
     for part in PROMPT_ENVELOPE_PARTS:
-        if part not in prompt_envelope or not prompt_envelope[part]:
+        if part not in prompt_envelope or _is_blank_prompt_value(prompt_envelope[part]):
             missing.append(part)
 
     if missing:
@@ -150,11 +155,28 @@ def validate_cicd_discovery(
     required_fields = ["detected_systems", "config_files"]
     missing = []
     for field in required_fields:
-        if field not in cicd_discovery:
+        if field not in cicd_discovery or not cicd_discovery[field]:
             missing.append(field)
+
+    has_ci_capability = any(
+        bool(cicd_discovery.get(field))
+        for field in ("has_tests", "has_linting", "has_deployment")
+    )
+    if not has_ci_capability:
+        missing.append("ci_capability")
 
     if missing:
         raise MissingCIDiscoveryError(run_id, missing)
+
+
+def _is_blank_prompt_value(value: Any) -> bool:
+    if not value:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, list):
+        return all(not isinstance(item, str) or not item.strip() for item in value)
+    return False
 
 
 def separate_facts_and_assumptions(

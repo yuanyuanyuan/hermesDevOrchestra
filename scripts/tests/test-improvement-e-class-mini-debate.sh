@@ -37,7 +37,7 @@ echo ""
 
 # Test 1: Import E-class module
 echo "Test 1: Import E-class module"
-if python3 -c "from e_class_mini_debate import create_e_class_dispute, execute_e_class_debate, persist_e_class_debate_refs, validate_e_class_dispute, check_e_class_auto_merge_blocked, EClassConsensusError, EClassDebateUnavailableError; print('OK')"; then
+if python3 -c "from e_class_mini_debate import create_e_class_dispute, execute_e_class_debate, persist_e_class_debate_refs, validate_e_class_dispute, check_e_class_auto_merge_blocked, EClassConsensusError, EClassDebateUnavailableError, MissingDebateRefsError; print('OK')"; then
     pass "Module imports successfully"
 else
     fail "Module import failed"
@@ -164,6 +164,7 @@ echo "Test 9: Auto-merge not blocked for E-class with completed debate"
 RESULT=$(python3 -c "
 from e_class_mini_debate import check_e_class_auto_merge_blocked
 run = {'run_id': 'run-8', 'e_class_debate_status': {'status': 'completed'}}
+run['e_class_debate_status']['dispute_id'] = 'edispute-8-1'
 blocked = check_e_class_auto_merge_blocked(run, 'edispute-8-1')
 print(blocked == False)
 ")
@@ -257,14 +258,17 @@ fi
 echo ""
 echo "Test 15: E-class dispute with empty evidence refs"
 RESULT=$(python3 -c "
-from e_class_mini_debate import create_e_class_dispute
-dispute = create_e_class_dispute('run-13', 'task-13', 'imp-13', 'low_priority', 'Test dispute', [])
-print(dispute['evidence_refs'] == [] and dispute['status'] == 'pending')
+from e_class_mini_debate import create_e_class_dispute, MissingDebateRefsError
+try:
+    create_e_class_dispute('run-13', 'task-13', 'imp-13', 'low_priority', 'Test dispute', [])
+    print('False')
+except MissingDebateRefsError:
+    print('True')
 ")
 if [ "$RESULT" = "True" ]; then
-    pass "E-class dispute handles empty evidence refs"
+    pass "E-class dispute rejects empty evidence refs"
 else
-    fail "E-class dispute does not handle empty evidence refs"
+    fail "E-class dispute accepted empty evidence refs"
 fi
 
 # Test 16: Persist E-class debate refs does not mutate input run
@@ -356,6 +360,151 @@ if [ "$RESULT" = "True" ]; then
     pass "Incomplete debate status is rejected"
 else
     fail "Incomplete debate status was not rejected"
+fi
+
+# Test 21: Auto-merge checks the requested dispute id
+echo ""
+echo "Test 21: Auto-merge checks the requested dispute id"
+RESULT=$(python3 -c "
+from e_class_mini_debate import check_e_class_auto_merge_blocked, persist_e_class_debate_refs
+run = {'run_id': 'run-19'}
+report = {'dispute_id': 'edispute-19-a', 'debate_refs': ['debate://run-19/e-class/edispute-19-a'], 'status': 'completed', 'consensus_score': 0.75, 'required_consensus': 0.60, 'completed_at': '2026-01-01T00:00:00Z'}
+updated = persist_e_class_debate_refs(run, report)
+print(check_e_class_auto_merge_blocked(updated, 'edispute-19-b') == True)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Auto-merge remains blocked for a different dispute id"
+else
+    fail "Auto-merge ignored requested dispute id"
+fi
+
+# Test 22: NaN and Inf consensus scores are unavailable
+echo ""
+echo "Test 22: NaN and Inf consensus scores are unavailable"
+RESULT=$(python3 -c "
+from e_class_mini_debate import execute_e_class_debate, EClassDebateUnavailableError
+run = {'run_id': 'run-20'}
+dispute = {'dispute_id': 'edispute-20-1', 'classification': 'high_priority', 'evidence_refs': ['ref-1']}
+for value in [float('nan'), float('inf')]:
+    try:
+        execute_e_class_debate(run, dispute, backend_report={'consensus_score': value})
+        print('False')
+        break
+    except EClassDebateUnavailableError:
+        pass
+else:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "NaN and Inf consensus scores are rejected"
+else
+    fail "NaN or Inf consensus score was accepted"
+fi
+
+# Test 23: Prefix-overlapping dispute refs do not match
+echo ""
+echo "Test 23: Prefix-overlapping dispute refs do not match"
+RESULT=$(python3 -c "
+from e_class_mini_debate import validate_e_class_dispute
+run = {
+    'run_id': 'run-21',
+    'e_class_debate_refs': ['debate://run-21/e-class/edispute-1-extra'],
+    'e_class_debate_statuses': {'edispute-1-extra': {'dispute_id': 'edispute-1-extra', 'status': 'completed'}}
+}
+errors = validate_e_class_dispute(run, 'edispute-1')
+print(any('missing_debate_ref_for_dispute' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Prefix-overlapping dispute refs do not match"
+else
+    fail "Prefix-overlapping dispute refs matched incorrectly"
+fi
+
+# Test 24: Multiple dispute statuses are preserved
+echo ""
+echo "Test 24: Multiple dispute statuses are preserved"
+RESULT=$(python3 -c "
+from e_class_mini_debate import persist_e_class_debate_refs, validate_e_class_dispute
+run = {'run_id': 'run-22'}
+report1 = {'dispute_id': 'edispute-22-a', 'debate_refs': ['debate://run-22/e-class/edispute-22-a'], 'status': 'completed', 'consensus_score': 0.75, 'required_consensus': 0.60, 'completed_at': '2026-01-01T00:00:00Z'}
+report2 = {'dispute_id': 'edispute-22-b', 'debate_refs': ['debate://run-22/e-class/edispute-22-b'], 'status': 'completed', 'consensus_score': 0.80, 'required_consensus': 0.60, 'completed_at': '2026-01-01T00:01:00Z'}
+updated = persist_e_class_debate_refs(persist_e_class_debate_refs(run, report1), report2)
+print(validate_e_class_dispute(updated, 'edispute-22-a') == [] and validate_e_class_dispute(updated, 'edispute-22-b') == [])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Multiple dispute statuses are preserved"
+else
+    fail "Multiple dispute statuses were overwritten"
+fi
+
+# Test 25: E-class config is read-only
+echo ""
+echo "Test 25: E-class config is read-only"
+RESULT=$(python3 -c "
+import e_class_mini_debate as module
+try:
+    module.E_CLASS_CONFIG['required_consensus'] = 0.0
+    print('False')
+except TypeError:
+    print(module.get_e_class_config()['required_consensus'] == 0.60)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "E-class config is read-only"
+else
+    fail "E-class config was mutable"
+fi
+
+# Test 26: Empty IDs are rejected
+echo ""
+echo "Test 26: Empty IDs are rejected"
+RESULT=$(python3 -c "
+from e_class_mini_debate import create_e_class_dispute
+for args in [(None, 'task', 'imp'), ('', 'task', 'imp'), ('run', '', 'imp'), ('run', 'task', '')]:
+    try:
+        create_e_class_dispute(args[0], args[1], args[2], 'high_priority', 'desc', ['ref-1'])
+        print('False')
+        break
+    except ValueError:
+        pass
+else:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Empty IDs are rejected"
+else
+    fail "Empty IDs were accepted"
+fi
+
+# Test 27: CLI stdin mode executes debate
+echo ""
+echo "Test 27: CLI stdin mode executes debate"
+CLI_OUTPUT=$(printf '%s\n' '{"run":{"run_id":"run-cli"},"dispute":{"dispute_id":"edispute-run-cli-imp","classification":"high_priority","evidence_refs":["ref-1"]},"backend_report":{"consensus_score":0.72,"rounds_completed":2,"debate_refs":["debate://run-cli/e-class/edispute-run-cli-imp"]}}' | scripts/bin/orch-e-class-debate)
+RESULT=$(python3 -c "
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(payload['status'] == 'completed' and payload['dispute_id'] == 'edispute-run-cli-imp')
+" "$CLI_OUTPUT")
+if [ "$RESULT" = "True" ]; then
+    pass "CLI stdin mode executes debate"
+else
+    fail "CLI stdin mode failed"
+fi
+
+# Test 28: CLI validate mode checks specific dispute
+echo ""
+echo "Test 28: CLI validate mode checks specific dispute"
+CLI_OUTPUT=$(scripts/bin/orch-e-class-debate --validate --dispute-id edispute-cli-a --run '{"run_id":"run-cli","e_class_debate_refs":["debate://run-cli/e-class/edispute-cli-a"],"e_class_debate_statuses":{"edispute-cli-a":{"dispute_id":"edispute-cli-a","status":"completed"}}}')
+RESULT=$(python3 -c "
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(payload['valid'] is True and payload['errors'] == [] and payload['auto_merge_blocked'] is False)
+" "$CLI_OUTPUT")
+if [ "$RESULT" = "True" ]; then
+    pass "CLI validate mode checks specific dispute"
+else
+    fail "CLI validate mode failed"
 fi
 
 # Summary
