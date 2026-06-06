@@ -301,6 +301,80 @@ else
     fail "Invalid DAG result without cycles not detected"
 fi
 
+# Test 16: Empty actual files with non-empty scope passes
+echo ""
+echo "Test 16: Empty actual files with non-empty scope passes"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_write_scope
+try:
+    validate_write_scope('run-15', ['scripts/lib/'], [])
+    print('True')
+except:
+    print('False')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Empty actual files pass with non-empty scope"
+else
+    fail "Empty actual files failed with non-empty scope"
+fi
+
+# Test 17: Path traversal violates write scope
+echo ""
+echo "Test 17: Path traversal violates write scope"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_write_scope, WriteScopeViolationError
+try:
+    validate_write_scope('run-16', ['scripts/lib/'], ['scripts/lib/../../etc/passwd'])
+    print('False')
+except WriteScopeViolationError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Path traversal violates write scope"
+else
+    fail "Path traversal did not violate write scope"
+fi
+
+# Test 18: Non-required stages can omit review and commit evidence
+echo ""
+echo "Test 18: Non-required stages can omit review and commit evidence"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_review_evidence, validate_commit_evidence
+try:
+    validate_review_evidence('run-17', 'solution_debate', None)
+    validate_commit_evidence('run-17', 'solution_debate', None)
+    print('True')
+except:
+    print('False')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Non-required stages can omit review and commit evidence"
+else
+    fail "Non-required stages incorrectly required evidence"
+fi
+
+# Test 19: Full worker advancement permits empty write scope
+echo ""
+echo "Test 19: Full worker advancement permits empty write scope"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+run = {'run_id': 'run-18'}
+task = {
+    'current_stage': 'implementation',
+    'write_scope': [],
+    'dag_validation_result': {'valid': True, 'cycles': []},
+    'review_evidence': {'approved': True},
+    'commit_evidence': {'commit_sha': 'abc123'}
+}
+errors = validate_worker_advancement(run, task, ['outside/scope.py'])
+print(len(errors) == 0)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Full worker advancement permits empty write scope"
+else
+    fail "Full worker advancement did not permit empty write scope"
+fi
+
 # Summary
 echo ""
 echo "=========================================="

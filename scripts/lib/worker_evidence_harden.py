@@ -12,6 +12,7 @@ stage advancement evidence bundle assembled from worker output and task state.
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath
 from typing import Any
 
 
@@ -95,16 +96,24 @@ def validate_write_scope(
     if not expected_scope:
         return  # No scope defined, allow all
 
+    normalized_scope = [_normalize_relative_path(scope) for scope in expected_scope]
     violating = []
     for filepath in actual_changed_files:
-        # Normalize path
-        normalized = filepath.lstrip("./")
+        normalized = _normalize_relative_path(filepath)
         # Check if file is in expected scope
-        if not any(normalized.startswith(scope.lstrip("./")) for scope in expected_scope):
+        if not any(normalized.startswith(scope) for scope in normalized_scope):
             violating.append(filepath)
 
     if violating:
         raise WriteScopeViolationError(run_id, violating, expected_scope)
+
+
+def _normalize_relative_path(path: str) -> str:
+    normalized = PurePosixPath(path).as_posix().lstrip("./")
+    parts = PurePosixPath(normalized).parts
+    if path.startswith("/") or ".." in parts:
+        return "__invalid_path__"
+    return normalized
 
 
 def validate_dag_evidence(
