@@ -37,7 +37,7 @@ echo ""
 
 # Test 1: Import correction module
 echo "Test 1: Import correction module"
-if python3 -c "from correction_override import create_correction_round, create_override_record, approve_override, reject_override, get_pending_overrides, validate_override_record, check_override_auto_merge_blocked, OverrideApprovalRequiredError, MissingApproverRefError; print('OK')"; then
+if python3 -c "from correction_override import create_correction_round, create_override_record, approve_override, reject_override, get_pending_overrides, validate_override_record, check_override_auto_merge_blocked, OverrideApprovalRequiredError, MissingApproverRefError, InvalidOverrideStatusError, UnauthorizedApproverError; print('OK')"; then
     pass "Module imports successfully"
 else
     fail "Module import failed"
@@ -92,8 +92,8 @@ RESULT=$(python3 -c "
 from correction_override import create_override_record, approve_override
 run = {'run_id': 'run-4', 'override_records': [create_override_record('run-4', 'task-4', [], 'major_change', 'L3')]}
 override_id = run['override_records'][0]['override_id']
-approved = approve_override(run, override_id, 'human-approver-1')
-print(approved['status'] == 'approved' and approved['approver_ref'] == 'human-approver-1')
+approved = approve_override(run, override_id, 'human')
+print(approved['status'] == 'approved' and approved['approver_ref'] == 'human')
 ")
 if [ "$RESULT" = "True" ]; then
     pass "Override approved successfully"
@@ -106,7 +106,7 @@ echo ""
 echo "Test 6: Reject override"
 RESULT=$(python3 -c "
 from correction_override import create_override_record, reject_override
-run = {'run_id': 'run-5', 'override_records': [create_override_record('run-5', 'task-5', [], 'minor_fix', 'L2')]}
+run = {'run_id': 'run-5', 'override_records': [create_override_record('run-5', 'task-5', [], 'major_change', 'L3')]}
 override_id = run['override_records'][0]['override_id']
 rejected = reject_override(run, override_id, 'Not justified')
 print(rejected['status'] == 'rejected' and rejected['rejection_reason'] == 'Not justified')
@@ -229,9 +229,9 @@ RESULT=$(python3 -c "
 from correction_override import create_override_record, approve_override, InvalidOverrideStatusError
 run = {'run_id': 'run-12', 'override_records': [create_override_record('run-12', 'task-12', [], 'major_change', 'L3')]}
 override_id = run['override_records'][0]['override_id']
-approve_override(run, override_id, 'human-approver-1')
+approve_override(run, override_id, 'human')
 try:
-    approve_override(run, override_id, 'human-approver-2')
+    approve_override(run, override_id, 'kimi')
     print('False')
 except InvalidOverrideStatusError:
     print('True')
@@ -258,6 +258,45 @@ if [ "$RESULT" = "True" ]; then
     pass "Multiple correction rounds in override"
 else
     fail "Multiple correction rounds handling failed"
+fi
+
+# Test 16: Reject repeated rejection
+echo ""
+echo "Test 16: Reject repeated rejection"
+RESULT=$(python3 -c "
+from correction_override import create_override_record, reject_override, InvalidOverrideStatusError
+run = {'run_id': 'run-13', 'override_records': [create_override_record('run-13', 'task-13', [], 'major_change', 'L3')]}
+override_id = run['override_records'][0]['override_id']
+reject_override(run, override_id, 'Not justified')
+try:
+    reject_override(run, override_id, 'Still not justified')
+    print('False')
+except InvalidOverrideStatusError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Repeated rejection rejected"
+else
+    fail "Repeated rejection was not rejected"
+fi
+
+# Test 17: Unauthorized approver rejected
+echo ""
+echo "Test 17: Unauthorized approver rejected"
+RESULT=$(python3 -c "
+from correction_override import create_override_record, approve_override, UnauthorizedApproverError
+run = {'run_id': 'run-14', 'override_records': [create_override_record('run-14', 'task-14', [], 'major_change', 'L3')]}
+override_id = run['override_records'][0]['override_id']
+try:
+    approve_override(run, override_id, 'random-unauthorized-user')
+    print('False')
+except UnauthorizedApproverError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Unauthorized approver rejected"
+else
+    fail "Unauthorized approver was not rejected"
 fi
 
 # Summary
