@@ -85,6 +85,9 @@ def create_mini_debate_request(
     files_changed: list[str],
 ) -> dict[str, Any]:
     """Create a mini-debate request for a channel."""
+    if not channel:
+        raise ValueError("channel is required")
+
     config = get_mini_debate_config(channel)
 
     return {
@@ -106,6 +109,7 @@ def execute_mini_debate(
     run: dict[str, Any],
     request: dict[str, Any],
     debate_backend_available: bool = True,
+    backend_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute a mini-debate and return the report.
 
@@ -113,6 +117,7 @@ def execute_mini_debate(
         run: Current run state
         request: Mini-debate request
         debate_backend_available: Whether debate backend is available
+        backend_report: Debate backend report containing consensus_score and optional refs
 
     Returns:
         Mini-debate report dict
@@ -127,7 +132,7 @@ def execute_mini_debate(
     now = datetime.now(timezone.utc)
 
     # Check if debate backend is available
-    if not debate_backend_available:
+    if not debate_backend_available or backend_report is None:
         # Mark degraded evidence and block completion
         report = {
             "run_id": run_id,
@@ -147,15 +152,9 @@ def execute_mini_debate(
         }
         return report
 
-    # Execute debate (simplified for now - in real implementation would call debate engine)
-    # TODO: Replace fallback consensus simulation with actual debate backend call.
-    # Simulate consensus based on channel
-    if channel == "quick":
-        consensus_score = 0.9  # High consensus for quick tasks
-    elif channel == "light":
-        consensus_score = 0.75  # Medium consensus for light tasks
-    else:
-        consensus_score = 0.65  # Standard consensus
+    consensus_score = backend_report.get("consensus_score")
+    if isinstance(consensus_score, bool) or not isinstance(consensus_score, (int, float)):
+        raise MiniDebateConsensusError(run_id, 0.0, config["required_consensus"])
 
     # Check consensus
     if consensus_score < config["required_consensus"]:
@@ -170,12 +169,12 @@ def execute_mini_debate(
         "status": "completed",
         "consensus_score": consensus_score,
         "required_consensus": config["required_consensus"],
-        "rounds_completed": config["max_rounds"],
+        "rounds_completed": backend_report.get("rounds_completed", config["max_rounds"]),
         "max_rounds": config["max_rounds"],
         "timeout_minutes": config["timeout_minutes"],
         "started_at": now.isoformat(),
         "completed_at": now.isoformat(),
-        "debate_refs": [f"debate://run/{run_id}/mini/{uuid4().hex}"],
+        "debate_refs": backend_report.get("debate_refs") or [f"debate://run/{run_id}/mini/{uuid4().hex}"],
     }
 
     return report
@@ -218,7 +217,7 @@ def validate_mini_debate(run: dict[str, Any]) -> list[str]:
 
     if "status" not in mini_debate_status:
         errors.append("status missing from mini_debate_status")
-    elif mini_debate_status.get("status") not in ("completed", "degraded"):
+    elif mini_debate_status["status"] not in ("completed", "degraded"):
         errors.append("status must be completed or degraded")
 
     if "consensus_score" not in mini_debate_status:

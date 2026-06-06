@@ -106,7 +106,8 @@ RESULT=$(python3 -c "
 from mini_debate_orchestration import execute_mini_debate
 run = {'run_id': 'run-1'}
 request = {'run_id': 'run-1', 'task_id': 'task-1', 'channel': 'quick'}
-report = execute_mini_debate(run, request, debate_backend_available=True)
+backend_report = {'consensus_score': 0.91, 'rounds_completed': 1, 'debate_refs': ['debate://backend/run-1/mini/1']}
+report = execute_mini_debate(run, request, debate_backend_available=True, backend_report=backend_report)
 print(report['status'] == 'completed' and report['consensus_score'] >= 0.8)
 ")
 if [ "$RESULT" = "True" ]; then
@@ -229,9 +230,10 @@ RESULT=$(python3 -c "
 from mini_debate_orchestration import execute_mini_debate
 run = {'run_id': 'run-9'}
 request = {'run_id': 'run-9', 'task_id': 'task-9', 'channel': 'light'}
-report = execute_mini_debate(run, request, debate_backend_available=True)
+backend_report = {'consensus_score': 0.76, 'rounds_completed': 2, 'debate_refs': ['debate://backend/run-9/mini/1']}
+report = execute_mini_debate(run, request, debate_backend_available=True, backend_report=backend_report)
 required_keys = ['run_id', 'task_id', 'channel', 'debate_type', 'status', 'consensus_score', 'required_consensus', 'rounds_completed', 'max_rounds', 'timeout_minutes', 'started_at', 'completed_at', 'debate_refs']
-print(all(k in report for k in required_keys))
+print(all(k in report for k in required_keys) and report['consensus_score'] == 0.76 and report['debate_refs'] == backend_report['debate_refs'])
 ")
 if [ "$RESULT" = "True" ]; then
     pass "Mini-debate report has all required fields"
@@ -308,14 +310,47 @@ RESULT=$(python3 -c "
 from mini_debate_orchestration import execute_mini_debate
 run = {'run_id': 'run-14'}
 request = {'run_id': 'run-14', 'task_id': 'task-14', 'channel': 'quick'}
-first = execute_mini_debate(run, request, debate_backend_available=True)
-second = execute_mini_debate(run, request, debate_backend_available=True)
+first = execute_mini_debate(run, request, debate_backend_available=True, backend_report={'consensus_score': 0.9})
+second = execute_mini_debate(run, request, debate_backend_available=True, backend_report={'consensus_score': 0.9})
 print(first['debate_refs'][0] != second['debate_refs'][0])
 ")
 if [ "$RESULT" = "True" ]; then
     pass "Mini-debate refs are unique"
 else
     fail "Mini-debate refs are not unique"
+fi
+
+# Test 20: Missing backend report degrades even when backend is available
+echo ""
+echo "Test 20: Missing backend report degrades even when backend is available"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate
+run = {'run_id': 'run-15'}
+request = {'run_id': 'run-15', 'task_id': 'task-15', 'channel': 'quick'}
+report = execute_mini_debate(run, request, debate_backend_available=True)
+print(report['status'] == 'degraded' and report['degradation_reason'] == 'debate_backend_unavailable')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Mini-debate degrades when backend report is missing"
+else
+    fail "Mini-debate did not degrade when backend report is missing"
+fi
+
+# Test 21: Create mini-debate request requires channel
+echo ""
+echo "Test 21: Create mini-debate request requires channel"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import create_mini_debate_request
+try:
+    create_mini_debate_request('run-16', 'task-16', '', 'Fix typo', ['README.md'])
+    print('False')
+except ValueError as exc:
+    print(str(exc) == 'channel is required')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Mini-debate request rejects missing channel"
+else
+    fail "Mini-debate request did not reject missing channel"
 fi
 
 # Summary
