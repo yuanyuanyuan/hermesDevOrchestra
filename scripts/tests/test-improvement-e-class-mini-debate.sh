@@ -63,9 +63,10 @@ echo "Test 3: Execute E-class debate - success"
 RESULT=$(python3 -c "
 from e_class_mini_debate import execute_e_class_debate
 run = {'run_id': 'run-2'}
-dispute = {'dispute_id': 'edispute-2-1', 'classification': 'high_priority'}
-report = execute_e_class_debate(run, dispute, debate_backend_available=True)
-print(report['status'] == 'completed' and report['consensus_score'] >= 0.60)
+dispute = {'dispute_id': 'edispute-2-1', 'classification': 'high_priority', 'evidence_refs': ['evidence://run-2/ref-1']}
+backend_report = {'consensus_score': 0.72, 'rounds_completed': 2, 'debate_refs': ['debate://run/run-2/e-class/edispute-2-1']}
+report = execute_e_class_debate(run, dispute, debate_backend_available=True, backend_report=backend_report)
+print(report['status'] == 'completed' and report['consensus_score'] == 0.72 and report['evidence_refs'] == ['evidence://run-2/ref-1'])
 ")
 if [ "$RESULT" = "True" ]; then
     pass "E-class debate executed successfully"
@@ -98,7 +99,7 @@ echo "Test 5: Persist E-class debate refs"
 RESULT=$(python3 -c "
 from e_class_mini_debate import persist_e_class_debate_refs
 run = {'run_id': 'run-4'}
-report = {'debate_refs': ['debate://run-4/e-class/edispute-4-1'], 'status': 'completed', 'consensus_score': 0.75, 'required_consensus': 0.60, 'completed_at': '2026-01-01T00:00:00Z'}
+report = {'dispute_id': 'edispute-4-1', 'debate_refs': ['debate://run-4/e-class/edispute-4-1'], 'status': 'completed', 'consensus_score': 0.75, 'required_consensus': 0.60, 'completed_at': '2026-01-01T00:00:00Z'}
 updated = persist_e_class_debate_refs(run, report)
 print('debate://run-4/e-class/edispute-4-1' in updated['e_class_debate_refs'])
 ")
@@ -113,7 +114,11 @@ echo ""
 echo "Test 6: Validate E-class dispute - valid"
 RESULT=$(python3 -c "
 from e_class_mini_debate import validate_e_class_dispute
-run = {'run_id': 'run-5', 'e_class_debate_refs': ['debate://run-5/e-class/edispute-5-1']}
+run = {
+    'run_id': 'run-5',
+    'e_class_debate_refs': ['debate://run-5/e-class/edispute-5-1'],
+    'e_class_debate_status': {'dispute_id': 'edispute-5-1', 'status': 'completed'}
+}
 errors = validate_e_class_dispute(run, 'edispute-5-1')
 print(len(errors) == 0)
 ")
@@ -188,9 +193,10 @@ echo "Test 11: E-class debate report structure"
 RESULT=$(python3 -c "
 from e_class_mini_debate import execute_e_class_debate
 run = {'run_id': 'run-9'}
-dispute = {'dispute_id': 'edispute-9-1', 'classification': 'high_priority'}
-report = execute_e_class_debate(run, dispute, debate_backend_available=True)
-required_keys = ['run_id', 'dispute_id', 'classification', 'status', 'consensus_score', 'required_consensus', 'rounds_completed', 'max_rounds', 'timeout_minutes', 'started_at', 'completed_at', 'debate_refs']
+dispute = {'dispute_id': 'edispute-9-1', 'classification': 'high_priority', 'evidence_refs': ['evidence://run-9/ref-1']}
+backend_report = {'consensus_score': 0.80, 'rounds_completed': 2, 'debate_refs': ['debate://run/run-9/e-class/edispute-9-1']}
+report = execute_e_class_debate(run, dispute, debate_backend_available=True, backend_report=backend_report)
+required_keys = ['run_id', 'dispute_id', 'classification', 'status', 'consensus_score', 'required_consensus', 'rounds_completed', 'max_rounds', 'timeout_minutes', 'started_at', 'completed_at', 'debate_refs', 'evidence_refs']
 print(all(k in report for k in required_keys))
 ")
 if [ "$RESULT" = "True" ]; then
@@ -220,8 +226,8 @@ echo "Test 13: Multiple E-class disputes"
 RESULT=$(python3 -c "
 from e_class_mini_debate import persist_e_class_debate_refs
 run = {'run_id': 'run-11'}
-report1 = {'debate_refs': ['debate://run-11/e-class/1'], 'status': 'completed', 'consensus_score': 0.75, 'required_consensus': 0.60, 'completed_at': '2026-01-01T00:00:00Z'}
-report2 = {'debate_refs': ['debate://run-11/e-class/2'], 'status': 'completed', 'consensus_score': 0.80, 'required_consensus': 0.60, 'completed_at': '2026-01-01T00:01:00Z'}
+report1 = {'dispute_id': 'edispute-11-1', 'debate_refs': ['debate://run-11/e-class/1'], 'status': 'completed', 'consensus_score': 0.75, 'required_consensus': 0.60, 'completed_at': '2026-01-01T00:00:00Z'}
+report2 = {'dispute_id': 'edispute-11-2', 'debate_refs': ['debate://run-11/e-class/2'], 'status': 'completed', 'consensus_score': 0.80, 'required_consensus': 0.60, 'completed_at': '2026-01-01T00:01:00Z'}
 updated = persist_e_class_debate_refs(run, report1)
 updated = persist_e_class_debate_refs(updated, report2)
 print(len(updated['e_class_debate_refs']) == 2)
@@ -245,6 +251,111 @@ if [ "$RESULT" = "True" ]; then
     pass "E-class debate unavailable blocks auto-merge"
 else
     fail "E-class debate unavailable not blocking"
+fi
+
+# Test 15: E-class dispute with empty evidence refs
+echo ""
+echo "Test 15: E-class dispute with empty evidence refs"
+RESULT=$(python3 -c "
+from e_class_mini_debate import create_e_class_dispute
+dispute = create_e_class_dispute('run-13', 'task-13', 'imp-13', 'low_priority', 'Test dispute', [])
+print(dispute['evidence_refs'] == [] and dispute['status'] == 'pending')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "E-class dispute handles empty evidence refs"
+else
+    fail "E-class dispute does not handle empty evidence refs"
+fi
+
+# Test 16: Persist E-class debate refs does not mutate input run
+echo ""
+echo "Test 16: Persist E-class debate refs does not mutate input run"
+RESULT=$(python3 -c "
+from e_class_mini_debate import persist_e_class_debate_refs
+run = {'run_id': 'run-14', 'e_class_debate_refs': ['debate://run-14/e-class/existing']}
+report = {'dispute_id': 'edispute-14-1', 'debate_refs': ['debate://run-14/e-class/edispute-14-1'], 'status': 'completed', 'consensus_score': 0.75, 'required_consensus': 0.60, 'completed_at': '2026-01-01T00:00:00Z'}
+updated = persist_e_class_debate_refs(run, report)
+print(run is not updated and len(run['e_class_debate_refs']) == 1 and len(updated['e_class_debate_refs']) == 2)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Persist returns copied run without mutating input"
+else
+    fail "Persist mutated input run"
+fi
+
+# Test 17: Execute E-class debate - low backend consensus
+echo ""
+echo "Test 17: Execute E-class debate - low backend consensus"
+RESULT=$(python3 -c "
+from e_class_mini_debate import execute_e_class_debate, EClassConsensusError
+try:
+    run = {'run_id': 'run-15'}
+    dispute = {'dispute_id': 'edispute-15-1', 'classification': 'low_priority'}
+    backend_report = {'consensus_score': 0.55, 'rounds_completed': 2, 'debate_refs': ['debate://run-15/e-class/edispute-15-1']}
+    execute_e_class_debate(run, dispute, backend_report=backend_report)
+    print('False')
+except EClassConsensusError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Low backend consensus raises EClassConsensusError"
+else
+    fail "Low backend consensus did not raise EClassConsensusError"
+fi
+
+# Test 18: Execute E-class debate - missing backend report
+echo ""
+echo "Test 18: Execute E-class debate - missing backend report"
+RESULT=$(python3 -c "
+from e_class_mini_debate import execute_e_class_debate, EClassDebateUnavailableError
+try:
+    execute_e_class_debate({'run_id': 'run-16'}, {'dispute_id': 'edispute-16-1'}, debate_backend_available=True)
+    print('False')
+except EClassDebateUnavailableError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Missing backend report raises EClassDebateUnavailableError"
+else
+    fail "Missing backend report did not raise EClassDebateUnavailableError"
+fi
+
+# Test 19: Validate E-class dispute rejects unknown dispute ID
+echo ""
+echo "Test 19: Validate E-class dispute rejects unknown dispute ID"
+RESULT=$(python3 -c "
+from e_class_mini_debate import validate_e_class_dispute
+run = {
+    'run_id': 'run-17',
+    'e_class_debate_refs': ['debate://run-17/e-class/edispute-17-1'],
+    'e_class_debate_status': {'dispute_id': 'edispute-17-1', 'status': 'completed'}
+}
+errors = validate_e_class_dispute(run, 'edispute-17-missing')
+print(any('missing_debate_ref_for_dispute' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Unknown dispute ID is rejected"
+else
+    fail "Unknown dispute ID was not rejected"
+fi
+
+# Test 20: Validate E-class dispute rejects incomplete status
+echo ""
+echo "Test 20: Validate E-class dispute rejects incomplete status"
+RESULT=$(python3 -c "
+from e_class_mini_debate import validate_e_class_dispute
+run = {
+    'run_id': 'run-18',
+    'e_class_debate_refs': ['debate://run-18/e-class/edispute-18-1'],
+    'e_class_debate_status': {'dispute_id': 'edispute-18-1', 'status': 'pending'}
+}
+errors = validate_e_class_dispute(run, 'edispute-18-1')
+print(any('incomplete_debate_status' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Incomplete debate status is rejected"
+else
+    fail "Incomplete debate status was not rejected"
 fi
 
 # Summary

@@ -106,7 +106,8 @@ RESULT=$(python3 -c "
 from mini_debate_orchestration import execute_mini_debate
 run = {'run_id': 'run-1'}
 request = {'run_id': 'run-1', 'task_id': 'task-1', 'channel': 'quick'}
-report = execute_mini_debate(run, request, debate_backend_available=True)
+backend_report = {'consensus_score': 0.91, 'rounds_completed': 1, 'debate_refs': ['debate://backend/run-1/mini/1']}
+report = execute_mini_debate(run, request, debate_backend_available=True, backend_report=backend_report)
 print(report['status'] == 'completed' and report['consensus_score'] >= 0.8)
 ")
 if [ "$RESULT" = "True" ]; then
@@ -229,14 +230,127 @@ RESULT=$(python3 -c "
 from mini_debate_orchestration import execute_mini_debate
 run = {'run_id': 'run-9'}
 request = {'run_id': 'run-9', 'task_id': 'task-9', 'channel': 'light'}
-report = execute_mini_debate(run, request, debate_backend_available=True)
+backend_report = {'consensus_score': 0.76, 'rounds_completed': 2, 'debate_refs': ['debate://backend/run-9/mini/1']}
+report = execute_mini_debate(run, request, debate_backend_available=True, backend_report=backend_report)
 required_keys = ['run_id', 'task_id', 'channel', 'debate_type', 'status', 'consensus_score', 'required_consensus', 'rounds_completed', 'max_rounds', 'timeout_minutes', 'started_at', 'completed_at', 'debate_refs']
-print(all(k in report for k in required_keys))
+print(all(k in report for k in required_keys) and report['consensus_score'] == 0.76 and report['debate_refs'] == backend_report['debate_refs'])
 ")
 if [ "$RESULT" = "True" ]; then
     pass "Mini-debate report has all required fields"
 else
     fail "Mini-debate report missing required fields"
+fi
+
+# Test 15: Mini-debate degraded report structure
+echo ""
+echo "Test 15: Mini-debate degraded report structure"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate
+run = {'run_id': 'run-10'}
+request = {'run_id': 'run-10', 'task_id': 'task-10', 'channel': 'quick'}
+report = execute_mini_debate(run, request, debate_backend_available=False)
+required_keys = ['run_id', 'task_id', 'channel', 'debate_type', 'status', 'degradation_reason', 'consensus_score', 'required_consensus', 'rounds_completed', 'max_rounds', 'timeout_minutes', 'started_at', 'completed_at', 'debate_refs']
+print(all(k in report for k in required_keys) and report['status'] == 'degraded' and report['degradation_reason'] == 'debate_backend_unavailable' and report['consensus_score'] == 0.0 and report['completed_at'] is None and report['debate_refs'] == [])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Mini-debate degraded report has all expected fields"
+else
+    fail "Mini-debate degraded report missing expected fields"
+fi
+
+# Test 16: Validate mini-debate - invalid status
+echo ""
+echo "Test 16: Validate mini-debate - invalid status"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import validate_mini_debate
+run = {'run_id': 'run-11', 'mini_debate_status': {'status': 'pending', 'consensus_score': 0.9}}
+errors = validate_mini_debate(run)
+print('status must be completed or degraded' in errors)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid mini-debate status detected"
+else
+    fail "Invalid mini-debate status not detected"
+fi
+
+# Test 17: Validate mini-debate - invalid consensus score
+echo ""
+echo "Test 17: Validate mini-debate - invalid consensus score"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import validate_mini_debate
+run = {'run_id': 'run-12', 'mini_debate_status': {'status': 'completed', 'consensus_score': 1.5}}
+errors = validate_mini_debate(run)
+print('consensus_score must be between 0 and 1' in errors)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid consensus score detected"
+else
+    fail "Invalid consensus score not detected"
+fi
+
+# Test 18: Auto-merge blocked when channel decision missing
+echo ""
+echo "Test 18: Auto-merge blocked when channel decision missing"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import check_auto_merge_blocked
+run = {'run_id': 'run-13'}
+blocked = check_auto_merge_blocked(run)
+print(blocked == True)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Auto-merge blocked when channel decision missing"
+else
+    fail "Auto-merge not blocked when channel decision missing"
+fi
+
+# Test 19: Mini-debate refs are unique
+echo ""
+echo "Test 19: Mini-debate refs are unique"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate
+run = {'run_id': 'run-14'}
+request = {'run_id': 'run-14', 'task_id': 'task-14', 'channel': 'quick'}
+first = execute_mini_debate(run, request, debate_backend_available=True, backend_report={'consensus_score': 0.9})
+second = execute_mini_debate(run, request, debate_backend_available=True, backend_report={'consensus_score': 0.9})
+print(first['debate_refs'][0] != second['debate_refs'][0])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Mini-debate refs are unique"
+else
+    fail "Mini-debate refs are not unique"
+fi
+
+# Test 20: Missing backend report degrades even when backend is available
+echo ""
+echo "Test 20: Missing backend report degrades even when backend is available"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import execute_mini_debate
+run = {'run_id': 'run-15'}
+request = {'run_id': 'run-15', 'task_id': 'task-15', 'channel': 'quick'}
+report = execute_mini_debate(run, request, debate_backend_available=True)
+print(report['status'] == 'degraded' and report['degradation_reason'] == 'debate_backend_unavailable')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Mini-debate degrades when backend report is missing"
+else
+    fail "Mini-debate did not degrade when backend report is missing"
+fi
+
+# Test 21: Create mini-debate request requires channel
+echo ""
+echo "Test 21: Create mini-debate request requires channel"
+RESULT=$(python3 -c "
+from mini_debate_orchestration import create_mini_debate_request
+try:
+    create_mini_debate_request('run-16', 'task-16', '', 'Fix typo', ['README.md'])
+    print('False')
+except ValueError as exc:
+    print(str(exc) == 'channel is required')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Mini-debate request rejects missing channel"
+else
+    fail "Mini-debate request did not reject missing channel"
 fi
 
 # Summary

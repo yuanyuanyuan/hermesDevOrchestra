@@ -64,7 +64,12 @@ class UnknownRiskSeverityError(GlobalEvaluationError):
         super().__init__(msg, run_id)
 
 
-def validate_veto_dimension(dimension: str, score: float, threshold: float = 0.6) -> None:
+def validate_veto_dimension(
+    dimension: str,
+    score: float,
+    threshold: float = 0.6,
+    run_id: str = "unknown",
+) -> None:
     """Validate that veto dimension score meets threshold.
 
     Raises VetoDimensionError if score below threshold.
@@ -73,7 +78,7 @@ def validate_veto_dimension(dimension: str, score: float, threshold: float = 0.6
         return  # Not a veto dimension
 
     if score < threshold:
-        raise VetoDimensionError("unknown", dimension, score, threshold)
+        raise VetoDimensionError(run_id, dimension, score, threshold)
 
 
 def validate_residual_risks(
@@ -82,7 +87,8 @@ def validate_residual_risks(
 ) -> list[dict[str, Any]]:
     """Validate residual risks and return high risks requiring approval.
 
-    Raises UnknownRiskSeverityError if severity unknown.
+    Each risk must include a severity value of "high", "medium", or "low".
+    Missing or unknown severity values raise UnknownRiskSeverityError.
     """
     high_risks = []
 
@@ -121,16 +127,19 @@ def sort_residual_risks_by_severity(risks: list[dict[str, Any]]) -> list[dict[st
 
 
 def attach_required_action(risks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Attach required action to each residual risk."""
+    """Return residual risks with required action attached."""
+    risks_with_actions = []
     for risk in risks:
+        risk_with_action = risk.copy()
         severity = risk.get("severity", "")
         if severity == "high":
-            risk["required_action"] = "human_approval_required"
+            risk_with_action["required_action"] = "human_approval_required"
         elif severity == "medium":
-            risk["required_action"] = "monitor_and_review"
+            risk_with_action["required_action"] = "monitor_and_review"
         else:
-            risk["required_action"] = "accept"
-    return risks
+            risk_with_action["required_action"] = "accept"
+        risks_with_actions.append(risk_with_action)
+    return risks_with_actions
 
 
 def validate_global_evaluation(
@@ -147,7 +156,9 @@ def validate_global_evaluation(
 
     # Check veto dimensions
     for dimension, score in veto_scores.items():
-        if dimension in VETO_DIMENSIONS and score < veto_threshold:
+        try:
+            validate_veto_dimension(dimension, score, veto_threshold, run_id)
+        except VetoDimensionError:
             errors.append(f"veto_dimension_blocked: {dimension} score {score:.2f} below {veto_threshold}")
 
     # Check residual risks

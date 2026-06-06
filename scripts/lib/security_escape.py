@@ -30,6 +30,11 @@ SECURITY_PATTERNS = [
 COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in SECURITY_PATTERNS]
 
 CONTENT_SCAN_EXCLUDED_SUFFIXES = (".md", ".sh")
+PATH_SENSITIVE_PATTERNS = [
+    re.compile(r"(^|/)(password|passwd|secret|secrets|token|api_key|apikey|access_key|private_key)(\.|_|-|/|$)", re.IGNORECASE),
+    re.compile(r"(^|/)(ssn|social_security|credit_card|bank_account|passport)(\.|_|-|/|$)", re.IGNORECASE),
+    re.compile(r"(^|/)config/(release/|authority_matrix|schemas/)", re.IGNORECASE),
+]
 
 
 class SecurityEscapeError(Exception):
@@ -51,6 +56,16 @@ def should_scan_content(filepath: str) -> bool:
     return True
 
 
+def detect_path_security_escape(filepath: str) -> list[str]:
+    """Detect security-sensitive file paths without broad content terms."""
+    matched = []
+    normalized = filepath.replace("\\", "/")
+    for pattern in PATH_SENSITIVE_PATTERNS:
+        if pattern.search(normalized):
+            matched.append(pattern.pattern)
+    return matched
+
+
 def detect_security_escape(files_changed: list[str], file_contents: dict[str, str] | None = None) -> list[str]:
     """Detect security escape patterns in changed files.
 
@@ -65,9 +80,7 @@ def detect_security_escape(files_changed: list[str], file_contents: dict[str, st
 
     # Check file paths for protected targets
     for filepath in files_changed:
-        for i, pattern in enumerate(COMPILED_PATTERNS):
-            if pattern.search(filepath):
-                matched_patterns.append(SECURITY_PATTERNS[i])
+        matched_patterns.extend(detect_path_security_escape(filepath))
 
     # Check file contents if provided
     if file_contents:

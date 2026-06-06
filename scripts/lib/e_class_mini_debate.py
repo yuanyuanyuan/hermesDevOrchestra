@@ -3,6 +3,14 @@
 
 Routes E-class improvement disputes into two-round mini-debate
 and blocks if consensus score remains below 0.60.
+
+Integration:
+    intake_completeness builds the PRD intake bundle and separates verified
+    facts from assumptions. When an improvement is classified as E-class or
+    remains disputed after intake/implementation evidence is reviewed, callers
+    create an E-class dispute with the relevant evidence refs, execute this
+    bounded mini-debate, persist the returned debate refs on run state, and
+    block auto-merge until a completed debate status is present.
 """
 
 from __future__ import annotations
@@ -87,6 +95,7 @@ def execute_e_class_debate(
     run: dict[str, Any],
     dispute: dict[str, Any],
     debate_backend_available: bool = True,
+    backend_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute E-class mini-debate and return report.
 
@@ -94,6 +103,7 @@ def execute_e_class_debate(
         run: Current run state
         dispute: E-class dispute
         debate_backend_available: Whether debate backend is available
+        backend_report: Debate engine report, when backend is available
 
     Returns:
         E-class debate report dict
@@ -106,15 +116,12 @@ def execute_e_class_debate(
     config = get_e_class_config()
 
     # Check if debate backend is available
-    if not debate_backend_available:
+    if not debate_backend_available or backend_report is None:
         raise EClassDebateUnavailableError(run_id)
 
-    # Execute debate (simplified - in real implementation would call debate engine)
-    # Simulate consensus based on dispute type
-    if dispute.get("classification") == "high_priority":
-        consensus_score = 0.75
-    else:
-        consensus_score = 0.65
+    consensus_score = backend_report.get("consensus_score")
+    if consensus_score is None:
+        raise EClassDebateUnavailableError(run_id)
 
     # Check consensus
     if consensus_score < config["required_consensus"]:
@@ -128,12 +135,13 @@ def execute_e_class_debate(
         "status": "completed",
         "consensus_score": consensus_score,
         "required_consensus": config["required_consensus"],
-        "rounds_completed": config["max_rounds"],
+        "rounds_completed": backend_report.get("rounds_completed", config["max_rounds"]),
         "max_rounds": config["max_rounds"],
         "timeout_minutes": config["timeout_minutes"],
         "started_at": datetime.now(timezone.utc).isoformat(),
         "completed_at": datetime.now(timezone.utc).isoformat(),
-        "debate_refs": [f"debate://run/{run_id}/e-class/{dispute.get('dispute_id', 'unknown')}"],
+        "debate_refs": backend_report.get("debate_refs", []),
+        "evidence_refs": dispute.get("evidence_refs", []),
     }
 
     return report
@@ -141,16 +149,14 @@ def execute_e_class_debate(
 
 def persist_e_class_debate_refs(run: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
     """Persist E-class debate refs on run state."""
-    run_id = run.get("run_id", "unknown")
+    updated_run = run.copy()
+    debate_refs = list(updated_run.get("e_class_debate_refs", []))
+    debate_refs.extend(report.get("debate_refs", []))
 
-    # Add debate refs to run
-    if "e_class_debate_refs" not in run:
-        run["e_class_debate_refs"] = []
-
-    run["e_class_debate_refs"].extend(report.get("debate_refs", []))
+    updated_run["e_class_debate_refs"] = debate_refs
 
     # Update run with debate status
-    run["e_class_debate_status"] = {
+    updated_run["e_class_debate_status"] = {
         "dispute_id": report.get("dispute_id"),
         "classification": report.get("classification"),
         "status": report.get("status"),
@@ -159,7 +165,7 @@ def persist_e_class_debate_refs(run: dict[str, Any], report: dict[str, Any]) -> 
         "completed_at": report.get("completed_at"),
     }
 
-    return run
+    return updated_run
 
 
 def validate_e_class_dispute(run: dict[str, Any], dispute_id: str) -> list[str]:
@@ -169,10 +175,20 @@ def validate_e_class_dispute(run: dict[str, Any], dispute_id: str) -> list[str]:
     """
     errors = []
 
-    # Check if dispute has debate refs
     e_class_debate_refs = run.get("e_class_debate_refs", [])
     if not e_class_debate_refs:
         errors.append(f"missing_debate_refs: {dispute_id}")
+        return errors
+
+    matching_refs = [ref for ref in e_class_debate_refs if dispute_id in ref]
+    if not matching_refs:
+        errors.append(f"missing_debate_ref_for_dispute: {dispute_id}")
+
+    e_class_debate_status = run.get("e_class_debate_status", {})
+    if e_class_debate_status.get("dispute_id") != dispute_id:
+        errors.append(f"missing_debate_status_for_dispute: {dispute_id}")
+    elif e_class_debate_status.get("status") != "completed":
+        errors.append(f"incomplete_debate_status: {dispute_id}")
 
     return errors
 

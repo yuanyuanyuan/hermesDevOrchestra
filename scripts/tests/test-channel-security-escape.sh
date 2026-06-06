@@ -259,6 +259,20 @@ else
     fail "Database pattern not detected"
 fi
 
+# Test 17: Broad security terms in paths do not force security escape
+echo ""
+echo "Test 17: Broad security terms in paths do not force security escape"
+RESULT=$(python3 -c "
+from security_escape import detect_security_escape
+matched = detect_security_escape(['docs/tls-guide.md', 'examples/proxy-config.txt', 'tests/hash_notes.py'])
+print(len(matched) == 0)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Broad path terms ignored"
+else
+    fail "Broad path terms caused security false positive"
+fi
+
 # Summary
 echo ""
 echo "=========================================="
