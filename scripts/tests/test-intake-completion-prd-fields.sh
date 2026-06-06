@@ -262,6 +262,45 @@ else
     fail "Intake bundle missing required fields"
 fi
 
+# Test 15: CI/CD detection avoids substring false positives
+echo ""
+echo "Test 15: CI/CD detection avoids substring false positives"
+RESULT=$(python3 -c "
+from intake_completeness import detect_cicd_config
+config = detect_cicd_config([
+    'docs/.github-notes.md',
+    'src/foo.github.txt',
+    'docs/docker-compose.yaml.md',
+    'notes/Jenkinsfile-guide.md',
+])
+print(config['detected_systems'] == [] and config['config_files'] == [])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "CI/CD substring false positives avoided"
+else
+    fail "CI/CD substring false positives detected"
+fi
+
+# Test 16: CI/CD detection accepts exact configured paths
+echo ""
+echo "Test 16: CI/CD detection accepts exact configured paths"
+RESULT=$(python3 -c "
+from intake_completeness import detect_cicd_config
+config = detect_cicd_config([
+    './.github/actions/build/action.yml',
+    '.circleci/config.yml',
+    'jenkins/pipeline.groovy',
+    'k8s/deployment.yml',
+])
+systems = set(config['detected_systems'])
+print({'github_actions', 'circleci', 'jenkins', 'kubernetes'}.issubset(systems))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Exact CI/CD paths detected"
+else
+    fail "Exact CI/CD paths not detected"
+fi
+
 # Summary
 echo ""
 echo "=========================================="

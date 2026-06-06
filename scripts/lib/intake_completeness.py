@@ -8,6 +8,7 @@ and verified facts vs unverified assumptions separation.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Any
 
 
@@ -63,21 +64,46 @@ def detect_cicd_config(files_changed: list[str], file_contents: dict[str, str] |
         "has_deployment": False,
     }
 
-    # Common CI/CD config file patterns
-    cicd_patterns = {
-        "github_actions": [".github/workflows/", ".github/actions/"],
-        "gitlab_ci": [".gitlab-ci.yml", ".gitlab-ci/"],
-        "circleci": [".circleci/config.yml"],
-        "jenkins": ["Jenkinsfile", "jenkins/"],
-        "travis": [".travis.yml"],
-        "docker": ["Dockerfile", "docker-compose.yml", "docker-compose.yaml"],
-        "kubernetes": ["kubernetes/", "k8s/", "helm/"],
-    }
+    def normalize_path(filepath: str) -> str:
+        path = PurePosixPath(filepath).as_posix()
+        while path.startswith("./"):
+            path = path[2:]
+        return path
+
+    def matches_cicd_config(filepath: str, system: str) -> bool:
+        path = normalize_path(filepath)
+        name = PurePosixPath(path).name
+
+        if system == "github_actions":
+            return path.startswith(".github/workflows/") or path.startswith(".github/actions/")
+        if system == "gitlab_ci":
+            return path == ".gitlab-ci.yml" or path.startswith(".gitlab-ci/")
+        if system == "circleci":
+            return path == ".circleci/config.yml"
+        if system == "jenkins":
+            return name == "Jenkinsfile" or path.startswith("jenkins/")
+        if system == "travis":
+            return path == ".travis.yml"
+        if system == "docker":
+            return name == "Dockerfile" or path in {"docker-compose.yml", "docker-compose.yaml"}
+        if system == "kubernetes":
+            return path.startswith("kubernetes/") or path.startswith("k8s/") or path.startswith("helm/")
+        return False
+
+    cicd_systems = [
+        "github_actions",
+        "gitlab_ci",
+        "circleci",
+        "jenkins",
+        "travis",
+        "docker",
+        "kubernetes",
+    ]
 
     # Check file paths
     for filepath in files_changed:
-        for system, patterns in cicd_patterns.items():
-            if any(pattern in filepath for pattern in patterns):
+        for system in cicd_systems:
+            if matches_cicd_config(filepath, system):
                 if system not in cicd_config["detected_systems"]:
                     cicd_config["detected_systems"].append(system)
                 cicd_config["config_files"].append(filepath)
