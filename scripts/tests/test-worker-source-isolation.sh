@@ -37,7 +37,7 @@ echo ""
 
 # Test 1: Import source isolation module
 echo "Test 1: Import source isolation module"
-if python3 -c "from worker_source_isolation import validate_model_source, get_adjudicator_source, check_source_isolation, create_worker_session, validate_worker_session, SourceIsolationViolationError, MissingModelSourceError, UnknownSourceError; print('OK')"; then
+if python3 -c "from worker_source_isolation import validate_model_source, get_adjudicator_source, check_source_isolation, check_worker_source_isolation, create_worker_session, validate_worker_session, SourceIsolationViolationError, MissingModelSourceError, MissingAdjudicatorSourceError, UnknownSourceError; print('OK')"; then
     pass "Module imports successfully"
 else
     fail "Module import failed"
@@ -259,6 +259,42 @@ if [ "$RESULT" = "True" ]; then
     pass "Invalid role detected"
 else
     fail "Invalid role not detected"
+fi
+
+# Test 16: Missing adjudicator source blocks isolated role
+echo ""
+echo "Test 16: Missing adjudicator source blocks isolated role"
+RESULT=$(python3 -c "
+from worker_source_isolation import check_worker_source_isolation, MissingAdjudicatorSourceError
+try:
+    check_worker_source_isolation('run-8', 'claude', None, 'reviewer')
+    print('False')
+except MissingAdjudicatorSourceError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Missing adjudicator source blocks isolated role"
+else
+    fail "Missing adjudicator source did not block isolated role"
+fi
+
+# Test 17: Task adjudicator source overrides run source
+echo ""
+echo "Test 17: Task adjudicator source overrides run source"
+RESULT=$(python3 -c "
+from worker_source_isolation import create_worker_session, SourceIsolationViolationError
+try:
+    run = {'adjudicator_source': 'claude'}
+    task = {'adjudicator_source': 'kimi'}
+    create_worker_session('run-9', 'task-9', 'worker-6', 'reviewer', 'kimi', run, task)
+    print('False')
+except SourceIsolationViolationError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Task adjudicator source overrides run source"
+else
+    fail "Task adjudicator source did not override run source"
 fi
 
 # Summary

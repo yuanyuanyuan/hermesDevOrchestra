@@ -18,8 +18,11 @@ VALID_MODEL_SOURCES = {
     "kimi", "claude", "codex", "human", "openai", "anthropic", "other"
 }
 
+# All supported worker roles.
+ALL_ROLES = {"implementer", "reviewer", "auditor", "cross_checker"}
+
 # Roles that require source isolation
-ISOLATED_ROLES = {"reviewer", "auditor", "cross_checker"}
+ISOLATED_ROLES = ALL_ROLES - {"implementer"}
 
 
 class SourceIsolationError(Exception):
@@ -50,6 +53,15 @@ class MissingModelSourceError(SourceIsolationError):
         super().__init__(msg, run_id)
 
 
+class MissingAdjudicatorSourceError(SourceIsolationError):
+    """Raised when adjudicator_source is missing for isolated role."""
+
+    def __init__(self, run_id: str, role: str):
+        self.role = role
+        msg = f"Missing adjudicator_source for {role} worker"
+        super().__init__(msg, run_id)
+
+
 class UnknownSourceError(SourceIsolationError):
     """Raised when model_source is unknown and not configured as 'other'."""
 
@@ -74,7 +86,7 @@ def get_adjudicator_source(run: dict[str, Any], task: dict[str, Any] | None = No
     return None
 
 
-def check_source_isolation(
+def check_worker_source_isolation(
     run_id: str,
     worker_source: str,
     adjudicator_source: str | None,
@@ -88,10 +100,13 @@ def check_source_isolation(
         return  # No isolation check needed for non-isolated roles
 
     if adjudicator_source is None:
-        return  # No adjudicator source to compare against
+        raise MissingAdjudicatorSourceError(run_id, role)
 
     if worker_source == adjudicator_source:
         raise SourceIsolationViolationError(run_id, worker_source, adjudicator_source, role)
+
+
+check_source_isolation = check_worker_source_isolation
 
 
 def create_worker_session(
@@ -114,7 +129,7 @@ def create_worker_session(
         SourceIsolationViolationError: If source isolation violated
     """
     # Validate role
-    if role not in {"implementer", "reviewer", "auditor", "cross_checker"}:
+    if role not in ALL_ROLES:
         raise ValueError(f"Invalid role: {role}")
 
     # Check model_source for isolated roles
@@ -129,7 +144,7 @@ def create_worker_session(
         adjudicator_source = get_adjudicator_source(run, task)
 
         # Check source isolation
-        check_source_isolation(run_id, model_source, adjudicator_source, role)
+        check_worker_source_isolation(run_id, model_source, adjudicator_source, role)
 
     # Create session
     session = {
@@ -158,7 +173,7 @@ def validate_worker_session(session: dict[str, Any]) -> list[str]:
         if field not in session:
             errors.append(f"{field} missing")
 
-    if "role" in session and session["role"] not in {"implementer", "reviewer", "auditor", "cross_checker"}:
+    if "role" in session and session["role"] not in ALL_ROLES:
         errors.append(f"Invalid role: {session['role']}")
 
     if "model_source" in session and not validate_model_source(session["model_source"]):
