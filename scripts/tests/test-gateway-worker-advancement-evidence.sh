@@ -702,13 +702,47 @@ else
     fail "Unknown stage did not fail closed"
 fi
 
-# Test 38: DAG falsy valid value fails validation
+# Test 38: Stage ordering mismatch fails closed
 echo ""
-echo "Test 38: DAG falsy valid value fails validation"
+echo "Test 38: Stage ordering mismatch fails closed"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+run = {'run_id': 'run-37', 'current_stage': 'solution_debate'}
+task = {
+    'current_stage': 'global_evaluation',
+    'write_scope': ['scripts/lib'],
+    'review_evidence': {'approved': True}
+}
+errors = validate_worker_advancement(run, task, ['scripts/lib/module.py'])
+print(any('stage_order_violation: run_current_stage=solution_debate; task_stage=global_evaluation' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Stage ordering mismatch fails closed"
+else
+    fail "Stage ordering mismatch did not fail closed"
+fi
+
+# Test 39: direction_debate requires write scope
+echo ""
+echo "Test 39: direction_debate requires write scope"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_worker_advancement
+errors = validate_worker_advancement({'run_id': 'run-38'}, {'current_stage': 'direction_debate', 'write_scope': []}, ['best_choice_report.json'])
+print(any('missing_write_scope: direction_debate' in error for error in errors))
+")
+if [ "$RESULT" = "True" ]; then
+    pass "direction_debate requires write scope"
+else
+    fail "direction_debate did not require write scope"
+fi
+
+# Test 40: DAG falsy valid value fails validation
+echo ""
+echo "Test 40: DAG falsy valid value fails validation"
 RESULT=$(python3 -c "
 from worker_evidence_harden import validate_dag_evidence, DAGValidationFailedError
 try:
-    validate_dag_evidence('run-37', 'implementation', {'valid': 0, 'cycles': []})
+    validate_dag_evidence('run-39', 'implementation', {'valid': 0, 'cycles': []})
     print('False')
 except DAGValidationFailedError:
     print('True')
@@ -719,13 +753,13 @@ else
     fail "DAG falsy valid value bypassed validation"
 fi
 
-# Test 39: DAG errors fail even when passed is true
+# Test 41: DAG errors fail even when passed is true
 echo ""
-echo "Test 39: DAG errors fail even when passed is true"
+echo "Test 41: DAG errors fail even when passed is true"
 RESULT=$(python3 -c "
 from worker_evidence_harden import validate_dag_evidence, DAGValidationFailedError
 try:
-    validate_dag_evidence('run-38', 'implementation', {'passed': True, 'errors': ['orphan_task']})
+    validate_dag_evidence('run-40', 'implementation', {'passed': True, 'errors': ['orphan_task']})
     print('False')
 except DAGValidationFailedError:
     print('True')
@@ -736,12 +770,12 @@ else
     fail "DAG errors were ignored when passed is true"
 fi
 
-# Test 40: Missing stage does not hide other evidence errors
+# Test 42: Missing stage does not hide other evidence errors
 echo ""
-echo "Test 40: Missing stage does not hide other evidence errors"
+echo "Test 42: Missing stage does not hide other evidence errors"
 RESULT=$(python3 -c "
 from worker_evidence_harden import validate_worker_advancement
-errors = validate_worker_advancement({'run_id': 'run-39'}, {'write_scope': ['/abs']}, ['anywhere/x.py'])
+errors = validate_worker_advancement({'run_id': 'run-41'}, {'write_scope': ['/abs']}, ['anywhere/x.py'])
 print(any('missing_current_stage' in error for error in errors) and any('invalid_evidence_input: expected_scope' in error for error in errors))
 ")
 if [ "$RESULT" = "True" ]; then
@@ -750,14 +784,14 @@ else
     fail "Missing stage hid other evidence errors"
 fi
 
-# Test 41: Run and task type guards return typed errors
+# Test 43: Run and task type guards return typed errors
 echo ""
-echo "Test 41: Run and task type guards return typed errors"
+echo "Test 43: Run and task type guards return typed errors"
 RESULT=$(python3 -c "
 from worker_evidence_harden import validate_worker_advancement
 print(
     validate_worker_advancement(None, {}, []) == ['invalid_evidence_input: run']
-    and validate_worker_advancement({'run_id': 'run-40'}, None, []) == ['invalid_evidence_input: task']
+    and validate_worker_advancement({'run_id': 'run-42'}, None, []) == ['invalid_evidence_input: task']
 )
 ")
 if [ "$RESULT" = "True" ]; then
@@ -766,13 +800,13 @@ else
     fail "Run and task type guards did not return typed errors"
 fi
 
-# Test 42: Null byte changed path violates write scope
+# Test 44: Null byte changed path violates write scope
 echo ""
-echo "Test 42: Null byte changed path violates write scope"
+echo "Test 44: Null byte changed path violates write scope"
 RESULT=$(python3 -c "
 from worker_evidence_harden import validate_write_scope, WriteScopeViolationError
 try:
-    validate_write_scope('run-41', ['scripts/lib'], ['scripts/lib/module.py\x00'])
+    validate_write_scope('run-43', ['scripts/lib'], ['scripts/lib/module.py\x00'])
     print('False')
 except WriteScopeViolationError:
     print('True')
@@ -783,9 +817,9 @@ else
     fail "Null byte changed path was accepted"
 fi
 
-# Test 43: CLI malformed JSON exits 2 with structured error
+# Test 45: CLI malformed JSON exits 2 with structured error
 echo ""
-echo "Test 43: CLI malformed JSON exits 2 with structured error"
+echo "Test 45: CLI malformed JSON exits 2 with structured error"
 set +e
 CLI_OUTPUT=$(printf '%s\n' '{bad json' | scripts/bin/orch-validate-worker-advancement)
 CLI_STATUS=$?
@@ -802,9 +836,9 @@ else
     fail "CLI malformed JSON did not return structured usage error"
 fi
 
-# Test 44: CLI empty stdin exits 2 with structured error
+# Test 46: CLI empty stdin exits 2 with structured error
 echo ""
-echo "Test 44: CLI empty stdin exits 2 with structured error"
+echo "Test 46: CLI empty stdin exits 2 with structured error"
 set +e
 CLI_OUTPUT=$(printf '' | scripts/bin/orch-validate-worker-advancement)
 CLI_STATUS=$?
@@ -821,9 +855,9 @@ else
     fail "CLI empty stdin did not return structured usage error"
 fi
 
-# Test 45: CLI oversized JSON exits 2 with structured error
+# Test 47: CLI oversized JSON exits 2 with structured error
 echo ""
-echo "Test 45: CLI oversized JSON exits 2 with structured error"
+echo "Test 47: CLI oversized JSON exits 2 with structured error"
 set +e
 CLI_OUTPUT=$(python3 - <<'PY' | scripts/bin/orch-validate-worker-advancement
 import sys

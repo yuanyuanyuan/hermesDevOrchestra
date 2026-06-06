@@ -16,13 +16,13 @@ import json
 from pathlib import PurePosixPath
 from typing import Any
 
-KNOWN_STAGES = {
-    "direction_debate",
-    "solution_debate",
-    "implementation",
-    "improvement",
-    "global_evaluation",
-    "continuous_improvement",
+STAGE_REQUIREMENTS = {
+    "direction_debate": {"write_scope"},
+    "solution_debate": {"write_scope", "dag_validation"},
+    "implementation": {"write_scope", "dag_validation", "review_evidence", "commit_evidence"},
+    "improvement": {"write_scope", "review_evidence"},
+    "global_evaluation": {"write_scope", "review_evidence"},
+    "continuous_improvement": {"write_scope"},
 }
 
 
@@ -99,16 +99,11 @@ class MissingCommitEvidenceError(WorkerEvidenceError):
         super().__init__(msg, run_id)
 
 
-# Stages that require DAG validation
-DAG_VALIDATION_STAGES = {"solution_debate", "implementation"}
-
-# Stages that require review evidence
-REVIEW_EVIDENCE_STAGES = {"implementation", "improvement", "global_evaluation"}
-
-# Stages that require commit evidence
-COMMIT_EVIDENCE_STAGES = {"implementation"}
-
-SCOPE_REQUIRED_STAGES = DAG_VALIDATION_STAGES | REVIEW_EVIDENCE_STAGES | COMMIT_EVIDENCE_STAGES
+KNOWN_STAGES = set(STAGE_REQUIREMENTS)
+DAG_VALIDATION_STAGES = {stage for stage, requirements in STAGE_REQUIREMENTS.items() if "dag_validation" in requirements}
+REVIEW_EVIDENCE_STAGES = {stage for stage, requirements in STAGE_REQUIREMENTS.items() if "review_evidence" in requirements}
+COMMIT_EVIDENCE_STAGES = {stage for stage, requirements in STAGE_REQUIREMENTS.items() if "commit_evidence" in requirements}
+SCOPE_REQUIRED_STAGES = {stage for stage, requirements in STAGE_REQUIREMENTS.items() if "write_scope" in requirements}
 
 
 def _canonical_stage(stage: Any) -> str:
@@ -274,10 +269,11 @@ def validate_worker_advancement(
     exceptions remain available from the lower-level validation functions.
 
     Error strings use the stable format "<code>: <payload>", where code is one
-    of: missing_current_stage, unknown_stage, invalid_evidence_input,
-    missing_write_scope, write_scope_violation, write_scope_unrestricted_engaged,
-    missing_dag_validation, dag_cycle_detected, dag_validation_failed,
-    missing_review_evidence, missing_commit_evidence.
+    of: missing_current_stage, unknown_stage, stage_order_violation,
+    invalid_evidence_input, missing_write_scope, write_scope_violation,
+    write_scope_unrestricted_engaged, missing_dag_validation,
+    dag_cycle_detected, dag_validation_failed, missing_review_evidence,
+    missing_commit_evidence.
     Payloads are human-readable strings; list and dict payloads use JSON.
 
     Returns list of validation errors. Empty list means valid.
@@ -290,6 +286,7 @@ def validate_worker_advancement(
     run_id = run.get("run_id", "unknown")
     raw_stage = task.get("current_stage", run.get("current_stage", ""))
     stage = _canonical_stage(raw_stage)
+    run_stage = _canonical_stage(run.get("current_stage"))
     expected_scope = task.get("write_scope", [])
     privilege_grants = run.get("privilege_grants") if isinstance(run.get("privilege_grants"), dict) else {}
     scope_unrestricted = privilege_grants.get("write_scope_unrestricted") is True
@@ -303,6 +300,8 @@ def validate_worker_advancement(
         errors.append("missing_current_stage: current_stage")
     elif stage not in KNOWN_STAGES:
         errors.append(f"unknown_stage: {raw_stage}")
+    elif run_stage and run_stage in KNOWN_STAGES and stage != run_stage:
+        errors.append(f"stage_order_violation: run_current_stage={run_stage}; task_stage={stage}")
     if task.get("write_scope_unrestricted") is True:
         errors.append("invalid_evidence_input: write_scope_unrestricted")
     if scope_unrestricted:
