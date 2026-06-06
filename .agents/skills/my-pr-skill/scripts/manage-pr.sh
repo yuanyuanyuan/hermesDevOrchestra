@@ -23,6 +23,7 @@ Edit mode:
 Checks mode:
   --checks                 Print combined status / checks for a PR.
   --number=N               PR number (required for checks).
+  --json                   Output checks as JSON array instead of text table.
 
 Common:
   --help                   Show this message.
@@ -40,6 +41,7 @@ main() {
   local head=""
   local repo=""
   local add_label=""
+  local json=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -53,6 +55,7 @@ main() {
       --head=*)     head="${1#*=}";   shift ;;
       --repo=*)     repo="${1#*=}";   shift ;;
       --add-label=*) add_label="${1#*=}"; shift ;;
+      --json)       json="1";         shift ;;
       --help)       usage; exit 0 ;;
       *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
     esac
@@ -100,7 +103,16 @@ main() {
         usage >&2
         exit 1
       fi
-      gh pr checks "$number" 2>/dev/null || true
+      if [[ -n "$json" ]]; then
+        local owner_name repo_name
+        owner_name="${repo%%/*}"
+        repo_name="${repo##*/}"
+        gh api "repos/${owner_name}/${repo_name}/commits/${number}/status" --jq '.statuses // []' 2>/dev/null \
+          || gh pr checks "$number" --json name,state,bucket,description,startedAt,completedAt 2>/dev/null \
+          || echo '[]'
+      else
+        gh pr checks "$number" 2>/dev/null || true
+      fi
       ;;
   esac
 }

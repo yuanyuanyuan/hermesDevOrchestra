@@ -1,5 +1,3 @@
-@/home/stark/.codex/RTK.md
-
 # Agent Reach 使用提示
 
 本机已安装 Agent Reach (https://github.com/Panniantong/Agent-Reach)。

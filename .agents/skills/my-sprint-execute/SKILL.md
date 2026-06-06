@@ -60,6 +60,9 @@ my-sprint-execute <PLAN_PATH> <CHECKLIST_PATH> <SPRINT>
 | `${OWNER}` | `my-pr-skill` 脚本 `get-repo-info.sh --owner` |
 | `${REPO}` | `my-pr-skill` 脚本 `get-repo-info.sh --repo` |
 | `${MY_PR_SKILL_SCRIPTS}` | `my-pr-skill` 的 scripts 目录路径 |
+| `${PR_TYPE}` | `feat` / `fix` / `docs` / `infra` / `chore`，决定 PR body 模板 |
+| `${COMMITS_JSON}` | `git log origin/${BASE_BRANCH}..HEAD --pretty=format:'{"sha":"%h","subject":"%s","type":"%s"},'` 解析为 JSON |
+| `${VERIFICATION_REPORT}` | `/tmp/sprint${SPRINT}-verification.md`（独立 verification 报告，可附在 PR body 内）|
 
 ---
 
@@ -88,7 +91,32 @@ git checkout -b ${BRANCH} origin/${BASE_BRANCH}
 
 **步骤 C — 提交规范（Conventional Commits）**
 
-每完成一个子任务提交一次，格式：
+每完成一个子任务提交一次，**必须使用 `TPL_COMMIT_MSG` 模板**（见末尾"模板"章节）：
+
+```bash
+# 1. 选择 commit type
+case "${SUBTASK_KIND}" in
+  feature)        COMMIT_TYPE="feat" ;;
+  bugfix)         COMMIT_TYPE="fix" ;;
+  doc)            COMMIT_TYPE="docs" ;;
+  test)           COMMIT_TYPE="test" ;;
+  refactor)       COMMIT_TYPE="refactor" ;;
+  perf)           COMMIT_TYPE="perf" ;;
+  build|ci|infra) COMMIT_TYPE="chore" ;;
+  *)              COMMIT_TYPE="feat" ;;  # 兜底
+esac
+
+# 2. 用模板生成 commit message
+export COMMIT_TYPE SUBTASK_NAME SUBTASK_DESC
+envsubst < ${REPO_DIR}/.agents/skills/my-sprint-execute/templates/TPL_COMMIT_MSG.md
+
+# 3. commit
+git commit -F - <<EOF
+$(envsubst < ${REPO_DIR}/.agents/skills/my-sprint-execute/templates/TPL_COMMIT_MSG.md)
+EOF
+```
+
+格式参考：
 - 功能提交：`feat(sprint-${SPRINT}): [子任务名] — [一句话描述]`
 - 修复提交：`fix(sprint-${SPRINT}): [修复描述]`
 - 文档提交：`docs(sprint-${SPRINT}): [文档描述]`
@@ -139,6 +167,31 @@ which gbrain && gbrain --version || echo "gbrain not available, using degraded p
 
 注意：以上验证命令为示例，实际执行时应根据 `${PLAN_PATH}` 和项目结构确定具体验证脚本。
 
+**步骤 B.5 — 生成 Verification Report（用 `TPL_VERIFICATION_REPORT` 模板）**
+
+每条验证命令执行后，将结果追加到 `${VERIFICATION_REPORT}`，最后在 PR body 中引用：
+
+```bash
+touch ${VERIFICATION_REPORT}
+
+# 对每条验证命令
+for cmd in "${VERIFICATION_CMDS[@]}"; do
+  echo "## \$ $cmd" >> ${VERIFICATION_REPORT}
+  echo '```' >> ${VERIFICATION_REPORT}
+  eval "$cmd" >> ${VERIFICATION_REPORT} 2>&1
+  echo '```' >> ${VERIFICATION_REPORT}
+  echo "" >> ${VERIFICATION_REPORT}
+done
+```
+
+报告结构（见末尾模板）：
+
+- 测试套件（按 spec / 单元 / 集成分组）
+- Schema 验证
+- Lint / Type check
+- 性能基准（如适用）
+- 边界用例覆盖
+
 **步骤 C — 标记完成**
 
 在 `${CHECKLIST_PATH}` 中 Sprint `${SPRINT}` 段落下追加：
@@ -150,36 +203,75 @@ which gbrain && gbrain --version || echo "gbrain not available, using degraded p
 
 ### 阶段 4：交付流水线（DELIVERY PIPELINE）
 
-**PR Body 生成（自动写入 `${PR_BODY_FILE}`）**
+**步骤 A — 自动检测 `${PR_TYPE}`**
 
-```markdown
-## Sprint ${SPRINT}: ${PR_TITLE}
-
-### 需求来源
-- ${PLAN_PATH} Sprint ${SPRINT}
-- ${SPEC_REF}
-- ${ADR_REF}
-
-### 实现摘要
-- 新增/修改文件：[列出]
-- 核心逻辑说明：[描述]
-
-### 测试证据
-```
-[粘贴验证脚本完整通过输出]
+```bash
+# 根据 ${COMMITS_JSON} 中 commit type 决定 PR 类型
+PR_TYPE=$(echo "${COMMITS_JSON}" | jq -r '
+  group_by(.type)
+  | map({type: .[0].type, count: length})
+  | sort_by(-.count)
+  | .[0].type
+')
+# e.g. feat / fix / docs / chore
 ```
 
-### 验收状态
-- [x] checklist Sprint ${SPRINT} 所有项已勾选
-- [x] 全部测试 exit 0
+**步骤 B — 选择 PR body 模板并填充**
+
+按 `${PR_TYPE}` 选择对应模板（见末尾"模板"章节）：
+
+| `${PR_TYPE}` | 模板 | 用途 |
+|--------------|------|------|
+| `feat` | `TPL_PR_BODY_FEAT` | 新功能 / 增强 |
+| `fix` | `TPL_PR_BODY_FIX` | Bug 修复（需含 regression test）|
+| `docs` | `TPL_PR_BODY_DOCS` | 纯文档（无代码变更）|
+| `infra` / `chore` | `TPL_PR_BODY_INFRA` | 构建 / CI / 依赖 |
+| `mixed`（默认）| `TPL_PR_BODY_FEAT` | 含多种 commit type，按主类型走 |
+
+**生成流程：**
+
+```bash
+# 1. 选模板
+TPL="${REPO_DIR}/.agents/skills/my-sprint-execute/templates/TPL_PR_BODY_${PR_TYPE^^}.md"
+[[ -f "$TPL" ]] || TPL="${REPO_DIR}/.agents/skills/my-sprint-execute/templates/TPL_PR_BODY_FEAT.md"
+
+# 2. 用 envsubst 渲染
+export SPRINT PR_TITLE PLAN_PATH SPEC_REF ADR_REF COMMITS_JSON
+envsubst < "$TPL" > ${PR_BODY_FILE}
+
+# 3. 嵌入 verification report（如模板含占位符 ${VERIFICATION_REPORT_INLINE}）
+if grep -q '\${VERIFICATION_REPORT_INLINE}' ${PR_BODY_FILE}; then
+  sed -i "/\${VERIFICATION_REPORT_INLINE}/r ${VERIFICATION_REPORT}" ${PR_BODY_FILE}
+  sed -i '/\${VERIFICATION_REPORT_INLINE}/d' ${PR_BODY_FILE}
+fi
+
+# 4. 模板填充校验（提交前必跑）
+bash ${REPO_DIR}/.agents/skills/my-sprint-execute/scripts/check-pr-body.sh \
+  --file=${PR_BODY_FILE} --type=${PR_TYPE}
 ```
 
 > 注：`manage-pr.sh --create` 原样传递 PR body 内容，不会追加额外 footer。
+
+**步骤 C — 发起 PR**
+
+```bash
+# 推送代码
+git push -u origin ${BRANCH}
+
+# 发起 PR（manage-pr.sh 会自动追加 @codex review footer）
+${MY_PR_SKILL_SCRIPTS}/manage-pr.sh --create \
+  --title="${PR_TITLE}" \
+  --head=${BRANCH} \
+  --base=${BASE_BRANCH} \
+  --body-file=${PR_BODY_FILE}
+```
 
 **PR 发起后：**
 - 推送最新 commit 到 `origin/${BRANCH}`
 - 确保 PR 关联到正确的 milestone/label（如果有）
 - **不自动合并**，等待 review
+
+> 注：4 个 PR body 模板的渲染示例见末尾"模板"章节，覆盖 90% 的 sprint 场景。
 
 ---
 
@@ -237,3 +329,65 @@ which gbrain && gbrain --version || echo "gbrain not available, using degraded p
 - 不得再次运行相同验证命令
 - 不得重复输出同一 blocker 报告
 - 只允许在用户提供新的解除信息后恢复执行
+
+---
+
+## 模板（Templates）
+
+模板原文外置在 `templates/`，SKILL.md 只描述**字段约定**和**引用路径**。
+
+### 模板清单
+
+| 用途 | 模板文件 | 校验 type |
+|------|----------|----------|
+| Commit 消息 | [`templates/TPL_COMMIT_MSG.md`](templates/TPL_COMMIT_MSG.md) | — |
+| 新功能 PR | [`templates/TPL_PR_BODY_FEAT.md`](templates/TPL_PR_BODY_FEAT.md) | `feat` |
+| Bug 修复 PR | [`templates/TPL_PR_BODY_FIX.md`](templates/TPL_PR_BODY_FIX.md) | `fix` |
+| 纯文档 PR | [`templates/TPL_PR_BODY_DOCS.md`](templates/TPL_PR_BODY_DOCS.md) | `docs` |
+| 构建/CI PR | [`templates/TPL_PR_BODY_INFRA.md`](templates/TPL_PR_BODY_INFRA.md) | `infra` |
+| 验证报告 | [`templates/TPL_VERIFICATION_REPORT.md`](templates/TPL_VERIFICATION_REPORT.md) | — |
+
+### 字段命名约定
+
+- `${AUTO:xxx}` = 从脚本输出自动填充
+- `${MANUAL:xxx}` = 人工判断后填充
+- `${VERIFICATION_REPORT_INLINE}` = 嵌入 `${VERIFICATION_REPORT}` 全文
+- `${COMMITS_TABLE}` = 自动生成 commit 列表（由 `render-commits.sh` 渲染）
+
+### 模板使用流程
+
+```bash
+# 1. 选模板（按 ${PR_TYPE}）
+TPL="${REPO_DIR}/.agents/skills/my-sprint-execute/templates/TPL_PR_BODY_${PR_TYPE^^}.md"
+# feat / fix / docs / infra
+
+# 2. envsubst 渲染
+envsubst < "$TPL" > ${PR_BODY_FILE}
+
+# 3. 嵌入 ${COMMITS_TABLE}（如有占位符）
+if grep -q '\${COMMITS_TABLE}' ${PR_BODY_FILE}; then
+  COMMITS_JSON=$(git log origin/${BASE_BRANCH}..HEAD --pretty=format:'{"sha":"%h","type":"%s","subject":"%s","files":[]},' | jq -s '.')
+  COMMITS_TABLE=$(COMMITS_JSON="$COMMITS_JSON" bash ${REPO_DIR}/.agents/skills/my-sprint-execute/scripts/render-commits.sh)
+  envsubst < ${PR_BODY_FILE} > ${PR_BODY_FILE}.tmp && mv ${PR_BODY_FILE}.tmp ${PR_BODY_FILE}
+fi
+
+# 4. 嵌入 ${VERIFICATION_REPORT_INLINE}（如有占位符）
+if grep -q '\${VERIFICATION_REPORT_INLINE}' ${PR_BODY_FILE}; then
+  sed -i "/\${VERIFICATION_REPORT_INLINE}/r ${VERIFICATION_REPORT}" ${PR_BODY_FILE}
+  sed -i '/\${VERIFICATION_REPORT_INLINE}/d' ${PR_BODY_FILE}
+fi
+
+# 5. 模板填充校验（发起 PR 前必跑）
+bash ${REPO_DIR}/.agents/skills/my-sprint-execute/scripts/check-pr-body.sh \
+  --file=${PR_BODY_FILE} --type=${PR_TYPE}
+```
+
+`scripts/check-pr-body.sh` 校验项（`--type` 决定）：
+1. 通用：所有 `${AUTO:}` / `${MANUAL:}` / `${VERIFICATION_REPORT_INLINE}` / `${COMMITS_TABLE}` 全部已替换
+2. `feat` 模式：5 个强制章节（需求来源/实现摘要/测试覆盖/验收状态/Reviewer 重点关注）
+3. `fix` 模式：必须含 `### Regression Test` + `修复前 FAIL` 证据
+4. `docs` 模式：3 个强制章节（文档变更/影响范围/验收状态）
+5. `infra` 模式：必须含 `### 兼容性 / 风险评估` + `### 回滚方案`
+6. 通用：所有验收 checkbox 必须全部勾选
+
+> ⚠️ 校验失败 → **禁止** 调 `manage-pr.sh --create`；回到阶段 4 修复。

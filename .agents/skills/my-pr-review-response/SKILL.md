@@ -47,7 +47,10 @@ my-pr-review-response <PR_NUMBER>
 | `${BRANCH}` | `my-pr-skill` 脚本 `get-pr-metadata.sh --number=N --field=headRefName` |
 | `${REPO_DIR}` | 当前工作目录（`$(pwd)`） |
 | `${REVIEW_LOG}` | `${REPO_DIR}/.tmp/pr-review-response-${PR_NUMBER}.md` |
+| `${REVIEW_CONTEXT}` | `${MY_PR_SKILL_SCRIPTS}/collect-review-context.sh ${PR_NUMBER}` 输出的 JSON（聚合 reviews/inline/issue comments）|
 | `${MY_PR_SKILL_SCRIPTS}` | `my-pr-skill` 的 scripts 目录路径 |
+| `${FINDINGS_INDEX}` | `${REPO_DIR}/.tmp/pr-${PR_NUMBER}-findings-index.json`（按严重度分组的 finding 数组，模板填充源）|
+| `${PER_FINDING_DIR}` | `${REPO_DIR}/.tmp/pr-${PR_NUMBER}-responses/`（每条 finding 单独响应文件，模板实例化位置）|
 
 ---
 
@@ -62,9 +65,9 @@ my-pr-review-response <PR_NUMBER>
 **步骤 B — 读取 Review 意见（全面收集，禁止遗漏）**
 
 通过 `my-pr-skill` 获取以下**全部**内容，**不得遗漏任何一类**：
-1. **PR reviews**（`get-pr-reviews.sh`）：提取所有 `state == "CHANGES_REQUESTED"` 的 review body 中的发现项
+1. **PR reviews**（`get-pr-reviews.sh --json`）：提取所有 `state == "CHANGES_REQUESTED"` 的 review body 中的发现项
 2. **Review comments**（line-level 代码行评论）：提取 reviewer 附着在具体代码行上的所有评论
-3. **Issue comments**（`get-pr-comments.sh`）：提取 PR 下方所有通用评论中属于 review 反馈的部分
+3. **Issue comments**（`get-pr-comments.sh --json`）：提取 PR 下方所有通用评论中属于 review 反馈的部分
 
 > ⚠️ **常见遗漏源**：Line-level review comments（reviewer 在文件 diff 上点击行号添加的评论）经常独立于 review body 存在，必须与 review body 中的发现项**同等对待**。
 
@@ -81,6 +84,40 @@ my-pr-review-response <PR_NUMBER>
 | 2 | line comment | @reviewer | path:line | [摘要] | PENDING |
 | 3 | issue comment | @reviewer | — | [摘要] | PENDING |
 ```
+
+**步骤 C.5 — 构建 Findings 索引（按严重度分组）**
+
+为模板填充做准备：解析 review body + line comments 中的严重度标记（P0/P1/P2/P3），写入 `${FINDINGS_INDEX}`：
+
+```bash
+mkdir -p ${REPO_DIR}/.tmp ${PER_FINDING_DIR}
+
+# 从 review body 中提取 finding（regex 抓 "P0" / "P1" / "P2" / "P3" + 文件路径）
+jq -s '
+  map(
+    .body
+    | capture("(?<sev>P[0-3])\\s*[—:-]\\s*(?<title>[^\\n]+)(\\n.*?(?<file>[^\\s:]+\\.\\w+):(?<line>\\d+))?")
+    | {severity: .sev, title: .title, file: .file, line: .line}
+  )
+  | group_by(.severity)
+' ${REVIEW_CONTEXT} > ${FINDINGS_INDEX}
+```
+
+`${FINDINGS_INDEX}` 结构：
+```json
+{
+  "P0": [{"file": "...", "line": N, "title": "..."}],
+  "P1": [...],
+  "P2": [...],
+  "P3": [...]
+}
+```
+
+> ⚠️ 若 review body 中**没有显式 P0/P1/P2/P3 标记**，按以下降级规则推断：
+> - 含 "blocker / 阻塞 / 严重 bug / 安全" → P0
+> - 含 "should fix / high / 重要" → P1
+> - 含 "建议 / nice-to-have / nit / style" → P2
+> - 其余 → P3
 
 **状态判定规则：**
 - `PENDING`：尚未有任何响应（无修复 commit、无回复 comment、无 resolved 标记）
@@ -146,7 +183,22 @@ my-pr-review-response <PR_NUMBER>
 
 **步骤 C — 在 PR 下回复修复结果（发 Comment）**
 
-通过 `my-pr-skill` 的 `post-comment.sh` 发送修复结果 comment，包含文件路径、修改摘要、验证结果和 commit SHA。
+通过 `my-pr-skill` 的 `post-comment.sh` 发送修复结果 comment，**必须使用 `TPL_AGREE_RESPONSE` 模板**（见末尾"模板"章节）：
+
+```bash
+# 1. 从模板生成实例（替换 ${AUTO}/${MANUAL} 字段）
+envsubst < ${REPO_DIR}/.agents/skills/my-pr-review-response/templates/TPL_AGREE_RESPONSE.md \
+  > ${PER_FINDING_DIR}/finding-${FINDING_ID}-agree.md
+
+# 2. 模板填充校验（提交前必跑）
+bash ${REPO_DIR}/.agents/skills/my-pr-review-response/scripts/check-template.sh agree \
+  ${PER_FINDING_DIR}/finding-${FINDING_ID}-agree.md
+
+# 3. 发送
+${MY_PR_SKILL_SCRIPTS}/post-comment.sh \
+  --number=${PR_NUMBER} \
+  --body-file=${PER_FINDING_DIR}/finding-${FINDING_ID}-agree.md
+```
 
 > 注：`post-comment.sh` 原样发送 comment body，不会追加额外 footer。
 
@@ -195,7 +247,22 @@ my-pr-review-response <PR_NUMBER>
 
 **步骤 B — 发 PR Comment 进行反驳**
 
-通过 `my-pr-skill` 的 `post-comment.sh` 发送反驳 comment，包含理由和证据。
+通过 `my-pr-skill` 的 `post-comment.sh` 发送反驳 comment，**必须使用 `TPL_DISAGREE_RESPONSE` 模板**（见末尾"模板"章节）：
+
+```bash
+# 1. 从模板生成实例
+envsubst < ${REPO_DIR}/.agents/skills/my-pr-review-response/templates/TPL_DISAGREE_RESPONSE.md \
+  > ${PER_FINDING_DIR}/finding-${FINDING_ID}-disagree.md
+
+# 2. 模板填充校验（确保反驳门槛 3 项都有内容）
+bash ${REPO_DIR}/.agents/skills/my-pr-review-response/scripts/check-template.sh disagree \
+  ${PER_FINDING_DIR}/finding-${FINDING_ID}-disagree.md
+
+# 3. 发送
+${MY_PR_SKILL_SCRIPTS}/post-comment.sh \
+  --number=${PR_NUMBER} \
+  --body-file=${PER_FINDING_DIR}/finding-${FINDING_ID}-disagree.md
+```
 
 > 注：`post-comment.sh` 原样发送 comment body，不会追加额外 footer。
 
@@ -233,24 +300,49 @@ my-pr-review-response <PR_NUMBER>
 
 **步骤 A — 生成 Review Response 汇总报告**
 
-将 `${REVIEW_LOG}` 整理，发一条 PR 通用评论：
+将 `${REVIEW_LOG}` 整理，**必须使用 `TPL_SUMMARY` 模板**（见末尾"模板"章节），按严重度分组：
+
+```bash
+# 1. 从模板生成实例
+envsubst < ${REPO_DIR}/.agents/skills/my-pr-review-response/templates/TPL_SUMMARY.md \
+  > ${REPO_DIR}/.tmp/pr-response-summary-${PR_NUMBER}.md
+
+# 2. 模板填充校验（确保所有 finding 状态都填写了）
+bash ${REPO_DIR}/.agents/skills/my-pr-review-response/scripts/check-template.sh summary \
+  ${REPO_DIR}/.tmp/pr-response-summary-${PR_NUMBER}.md
+```
+
+模板核心结构（**按 P0/P1/P2/P3 分组** + 全量统计 + @reviewer mention）：
 
 ```markdown
-## Review Response Summary — PR #${PR_NUMBER}
+## Review Response Summary — PR #${AUTO:pr_number}
 
-所有 review 意见已处理完毕：
+**全量统计**
+- 收到 finding 总数: ${AUTO:total_count}
+- AGREE / FIXED: ${AUTO:agree_count}
+- DISAGREE / COUNTERED: ${AUTO:disagree_count}
+- VERIFIED: ${AUTO:verified_count}
+- SKIPPED: ${AUTO:skipped_count}
+- PENDING: ${AUTO:pending_count}  <!-- 必须为 0 才能提交 -->
 
-| 问题 | 文件:行号 | 决策 | 状态 |
-|--------|-----------|------|------|
-| #id1 | path:line | AGREE | 已修复，已发 comment |
-| #id2 | path:line | AGREE | 已修复，已发 comment |
-| #id3 | path:line | DISAGREE | 已反驳，已发 comment |
+### P0 — Critical（${AUTO:p0_count} 项）
+| # | 文件:行号 | 标题 | 决策 | 状态 | 证据 |
+|---|-----------|------|------|------|------|
+${TABLE_DATA:p0_rows}
 
-- 同意项：N 项，已修复并提交，Commit range: [first-hash..last-hash]
-- 不同意项：M 项，理由已发 comment 说明，请 reviewer 查看
-- 待讨论项：K 项，需要 reviewer 进一步澄清
+### P1 — High（${AUTO:p1_count} 项）
+${TABLE_DATA:p1_rows}
 
-请 reviewer 重新 review。如有需要，可点击 "Re-request review" 按钮。
+### P2 — Moderate（${AUTO:p2_count} 项）
+${TABLE_DATA:p2_rows}
+
+### P3 — Low（${AUTO:p3_count} 项）
+${TABLE_DATA:p3_rows}
+
+### 修复 Commit Range
+${AUTO:commit_range}  <!-- e.g. `abc1234..def5678` -->
+
+@${AUTO:reviewer_login} 请重新 review。
 ```
 
 > 注：`post-comment.sh` 原样发送汇总 comment body，不会追加额外 footer。
@@ -311,3 +403,48 @@ my-pr-review-response <PR_NUMBER>
 - 涉及的问题摘要 / 文件路径 / 行号
 - 已尝试的处理方式
 - 解锁所需的人类输入
+
+---
+
+## 模板（Templates）
+
+模板原文外置在 `templates/`，SKILL.md 只描述**字段约定**和**引用路径**。
+
+### 模板清单
+
+| 决策 | 模板文件 | 校验 mode |
+|------|----------|----------|
+| AGREE（修复）| [`templates/TPL_AGREE_RESPONSE.md`](templates/TPL_AGREE_RESPONSE.md) | `agree` |
+| DISAGREE（反驳）| [`templates/TPL_DISAGREE_RESPONSE.md`](templates/TPL_DISAGREE_RESPONSE.md) | `disagree` |
+| VERIFIED（复核）| [`templates/TPL_VERIFIED_RESPONSE.md`](templates/TPL_VERIFIED_RESPONSE.md) | `verified` |
+| SKIPPED（跳过）| [`templates/TPL_SKIPPED_RESPONSE.md`](templates/TPL_SKIPPED_RESPONSE.md) | `skipped` |
+| Summary（汇总）| [`templates/TPL_SUMMARY.md`](templates/TPL_SUMMARY.md) | `summary` |
+
+### 字段命名约定
+
+- `${AUTO:xxx}` = 从脚本输出自动填充
+- `${MANUAL:xxx}` = 人工判断后填充
+- `${TABLE_DATA:xxx}` = 表格行，由 `render-summary.sh` 从 `${FINDINGS_INDEX}` 动态生成
+
+### 模板使用流程
+
+```bash
+# 1. 选模板（按决策 type）
+TPL="${REPO_DIR}/.agents/skills/my-pr-review-response/templates/TPL_<DECISION>_RESPONSE.md"
+# 或 summary: TPL_SUMMARY.md
+
+# 2. envsubst 渲染
+envsubst < "$TPL" > ${PER_FINDING_DIR}/finding-${FINDING_ID}-<DECISION>.md
+
+# 3. 模板填充校验（提交前必跑）
+bash ${REPO_DIR}/.agents/skills/my-pr-review-response/scripts/check-template.sh \
+  <DECISION> ${PER_FINDING_DIR}/finding-${FINDING_ID}-<DECISION>.md
+```
+
+`scripts/check-template.sh` 校验项（`mode` 决定）：
+1. 通用：`${AUTO:}` / `${MANUAL:}` / `${TABLE_DATA:}` 字段全部已替换
+2. `disagree` 模式：反驳门槛 3 项（代码证据 / 架构理由 / 替代方案）必须都有非空内容
+3. `summary` 模式：`PENDING:` 必须为 0，且必须含 `@<reviewer>` mention
+4. `agree` 模式：必须含"修复 commit"引用
+
+> ⚠️ 校验失败 → **禁止** 调 `post-comment.sh`；回到对应阶段修复。

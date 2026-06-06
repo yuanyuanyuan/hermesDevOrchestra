@@ -1,5 +1,3 @@
-@/home/stark/.claude/RTK.md
-
 # Agent Reach (全局可用)
 
 环境已安装 Agent Reach。使用原则：
@@ -82,9 +80,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 ## Project Reference: Hermes Docs Index
-
-
-@RTK.md
 
 ## Developer Profile
 
