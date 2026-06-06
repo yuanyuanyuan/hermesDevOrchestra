@@ -176,7 +176,37 @@ fi
 
 # Test 10: Sort residual risks by severity
 echo ""
-echo "Test 10: Sort residual risks by severity"
+echo "Test 10: Authority approval check - missing route with risks"
+RESULT=$(python3 -c "
+from global_evaluation_veto import check_authority_approval
+run = {}
+risks = [{'risk_id': 'r1', 'severity': 'high'}]
+approved = check_authority_approval(run, risks)
+print(approved == False)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Missing authority route rejects non-empty risks"
+else
+    fail "Missing authority route incorrectly approved risks"
+fi
+
+# Test 11: Residual risk validation - empty list
+echo ""
+echo "Test 11: Residual risk validation - empty list"
+RESULT=$(python3 -c "
+from global_evaluation_veto import validate_residual_risks
+high_risks = validate_residual_risks('run-empty', [])
+print(high_risks == [])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Empty residual risks are valid"
+else
+    fail "Empty residual risks are not valid"
+fi
+
+# Test 12: Sort residual risks by severity
+echo ""
+echo "Test 12: Sort residual risks by severity"
 RESULT=$(python3 -c "
 from global_evaluation_veto import sort_residual_risks_by_severity
 risks = [{'severity': 'low'}, {'severity': 'high'}, {'severity': 'medium'}]
@@ -189,9 +219,9 @@ else
     fail "Residual risks not sorted correctly"
 fi
 
-# Test 11: Attach required action
+# Test 13: Attach required action
 echo ""
-echo "Test 11: Attach required action"
+echo "Test 13: Attach required action"
 RESULT=$(python3 -c "
 from global_evaluation_veto import attach_required_action
 risks = [{'severity': 'high'}, {'severity': 'medium'}, {'severity': 'low'}]
@@ -208,9 +238,9 @@ else
     fail "Required actions not attached correctly"
 fi
 
-# Test 12: Validate global evaluation - valid
+# Test 14: Validate global evaluation - valid
 echo ""
-echo "Test 12: Validate global evaluation - valid"
+echo "Test 14: Validate global evaluation - valid"
 RESULT=$(python3 -c "
 from global_evaluation_veto import validate_global_evaluation
 veto_scores = {'security_compliance': 0.8, 'completion_correctness': 0.9}
@@ -224,9 +254,9 @@ else
     fail "Valid global evaluation fails validation"
 fi
 
-# Test 13: Validate global evaluation - veto block
+# Test 15: Validate global evaluation - veto block
 echo ""
-echo "Test 13: Validate global evaluation - veto block"
+echo "Test 15: Validate global evaluation - veto block"
 RESULT=$(python3 -c "
 from global_evaluation_veto import validate_global_evaluation
 veto_scores = {'security_compliance': 0.4}
@@ -240,9 +270,9 @@ else
     fail "Veto dimension block not detected"
 fi
 
-# Test 14: Validate global evaluation - high residual risk
+# Test 16: Validate global evaluation - high residual risk
 echo ""
-echo "Test 14: Validate global evaluation - high residual risk"
+echo "Test 16: Validate global evaluation - high residual risk"
 RESULT=$(python3 -c "
 from global_evaluation_veto import validate_global_evaluation
 veto_scores = {'security_compliance': 0.8}
@@ -256,9 +286,9 @@ else
     fail "High residual risk not detected in validation"
 fi
 
-# Test 15: Create global evaluation report
+# Test 17: Create global evaluation report
 echo ""
-echo "Test 15: Create global evaluation report"
+echo "Test 17: Create global evaluation report"
 RESULT=$(python3 -c "
 from global_evaluation_veto import create_global_evaluation_report
 veto_scores = {'security_compliance': 0.8, 'completion_correctness': 0.9}

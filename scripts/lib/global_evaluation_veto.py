@@ -156,7 +156,9 @@ def validate_global_evaluation(
 
     # Check veto dimensions
     for dimension, score in veto_scores.items():
-        if dimension in VETO_DIMENSIONS and score < veto_threshold:
+        try:
+            validate_veto_dimension(dimension, score, veto_threshold, run_id)
+        except VetoDimensionError:
             errors.append(f"veto_dimension_blocked: {dimension} score {score:.2f} below {veto_threshold}")
 
     # Check residual risks
