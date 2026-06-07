@@ -192,7 +192,7 @@ echo ""
 echo "Test 12: Validate security escape - valid"
 RESULT=$(python3 -c "
 from security_escape import validate_security_escape
-run = {'run_id': 'run-4', 'channel_decision': {'forced_standard': True, 'forced_standard_reasons': ['security_pattern:password']}}
+run = {'run_id': 'run-4', 'channel_decision': {'channel': 'standard', 'forced_standard': True, 'forced_standard_reasons': ['security_pattern:password']}}
 errors = validate_security_escape(run)
 print(len(errors) == 0)
 ")
@@ -207,9 +207,9 @@ echo ""
 echo "Test 13: Validate security escape - missing reasons"
 RESULT=$(python3 -c "
 from security_escape import validate_security_escape
-run = {'run_id': 'run-5', 'channel_decision': {'forced_standard': True}}
+run = {'run_id': 'run-5', 'channel_decision': {'channel': 'standard', 'forced_standard': True}}
 errors = validate_security_escape(run)
-print(len(errors) > 0 and 'forced_standard_reasons' in errors[0])
+print(len(errors) > 0 and 'forced_standard_reasons' in errors[-1])
 ")
 if [ "$RESULT" = "True" ]; then
     pass "Missing forced_standard_reasons detected"
@@ -229,6 +229,36 @@ if [ "$RESULT" = "True" ]; then
     pass "Database pattern detected"
 else
     fail "Database pattern not detected"
+fi
+
+# Test 15: Validate security escape - channel must be standard
+echo ""
+echo "Test 15: Validate security escape - channel must be standard"
+RESULT=$(python3 -c "
+from security_escape import validate_security_escape
+run = {'run_id': 'run-15', 'channel_decision': {'channel': 'quick', 'forced_standard': True, 'forced_standard_reasons': ['security_pattern:password']}}
+errors = validate_security_escape(run)
+print(len(errors) > 0 and 'channel' in errors[0])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Channel mismatch detected"
+else
+    fail "Channel mismatch not detected"
+fi
+
+# Test 16: Validate security escape - reason must carry security_pattern prefix
+echo ""
+echo "Test 16: Validate security escape - reason prefix"
+RESULT=$(python3 -c "
+from security_escape import validate_security_escape
+run = {'run_id': 'run-16', 'channel_decision': {'channel': 'standard', 'forced_standard': True, 'forced_standard_reasons': ['plain_reason']}}
+errors = validate_security_escape(run)
+print(len(errors) > 0 and 'security_pattern' in errors[0])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Missing security_pattern prefix detected"
+else
+    fail "Missing security_pattern prefix not detected"
 fi
 
 # Summary

@@ -106,7 +106,8 @@ RESULT=$(python3 -c "
 from mini_debate_orchestration import execute_mini_debate
 run = {'run_id': 'run-1'}
 request = {'run_id': 'run-1', 'task_id': 'task-1', 'channel': 'quick'}
-report = execute_mini_debate(run, request, debate_backend_available=True)
+backend_report = {'elapsed_minutes': 1, 'consensus_score': 0.9, 'rounds_completed': 1, 'debate_refs': ['debate://run-1/mini/abc']}
+report = execute_mini_debate(run, request, debate_backend_available=True, backend_report=backend_report)
 print(report['status'] == 'completed' and report['consensus_score'] >= 0.8)
 ")
 if [ "$RESULT" = "True" ]; then

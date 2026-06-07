@@ -37,7 +37,7 @@ echo ""
 
 # Test 1: Import worker evidence module
 echo "Test 1: Import worker evidence module"
-if python3 -c "from worker_evidence_harden import validate_write_scope, validate_dag_evidence, validate_review_evidence, validate_commit_evidence, validate_worker_advancement, WriteScopeViolationError, MissingDAGValidationError, DAGCycleDetectedError, MissingReviewEvidenceError, MissingCommitEvidenceError; print('OK')"; then
+if python3 -c "from worker_evidence_harden import validate_write_scope, validate_dag_evidence, validate_review_evidence, validate_commit_evidence, validate_worker_advancement, WriteScopeViolationError, MissingDAGValidationError, DAGCycleDetectedError, DAGValidationFailedError, InvalidEvidenceInputError, MissingReviewEvidenceError, MissingCommitEvidenceError; print('OK')"; then
     pass "Module imports successfully"
 else
     fail "Module import failed"
@@ -117,7 +117,7 @@ echo "Test 6: DAG validation - cycle detected"
 RESULT=$(python3 -c "
 from worker_evidence_harden import validate_dag_evidence, DAGCycleDetectedError
 try:
-    validate_dag_evidence('run-5', 'implementation', {'valid': False, 'cycles': [['a', 'b', 'a']]})
+    validate_dag_evidence('run-5', 'implementation', {'valid': True, 'cycles': [['a', 'b', 'a']]})
     print('False')
 except DAGCycleDetectedError:
     print('True')
@@ -126,6 +126,57 @@ if [ "$RESULT" = "True" ]; then
     pass "DAGCycleDetectedError raised correctly"
 else
     fail "DAGCycleDetectedError not raised"
+fi
+
+# Test 6b: DAG validation - valid:False raises DAGValidationFailedError
+echo ""
+echo "Test 6b: DAG validation - valid:False blocks advancement"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_dag_evidence, DAGValidationFailedError
+try:
+    validate_dag_evidence('run-5b', 'implementation', {'valid': False, 'cycles': []})
+    print('False')
+except DAGValidationFailedError as e:
+    print(e.reason == 'valid_or_passed_false')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "DAGValidationFailedError raised on valid=False"
+else
+    fail "DAGValidationFailedError not raised on valid=False"
+fi
+
+# Test 6c: DAG validation - non-dict input raises InvalidEvidenceInputError
+echo ""
+echo "Test 6c: DAG validation - non-dict input rejected"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_dag_evidence, InvalidEvidenceInputError
+try:
+    validate_dag_evidence('run-5c', 'implementation', 'not-a-dict')
+    print('False')
+except InvalidEvidenceInputError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "InvalidEvidenceInputError raised on non-dict"
+else
+    fail "InvalidEvidenceInputError not raised on non-dict"
+fi
+
+# Test 6d: stage normalization - 'Implementation ' must still trigger DAG gate
+echo ""
+echo "Test 6d: stage normalization strips/lowers whitespace"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_dag_evidence, MissingDAGValidationError
+try:
+    validate_dag_evidence('run-5d', 'Implementation ', None)
+    print('False')
+except MissingDAGValidationError:
+    print('True')
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Stage normalization triggers MissingDAGValidationError"
+else
+    fail "Stage normalization failed"
 fi
 
 # Test 7: Review evidence - required stage with result

@@ -105,11 +105,36 @@ def validate_security_escape(run: dict[str, Any]) -> list[str]:
     """Validate security escape handling on run.
 
     Returns list of validation errors. Empty list means valid.
+
+    Enforces: (1) forced_standard_reasons is a non-empty list,
+    (2) every reason carries the 'security_pattern:' prefix,
+    (3) the channel decision is 'standard' whenever forced_standard is set.
     """
     errors = []
     channel_decision = run.get("channel_decision", {})
 
-    if channel_decision.get("forced_standard") and not channel_decision.get("forced_standard_reasons"):
+    if not channel_decision.get("forced_standard"):
+        return errors
+
+    if channel_decision.get("channel") != "standard":
+        errors.append(
+            "forced_standard=True but channel != 'standard' "
+            f"(got {channel_decision.get('channel')!r})"
+        )
+
+    reasons = channel_decision.get("forced_standard_reasons")
+    if not reasons:
         errors.append("forced_standard=True but forced_standard_reasons missing")
+        return errors
+
+    if not isinstance(reasons, list):
+        errors.append("forced_standard_reasons must be a list")
+        return errors
+
+    for reason in reasons:
+        if not isinstance(reason, str) or not reason.startswith("security_pattern:"):
+            errors.append(
+                f"forced_standard_reasons entry missing 'security_pattern:' prefix: {reason!r}"
+            )
 
     return errors

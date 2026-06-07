@@ -89,6 +89,7 @@ def execute_e_class_debate(
     run: dict[str, Any],
     dispute: dict[str, Any],
     debate_backend_available: bool = True,
+    backend_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute E-class mini-debate and return report.
 
@@ -99,6 +100,11 @@ def execute_e_class_debate(
         run: Current run state
         dispute: E-class dispute
         debate_backend_available: Whether debate backend is available
+        backend_report: Optional debate backend report. When present and well-formed,
+            its `consensus_score` and `debate_refs` are used; otherwise the function
+            falls back to deterministic placeholder scoring. Mirrors the contract
+            of `mini_debate_orchestration.execute_mini_debate` so the CLI envelope
+            (`orch-e-class-debate`) can pass `backend_report` uniformly.
 
     Returns:
         E-class debate report dict
@@ -114,12 +120,33 @@ def execute_e_class_debate(
     if not debate_backend_available:
         raise EClassDebateUnavailableError(run_id)
 
-    # Execute debate (simplified - in real implementation would call debate engine)
-    # Simulate consensus based on dispute type
-    if dispute.get("classification") == "high_priority":
-        consensus_score = 0.75
+    # Resolve consensus score: prefer explicit backend_report; fall back to placeholder.
+    consensus_score: float
+    debate_refs: list[str]
+    if isinstance(backend_report, dict):
+        score = backend_report.get("consensus_score")
+        if isinstance(score, (int, float)) and 0 <= float(score) <= 1:
+            consensus_score = float(score)
+        else:
+            # Backend report present but malformed — use placeholder rather than
+            # crashing the gate; this matches the mini-debate degraded-on-malformed
+            # policy in spirit but stays at the debate layer.
+            consensus_score = 0.75 if dispute.get("classification") == "high_priority" else 0.65
+        refs = backend_report.get("debate_refs")
+        if isinstance(refs, list) and refs and all(isinstance(r, str) and r for r in refs):
+            debate_refs = list(refs)
+        else:
+            dispute_id = dispute.get("dispute_id", "unknown")
+            debate_refs = [f"debate://run/{run_id}/e-class/{dispute_id}"]
     else:
-        consensus_score = 0.65
+        # Execute debate (simplified - in real implementation would call debate engine)
+        # Simulate consensus based on dispute type
+        if dispute.get("classification") == "high_priority":
+            consensus_score = 0.75
+        else:
+            consensus_score = 0.65
+        dispute_id = dispute.get("dispute_id", "unknown")
+        debate_refs = [f"debate://run/{run_id}/e-class/{dispute_id}"]
 
     # Check consensus
     if consensus_score < config["required_consensus"]:
@@ -138,7 +165,7 @@ def execute_e_class_debate(
         "timeout_minutes": config["timeout_minutes"],
         "started_at": datetime.now(timezone.utc).isoformat(),
         "completed_at": datetime.now(timezone.utc).isoformat(),
-        "debate_refs": [f"debate://run/{run_id}/e-class/{dispute.get('dispute_id', 'unknown')}"],
+        "debate_refs": debate_refs,
     }
 
     return report
@@ -168,24 +195,53 @@ def persist_e_class_debate_refs(run: dict[str, Any], report: dict[str, Any]) -> 
 
 
 def validate_e_class_dispute(run: dict[str, Any], dispute_id: str) -> list[str]:
-    """Validate E-class dispute has debate refs.
+    """Validate E-class dispute has debate refs bound to the given dispute_id.
 
     Returns list of validation errors. Empty list means valid.
+
+    The check requires that at least one persisted ref actually carries the
+    supplied dispute_id (refs are formatted as
+    ``debate://run/{run_id}/e-class/{dispute_id}``). This prevents a completed
+    dispute's refs from satisfying the gate for an unrelated dispute.
     """
     errors = []
 
-    # Check if dispute has debate refs
+    if not dispute_id or not isinstance(dispute_id, str):
+        errors.append("dispute_id is required and must be a string")
+        return errors
+
     e_class_debate_refs = run.get("e_class_debate_refs", [])
     if not e_class_debate_refs:
         errors.append(f"missing_debate_refs: {dispute_id}")
+        return errors
+
+    # At least one ref must be bound to this dispute_id.
+    matching = [r for r in e_class_debate_refs if isinstance(r, str) and dispute_id in r]
+    if not matching:
+        errors.append(
+            f"debate_refs do not contain dispute_id={dispute_id}: {e_class_debate_refs}"
+        )
 
     return errors
 
 
 def check_e_class_auto_merge_blocked(run: dict[str, Any], dispute_id: str) -> bool:
-    """Check if auto-merge is blocked due to missing E-class debate refs."""
+    """Check if auto-merge is blocked due to missing E-class debate refs.
+
+    Auto-merge is unblocked only when ``e_class_debate_status`` exists, is
+    ``completed``, and is bound to the supplied ``dispute_id``. Any other
+    status — including a status for a different dispute — leaves the gate
+    blocked.
+    """
     e_class_debate_status = run.get("e_class_debate_status")
-    if not e_class_debate_status or e_class_debate_status.get("status") != "completed":
+    if not isinstance(e_class_debate_status, dict):
+        return True  # Blocked
+
+    if e_class_debate_status.get("status") != "completed":
+        return True  # Blocked
+
+    if e_class_debate_status.get("dispute_id") != dispute_id:
+        # Status belongs to a different dispute; do not unblock this one.
         return True  # Blocked
 
     return False  # Not blocked

@@ -155,7 +155,10 @@ from intake_completeness import create_intake_bundle, validate_intake_bundle
 bundle = create_intake_bundle(
     'run-4', 'Test task', ['Criteria 1'], ['Constraint 1'],
     ['Dep 1'], ['Metric 1'], ['Risk 1'], ['Plan 1'],
-    'Revert', ['test.py']
+    'Revert', ['tests/test_module.py', '.github/workflows/ci.yml'],
+    file_contents={'tests/test_module.py': 'def test_main(): assert True'},
+    verified_facts=['Fact 1'],
+    unverified_assumptions=['Assumption 1']
 )
 errors = validate_intake_bundle('run-4', bundle)
 print(len(errors) == 0)
@@ -185,7 +188,7 @@ echo ""
 echo "Test 10: Validate CI/CD discovery - valid"
 RESULT=$(python3 -c "
 from intake_completeness import validate_cicd_discovery
-discovery = {'detected_systems': ['github_actions'], 'config_files': ['.github/workflows/test.yml']}
+discovery = {'detected_systems': ['github_actions'], 'config_files': ['.github/workflows/test.yml'], 'has_tests': True}
 try:
     validate_cicd_discovery('run-5', discovery)
     print('True')

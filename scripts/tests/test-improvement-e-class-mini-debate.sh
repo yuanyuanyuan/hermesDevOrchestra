@@ -158,7 +158,7 @@ echo ""
 echo "Test 9: Auto-merge not blocked for E-class with completed debate"
 RESULT=$(python3 -c "
 from e_class_mini_debate import check_e_class_auto_merge_blocked
-run = {'run_id': 'run-8', 'e_class_debate_status': {'status': 'completed'}}
+run = {'run_id': 'run-8', 'e_class_debate_status': {'dispute_id': 'edispute-8-1', 'status': 'completed'}}
 blocked = check_e_class_auto_merge_blocked(run, 'edispute-8-1')
 print(blocked == False)
 ")
@@ -245,6 +245,52 @@ if [ "$RESULT" = "True" ]; then
     pass "E-class debate unavailable blocks auto-merge"
 else
     fail "E-class debate unavailable not blocking"
+fi
+
+# Test 15: Cross-dispute isolation - status for dispute A must not unblock dispute B
+echo ""
+echo "Test 15: Cross-dispute isolation"
+RESULT=$(python3 -c "
+from e_class_mini_debate import check_e_class_auto_merge_blocked
+run = {'run_id': 'run-15', 'e_class_debate_status': {'dispute_id': 'edispute-A', 'status': 'completed'}}
+blocked = check_e_class_auto_merge_blocked(run, 'edispute-B')
+print(blocked == True)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Cross-dispute status correctly blocked"
+else
+    fail "Cross-dispute status leaked across disputes"
+fi
+
+# Test 16: execute_e_class_debate accepts backend_report parameter
+echo ""
+echo "Test 16: execute_e_class_debate accepts backend_report"
+RESULT=$(python3 -c "
+from e_class_mini_debate import execute_e_class_debate
+run = {'run_id': 'run-16'}
+dispute = {'dispute_id': 'edispute-16-1', 'classification': 'high_priority'}
+report = execute_e_class_debate(run, dispute, debate_backend_available=True, backend_report={'consensus_score': 0.80, 'debate_refs': ['debate://run-16/e-class/edispute-16-1']})
+print(report['consensus_score'] == 0.80 and 'debate://run-16/e-class/edispute-16-1' in report['debate_refs'])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "backend_report honored when well-formed"
+else
+    fail "backend_report not honored"
+fi
+
+# Test 17: validate_e_class_dispute rejects refs that do not mention dispute_id
+echo ""
+echo "Test 17: validate_e_class_dispute cross-dispute rejection"
+RESULT=$(python3 -c "
+from e_class_mini_debate import validate_e_class_dispute
+run = {'run_id': 'run-17', 'e_class_debate_refs': ['debate://run-17/e-class/edispute-A']}
+errors = validate_e_class_dispute(run, 'edispute-B')
+print(len(errors) > 0 and 'edispute-B' in errors[0])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "validate_e_class_dispute rejects cross-dispute refs"
+else
+    fail "validate_e_class_dispute did not reject cross-dispute refs"
 fi
 
 # Summary

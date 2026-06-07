@@ -37,7 +37,7 @@ echo ""
 
 # Test 1: Import source isolation module
 echo "Test 1: Import source isolation module"
-if python3 -c "from worker_source_isolation import validate_model_source, get_adjudicator_source, check_source_isolation, create_worker_session, validate_worker_session, SourceIsolationViolationError, MissingModelSourceError, UnknownSourceError; print('OK')"; then
+if python3 -c "from worker_source_isolation import validate_model_source, get_adjudicator_source, check_worker_source_isolation, create_worker_session, validate_worker_session, SourceIsolationViolationError, MissingModelSourceError, UnknownSourceError; print('OK')"; then
     pass "Module imports successfully"
 else
     fail "Module import failed"
@@ -102,9 +102,9 @@ fi
 echo ""
 echo "Test 6: Source isolation check - no violation"
 RESULT=$(python3 -c "
-from worker_source_isolation import check_source_isolation
+from worker_source_isolation import check_worker_source_isolation
 try:
-    check_source_isolation('run-1', 'claude', 'kimi', 'reviewer')
+    check_worker_source_isolation('run-1', 'claude', 'kimi', 'reviewer')
     print('True')
 except:
     print('False')
@@ -119,9 +119,9 @@ fi
 echo ""
 echo "Test 7: Source isolation check - violation"
 RESULT=$(python3 -c "
-from worker_source_isolation import check_source_isolation, SourceIsolationViolationError
+from worker_source_isolation import check_worker_source_isolation, SourceIsolationViolationError
 try:
-    check_source_isolation('run-2', 'claude', 'claude', 'reviewer')
+    check_worker_source_isolation('run-2', 'claude', 'claude', 'reviewer')
     print('False')
 except SourceIsolationViolationError:
     print('True')
@@ -139,7 +139,7 @@ RESULT=$(python3 -c "
 from worker_source_isolation import create_worker_session
 run = {'adjudicator_source': 'claude'}
 session = create_worker_session('run-3', 'task-3', 'worker-1', 'implementer', 'claude', run)
-print(session['role'] == 'implementer' and session['source_isolation_status'] == 'not_applicable')
+print(session['role'] == 'implementer' and session['source_isolation_status'] == 'degraded' and session['source_isolation_reason'] == 'not_required_for_role')
 ")
 if [ "$RESULT" = "True" ]; then
     pass "Implementer session created without isolation check"
