@@ -64,9 +64,22 @@ class MissingDAGValidationError(WorkerEvidenceError):
 
 
 class DAGCycleDetectedError(WorkerEvidenceError):
-    """Raised when DAG validation detects cycles."""
+    """Raised when DAG validation detects cycles.
 
-    def __init__(self, run_id: str, cycles: list[list[str]]):
+    The ``cycles`` payload is opaque; consumers should treat it as a sequence of
+    cycle descriptions without depending on element shape. The validator accepts
+    both schemas produced upstream:
+
+    - ``list[list[str]]`` — local test/historical format, e.g. ``[['a', 'b']]``.
+    - ``list[dict[str, str]]`` — production output of
+      ``scripts/lib/dag_validator.py:validate_dag``'s ``back_edges`` field, e.g.
+      ``[{'from': 'a', 'to': 'b'}]``.
+
+    The exception message and ``cycles`` field round-trip through
+    ``_error_payload`` (json.dumps), so both shapes serialize safely.
+    """
+
+    def __init__(self, run_id: str, cycles: list[Any]):
         self.cycles = cycles
         msg = f"DAG cycle detected: {cycles}"
         super().__init__(msg, run_id)

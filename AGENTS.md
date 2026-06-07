@@ -139,6 +139,56 @@ mycodemap env-contract --for default --json
 
 使用 `--for explore`、`--for plan`、`--for worker` 或 `--for verify` 指定委托角色。
 
+### Worker Advancement Evidence Gate (Sprint 8)
+
+`orch_gateway.submit_worker_output` 在 Sprint 8 中接入了 worker advancement
+evidence gate，确保 stage advancement 之前必须有完整的 write scope / DAG /
+review / commit evidence。
+
+**Library**：`scripts/lib/worker_evidence_harden.py`
+
+- `validate_worker_advancement(run, task, actual_changed_files) -> list[str]`：
+  返回错误码列表；空列表表示通过。
+- 错误码 schema：`<code>: <payload>`，如
+  `write_scope_violation: files=[...]; expected_scope=[...]`。
+- 错误码集合：`missing_write_scope`、`write_scope_violation`、
+  `invalid_evidence_input`、`missing_dag_validation`、
+  `dag_cycle_detected`、`dag_validation_failed`、
+  `missing_review_evidence`、`missing_commit_evidence`、
+  `unknown_stage`、`stage_order_violation`、
+  `write_scope_unrestricted_engaged`。
+
+**CLI**：`scripts/bin/orch-validate-worker-advancement`
+
+- stdin 或 `--run` / `--task` / `--actual-changed-files` argv 输入 JSON。
+- exit code：0 = valid / 1 = violations / 2 = usage error。
+- 1MB JSON 大小限制（DoS 防护）。
+
+**Stage 规范化**：所有 stage 字符串在 entry 处 `strip().lower()`。
+Stage 元数据单一来源：`worker_evidence_harden.STAGE_REQUIREMENTS`。
+
+**重要约束**：
+
+- **不要**在 task 里设置 `write_scope_unrestricted: true` 来绕过 scope 校验；
+  task-level 会被拒。run-level privilege grant 才会接受，但会 emit
+  `write_scope_unrestricted_engaged: <stage>` 审计 warning。
+- **不要**使用 `cycles`/`back_edges` 之外的 key 来传递 DAG 验证信息；当前
+  validator 接受两种 schema（`valid`/`cycles` 与 `passed`/`back_edges`/
+  `cycle_detected`）。
+
+**已知 follow-up**：
+
+- Sprint 8 e2e 集成测试目前只覆盖 block 路径；happy-path 计划在
+  Sprint 8 follow-up issue 中实现。
+- `worker_advancement_evidence_violations` 当前只接受 `dict` run/task；
+  非 dict 入参返回 `invalid_evidence_input`。
+
+详见：
+
+- `docs/FULL-COVERAGE-MATRIX.md` — 工具条目
+- `docs/solutions/security/worker-advancement-evidence-gate.md` — 完整背景
+  与复用模式
+
 ### CodeMap 上下文
 
 > 详见 `.mycodemap/assistants/agents-context.md`

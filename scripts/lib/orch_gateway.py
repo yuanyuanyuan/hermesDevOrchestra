@@ -4457,10 +4457,16 @@ class GatewayApp:
             failure_class = "evidence_missing"
             blocked_reason = "worker_output_evidence_missing"
         if not violations:
-            run = read_json(run_path)
-            violations = self.worker_advancement_evidence_violations(run, task, worker_response)
-            failure_class = "worker_advancement_evidence"
-            blocked_reason = "worker_advancement_evidence_invalid"
+            try:
+                run = read_json(run_path)
+            except (OSError, json.JSONDecodeError):
+                violations = ["run_artifact_unreadable"]
+                failure_class = "run_artifact_invalid"
+                blocked_reason = "run_artifact_unreadable"
+            else:
+                violations = self.worker_advancement_evidence_violations(run, task, worker_response)
+                failure_class = "worker_advancement_evidence"
+                blocked_reason = "worker_advancement_evidence_invalid"
         if not violations:
             violations = self.open_high_conflict_ids(run_id)
             failure_class = "open_conflict"
@@ -5578,18 +5584,21 @@ class GatewayApp:
         return []
 
     def worker_advancement_evidence_violations(self, run: dict[str, Any], task: dict[str, Any], worker_response: dict[str, Any]) -> list[str]:
-        role_payload = worker_response.get("role_specific_payload")
-        if not isinstance(role_payload, dict):
-            return ["role_specific_payload"]
-        gate_task = {
-            "current_stage": task.get("stage") or run.get("current_stage"),
-            "write_scope": task.get("write_scope", []),
-            "dag_validation_result": role_payload.get("dag_validation_result"),
-            "review_evidence": role_payload.get("review_evidence"),
-            "commit_evidence": role_payload.get("commit_evidence"),
-        }
-        changed_files = role_payload.get("changed_files", [])
-        return validate_worker_advancement(run, gate_task, changed_files)
+        try:
+            role_payload = worker_response.get("role_specific_payload")
+            if not isinstance(role_payload, dict):
+                return ["role_specific_payload"]
+            gate_task = {
+                "current_stage": task.get("stage") or run.get("current_stage"),
+                "write_scope": task.get("write_scope", []),
+                "dag_validation_result": role_payload.get("dag_validation_result"),
+                "review_evidence": role_payload.get("review_evidence"),
+                "commit_evidence": role_payload.get("commit_evidence"),
+            }
+            changed_files = role_payload.get("changed_files", [])
+            return validate_worker_advancement(run, gate_task, changed_files)
+        except (TypeError, AttributeError) as exc:
+            return [f"invalid_evidence_input: {type(exc).__name__}: {exc}"]
 
     def next_event_seq(self, run_id: str) -> int:
         path = self.store.events_path(run_id)

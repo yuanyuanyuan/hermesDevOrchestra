@@ -878,6 +878,23 @@ else
     fail "CLI oversized JSON did not return structured usage error"
 fi
 
+# Test 48: Mixed-shape DAG result (cycles key present, cycle_detected absent) still surfaces cycle
+echo ""
+echo "Test 48: Mixed-shape DAG result surfaces cycle regardless of passed flag"
+RESULT=$(python3 -c "
+from worker_evidence_harden import validate_dag_evidence, DAGCycleDetectedError
+try:
+    validate_dag_evidence('run-47', 'implementation', {'passed': True, 'cycles': [['a', 'b']]})
+    print('False')
+except DAGCycleDetectedError as exc:
+    print(exc.cycles == [['a', 'b']])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Mixed-shape DAG result surfaces cycle regardless of passed flag"
+else
+    fail "Mixed-shape DAG result with cycles was ignored when passed is true"
+fi
+
 # Summary
 echo ""
 echo "=========================================="
