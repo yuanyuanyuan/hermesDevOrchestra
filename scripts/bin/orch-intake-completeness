@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat >&2 <<'EOF'
+Usage:
+  orch-intake-completeness --validate < payload.json
+  orch-intake-completeness --create --run-id ID --task-description TEXT \
+    --acceptance-criteria JSON_OR_TEXT --technical-constraints JSON_OR_TEXT \
+    --dependencies JSON_OR_TEXT --success-metrics JSON_OR_TEXT \
+    --risks-and-assumptions JSON_OR_TEXT --verification-plan JSON_OR_TEXT \
+    --rollback-strategy TEXT --files-changed FILES_JSON [--file-contents JSON]
+
+Validate payload stdin format:
+  {"run_id": "run", "bundle": {...}}
+
+Prints a validation result in validate mode or an intake bundle in create mode.
+EOF
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+MODE=""
+RUN_ID=""
+TASK_DESCRIPTION=""
+ACCEPTANCE_CRITERIA=""
+TECHNICAL_CONSTRAINTS=""
+DEPENDENCIES=""
+SUCCESS_METRICS=""
+RISKS_AND_ASSUMPTIONS=""
+VERIFICATION_PLAN=""
+ROLLBACK_STRATEGY=""
+FILES_CHANGED="[]"
+FILE_CONTENTS="{}"
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --validate)
+            MODE="validate"
+            shift
+            ;;
+        --create)
+            MODE="create"
+            shift
+            ;;
+        --run-id)
+            RUN_ID="${2:-}"
+            shift 2
+            ;;
+        --task-description)
+            TASK_DESCRIPTION="${2:-}"
+            shift 2
+            ;;
+        --acceptance-criteria)
+            ACCEPTANCE_CRITERIA="${2:-}"
+            shift 2
+            ;;
+        --technical-constraints)
+            TECHNICAL_CONSTRAINTS="${2:-}"
+            shift 2
+            ;;
+        --dependencies)
+            DEPENDENCIES="${2:-}"
+            shift 2
+            ;;
+        --success-metrics)
+            SUCCESS_METRICS="${2:-}"
+            shift 2
+            ;;
+        --risks-and-assumptions)
+            RISKS_AND_ASSUMPTIONS="${2:-}"
+            shift 2
+            ;;
+        --verification-plan)
+            VERIFICATION_PLAN="${2:-}"
+            shift 2
+            ;;
+        --rollback-strategy)
+            ROLLBACK_STRATEGY="${2:-}"
+            shift 2
+            ;;
+        --files-changed)
+            FILES_CHANGED="${2:-}"
+            shift 2
+            ;;
+        --file-contents)
+            FILE_CONTENTS="${2:-}"
+            shift 2
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *)
+            usage
+            exit 2
+            ;;
+    esac
+done
+
+if [ -z "$MODE" ]; then
+    usage
+    exit 2
+fi
+
+STDIN_PAYLOAD=""
+if [ "$MODE" = "validate" ]; then
+    STDIN_PAYLOAD="$(cat)"
+fi
+
+PYTHONPATH="$REPO_ROOT/scripts/lib${PYTHONPATH:+:$PYTHONPATH}" python3 - \
+    "$MODE" "$STDIN_PAYLOAD" "$RUN_ID" "$TASK_DESCRIPTION" "$ACCEPTANCE_CRITERIA" \
+    "$TECHNICAL_CONSTRAINTS" "$DEPENDENCIES" "$SUCCESS_METRICS" "$RISKS_AND_ASSUMPTIONS" \
+    "$VERIFICATION_PLAN" "$ROLLBACK_STRATEGY" "$FILES_CHANGED" "$FILE_CONTENTS" <<'PY'
+import json
+import sys
+
+from intake_completeness import create_intake_bundle, validate_intake_bundle
+
+
+def json_or_single(value):
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return [value]
+    return parsed if isinstance(parsed, list) else [parsed]
+
+
+(
+    mode,
+    stdin_payload,
+    run_id,
+    task_description,
+    acceptance_criteria,
+    technical_constraints,
+    dependencies,
+    success_metrics,
+    risks_and_assumptions,
+    verification_plan,
+    rollback_strategy,
+    files_changed,
+    file_contents,
+) = sys.argv[1:]
+
+if mode == "validate":
+    payload = json.loads(stdin_payload)
+    errors = validate_intake_bundle(payload.get("run_id", "unknown"), payload.get("bundle", {}))
+    print(json.dumps({"errors": errors, "valid": not errors}, ensure_ascii=False, sort_keys=True))
+    raise SystemExit(1 if errors else 0)
+
+bundle = create_intake_bundle(
+    run_id,
+    task_description,
+    json_or_single(acceptance_criteria),
+    json_or_single(technical_constraints),
+    json_or_single(dependencies),
+    json_or_single(success_metrics),
+    json_or_single(risks_and_assumptions),
+    json_or_single(verification_plan),
+    rollback_strategy,
+    json.loads(files_changed),
+    json.loads(file_contents),
+)
+print(json.dumps(bundle, ensure_ascii=False, sort_keys=True))
+PY

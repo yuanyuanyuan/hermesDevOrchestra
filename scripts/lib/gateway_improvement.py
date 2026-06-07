@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from typing import Any
 import uuid
 
 from atomic_writer import AtomicWriter
+from e_class_mini_debate import get_e_class_config
 
 
 CLASSIFICATION_TABLE: dict[str, dict[str, str]] = {
@@ -49,7 +51,7 @@ CLASSIFICATION_TABLE: dict[str, dict[str, str]] = {
 DECISION_OPTIONS = ["accept_with_risk", "rollback", "redesign"]
 MAX_D_REGRESSION_CYCLES = 3
 MAX_E_DEBATE_ROUNDS = 2
-CONSENSUS_THRESHOLD = 0.60
+CONSENSUS_THRESHOLD = float(get_e_class_config()["required_consensus"])
 SCHEMA_VERSION = "orchestra.v1"
 EVENT_SCHEMA_VERSION = "orchestra.event.v1"
 _ATOMIC_WRITER = AtomicWriter()
@@ -479,7 +481,11 @@ def _route_dispute(payload: dict[str, Any]) -> ImprovementRoute:
     scores = payload.get("consensus_scores")
     if not isinstance(scores, list):
         scores = []
-    numeric_scores = [float(score) for score in scores[:MAX_E_DEBATE_ROUNDS] if isinstance(score, (int, float))]
+    numeric_scores = [
+        float(score)
+        for score in scores[:MAX_E_DEBATE_ROUNDS]
+        if isinstance(score, (int, float)) and not isinstance(score, bool) and math.isfinite(score)
+    ]
     rounds = [
         {"round": index + 1, "consensus_score": score}
         for index, score in enumerate(numeric_scores)

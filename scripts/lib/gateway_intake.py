@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from intake_completeness import validate_intake_bundle
+
 
 class NormalizedIntent(TypedDict, total=False):
     """Structured intent produced by the intake pipeline."""
@@ -115,6 +117,10 @@ def _validate_payload(request: dict[str, Any], intent_type: str) -> list[str]:
             errors.append("authority is required for module endpoint")
     elif intent_type == "unknown":
         errors.append("unable to determine intent type from payload")
+    intake_bundle = request.get("intake_bundle")
+    if isinstance(intake_bundle, dict):
+        run_id = request.get("run_id") if isinstance(request.get("run_id"), str) else "unknown"
+        errors.extend(validate_intake_bundle(run_id, intake_bundle))
     return errors
 
 
