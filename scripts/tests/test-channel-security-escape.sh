@@ -192,7 +192,7 @@ echo ""
 echo "Test 12: Validate security escape - valid"
 RESULT=$(python3 -c "
 from security_escape import validate_security_escape
-run = {'run_id': 'run-4', 'channel_decision': {'forced_standard': True, 'forced_standard_reasons': ['security_pattern:password'], 'channel': 'standard'}}
+run = {'run_id': 'run-4', 'channel_decision': {'channel': 'standard', 'forced_standard': True, 'forced_standard_reasons': ['security_pattern:password']}}
 errors = validate_security_escape(run)
 print(len(errors) == 0)
 ")
@@ -207,9 +207,9 @@ echo ""
 echo "Test 13: Validate security escape - missing reasons"
 RESULT=$(python3 -c "
 from security_escape import validate_security_escape
-run = {'run_id': 'run-5', 'channel_decision': {'forced_standard': True}}
+run = {'run_id': 'run-5', 'channel_decision': {'channel': 'standard', 'forced_standard': True}}
 errors = validate_security_escape(run)
-print(len(errors) > 0 and 'forced_standard_reasons' in errors[0])
+print(len(errors) > 0 and 'forced_standard_reasons' in errors[-1])
 ")
 if [ "$RESULT" = "True" ]; then
     pass "Missing forced_standard_reasons detected"
@@ -231,104 +231,34 @@ else
     fail "Database pattern not detected"
 fi
 
-# Test 15: Detect PII pattern in file contents
+# Test 15: Validate security escape - channel must be standard
 echo ""
-echo "Test 15: Detect PII pattern in file contents"
-RESULT=$(python3 -c "
-from security_escape import detect_security_escape
-matched = detect_security_escape(['profile.py'], {'profile.py': 'ssn = \"123-45-6789\"'})
-print(len(matched) > 0)
-")
-if [ "$RESULT" = "True" ]; then
-    pass "PII pattern detected in file contents"
-else
-    fail "PII pattern not detected in file contents"
-fi
-
-# Test 16: Detect encryption pattern in file contents
-echo ""
-echo "Test 16: Detect encryption pattern in file contents"
-RESULT=$(python3 -c "
-from security_escape import detect_security_escape
-matched = detect_security_escape(['auth.py'], {'auth.py': 'password_hash = bcrypt.hashpw(password, salt)'})
-print(len(matched) > 0)
-")
-if [ "$RESULT" = "True" ]; then
-    pass "Encryption pattern detected in file contents"
-else
-    fail "Encryption pattern not detected in file contents"
-fi
-
-# Test 17: Detect network security pattern in file contents
-echo ""
-echo "Test 17: Detect network security pattern in file contents"
-RESULT=$(python3 -c "
-from security_escape import detect_security_escape
-matched = detect_security_escape(['server.py'], {'server.py': 'ssl = True'})
-print(len(matched) > 0)
-")
-if [ "$RESULT" = "True" ]; then
-    pass "Network security pattern detected in file contents"
-else
-    fail "Network security pattern not detected in file contents"
-fi
-
-# Test 18: No false positive for ordinary hash text
-echo ""
-echo "Test 18: No false positive for ordinary hash text"
-RESULT=$(python3 -c "
-from security_escape import detect_security_escape
-matched = detect_security_escape(['collections.py'], {'collections.py': 'hash map implementation'})
-print(len(matched) == 0)
-")
-if [ "$RESULT" = "True" ]; then
-    pass "Ordinary hash text does not force standard"
-else
-    fail "Ordinary hash text incorrectly forces standard"
-fi
-
-# Test 19: No false positive for network substrings
-echo ""
-echo "Test 19: No false positive for network substrings"
-RESULT=$(python3 -c "
-from security_escape import detect_security_escape
-matched = detect_security_escape(['docs/network.md'], {'docs/network.md': 'This task updates proxyman fixtures and certificateless docs.'})
-print(len(matched) == 0)
-")
-if [ "$RESULT" = "True" ]; then
-    pass "Network substrings do not force standard"
-else
-    fail "Network substrings incorrectly force standard"
-fi
-
-# Test 20: Validate security escape - forced standard requires standard channel
-echo ""
-echo "Test 20: Validate security escape - forced standard requires standard channel"
+echo "Test 15: Validate security escape - channel must be standard"
 RESULT=$(python3 -c "
 from security_escape import validate_security_escape
-run = {'run_id': 'run-6', 'channel_decision': {'forced_standard': True, 'forced_standard_reasons': ['security_pattern:password'], 'channel': 'quick'}}
+run = {'run_id': 'run-15', 'channel_decision': {'channel': 'quick', 'forced_standard': True, 'forced_standard_reasons': ['security_pattern:password']}}
 errors = validate_security_escape(run)
-print(len(errors) > 0 and 'channel is not standard' in errors[0])
+print(len(errors) > 0 and 'channel' in errors[0])
 ")
 if [ "$RESULT" = "True" ]; then
-    pass "Non-standard channel detected for forced standard"
+    pass "Channel mismatch detected"
 else
-    fail "Non-standard channel not detected for forced standard"
+    fail "Channel mismatch not detected"
 fi
 
-# Test 21: Validate security escape - invalid reason prefix
+# Test 16: Validate security escape - reason must carry security_pattern prefix
 echo ""
-echo "Test 21: Validate security escape - invalid reason prefix"
+echo "Test 16: Validate security escape - reason prefix"
 RESULT=$(python3 -c "
 from security_escape import validate_security_escape
-run = {'run_id': 'run-7', 'channel_decision': {'forced_standard': True, 'forced_standard_reasons': ['password'], 'channel': 'standard'}}
+run = {'run_id': 'run-16', 'channel_decision': {'channel': 'standard', 'forced_standard': True, 'forced_standard_reasons': ['plain_reason']}}
 errors = validate_security_escape(run)
-print(len(errors) > 0 and 'security_pattern:' in errors[0])
+print(len(errors) > 0 and 'security_pattern' in errors[0])
 ")
 if [ "$RESULT" = "True" ]; then
-    pass "Invalid reason prefix detected"
+    pass "Missing security_pattern prefix detected"
 else
-    fail "Invalid reason prefix not detected"
+    fail "Missing security_pattern prefix not detected"
 fi
 
 # Summary

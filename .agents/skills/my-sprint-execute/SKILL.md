@@ -174,7 +174,7 @@ which gbrain && gbrain --version || echo "gbrain not available, using degraded p
 - [x] 全部测试 exit 0
 ```
 
-> 注：`manage-pr.sh --create` 会自动在 PR body 末尾追加 `@codex review`，以触发 Codex 外部视觉 review，无需在 `${PR_BODY_FILE}` 中手动写入。
+> 注：`manage-pr.sh --create` 原样传递 PR body 内容，不会追加额外 footer。
 
 **PR 发起后：**
 - 推送最新 commit 到 `origin/${BRANCH}`

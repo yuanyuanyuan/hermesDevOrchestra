@@ -2,6 +2,8 @@
 """Mini-Debate Orchestration for PRD Compliance.
 
 Connects channel routing to bounded debate execution for Quick and Light channels.
+The current executor uses deterministic placeholder scoring until an external
+debate backend is wired into the PRD compliance gate.
 """
 
 from __future__ import annotations
@@ -118,6 +120,10 @@ def execute_mini_debate(
     backend_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute a mini-debate and return the report.
+
+    Uses deterministic placeholder consensus scores when the backend is
+    available; this is a bounded gate simulation, not an external consensus
+    engine invocation.
 
     Args:
         run: Current run state

@@ -76,18 +76,12 @@ main() {
         usage >&2
         exit 1
       fi
-      local footer=$'\n\n---\n@codex review'
-      local tmp_body_file
-      tmp_body_file="$(mktemp)"
-      cat "$body_file" > "$tmp_body_file"
-      printf '%s' "$footer" >> "$tmp_body_file"
       gh pr create \
         --title "$title" \
-        --body-file "$tmp_body_file" \
+        --body-file "$body_file" \
         --base "$base" \
         --head "$head" \
         --repo "$repo" 2>/dev/null || echo "PR may already exist"
-      rm -f "$tmp_body_file"
       ;;
     edit)
       if [[ -z "$number" ]]; then

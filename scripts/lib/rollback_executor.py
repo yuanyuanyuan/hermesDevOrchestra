@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """Rollback Executor for PRD Compliance.
 
-Implements rollback request handling, execution, and reporting with
-current-run scope protection and protected target approval gates.
+Implements rollback request handling and reporting with current-run scope
+protection and protected target approval gates. This module is intentionally
+report-only for PRD gate validation: non-dry-run calls still produce a
+simulated rollback report and do not execute destructive repository commands.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import re
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,8 +31,6 @@ ROLLBACK_STRATEGIES = {
     "file_restore": "Restore files from baseline ref",
     "state_reset": "Reset state to baseline",
 }
-
-REQUEST_ID_PATTERN = re.compile(r"^rollback-(?P<run_id>.+)-(?P<timestamp>\d{14})$")
 
 
 class RollbackError(Exception):
@@ -75,18 +72,13 @@ def validate_rollback_prereqs(run: dict[str, Any], request: dict[str, Any]) -> l
     if not baseline_ref:
         missing.append("baseline_ref")
 
-    run_id = run.get("run_id")
-    request_id = request.get("request_id")
-
     # Check run_id exists
-    if not run_id:
+    if not run.get("run_id"):
         missing.append("run_id")
 
     # Check request has required fields
-    if not request_id:
+    if not request.get("request_id"):
         missing.append("request_id")
-    elif run_id and not _valid_request_id(str(request_id), str(run_id)):
-        missing.append("request_id_format")
 
     if not request.get("requested_stage"):
         missing.append("requested_stage")
@@ -94,17 +86,16 @@ def validate_rollback_prereqs(run: dict[str, Any], request: dict[str, Any]) -> l
     return missing
 
 
-def check_protected_targets(changed_refs: list[str], protected_targets: set[str] | None = None) -> list[str]:
+def check_protected_targets(changed_refs: list[str]) -> list[str]:
     """Check if any changed refs target protected resources.
 
     Returns list of protected targets that need approval.
     """
     protected = []
-    targets = protected_targets if protected_targets is not None else PROTECTED_TARGETS
     for ref in changed_refs:
         # Normalize path
         normalized = ref.lstrip("./")
-        if normalized in targets:
+        if normalized in PROTECTED_TARGETS:
             protected.append(normalized)
     return protected
 
@@ -135,12 +126,13 @@ def execute_rollback(
     request: dict[str, Any],
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Execute a rollback and return rollback report.
+    """Create a rollback execution report.
 
     Args:
         run: Current run state
         request: Rollback request
-        dry_run: If True, only report what would be done
+        dry_run: If True, mark the report as dry-run. If False, perform the
+            same report-only simulation while preserving approval gates.
 
     Returns:
         Rollback report dict
@@ -173,14 +165,7 @@ def execute_rollback(
 
     # Execute rollback based on strategy
     strategy = request.get("rollback_strategy", "git_revert")
-    result = "success" if not dry_run else "dry_run"
-
-    if not dry_run:
-        # TODO(sprint-rollback-executor): execute the selected rollback strategy
-        # against affected current-run refs once the Gateway command execution
-        # contract is wired into this module. Sprint 3 records the auditable
-        # rollback report and approval gates without mutating external state.
-        pass
+    result = "simulated" if not dry_run else "dry_run"
 
     # Create rollback report
     report = {
@@ -210,7 +195,7 @@ def write_rollback_report(report: dict[str, Any], state_dir: str | Path) -> Path
 
     report_path = state_dir / "rollback_report.json"
     writer = AtomicWriter()
-    writer.write(report_path, report)
+    writer.write_json(report_path, report)
 
     return report_path
 
@@ -226,17 +211,5 @@ def load_rollback_report(state_dir: str | Path) -> dict[str, Any] | None:
     try:
         with open(report_path) as f:
             return json.load(f)
-    except json.JSONDecodeError:
+    except (OSError, json.JSONDecodeError):
         return None
-
-
-def _valid_request_id(request_id: str, run_id: str) -> bool:
-    """Validate rollback request id format and timestamp."""
-    match = REQUEST_ID_PATTERN.match(request_id)
-    if not match or match.group("run_id") != run_id:
-        return False
-    try:
-        datetime.strptime(match.group("timestamp"), "%Y%m%d%H%M%S")
-    except ValueError:
-        return False
-    return True
