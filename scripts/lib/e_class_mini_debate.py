@@ -16,17 +16,19 @@ Integration:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import math
+from types import MappingProxyType
 from typing import Any
 
 
 # E-class mini-debate configuration
-E_CLASS_CONFIG = {
+E_CLASS_CONFIG = MappingProxyType({
     "max_rounds": 2,
     "team_size": 2,
     "timeout_minutes": 30,
     "required_consensus": 0.60,
     "debate_type": "e_class_dispute",
-}
+})
 
 
 class EClassDebateError(Exception):
@@ -66,7 +68,7 @@ class MissingDebateRefsError(EClassDebateError):
 
 def get_e_class_config() -> dict[str, Any]:
     """Get E-class mini-debate configuration."""
-    return E_CLASS_CONFIG.copy()
+    return dict(E_CLASS_CONFIG)
 
 
 def create_e_class_dispute(
@@ -78,6 +80,11 @@ def create_e_class_dispute(
     evidence_refs: list[str],
 ) -> dict[str, Any]:
     """Create an E-class improvement dispute."""
+    if not all(isinstance(value, str) and value.strip() for value in (run_id, task_id, improvement_id)):
+        raise ValueError("run_id, task_id, improvement_id must be non-empty")
+    if not evidence_refs:
+        raise MissingDebateRefsError(run_id, f"edispute-{run_id}-{improvement_id}")
+
     return {
         "dispute_id": f"edispute-{run_id}-{improvement_id}",
         "run_id": run_id,
@@ -120,7 +127,11 @@ def execute_e_class_debate(
         raise EClassDebateUnavailableError(run_id)
 
     consensus_score = backend_report.get("consensus_score")
-    if consensus_score is None:
+    if (
+        not isinstance(consensus_score, (int, float))
+        or isinstance(consensus_score, bool)
+        or not math.isfinite(consensus_score)
+    ):
         raise EClassDebateUnavailableError(run_id)
 
     # Check consensus
@@ -156,7 +167,7 @@ def persist_e_class_debate_refs(run: dict[str, Any], report: dict[str, Any]) -> 
     updated_run["e_class_debate_refs"] = debate_refs
 
     # Update run with debate status
-    updated_run["e_class_debate_status"] = {
+    status = {
         "dispute_id": report.get("dispute_id"),
         "classification": report.get("classification"),
         "status": report.get("status"),
@@ -164,6 +175,12 @@ def persist_e_class_debate_refs(run: dict[str, Any], report: dict[str, Any]) -> 
         "required_consensus": report.get("required_consensus"),
         "completed_at": report.get("completed_at"),
     }
+    statuses = dict(updated_run.get("e_class_debate_statuses", {}))
+    dispute_id = report.get("dispute_id")
+    if isinstance(dispute_id, str) and dispute_id:
+        statuses[dispute_id] = status
+    updated_run["e_class_debate_statuses"] = statuses
+    updated_run["e_class_debate_status"] = status
 
     return updated_run
 
@@ -180,11 +197,11 @@ def validate_e_class_dispute(run: dict[str, Any], dispute_id: str) -> list[str]:
         errors.append(f"missing_debate_refs: {dispute_id}")
         return errors
 
-    matching_refs = [ref for ref in e_class_debate_refs if dispute_id in ref]
+    matching_refs = [ref for ref in e_class_debate_refs if _ref_matches_dispute(ref, dispute_id)]
     if not matching_refs:
         errors.append(f"missing_debate_ref_for_dispute: {dispute_id}")
 
-    e_class_debate_status = run.get("e_class_debate_status", {})
+    e_class_debate_status = _status_for_dispute(run, dispute_id)
     if e_class_debate_status.get("dispute_id") != dispute_id:
         errors.append(f"missing_debate_status_for_dispute: {dispute_id}")
     elif e_class_debate_status.get("status") != "completed":
@@ -195,8 +212,27 @@ def validate_e_class_dispute(run: dict[str, Any], dispute_id: str) -> list[str]:
 
 def check_e_class_auto_merge_blocked(run: dict[str, Any], dispute_id: str) -> bool:
     """Check if auto-merge is blocked due to missing E-class debate refs."""
-    e_class_debate_status = run.get("e_class_debate_status")
+    e_class_debate_status = _status_for_dispute(run, dispute_id)
     if not e_class_debate_status or e_class_debate_status.get("status") != "completed":
         return True  # Blocked
 
     return False  # Not blocked
+
+
+def _ref_matches_dispute(ref: Any, dispute_id: str) -> bool:
+    if not isinstance(ref, str):
+        return False
+    return ref.rstrip("/").split("/")[-1] == dispute_id
+
+
+def _status_for_dispute(run: dict[str, Any], dispute_id: str) -> dict[str, Any]:
+    statuses = run.get("e_class_debate_statuses")
+    if isinstance(statuses, dict):
+        status = statuses.get(dispute_id)
+        if isinstance(status, dict):
+            return status
+
+    status = run.get("e_class_debate_status")
+    if isinstance(status, dict) and status.get("dispute_id") == dispute_id:
+        return status
+    return {}

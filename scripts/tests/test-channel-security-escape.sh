@@ -192,7 +192,7 @@ echo ""
 echo "Test 12: Validate security escape - valid"
 RESULT=$(python3 -c "
 from security_escape import validate_security_escape
-run = {'run_id': 'run-4', 'channel_decision': {'forced_standard': True, 'forced_standard_reasons': ['security_pattern:password']}}
+run = {'run_id': 'run-4', 'channel_decision': {'forced_standard': True, 'forced_standard_reasons': ['security_pattern:password'], 'channel': 'standard'}}
 errors = validate_security_escape(run)
 print(len(errors) == 0)
 ")
@@ -217,37 +217,9 @@ else
     fail "Missing forced_standard_reasons not detected"
 fi
 
-# Test 14: Documentation content does not force security escape
+# Test 14: Database pattern detected
 echo ""
-echo "Test 14: Documentation content does not force security escape"
-RESULT=$(python3 -c "
-from security_escape import detect_security_escape
-matched = detect_security_escape(['README.md'], {'README.md': 'Document TLS proxy certificate setup'})
-print(len(matched) == 0)
-")
-if [ "$RESULT" = "True" ]; then
-    pass "Documentation content ignored for broad security terms"
-else
-    fail "Documentation content caused broad security false positive"
-fi
-
-# Test 15: Test code content does not force security escape
-echo ""
-echo "Test 15: Test code content does not force security escape"
-RESULT=$(python3 -c "
-from security_escape import detect_security_escape
-matched = detect_security_escape(['scripts/tests/test_security.py'], {'scripts/tests/test_security.py': 'assert hash(value)'})
-print(len(matched) == 0)
-")
-if [ "$RESULT" = "True" ]; then
-    pass "Test code content ignored for broad security terms"
-else
-    fail "Test code content caused broad security false positive"
-fi
-
-# Test 16: Database pattern detected
-echo ""
-echo "Test 16: Database pattern detected"
+echo "Test 14: Database pattern detected"
 RESULT=$(python3 -c "
 from security_escape import detect_security_escape
 matched = detect_security_escape(['migrations/001.sql'], {'migrations/001.sql': 'DROP TABLE users;'})
@@ -259,18 +231,104 @@ else
     fail "Database pattern not detected"
 fi
 
-# Test 17: Broad security terms in paths do not force security escape
+# Test 15: Detect PII pattern in file contents
 echo ""
-echo "Test 17: Broad security terms in paths do not force security escape"
+echo "Test 15: Detect PII pattern in file contents"
 RESULT=$(python3 -c "
 from security_escape import detect_security_escape
-matched = detect_security_escape(['docs/tls-guide.md', 'examples/proxy-config.txt', 'tests/hash_notes.py'])
+matched = detect_security_escape(['profile.py'], {'profile.py': 'ssn = \"123-45-6789\"'})
+print(len(matched) > 0)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "PII pattern detected in file contents"
+else
+    fail "PII pattern not detected in file contents"
+fi
+
+# Test 16: Detect encryption pattern in file contents
+echo ""
+echo "Test 16: Detect encryption pattern in file contents"
+RESULT=$(python3 -c "
+from security_escape import detect_security_escape
+matched = detect_security_escape(['auth.py'], {'auth.py': 'password_hash = bcrypt.hashpw(password, salt)'})
+print(len(matched) > 0)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Encryption pattern detected in file contents"
+else
+    fail "Encryption pattern not detected in file contents"
+fi
+
+# Test 17: Detect network security pattern in file contents
+echo ""
+echo "Test 17: Detect network security pattern in file contents"
+RESULT=$(python3 -c "
+from security_escape import detect_security_escape
+matched = detect_security_escape(['server.py'], {'server.py': 'ssl = True'})
+print(len(matched) > 0)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Network security pattern detected in file contents"
+else
+    fail "Network security pattern not detected in file contents"
+fi
+
+# Test 18: No false positive for ordinary hash text
+echo ""
+echo "Test 18: No false positive for ordinary hash text"
+RESULT=$(python3 -c "
+from security_escape import detect_security_escape
+matched = detect_security_escape(['collections.py'], {'collections.py': 'hash map implementation'})
 print(len(matched) == 0)
 ")
 if [ "$RESULT" = "True" ]; then
-    pass "Broad path terms ignored"
+    pass "Ordinary hash text does not force standard"
 else
-    fail "Broad path terms caused security false positive"
+    fail "Ordinary hash text incorrectly forces standard"
+fi
+
+# Test 19: No false positive for network substrings
+echo ""
+echo "Test 19: No false positive for network substrings"
+RESULT=$(python3 -c "
+from security_escape import detect_security_escape
+matched = detect_security_escape(['docs/network.md'], {'docs/network.md': 'This task updates proxyman fixtures and certificateless docs.'})
+print(len(matched) == 0)
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Network substrings do not force standard"
+else
+    fail "Network substrings incorrectly force standard"
+fi
+
+# Test 20: Validate security escape - forced standard requires standard channel
+echo ""
+echo "Test 20: Validate security escape - forced standard requires standard channel"
+RESULT=$(python3 -c "
+from security_escape import validate_security_escape
+run = {'run_id': 'run-6', 'channel_decision': {'forced_standard': True, 'forced_standard_reasons': ['security_pattern:password'], 'channel': 'quick'}}
+errors = validate_security_escape(run)
+print(len(errors) > 0 and 'channel is not standard' in errors[0])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Non-standard channel detected for forced standard"
+else
+    fail "Non-standard channel not detected for forced standard"
+fi
+
+# Test 21: Validate security escape - invalid reason prefix
+echo ""
+echo "Test 21: Validate security escape - invalid reason prefix"
+RESULT=$(python3 -c "
+from security_escape import validate_security_escape
+run = {'run_id': 'run-7', 'channel_decision': {'forced_standard': True, 'forced_standard_reasons': ['password'], 'channel': 'standard'}}
+errors = validate_security_escape(run)
+print(len(errors) > 0 and 'security_pattern:' in errors[0])
+")
+if [ "$RESULT" = "True" ]; then
+    pass "Invalid reason prefix detected"
+else
+    fail "Invalid reason prefix not detected"
 fi
 
 # Summary

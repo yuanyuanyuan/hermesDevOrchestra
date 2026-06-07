@@ -21,6 +21,7 @@ RISK_LEVELS = {
 # Override statuses
 OVERRIDE_STATUSES = {
     "pending",
+    "pending_approval",
     "approved",
     "rejected",
     "cancelled",
@@ -64,6 +65,17 @@ class InvalidOverrideStatusError(CorrectionError):
         super().__init__(msg, run_id)
 
 
+class UnauthorizedApproverError(CorrectionError):
+    """Raised when approver_ref is not authorized for override risk level."""
+
+    def __init__(self, run_id: str, override_id: str, approver_ref: str, risk_level: str):
+        self.override_id = override_id
+        self.approver_ref = approver_ref
+        self.risk_level = risk_level
+        msg = f"Approver '{approver_ref}' not authorized for {risk_level}"
+        super().__init__(msg, run_id)
+
+
 def create_correction_round(
     run_id: str,
     task_id: str,
@@ -96,7 +108,8 @@ def create_override_record(
     evidence_refs: list[str] | None = None,
 ) -> dict[str, Any]:
     """Create an override record."""
-    override_id = f"override-{run_id}-{task_id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    now = datetime.now(timezone.utc)
+    override_id = f"override-{run_id}-{task_id}-{now.strftime('%Y%m%d%H%M%S')}"
 
     # Validate risk level
     if risk_level not in RISK_LEVELS:
@@ -124,7 +137,7 @@ def create_override_record(
         "evidence_refs": evidence_refs or [],
         "status": status,
         "requires_approval": requires_approval,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now.isoformat(),
         "resolved_at": None,
     }
 
@@ -134,7 +147,10 @@ def approve_override(
     override_id: str,
     approver_ref: str,
 ) -> dict[str, Any]:
-    """Approve an override record."""
+    """Approve an override record.
+
+    Note: modifies the matching override record in run in-place.
+    """
     run_id = run.get("run_id", "unknown")
 
     # Find override in run
@@ -147,6 +163,15 @@ def approve_override(
     # Check if approval is required
     if override.get("requires_approval") and not approver_ref:
         raise MissingApproverRefError(run_id, override_id)
+
+    risk_level = override.get("risk_level")
+    authority = RISK_LEVELS.get(risk_level, {}).get("approval_authority", [])
+    if authority and approver_ref not in authority:
+        raise UnauthorizedApproverError(run_id, override_id, approver_ref, risk_level)
+
+    status = override.get("status")
+    if status not in ("pending", "pending_approval"):
+        raise InvalidOverrideStatusError(run_id, override_id, status)
 
     # Update override
     override["status"] = "approved"
@@ -161,7 +186,10 @@ def reject_override(
     override_id: str,
     reason: str,
 ) -> dict[str, Any]:
-    """Reject an override record."""
+    """Reject an override record.
+
+    Note: modifies the matching override record in run in-place.
+    """
     run_id = run.get("run_id", "unknown")
 
     # Find override in run
@@ -170,6 +198,10 @@ def reject_override(
 
     if not override:
         raise CorrectionError(f"Override {override_id} not found", run_id)
+
+    status = override.get("status")
+    if status not in ("pending", "pending_approval", "approved"):
+        raise InvalidOverrideStatusError(run_id, override_id, status)
 
     # Update override
     override["status"] = "rejected"

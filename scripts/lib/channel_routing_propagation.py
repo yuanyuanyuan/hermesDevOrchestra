@@ -8,6 +8,7 @@ run creation, required evidence, and stage behavior.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from channel_router import ChannelRouter
@@ -58,7 +59,8 @@ class ChannelPolicyInvalidError(ChannelRoutingError):
 
     def __init__(self, channel: str, run_id: str | None = None):
         self.channel = channel
-        msg = f"Channel policy invalid: {channel}"
+        valid = ", ".join(sorted(CHANNEL_CONFIGS))
+        msg = f"Channel policy invalid: {channel} (expected one of: {valid})"
         super().__init__(msg, run_id)
 
 
@@ -78,14 +80,14 @@ def classify_and_persist(
     project_age_weeks: int,
     force_standard: bool = False,
     force_standard_reasons: list[str] | None = None,
+    repo_root: str | Path | None = None,
+    task_type: str = "feature",
 ) -> dict[str, Any]:
     """Classify channel and persist decision on run state.
 
     Returns updated run dict with channel_decision persisted.
     """
-    run_id = run.get("run_id")
-    if not run_id:
-        raise ValueError("run_id required")
+    run_id = run.get("run_id", "unknown")
 
     # If forced to Standard, use Standard channel
     if force_standard:
@@ -101,21 +103,23 @@ def classify_and_persist(
         }
     else:
         # Use ChannelRouter to classify
-        router = ChannelRouter(repo_root=".")
+        router = ChannelRouter(repo_root=repo_root or _default_repo_root())
         intent = {
-            "task_type": "feature",
+            "task_type": task_type,
             "files_count": len(files_changed),
             "files": files_changed,
         }
         result = router.classify(intent, project_age_weeks)
-        selected_channel = result.get("channel", "standard")
+        channel = result.get("channel", "standard")
+        if channel not in CHANNEL_CONFIGS:
+            raise ChannelPolicyInvalidError(channel, run_id)
         decision = {
-            "channel": selected_channel,
+            "channel": channel,
             "reason": result.get("reason", "default"),
             "project_age_weeks": project_age_weeks,
             "files_count": len(files_changed),
-            "required_debate_rounds": CHANNEL_CONFIGS[selected_channel]["required_debate_rounds"],
-            "required_evidence": CHANNEL_CONFIGS[selected_channel]["required_evidence"],
+            "required_debate_rounds": CHANNEL_CONFIGS[channel]["required_debate_rounds"],
+            "required_evidence": CHANNEL_CONFIGS[channel]["required_evidence"],
             "forced_standard": False,
             "forced_standard_reasons": [],
         }
@@ -163,7 +167,7 @@ def classify_and_persist(
 
 def get_channel_requirements(run: dict[str, Any]) -> dict[str, Any]:
     """Get channel requirements for a run."""
-    return run.get("channel_requirements", CHANNEL_CONFIGS["standard"])
+    return run.get("channel_requirements", CHANNEL_CONFIGS["standard"].copy())
 
 
 def can_skip_stage(run: dict[str, Any], stage: str) -> bool:
@@ -199,6 +203,8 @@ def validate_channel_decision(run: dict[str, Any]) -> list[str]:
 
     if "channel" not in channel_decision:
         errors.append("channel missing from channel_decision")
+    elif channel_decision.get("channel") not in CHANNEL_CONFIGS:
+        errors.append("channel invalid in channel_decision")
 
     if "required_debate_rounds" not in channel_decision:
         errors.append("required_debate_rounds missing from channel_decision")
@@ -207,3 +213,8 @@ def validate_channel_decision(run: dict[str, Any]) -> list[str]:
         errors.append("required_evidence missing from channel_decision")
 
     return errors
+
+
+def _default_repo_root() -> Path:
+    """Resolve repository root from this module location."""
+    return Path(__file__).resolve().parent.parent.parent

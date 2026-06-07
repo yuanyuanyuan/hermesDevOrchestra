@@ -3,11 +3,17 @@
 
 Completes PRD intake bundle fields with CI/CD detection, 8-part prompt envelope,
 and verified facts vs unverified assumptions separation.
+
+Integration:
+    Gateway/project discovery callers use this module to create and validate
+    PRD intake bundles before stage advancement. The CLI wrapper
+    scripts/bin/orch-intake-completeness exposes the same validation to agents.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Any
 
 
@@ -63,21 +69,46 @@ def detect_cicd_config(files_changed: list[str], file_contents: dict[str, str] |
         "has_deployment": False,
     }
 
-    # Common CI/CD config file patterns
-    cicd_patterns = {
-        "github_actions": [".github/workflows/", ".github/actions/"],
-        "gitlab_ci": [".gitlab-ci.yml", ".gitlab-ci/"],
-        "circleci": [".circleci/config.yml"],
-        "jenkins": ["Jenkinsfile", "jenkins/"],
-        "travis": [".travis.yml"],
-        "docker": ["Dockerfile", "docker-compose.yml", "docker-compose.yaml"],
-        "kubernetes": ["kubernetes/", "k8s/", "helm/"],
-    }
+    def normalize_path(filepath: str) -> str:
+        path = PurePosixPath(filepath).as_posix()
+        while path.startswith("./"):
+            path = path[2:]
+        return path
+
+    def matches_cicd_config(filepath: str, system: str) -> bool:
+        path = normalize_path(filepath)
+        name = PurePosixPath(path).name
+
+        if system == "github_actions":
+            return path.startswith(".github/workflows/") or path.startswith(".github/actions/")
+        if system == "gitlab_ci":
+            return path == ".gitlab-ci.yml" or path.startswith(".gitlab-ci/")
+        if system == "circleci":
+            return path == ".circleci/config.yml"
+        if system == "jenkins":
+            return name == "Jenkinsfile" or path.startswith("jenkins/")
+        if system == "travis":
+            return path == ".travis.yml"
+        if system == "docker":
+            return name == "Dockerfile" or path in {"docker-compose.yml", "docker-compose.yaml"}
+        if system == "kubernetes":
+            return path.startswith("kubernetes/") or path.startswith("k8s/") or path.startswith("helm/")
+        return False
+
+    cicd_systems = [
+        "github_actions",
+        "gitlab_ci",
+        "circleci",
+        "jenkins",
+        "travis",
+        "docker",
+        "kubernetes",
+    ]
 
     # Check file paths
     for filepath in files_changed:
-        for system, patterns in cicd_patterns.items():
-            if any(pattern in filepath for pattern in patterns):
+        for system in cicd_systems:
+            if matches_cicd_config(filepath, system):
                 if system not in cicd_config["detected_systems"]:
                     cicd_config["detected_systems"].append(system)
                 cicd_config["config_files"].append(filepath)
@@ -106,7 +137,7 @@ def validate_prompt_envelope(
     """
     missing = []
     for part in PROMPT_ENVELOPE_PARTS:
-        if part not in prompt_envelope or not prompt_envelope[part]:
+        if part not in prompt_envelope or _is_blank_prompt_value(prompt_envelope[part]):
             missing.append(part)
 
     if missing:
@@ -124,11 +155,28 @@ def validate_cicd_discovery(
     required_fields = ["detected_systems", "config_files"]
     missing = []
     for field in required_fields:
-        if field not in cicd_discovery:
+        if field not in cicd_discovery or not cicd_discovery[field]:
             missing.append(field)
+
+    has_ci_capability = any(
+        bool(cicd_discovery.get(field))
+        for field in ("has_tests", "has_linting", "has_deployment")
+    )
+    if not has_ci_capability:
+        missing.append("ci_capability")
 
     if missing:
         raise MissingCIDiscoveryError(run_id, missing)
+
+
+def _is_blank_prompt_value(value: Any) -> bool:
+    if not value:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, list):
+        return all(not isinstance(item, str) or not item.strip() for item in value)
+    return False
 
 
 def separate_facts_and_assumptions(
