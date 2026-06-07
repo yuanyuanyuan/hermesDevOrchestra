@@ -10,8 +10,6 @@ simulated rollback report and do not execute destructive repository commands.
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -168,10 +166,6 @@ def execute_rollback(
     # Execute rollback based on strategy
     strategy = request.get("rollback_strategy", "git_revert")
     result = "simulated" if not dry_run else "dry_run"
-
-    if not dry_run:
-        # Report-only gate: do not execute destructive rollback commands here.
-        pass
 
     # Create rollback report
     report = {

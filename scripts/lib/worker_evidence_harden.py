@@ -90,9 +90,11 @@ def validate_write_scope(
     """Validate that actual changed files are within expected write scope.
 
     Raises WriteScopeViolationError if any file is outside expected scope.
+    Fails closed when no scope is declared: an undefined scope is treated as a
+    security violation rather than a permissive default.
     """
     if not expected_scope:
-        return  # No scope defined, allow all
+        raise WriteScopeViolationError(run_id, list(actual_changed_files), [])
 
     violating = []
     for filepath in actual_changed_files:

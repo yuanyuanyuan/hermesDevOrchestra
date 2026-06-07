@@ -113,15 +113,22 @@ def detect_cicd_config(files_changed: list[str], file_contents: dict[str, str] |
                     cicd_config["detected_systems"].append(system)
                 cicd_config["config_files"].append(filepath)
 
-    # Check file contents for CI/CD indicators
+    # Check file contents for CI/CD indicators using whole-word matching to avoid
+    # false positives from substrings (e.g. "attestation", "latest", "contest").
     if file_contents:
+        import re
+
+        test_pattern = re.compile(r"\btest(s|ing|ed)?\b", re.IGNORECASE)
+        lint_pattern = re.compile(r"\blint(s|ing|ed)?\b", re.IGNORECASE)
+        deploy_pattern = re.compile(r"\b(deploy|deployment|deployed)\b", re.IGNORECASE)
         for filepath, content in file_contents.items():
             content_lower = content.lower()
-            if "test" in filepath.lower() or "test" in content_lower:
+            filepath_lower = filepath.lower()
+            if test_pattern.search(filepath_lower) or test_pattern.search(content_lower):
                 cicd_config["has_tests"] = True
-            if "lint" in filepath.lower() or "lint" in content_lower:
+            if lint_pattern.search(filepath_lower) or lint_pattern.search(content_lower):
                 cicd_config["has_linting"] = True
-            if "deploy" in filepath.lower() or "deploy" in content_lower:
+            if deploy_pattern.search(filepath_lower) or deploy_pattern.search(content_lower):
                 cicd_config["has_deployment"] = True
 
     return cicd_config
