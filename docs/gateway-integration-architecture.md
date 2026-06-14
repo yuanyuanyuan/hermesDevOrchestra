@@ -67,6 +67,7 @@ The module classes below are the contract for implementation sprints. Method nam
 - `__init__(repo_root: Path, package_root: str = "config/debate/full", allow_staged: bool = False, enabled: bool = True) -> None`
 - `load_registries() -> dict[str, Any]`
 - `create_run(question: str, mode_id: str, selected_member_ids: list[str] | None = None, metadata: dict[str, Any] | None = None) -> dict[str, Any]`
+  - Returns: dict with fields `{ run_id, mode_id, selected_member_ids, metadata }`. The `run_id` is the owner of subsequent `conflict_ledger` entries (see Cross-Sprint Contract 1).
 
 ### Sprint 2
 
@@ -88,11 +89,13 @@ The module classes below are the contract for implementation sprints. Method nam
 
 - `__init__(repo_root: Path, package_root: str = "config/debate/full", allow_staged: bool = False) -> None`
 - `resolve_backend(backend_id: str) -> dict[str, Any]`
+  - Returns: dict with fields `{ backend_id, backend_kind, available, reason_if_unavailable }`. The `backend_kind` is the model source consumed by `worker_session_record.model_source` (Sprint 7 source-isolation, see `schema.md` §`worker_session_record`).
 - `invoke(invocation: dict[str, Any]) -> dict[str, Any]`
 
 `class DebateReportBuilder`
 
 - `create_report(run_id: str, mode_id: str, opinions: list[dict[str, Any]], degraded: bool = False) -> dict[str, Any]`
+  - Returns: dict with fields `{ report_id, run_id, mode_id, debate_refs[], consensus_score, degraded }`. See Cross-Sprint Contract 5 for the canonical shape; the `consensus_score` 0.60 threshold gates Sprint 9 E-class disputes (`spec.md` FR-13).
 
 ### Sprint 4
 
@@ -199,7 +202,107 @@ sequenceDiagram
 `class FullSchemaCutover`
 
 - `evaluate_family(family_id: str) -> dict[str, Any]`
+  - Returns: dict with fields `{ family_id, can_activate, gates_passed[], gates_failed[] }`. Belongs to Sprint 12 schema sync (see Cross-Sprint Contract 6 and the Plan Mapping Table in `## Plan Mapping Table`).
 - `can_activate(family_id: str) -> dict[str, Any]`
+
+## Cross-Sprint Contract Surfaces
+
+The 13-sprint audit-remediation plan produces and consumes six cross-sprint contracts. These contracts are the producer/consumer interface that the original Sprint 0 baseline did not enumerate. They are referenced from `docs/sprints/prd-compliance-audit-remediation-full/sprint-overview.md` and the field shapes are defined in `docs/sprints/prd-compliance-audit-remediation-full/schema.md`.
+
+### Contract 1 — `conflict_ledger` (Producer: Sprint 1; Consumers: Sprints 2, 10, 13)
+
+- **Producer**: Sprint 1 (`plan-sprint-1.md` U1, 5 SP).
+- **Consumers**: Sprint 2 (closeout audit reads ledger), Sprint 10 (residual-risk basis), Sprint 13 (final audit gate).
+- **Artifact path**: `state://runs/{run_id}/conflict-ledger.json` (per `schema.md` Persistence).
+- **Top-level required fields** (from `schema.md` §`conflict_ledger`):
+  - `schema_version: string = "orchestra.full.v1"`
+  - `artifact_type: string = "conflict_ledger"`
+  - `run_id: string`
+  - `conflicts[]: array` — each item: `conflict_id, run_id, stage, type, sources, severity, resolution, resolver, resolution_evidence, created_at, resolved_at`
+- **Enums** (from `schema.md`):
+  - `type`: `intent_vs_inference | fact_vs_assumption | cross_team_conflict | dependency_conflict | user_override`
+  - `severity`: `high | medium | low`
+  - `resolution`: `open | auto_resolved | accepted_risk | manual_resolved | superseded`
+- **Surface status**: type definition lives in `schema.md`; this contract block is the only doc surface in `docs/`. No current public class method in this document enforces the schema (see `## Plan Mapping Table` for follow-up).
+
+### Contract 2 — `run.lifecycle_status` + transition guard API (Producer: Sprint 2; Consumers: Sprints 3, 4, 7, 8, 10)
+
+- **Producer**: Sprint 2 (`plan-sprint-2.md`, 5 SP).
+- **Consumers**: Sprint 3 (rollback target state), Sprint 4 (channel routing input), Sprint 7 (worker source-isolation precondition), Sprint 8 (DAG validator precondition), Sprint 10 (veto decision).
+- **Allowed values** (13, from `schema.md` §`run.lifecycle_status`):
+  `created`, `intake_complete`, `direction_debate`, `solution_debate`, `implementation`, `improvement`, `global_evaluation`, `continuous_improvement`, `closed`, `paused`, `blocked`, `cancelled`, `rollback_requested`.
+- **Transition Guard Table** (from `schema.md` L28-40):
+  - `created` → `intake_complete`, `cancelled`
+  - `intake_complete` → `direction_debate`, `cancelled`, `blocked`
+  - `direction_debate` → `solution_debate`, `cancelled`, `blocked`, `rollback_requested`
+  - `solution_debate` → `implementation`, `cancelled`, `blocked`, `rollback_requested`
+  - `implementation` → `improvement`, `cancelled`, `blocked`, `rollback_requested`
+  - `improvement` → `global_evaluation`, `cancelled`, `blocked`, `rollback_requested`
+  - `global_evaluation` → `continuous_improvement`, `closed`, `cancelled`, `blocked`, `rollback_requested`
+  - `continuous_improvement` → `closed`, `cancelled`, `blocked`, `rollback_requested`
+  - `closed` → (terminal)
+  - `paused` → `cancelled`; resume requires explicit `resume_lifecycle_status` or `previous_lifecycle_status` active target
+  - `blocked` → `cancelled`; resume requires resolved blockers and explicit `resume_lifecycle_status` or `previous_lifecycle_status` active target
+  - `cancelled` → (terminal)
+  - `rollback_requested` → `implementation`, `cancelled`, `blocked`
+- **Run Projection API impact**: the response schema in `## Run Projection API` includes `run.lifecycle_status` as a top-level field under `run` (see the L219 cell note).
+- **Surface status**: this block is the first explicit field/guard declaration in `docs/`.
+
+### Contract 3 — `run.channel_decision` (Producer: Sprint 4; Consumers: Sprints 5, 6)
+
+- **Producer**: Sprint 4 (`plan-sprint-4.md`, 5 SP).
+- **Consumers**: Sprint 5 (security escape forces `forced_standard`), Sprint 6 (mini-debate round count from `required_debate_rounds`).
+- **Required fields** (9, from `schema.md` §`channel_decision`):
+  - `channel: enum (quick | light | standard | deep)`
+  - `reason: string`
+  - `project_age_weeks: number`
+  - `files_count: number`
+  - `required_debate_rounds: number`
+  - `required_evidence[]: array of evidence refs`
+  - `forced_standard: bool`
+  - `forced_standard_reasons[]: array of strings`
+  - `decision_ref: string` (audit trail pointer)
+- **Surface status**: zero class methods consume this schema in current doc; this block is the first surface. No code change implied (audit scope is docs only).
+
+### Contract 4 — `authority_route` + residual-risk approval (Producer: Sprint 10; Consumer: Sprint 11)
+
+- **Producer**: Sprint 10 (`plan-sprint-10.md` U10, 5 SP) — modifies `scripts/lib/gateway_evaluation.py`.
+- **Consumer**: Sprint 11 (Override approval records use `authority_route` and `residual_risks` as approval preconditions).
+- **Required fields** (from `spec.md` and `schema.md` §`override_record` companion):
+  - `authority_route: string` (which authority chain must approve: e.g., `l4_user_only`, `l3_l4_kimi_user`, `auto_resolved_within_policy`)
+  - `veto_dimensions[]: array` (one-vote veto scores from PRD policy)
+  - `residual_risks[]: array` of `{severity: high|medium|low, action: string, authority_route: string}`
+  - `approver_ref: string`
+  - `notification_mode: enum (summary | full | none)`
+- **Companion artifact**: `override_record` (Sprint 11 output) — required fields from `schema.md` L57-59: `override_id, run_id, correction_rounds[], override_category, risk_level, approver_ref, evidence_refs[], status, created_at, resolved_at`.
+- **Surface status**: `## PRD 2.2 Capability Mapping` (L246-257) covers actor capability but not run-level `authority_route`. This contract block is the first run-level surface.
+
+### Contract 5 — mini-debate report refs + `consensus_score` (Producer: Sprint 6; Consumer: Sprint 9)
+
+- **Producer**: Sprint 6 (`plan-sprint-6.md`, 5 SP) — Quick/Light mini-debate integration.
+- **Consumer**: Sprint 9 (E-class improvement disputes use this; `spec.md` FR-13: "Two-round E dispute flow blocks when consensus is below 0.60").
+- **Required fields**:
+  - `debate_refs[]: array of strings` (pointers to debate report artifacts)
+  - `consensus_score: number` (range 0.0–1.0; **0.60 threshold** — Sprint 9 E-class blocks below this)
+  - `degraded: bool` (whether bounded debate fell back to degraded mode)
+- **Class surface**: `DebateReportBuilder.create_report(run_id, mode_id, opinions, degraded)` at L95. The existing block in `## Public Module Interfaces` (L93-95) cross-links to this contract; the typed shape annotation is the canonical reference.
+- **Surface status**: this block is the first explicit field declaration in `docs/`.
+
+### Contract 6 — Sprint 12 → Sprint 13 gate scripts + evidence refs (Producer: Sprint 12; Consumer: Sprint 13)
+
+- **Producer**: Sprint 12 (`plan-sprint-12.md` U14, 3 SP) — Schema/docs/success metrics synchronization.
+- **Consumer**: Sprint 13 (`plan-sprint-13.md`) — Final PRD compliance audit gate; consumes Sprint 12 evidence refs.
+- **Key deliverables** (per `plan-sprint-12.md` U14):
+  - Full schema reconciliation of additive fields (`config/schemas/orchestra.full.schema.json`)
+  - Success metrics for conflict gate, rollback, channel escape, source isolation, final audit
+  - Docs updated only for behavior actually implemented
+  - `scripts/tests/test-prd-remediation-schema-doc-sync.sh` (per `schema.md` L68 Consistency Checks)
+- **Required evidence refs** (Sprint 13 gate consumes):
+  - Schema validation pass for all new fixture artifacts
+  - Docs sync test pass (no missing schema references)
+  - Strict e2e six-stage flow pass
+  - Success metrics pipeline pass
+- **Surface status**: `## Strict Gate Harness` in `docs/ARCHITECTURE.md` (L82) lists the scripts but does not yet declare Owner=Sprint 12 / Consumer=Sprint 13. This contract block is the canonical relationship reference.
 
 ## Call Pattern
 
@@ -216,7 +319,7 @@ Gateway exposes Kimi-facing state projection without exposing raw Kanban mutatio
 
 | Method | Path | Capability | Notes |
 |---|---|---|---|
-| GET | `/orchestra/runs/{run_id}/projection` | `hydrate_requirements` | Returns `run`, `tasks`, `artifacts`, `decisions`, `audits`, and `events`; response header `X-Projection-Schema-Version: 1.0.0`. |
+| GET | `/orchestra/runs/{run_id}/projection` | `hydrate_requirements` | Returns `run` (with `lifecycle_status` per Cross-Sprint Contract 2), `tasks`, `artifacts`, `decisions`, `audits`, and `events`; response header `X-Projection-Schema-Version: 1.0.0`. |
 | POST | `/orchestra/runs/{run_id}/projection` | `hydrate_requirements` | Refreshes projection for `stage_advance`, `heartbeat_sync`, `audit_rebuild`, or `manual_refresh`; invalid reasons return `invalid_refresh_reason`. |
 | POST | `/orchestra/kanban/raw-state` | `mutate_kanban_raw_state` | Gateway-only raw Kanban mutation seam; Kimi receives `mutate_kanban_raw_state_blocked`. |
 
