@@ -8,6 +8,27 @@ Hermes Dev Orchestra is a single-developer, multi-project AI development orchest
 
 <!-- VERIFY: Minimums are Hermes Agent v0.11.0+, Claude Code CLI v2.1.110+, and Codex CLI v0.122.0+. Last local verification used Hermes Agent v0.13.0, Claude Code 2.1.161, and codex-cli 0.136.0. -->
 
+## Current Remediation in Flight
+
+The 13-sprint PRD Compliance Audit Remediation plan is in active execution. See [`docs/sprints/prd-compliance-audit-remediation-full/sprint-overview.md`](sprints/prd-compliance-audit-remediation-full/sprint-overview.md) for the authoritative plan. This section surfaces the 6 cross-sprint contracts, Sprint 12 deliverable owner, and Sprint 13 audit gate consumer; for full field shapes, see [`docs/gateway-integration-architecture.md`](gateway-integration-architecture.md) `## Cross-Sprint Contract Surfaces`.
+
+| Aspect | Status | Reference |
+|---|---|---|
+| Source of truth | `sprint-overview.md` Sprint Table + `schema.md` | `docs/sprints/prd-compliance-audit-remediation-full/` |
+| Cross-sprint contracts surfaced | 6 (see `gateway-integration-architecture.md` `## Cross-Sprint Contract Surfaces`) | Contracts 1-6 in gateway doc |
+| Strict 0→6 gate scripts | `test-e2e-strict-six-stage-flow.sh`, `test-success-metrics-pipeline.sh`, `test-schema-doc-sync.sh` | `## Key Abstractions` row "Strict Gate Harness" below |
+| Sprint 12 deliverable | `plan-sprint-12.md` U14 (schema/doc/metrics sync) — owner: solo, 3 SP | `scripts/tests/test-prd-remediation-schema-doc-sync.sh` |
+| Sprint 13 audit gate consumer | consumes Sprint 12 evidence refs; final PRD compliance gate | `plan-sprint-13.md` |
+| Prior gate slice (archived) | `docs/archive/sprints/prd-compliance-audit-remediation/` (Sprint 1 only) | `plan-sprint-1.md` L13 |
+
+### Known Limitations of the in-flight plan
+
+The audit-remediation-full plan declares three explicit boundaries (`sprint-overview.md` L38-42):
+
+- **Prior Conflict Ledger gate slice**: archived at `docs/archive/sprints/prd-compliance-audit-remediation/`. The current plan does not overwrite it; Sprint 1's `conflict_ledger` schema and closeout integration consume it.
+- **DAG scope**: DAG work is scoped to **Gateway integration seam only** (consuming `scripts/lib/dag_validator.py` results as blocking advancement evidence). Low-level cycle detection already exists in `dag_validator.py` and is **not** in scope.
+- **Rollback scope**: rollback implementation is limited to `current-run refs[]` (per `rollback_report.affected_refs[]` in `schema.md` L42-44). Must not touch unrelated branches or protected targets; `protected_target_check` is a required field in `rollback_report`.
+
 ## Current Architecture Layers
 
 | Layer | Runtime status | Notes |
@@ -78,8 +99,11 @@ A typical MVP/local task flows through the system as follows:
 | **Skills** | `skills/{dev-orchestra,claude-supervisor,codex-executor,escalation-handler}/SKILL.md` | Hermes-native skill definitions that encode the orchestration workflow, role behaviors, and escalation handling logic consumed by the upstream Hermes Agent. |
 | **Pre-Tool Risk Gate** | `hermes/hooks/pre_tool_call-risk-gate.sh` | Hook script invoked before tool execution to enforce role-specific guardrails and risk floors at the CLI layer. |
 | **Gateway Runtime** | `scripts/lib/orch_gateway.py`, `scripts/bin/orch-gateway` | Local HTTP runtime for Run Projection API, Gateway State/Audit, authority checks, idempotency, worker/debate/evaluation/closeout endpoints. |
+| **Run Projection Response Header** | `X-Projection-Schema-Version: 1.0.0` | Returned by `GET /orchestra/runs/{run_id}/projection` to version Kimi-facing projection payloads. |
+| **Actor Token Expiry** | 300 seconds + 30 seconds clock skew | HMAC-validated actor tokens (L3/L4 approval claims supported). |
+| **Cutover Config** | `config/cutover/full-readiness-gates.json`, `config/cutover/runtime-family-activation.json` | Source of truth for staged-vs-active policy; family-scoped activation override. |
 | **Authority Matrix** | `config/decisions/authority-matrix.json`, `docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md` | Runtime and full-target actor capability boundaries. |
-| **Strict Gate Harness** | `scripts/tests/test-e2e-strict-six-stage-flow.sh`, `scripts/tests/test-success-metrics-pipeline.sh`, `scripts/tests/test-schema-doc-sync.sh` | Regression gates for strict 0→6 flow, success metrics, and schema/doc/Gateway sync. |
+| **Strict Gate Harness** | `scripts/tests/test-e2e-strict-six-stage-flow.sh`, `scripts/tests/test-success-metrics-pipeline.sh`, `scripts/tests/test-schema-doc-sync.sh` | Regression gates for strict 0→6 flow, success metrics, and schema/doc/Gateway sync. **Owner**: Sprint 12 (`plan-sprint-12.md` U14, 3 SP). **Consumer**: Sprint 13 (`plan-sprint-13.md` final audit gate). Required evidence refs per `plan-sprint-12.md` Test Matrix: schema validation, docs sync, success metrics pipeline, strict e2e audit gate pass together. |
 
 ---
 
