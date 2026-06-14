@@ -97,46 +97,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ---
 
-## 项目架构
-
-本项目采用**包式目录结构**，支持模块化集成开发：
-
-```
-hermes/
-├── packages/                          # 所有集成包
-│   ├── modbus_ocpp_bridge/            # Modbus ↔ OCPP 桥接
-│   │   ├── modbus_ocpp_bridge/        # 主包代码
-│   │   ├── modbus_ocpp_bridge_assets/ # 生成的文档和二进制
-│   │   ├── tests/                     # 单元测试
-│   │   └── deploy.sh                  # 独立部署脚本
-│   └── evse_master_chargepoint/       # EVSE 充电桩集成
-│       ├── evse_master_chargepoint/
-│       ├── evse_master_chargepoint_assets/
-│       ├── tests/
-│       └── deploy.sh
-├── integrations/                      # 活跃集成实例（运行时数据）
-├── archive/                           # 归档/未使用的集成
-├── install.sh                         # 主安装器（编排包部署）
-├── setup_venv.sh                      # 虚拟环境设置
-└── configs/                           # 配置文件
-```
-
-### 关键原则
-
-1. **包隔离**：每个包有自己的包目录、资产、测试和部署脚本
-2. **资产以包名前缀**：文档和二进制输出使用 `{package_name}_assets/` 命名
-3. **集中式安装器**：`install.sh` 自动发现并部署所有包
-4. **独立部署**：每个包可通过其 `deploy.sh` 独立部署
-
-### 部署流程
-
-1. `install.sh` 设置虚拟环境并复制主脚本
-2. 对 `packages/` 中的每个包，执行包的 `deploy.sh`
-3. 每个 `deploy.sh` 处理自己的文档生成和 systemd 服务设置
-4. systemd 服务安装后管理集成
-
----
-
 ## CodeMap 集成
 
 > 本项目使用 [CodeMap](https://github.com/yuanyuanyuan/mycodemap) 进行 AI-Native 代码分析和依赖管理。
