@@ -166,6 +166,8 @@ Routing:
 | **真流量 savings 对比** | ⏳ 待跑 | 当前 `/stats` 全 0,需跑 30 分钟 Claude/Codex 任务后对比 0.23.0 时期数据(Codex 5.9% / Claude 0.7%) |
 | **Kompress v2 实际节省率** | ⏳ 待跑 | `kompress-v2-base` int8-wo vs `kompress-base`(0.23.0 没工作)——首次请求触发下载后才能测 |
 | **headroom-ctl stats 解析修复** | ✅ **已修(2026-06-14 23:13)** | `_kompress_health()` 改用 v2-base 路径 + 3 文件 fallback 链(int8-wo > fp32 > int8)。空 cache 仍报"未找到"是正常的(等首次请求触发下载)。其他 stats 字段在 0.25.0 仍兼容。`~/bin/headroom-ctl` 备份到 `~/backup/headroom-upgrade-20260614-201030/headroom-ctl.post` |
+| **headroom-ctl model_loaded 自相矛盾** | ✅ **已修(2026-06-14 23:38)** | `is_kompress_available()` 是骗术——只查 onnxruntime+transformers 包能否 import,不验文件存在。改用文件+大小 sanity check(三态:True/Partial/False),并加 `headroom-ctl warmup-kompress` 主动预热命令。详见本节"§6.1 二次 fix" |
+| **§6.1 二次 fix:`is_kompress_available()` 骗局** | ⚠️ **部分修复** | headroom-ctl 修对了(`status` 自洽,`warmup-kompress` 命令就位);但实际下载**仍被网络层阻**:xet 协议在 hf-mirror.com + Clash 代理下 hang 在 67MB 处 7+ 分钟;关掉 xet (`HF_HUB_DISABLE_XET=1`) 后走经典 HTTP 立即报 `OSError: We couldn't connect to 'https://hf-mirror.com'`(同 0.23.0 P0 网络 bug,308 redirect → huggingface.co 断)。需要**VPN 直连 huggingface.co** 或手动放模型到 `~/.cache/huggingface/hub/models--chopratejas--kompress-v2-base/snapshots/<hash>/onnx/kompress-int8-wo.onnx` |
 | **HEADROOM.md docs 完整对齐** | ✅ 大部分完成 | §0.0 / §3.1.1 / §10 已更新 |
 | **HEADROOM-OPS.md docs 完整对齐** | ✅ 大部分完成 | §0.6 / §1.7 / §1.10 / §7 已更新 |
 | **2026-06-06 诊断报告归档** | ✅ 完成 | 改名 + header 标注 |
@@ -175,7 +177,10 @@ Routing:
 ## 七、当前已知风险(0.25.0 升级后)
 
 1. **`memory_20250818` 在 relay 兼容性**——0.25.0 默认会把 native memory tool 暴露给 LLM,gotoken.relay **可能不识别**导致 400 错。`features.memory: false` 一秒回滚
-2. **`kompress-v2-base` 首次下载依赖 hf-mirror**——0.23.0 时期 `kompress-base` 下载失败的 P0 bug 根因(网络 308 redirect)在 0.25.0 仍然存在,首次请求可能阻塞 ~12s
+2. **`kompress-v2-base` 下载链路有 2 个网络变体都坏** —— 实测(2026-06-14 23:35):
+   - **xet 协议**(huggingface_hub 1.19.0 默认):hf-mirror.com + Clash 本地代理 7897,下载到 67MB 卡 7+ 分钟,日志显示 "Decreased concurrency from 1 to 1" 但不报错,xet client 静默断流
+   - **经典 HTTP**(`HF_HUB_DISABLE_XET=1`):立即报 `OSError: We couldn't connect to 'https://hf-mirror.com'`(同 0.23.0 P0 网络 bug,308 redirect → huggingface.co 断)
+   - **实际可工作路径**:VPN 直连 `huggingface.co` 下载到本地后,**手动** symlink 到 `~/.cache/huggingface/hub/models--chopratejas--kompress-v2-base/snapshots/<hash>/onnx/kompress-int8-wo.onnx`;或首次真流量触发自动下载(走同链路,可能仍 hang)
 3. **`ccr_enabled=True` 默认开启**——CCR marker 注入现在是默认行为,对 prefix cache 行为有微小影响(已通过 `compress_assistant_text_blocks=False` 缓解)
 4. **TOIN 状态需重新积累**——升级后 `toin.json` 旧模式可能不匹配新格式,proxy 会自动重新学习
 
