@@ -4,6 +4,33 @@
 
 Define how Hermes Orchestra full-system modules integrate with the existing Python Gateway. This document started as the Sprint 0 integration baseline; later sections include subsequent Gateway additions such as Run Projection, actor-token authority, heartbeat/snapshot/sweeper behavior, and mixed-family runtime activation.
 
+## Post-Sprint 0 Additions
+
+This document is the Sprint 0 baseline plus subsequent additions. The current appendix layer (`## Cross-Sprint Contract Surfaces` + this section + `## Known Limitations (from sprint-overview.md)` + `## Plan Mapping Table`) is the audit-remediation-full alignment layer for the 13-sprint PRD compliance plan. Additions and surface changes:
+
+| Addition | Reference |
+|---|---|
+| Run Projection API (with `X-Projection-Schema-Version: 1.0.0`) | `## Run Projection API` |
+| Actor-token authority + 300s + 30s clock skew | `## Actor Authentication` |
+| Heartbeat / snapshot / sweeper flow | `## Sprint 9 Heartbeat, Snapshot, Sweeper Flow` — actually Sprint 5 scope per `plan-sprint-5.md`; see `## Plan Mapping Table` |
+| Mixed-family runtime activation | `## Configuration Routing` + `config/cutover/runtime-family-activation.json` |
+| 14 public class blocks (Sprints 1-10) | `## Public Module Interfaces`; 2 are scope-drift flagged (see `## Plan Mapping Table`) |
+| 6 Cross-Sprint Contract surfaces (Contracts 1-6) | `## Cross-Sprint Contract Surfaces` |
+| Plan Mapping Table | `## Plan Mapping Table` (at end of doc) |
+| Known Limitations (3 from `sprint-overview.md`) | `## Known Limitations (from sprint-overview.md)` (at end of doc) |
+| `## Historical Sprint 0 Non-Goals` (negative list) | existing |
+
+### Cross-Sprint Contract → Plan Mapping
+
+| Contract | Producer | Consumers | Key shape |
+|---|---|---|---|
+| `conflict_ledger` | Sprint 1 | 2, 10, 13 | `conflicts[]` with 3 enums (type, severity, resolution) |
+| `run.lifecycle_status` | Sprint 2 | 3, 4, 7, 8, 10 | 13 values + transition guard table |
+| `run.channel_decision` | Sprint 4 | 5, 6 | 9 required fields incl. `forced_standard_reasons[]` |
+| mini-debate report + `consensus_score` | Sprint 6 | 9 | `consensus_score` 0.60 threshold |
+| `authority_route` + residual-risk | Sprint 10 | 11 | `residual_risks[]`, `approver_ref`, `notification_mode` |
+| Sprint 12 → Sprint 13 gate scripts | Sprint 12 | 13 | schema/doc/metric gate scripts + evidence refs |
+
 ## Integration Mode
 
 - Integration mode: import-and-call Python modules under `scripts/lib/`.
@@ -60,7 +87,7 @@ Allowed behavior for inactive modules:
 
 The module classes below are the contract for implementation sprints. Method names are intentionally small and concrete.
 
-### Sprint 1
+### Sprint 1 [SP: 5]
 
 `class DebateEngine`
 
@@ -69,7 +96,7 @@ The module classes below are the contract for implementation sprints. Method nam
 - `create_run(question: str, mode_id: str, selected_member_ids: list[str] | None = None, metadata: dict[str, Any] | None = None) -> dict[str, Any]`
   - Returns: dict with fields `{ run_id, mode_id, selected_member_ids, metadata }`. The `run_id` is the owner of subsequent `conflict_ledger` entries (see Cross-Sprint Contract 1).
 
-### Sprint 2
+### Sprint 2 [SP: 5]
 
 `class DebateAssembly`
 
@@ -77,7 +104,7 @@ The module classes below are the contract for implementation sprints. Method nam
 - `load_policy() -> dict[str, Any]`
 - `select_for_stage(stage: str, task_type: str, risk_level: str, project_overrides: dict[str, Any] | None = None) -> dict[str, Any]`
 
-### Sprint 3
+### Sprint 3 [SP: 5]
 
 `class DebateMemberInvoker`
 
@@ -97,7 +124,7 @@ The module classes below are the contract for implementation sprints. Method nam
 - `create_report(run_id: str, mode_id: str, opinions: list[dict[str, Any]], degraded: bool = False) -> dict[str, Any]`
   - Returns: dict with fields `{ report_id, run_id, mode_id, debate_refs[], consensus_score, degraded }`. See Cross-Sprint Contract 5 for the canonical shape; the `consensus_score` 0.60 threshold gates Sprint 9 E-class disputes (`spec.md` FR-13).
 
-### Sprint 4
+### Sprint 4 [SP: 5]
 
 `class WorkerRegistry`
 
@@ -110,7 +137,9 @@ The module classes below are the contract for implementation sprints. Method nam
 - `__init__(registry: WorkerRegistry) -> None`
 - `negotiate(role: str, requested_backend: str | None = None, required_capabilities: list[str] | None = None) -> dict[str, Any]`
 
-### Sprint 5
+### Sprint 5 [SP: 6]
+
+> ⚠ **Scope drift note (audit P0-3)**: `WorkerSessionManager.transition` is not authorized by any `plan-sprint-N.md` (verified 2026-06-15). Retained for current behavior; see `## Plan Mapping Table` for relocation plan. **Fix docs only** — no method removal.
 
 `class WorkerSessionManager`
 
@@ -121,7 +150,7 @@ The module classes below are the contract for implementation sprints. Method nam
 
 - `sweep(now: datetime | None = None) -> dict[str, Any]`
 
-### Sprint 6
+### Sprint 6 [SP: 5]
 
 `class ReleasePipeline`
 
@@ -160,7 +189,7 @@ sequenceDiagram
   Report-->>Gateway: debate_report with implementation_report
 ```
 
-### Sprint 7
+### Sprint 7 [SP: 5]
 
 `class RuntimeKnowledgeBase`
 
@@ -171,7 +200,7 @@ sequenceDiagram
 
 - `ingest(entry: dict[str, Any]) -> dict[str, Any]`
 
-### Sprint 8
+### Sprint 8 [SP: 5]
 
 `class SelfEvolutionQueue`
 
@@ -182,7 +211,7 @@ sequenceDiagram
 
 - `evaluate(component_id: str, observed: dict[str, Any]) -> dict[str, Any]`
 
-### Sprint 9
+### Sprint 9 [SP: 6]
 
 `class FixturePolicy`
 
@@ -192,12 +221,14 @@ sequenceDiagram
 
 - `evaluate(evidence: dict[str, Any]) -> dict[str, Any]`
 
-### Sprint 10
+### Sprint 10 [SP: 5]
 
 `class IdempotencyArchive`
 
 - `record(command_id: str, payload: dict[str, Any]) -> dict[str, Any]`
 - `fetch(idempotency_key: str) -> dict[str, Any] | None`
+
+> ⚠ **Scope drift note (audit P0-4)**: `FullSchemaCutover` belongs to Sprint 12 schema sync (per `plan-sprint-12.md` U14), not Sprint 10 (which is `gateway_evaluation.py` per `plan-sprint-10.md` U10). Retained at this anchor for now; see `## Plan Mapping Table` for relocation plan.
 
 `class FullSchemaCutover`
 
@@ -418,3 +449,42 @@ Gateway facade responsibilities stay narrow:
 - No Gateway refactor.
 - No automatic full-package activation.
 - No separate process supervisor for debate, worker, release, or knowledge modules.
+
+## Known Limitations (from `sprint-overview.md`)
+
+The 13-sprint audit-remediation-full plan declares three explicit boundaries (`sprint-overview.md` L38-42):
+
+- **Prior Conflict Ledger gate slice**: archived at `docs/archive/sprints/prd-compliance-audit-remediation/`. The current plan does not overwrite it; Sprint 1's `conflict_ledger` schema and closeout integration consume it.
+- **DAG scope**: DAG work is scoped to **Gateway integration seam only** (consuming `scripts/lib/dag_validator.py` results as blocking advancement evidence). Low-level cycle detection already exists in `dag_validator.py` and is **not** in scope.
+- **Rollback scope**: rollback implementation is limited to `current-run refs[]` (per `rollback_report.affected_refs[]` in `schema.md` L42-44). Must not touch unrelated branches or protected targets; `protected_target_check` is a required field in `rollback_report`.
+
+## Plan Mapping Table
+
+Reference: `docs/sprints/prd-compliance-audit-remediation-full/sprint-overview.md` Sprint Table.
+
+This table is the authoritative cross-reference between the 13-sprint audit-remediation plan and the existing `### Sprint N` anchors in this document. The existing anchor titles are retained to preserve external links; new contract surfaces (in `## Cross-Sprint Contract Surfaces`) provide the producer/consumer relationship.
+
+| Plan Sprint | Plan Focus | SP | This doc anchor | Status |
+|---|---|---|---|---|
+| 1 | Conflict Ledger | 5 | `### Sprint 1 [SP: 5]` | `DebateEngine` block; Contract 1 `conflict_ledger` added |
+| 2 | Lifecycle state machine | 5 | `### Sprint 2 [SP: 5]` | `DebateAssembly` block; Contract 2 `run.lifecycle_status` added |
+| 3 | Rollback strategy | 5 | `### Sprint 3 [SP: 5]` | `DebateMemberInvoker` / `DebateBackendAdapter` / `DebateReportBuilder` blocks; related to Contract 5 `consensus_score` |
+| 4 | Channel routing | 5 | `### Sprint 4 [SP: 5]` | `WorkerRegistry` / `CapabilityNegotiator` blocks; Contract 3 `run.channel_decision` added |
+| 5 | Security escape + heartbeat reconnect/snapshot | 6 | `### Sprint 5 [SP: 6]` | `WorkerSessionManager` ⚠ / `WorkerSessionSweeper` blocks; see Scope Drift Notes below |
+| 6 | Quick/Light mini-debate | 5 | `### Sprint 6 [SP: 5]` | `ReleasePipeline` / `ReleaseExecutor` / `DagValidator` blocks; Contract 5 `consensus_score` added |
+| 7 | Worker `model_source` source isolation | 5 | `### Sprint 7 [SP: 5]` | `RuntimeKnowledgeBase` / `KnowledgeIngestion` blocks; `model_source` field surfaced via `DebateBackendAdapter.resolve_backend` typed shape |
+| 8 | Worker write-scope, DAG, review/commit evidence | 5 | `### Sprint 8 [SP: 5]` | `SelfEvolutionQueue` / `PerformanceBudgetPolicy` blocks |
+| 9 | Intake completeness + E-class mini-debate | 6 | `### Sprint 9 [SP: 6]` | `FixturePolicy` / `DegradationPolicy` blocks; consumer of Contract 5 `consensus_score` 0.60 threshold |
+| 10 | Veto + residual-risk | 5 | `### Sprint 10 [SP: 5]` | `IdempotencyArchive` / `FullSchemaCutover` ⚠ blocks; Contract 4 `authority_route` added |
+| 11 | User correction / Override | 5 | (no anchor) | Pending — companion to Contract 4 via `override_record` |
+| 12 | Schema/docs/metrics sync | 3 | (no anchor) | Plan owner; Contract 6 + `FullSchemaCutover` ⚠ should relocate here |
+| 13 | Final PRD audit gate | 5 | (no anchor) | Consumer of Contract 6 evidence refs |
+
+### Scope Drift Notes (this doc, not yet resolved)
+
+The following class blocks in this document are **not authorized by any `plan-sprint-N.md`** (verified 2026-06-15 by `grep -l` across all 13 plan files, see audit `prd-compliance-docsync-review-2026-06-15.md` P0-3 / P0-4):
+
+- `WorkerSessionManager.transition(session_id, next_state, details)` — see inline ⚠ at `### Sprint 5 [SP: 6]`. The class block was added in the Sprint 0 baseline before the 13-sprint remediation plan existed. **Retained** for current behavior; flagged for relocation or removal in a future doc-sync cycle. The closest contextual location would be Sprint 8 (Worker write-scope) but that plan does not enumerate this method.
+- `FullSchemaCutover.evaluate_family(family_id)` / `can_activate(family_id)` — see inline ⚠ at `### Sprint 10 [SP: 5]`. Belongs to `plan-sprint-12.md` U14 (Schema/docs/metrics sync) per that file's "Files" list (`config/schemas/orchestra.full.schema.json`, `test-prd-remediation-schema-doc-sync.sh`). Not Sprint 10 (which is `gateway_evaluation.py` veto work per `plan-sprint-10.md` U10). **Relocate anchor**: future PR should move this class block to a new "Sprint 12 Schema Sync" anchor.
+
+This table is the authoritative cross-reference. Existing `### Sprint N` block titles remain as-is to preserve anchors used by external links; do not rename them in this PR.
