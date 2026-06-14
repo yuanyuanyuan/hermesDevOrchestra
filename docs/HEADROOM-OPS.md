@@ -80,6 +80,11 @@
 | **同步到 claude/codex** | `~/bin/headroom-ctl apply` | ✅ |
 | **离线学习**(透传) | `~/bin/headroom-ctl learn [--apply] [--project <p>]` | ✅ |
 | **长程记忆 CRUD**(透传) | `~/bin/headroom-ctl memory <stats\|list\|search\|add\|remove>` | ✅ |
+| **token-savings 验证**(透传) | `~/bin/headroom-ctl agent-savings [--check-perf]` | ✅ |
+| **proxy 性能分析**(透传) | `~/bin/headroom-ctl perf [--hours 24] [--format json]` | ✅ |
+| **网络流量对比**(透传) | `~/bin/headroom-ctl capture network-diff <a.jsonl> <b.jsonl>` | ✅ |
+| **memory 评估**(透传) | `~/bin/headroom-ctl evals <memory\|memory-v2\|probes>` | ✅ |
+| **持久化 deployment 管理**(透传) | `~/bin/headroom-ctl install <apply\|status\|restart\|stop\|remove>` | ✅ |
 | **help** | `~/bin/headroom-ctl help` | ✅ |
 | 配置文件(唯一真相源) | `~/.config/headroom/config.yaml` | ✅ 已建,chmod 600 |
 | ~~`proxy.env`~~ | ~~`~/.config/headroom/proxy.env`~~ | ❌ **已删除**(2026-06-06 决定) |

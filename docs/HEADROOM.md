@@ -501,7 +501,7 @@ paths:
 
 ### 3.2 管理脚本 `~/bin/headroom-ctl`
 
-11 个子命令(覆盖 start/wait/stop/restart/status/show-config-hints/config-show/config-edit/apply/learn/memory):
+16 个子命令(覆盖 start/wait/stop/restart/status/doctor/warmup-kompress/show-config-hints/config-show/config-edit/apply/learn/memory/agent-savings/perf/capture/evals/install):
 
 ```bash
 # === 改上游/换 token/开关特性 → 改 yaml + 同步 ===
@@ -520,6 +520,11 @@ HEADROOM_MODE=cache headroom-ctl restart   # 单次启 cache 模式
 # === 离线工具(透传 headroom 子命令) ===
 headroom-ctl learn [--apply] [--project <path>]   # 离线失败学习(见 §1.8)
 headroom-ctl memory stats|list|search|add|remove  # 长程记忆 CRUD(见 §5.3)
+headroom-ctl agent-savings [--check-perf]        # 渲染/验证 token-savings profile
+headroom-ctl perf [--hours 24] [--format json]   # proxy 性能分析(从 log)
+headroom-ctl capture network-diff <a> <b>        # 网络流量对比(MITM/diff)
+headroom-ctl evals memory|memory-v2|probes       # memory 评估(LoCoMo benchmark)
+headroom-ctl install apply|status|restart|stop|remove   # 持久化 deployment 管理
 ```
 
 > **关键设计决定**:`learn` / `memory` **不**进 `config.yaml`——它们是**命令式数据操作**(非幂等:add 加新行、learn 重写文件),不是**声明式启动参数**。config.yaml 只装"启 proxy 时要什么状态",不装"每次重启要执行的副作用"。
@@ -1531,7 +1536,7 @@ sqlite3 /data/hermes/headroom_memory.db 'DELETE FROM memories;'
 | Telemetry | ❌ off |
 | Rust core | ✅ loaded |
 | 配置 | `~/.config/headroom/config.yaml`(2026-06-06 起替代 `proxy.env`) |
-| 管理脚本 | `~/bin/headroom-ctl`(11 个子命令,0.25.0 stats 字段解析需要小幅更新) |
+| 管理脚本 | `~/bin/headroom-ctl`(16 个子命令,2026-06-15 新增 5 个透传: agent-savings / perf / capture / evals / install) |
 | Log | `/tmp/headroom.log` |
 | Memory DB | `/data/hermes/headroom_memory.db` (空,2026-06-14 仍是 0 行) |
 | 缓存(ONNX 模型) | `~/.cache/huggingface/hub/models--chopratejas--kompress-v2-base/`(首次请求触发下载,默认 261MB int8-wo,fallback 601MB fp32)|
