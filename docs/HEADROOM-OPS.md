@@ -44,23 +44,26 @@
 
 #### 0.2.1 ContentRouter 内部开关(不可配置)
 
-> **重要**:`ContentRouterConfig` 18 个字段在 proxy 0.23.0 启动时**硬编码**,**不可通过 `config.yaml` 覆盖**。本节列出 8 个**最影响实际行为**的字段,供运维排错时查。完整 18 字段表见 `HEADROOM.md §3.1.1`。
+> **重要**:`ContentRouterConfig` 字段在 proxy 启动时**多数硬编码**,**不可通过 `config.yaml` 覆盖**。本节列出 8 个**最影响实际行为**的字段,供运维排错时查。完整字段表见 `HEADROOM.md §3.1.1`(**0.25.0 28 字段**,从 0.23.0 的 18 字段扩展)。
+>
+> **0.25.0 默认值变化**:`ccr_enabled=True`(0.23.0 是 False),`ccr_inject_marker=True`(0.23.0 是 False)。详见 `HEADROOM.md §0.0.2`。
 
 | 字段 | 当前默认值 | 实际影响 |
 |---|---|---|
-| `enable_code_aware` | `False` | AST 压缩**永不被调用**。即便 proxy 启 `--code-aware` 也不调——是**双层 off**(proxy 启 + 内部 disable)。源码注释:`Disabled: use code graph MCP tools instead` |
-| `enable_kompress` | `True` | 但因模型缺失(Kompress 148MB ONNX 没下)→ **静默 fallback passthrough** |
+| `enable_code_aware` | `False`(dataclass 默认) | **可被 proxy 配置覆盖为 True**(env `HEADROOM_CODE_AWARE_ENABLED` 默认 True)。当 `config.yaml` 中 `features.code_aware: true` 时,`server.py:~372` 会透传为 True,ContentRouter 调 CodeAwareCompressor。**但** 0.23.0 时期该 Compressor 又依赖 `tree_sitter_language_pack`;**0.25.0 把 `tree_sitter_language_pack` 收成默认依赖**,该 fallback 隐患在 0.25.0 不存在 |
+| `enable_kompress` | `True` | **0.25.0 默认 backend 切换到 `chopratejas/kompress-v2-base`(#799)**。模型缺失时仍 fallback passthrough(网络阻塞 ~12s,跟 0.23.0 一样)。**首次请求会下载 int8-wo(261MB)或 fallback 到 fp32(601MB)** |
 | `protect_recent_reads_fraction` | `0.0` | 0.0 = 保护 ALL tool 输出。**Claude 90% tool 不被压的第二重保险**(第一重是 tool 名在 `DEFAULT_EXCLUDE_TOOLS`) |
 | `min_ratio_relaxed` / `min_ratio_aggressive` | `0.85` / `0.65` | 压缩比阈值。context 满时压到 65%,空时压到 85%,线性插值 |
 | `compress_assistant_text_blocks` | `False` | assistant 自己产出的 text **不被压缩**。这是 prefix cache 0 bust 的**根因**(assistant text 是 cache key,改了会 bust) |
-| `DEFAULT_EXCLUDE_TOOLS` | `{Read, Glob, Grep, Write, Edit, Bash}`(含大小写 12 个) | Claude Code 核心工具集**正好命中这 6 个** → ContentRouter 直接 reject,不压缩 |
+| `DEFAULT_EXCLUDE_TOOLS` | `{Read, Glob, Grep, Write, Edit, Bash}`(含大小写 12 个) | Claude Code 核心工具集**正好命中这 6 个** → ContentRouter 直接 reject,不压缩。**0.25.0 新增 `exclude_tools` 配置字段**,可覆盖此硬编码常量 |
 | `skip_user_messages` | `True` | 用户消息不参与压缩(它们是"分析对象") |
-| `enable_image_optimizer` / `enable_html_extractor` | `True` / `True` | 图片 + HTML 压缩默认启,只是 Codex WebSocket 流没碰到这两种 content_type |
+| `protect_error_outputs` / `error_protection_max_chars` | `True` / `8000` | **0.25.0 新增**(#851 compression safety rails)。error 输出不会被破坏式压缩 |
+| `ccr_enabled` / `ccr_inject_marker` | **`True` / `True`**(0.23.0 都是 `False`) | **0.25.0 默认开启** CCR marker 注入。压缩内容带 retrieval marker,LLM 可调 `headroom_retrieve` 召原文(proxy 模式不暴露该工具) |
 
-**运维常见误判**:
-- "为什么启了 `--code-aware` 但 /health.config.code_graph=False?" —— 因为是 `enable_code_aware`(另一个字段),而这个字段是**永 False 的**——见 §1.6.1 详细说明
-- "为什么 cache 100% 命中?" —— `compress_assistant_text_blocks=False` 是关键(assistant text 原样 echo),不是"压缩策略没破坏缓存"
-- "为什么 Kompress 没工作?" —— 模型没下,看 §4.2 或 proxy log 找 `_load_kompress` 异常
+**运维常见误判**(2026-06-14 0.25.0 更新):
+- "为什么启了 `--code-aware` 但 `tokens_saved_by_strategy.code_aware=0`?" —— 0.23.0 时是 `tree_sitter_language_pack` 缺失;**0.25.0 收成默认依赖,该误判不成立**
+- "为什么 cache 100% 命中?" —— `compress_assistant_text_blocks=False` 是关键(assistant text 原样 echo),不是"压缩策略没破坏缓存"。**0.25.0 `ccr_enabled=True` 也带 marker 但不改 assistant text,所以这条仍然成立**
+- "为什么 Kompress 没工作?" —— 看 §4.2 或 proxy log 找 `_load_kompress` 异常。0.25.0 模型名从 `kompress-base` → `kompress-v2-base`,缓存路径不同
 
 ### 0.3 关键命令一行流(`headroom-ctl`)
 
@@ -119,21 +122,22 @@
 
 > **说明**:proxy 起着但**没有真实 LLM 工作流量**。等真正用 `ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude` 启动时,这些数字才会长。
 
-### 0.6 文件 / 数据 / 持久化
+### 0.6 文件 / 数据 / 持久化(2026-06-14 0.25.0 升级后)
 
 | 位置 | 路径 | 状态 |
 |---|---|---|
 | headroom 二进制 | `/home/stark/.local/bin/headroom` | symlink → uv tool |
-| uv venv | `/home/stark/.local/share/uv/tools/headroom-ai/` | ~1 GB |
+| uv venv | `/home/stark/.local/share/uv/tools/headroom-ai/` | ~6 GB(含 torch/transformers/sentence-transformers) |
+| **HF 模型缓存** | `~/.cache/huggingface/hub/models--chopratejas--kompress-v2-base/` | **首次请求触发下载**,默认 261MB int8-wo(0.25.0 从 `kompress-base` 切换) |
 | Memory DB | `/data/hermes/headroom_memory.db` | 57 KB,0 行(`journal_mode=delete`) |
-| HF 模型缓存 | `~/.cache/huggingface/hub/models--chopratejas--kompress-base/` | ~70 MB,已下完 |
-| Headroom 全局 | `~/.headroom/` | `deploy/` + `logs/` + `.beacon_lock_8787` |
+| Headroom 全局 | `~/.headroom/` | `deploy/` + `logs/` + `.beacon_lock_8787` + `proxy_savings.json`(240KB)+ `toin.json`(112KB) |
 | 备用 venv(未用) | `/tmp/headroom-env/` | ~3 GB |
-| 仓库代码 | `/tmp/headroom/` | chopratejas/headroom @ 26f325f5 |
-| 配置文件 | `~/.config/headroom/proxy.env` | ❌ **未创建** |
-| 管理脚本 | `~/bin/headroom-ctl` | ❌ **未创建** |
-| Claude Code 配置 | `~/.claude/settings.json` | ✅ **未改**(init 半失败时备份到 `~/.claude/settings.json.bak.20260606_152245`) |
-| Codex 配置 | `~/.codex/config.toml` | ✅ **未改** |
+| 仓库代码 | `/tmp/headroom/` | chopratejas/headroom @ 26f325f5(**0.23.0 时点,未再 sync**) |
+| **配置文件** | `~/.config/headroom/config.yaml` | ✅ **已建**(2026-06-06 起替代 `proxy.env`) |
+| **管理脚本** | `~/bin/headroom-ctl` | ✅ **已装**(11 个子命令) |
+| Claude Code 配置 | `~/.claude/settings.json` | ✅ 未改(init 半失败时备份到 `~/.claude/settings.json.bak.20260606_152245`) |
+| Codex 配置 | `~/.codex/config.toml` | ✅ 未改 |
+| **升级前备份** | `~/backup/headroom-upgrade-20260614-201030/` | ✅ 1.1MB,12 文件 |
 
 ### 0.7 端点速查
 
@@ -235,23 +239,29 @@ https_proxy=http://192.168.3.74:7897/
 | **Optimize(压缩)** | ✅ on | `headroom proxy` 默认行为 | `/health.config.optimize=true` |
 | **Cache(语义缓存)** | ✅ on | 默认 | `config.cache=true` |
 | **Rate Limit** | ✅ on | 默认 | `config.rate_limit=true` |
-| **Memory(长程记忆)** | ❌ **off** | 没传 `--memory` 也没传 `HEADROOM_MEMORY=on` | `/health.checks.memory.enabled=false` |
-| **Code-Aware** | ❌ **off** | 没传 `--code-aware` 也没传 `HEADROOM_CODE_AWARE_ENABLED=1` | `/health.config.code_graph=false` |
+| **Memory(长程记忆)** | ✅ **on**(2026-06-14 升级后) | `features.memory: true` + `--memory` | `/health.checks.memory.enabled=true,backend=local` |
+| **Code-Aware** | ✅ **on**(2026-06-14) | `features.code_aware: true` + `--code-aware` | `/health.config.code_graph=true` |
 | **Telemetry** | ❌ off | 显式传 `HEADROOM_TELEMETRY=off` | `/health` summary.telemetry.enabled=false |
 | **Learn(失败学习)** | ❌ off | 没传 `--learn` | `config.learn=false` |
 | **Subscription tracking** | ❌ off(走 relay 默认) | `config.optimize=true` 隐含;relay 模式下无效 | — |
 | **Rust core** | ✅ loaded | `[all]` extra 装了 onnxruntime | `/health.rust_core=loaded` |
+| **Vertex AI 路由** | ✅ 路由表已上线(2026-06-14) | 0.25.0 #793 新增,但未配置 token/region | 启动 banner 显示 `/v1/projects/.../publishers/... → us-central1-aiplatform.googleapis.com` |
+| **Multi-provider memory** | ✅ on(2026-06-14) | 0.25.0 #824:Anthropic native `memory_20250818` + OpenAI/Gemini function calling | banner: `Tools: ENABLED, Context injection: ENABLED` |
+| **Upstream 健康检查** | ✅ 新增(2026-06-14) | 0.25.0 #744:/health.checks.upstream | `{"upstream": {"enabled": true, "ready": true, "url": "https://api.gotoken.top"}}` |
 
-> 跟 `HEADROOM.md` §3 "完整配置(推荐)" 的差别:**Memory / Code-Aware 没启**。如果想开,见 §3.4 升级流程。
+> 跟 `HEADROOM.md` §3 "完整配置(推荐)" 的差别:**0.25.0 升级后所有推荐 feature 都已开**(Memory / Code-Aware / Code-Graph)。本节是 2026-06-14 升级后状态。
 
-> **2026-06-06 补(代码层说明)**:上表里 **Code-Aware 写 "off"** 容易让运维误读——Code-Aware 实际上是**双层 off**:
+> **2026-06-06 历史补(代码层说明,2026-06-14 升级后已不适用)**:之前 0.23.0 时期上表里 **Code-Aware 写 "off"** 容易让运维误读——Code-Aware 实际上是**双层 off**:
 >
-> 1. **proxy 层面**(本节表格):`/health.config.code_graph=false` ← `headroom proxy` 没启 `--code-aware` 标志
-> 2. **ContentRouter 内部**(更深层):`enable_code_aware: bool = False`(硬编码,见 §0.2.1 + `HEADROOM.md §3.1.1`)
+> 1. **proxy 层面**:没启 `--code-aware` 标志
+> 2. **ContentRouter 内部**:`enable_code_aware: bool = False`(dataclass 默认)
 >
-> 源码注释明示意图:`Disabled: use code graph MCP tools instead`(意思是"AST 压缩没用,改用 code graph MCP 工具代替")。所以**用户既不需要(也不能)改 `enable_code_aware`**——这是 headroom 0.23.0 的设计选择,不是配置遗漏。
+> 0.25.0 升级后**这个双层 off 全部消失**:
+> - proxy 层:`features.code_aware: true` + `--code-aware` 都已配置
+> - ContentRouter 内部:`enable_code_aware` 仍然 dataclass 默认 False,但 `server.py:~3570` 的 env 入口默认 True,自动透传为 True
+> - Compressor 层:`tree_sitter_language_pack` 0.25.0 收成默认依赖,AST 压缩实际生效
 >
-> 同样情况:`compress_assistant_text_blocks=False`(硬编码)解释了为什么 prefix cache 0 bust——assistant text 不被压缩,cache key 稳定,命中 100%。
+> 同样情况:`compress_assistant_text_blocks=False`(硬编码)解释了为什么 prefix cache 0 bust——assistant text 不被压缩,cache key 稳定,命中 100%。**0.25.0 `ccr_enabled=True` 也带 retrieval marker 但不改 assistant text**,所以这条仍然成立。
 
 #### 1.6.2 启动参数(实际传给 proxy 的)
 
@@ -360,19 +370,22 @@ https_proxy=http://192.168.3.74:7897/
 
 ### 1.7 Code-Aware 选型说明
 
-> **状态**:**未启用**(`config.code_graph=false`),但**不是技术阻碍**,详见下文。
+> **状态(2026-06-14 升级后)**:**已启用**(`config.code_graph=true`,`features.code_aware: true`)。**0.25.0 升级后所有层都默认开了**:proxy 层 + ContentRouter 层(`server.py` env 默认 True)+ Compressor 层(`tree_sitter_language_pack` 收成默认依赖,2026-06-14 `uv tool upgrade` 后自动装上 v1.8.1)。
+>
+> **0.23.0 历史背景**(详见 `docs/headroom-code-aware-tree-sitter` 分支的诊断):proxy 层可以开,但 Compressor 层静默 fallback 是因为 `uv tool install "headroom-ai[all]"` 不带 `[code]` extra,`tree_sitter_language_pack` 缺失导致 `_check_tree_sitter_available()=False`。0.25.0 升级后该隐患消失。
 
-#### 1.7.1 为什么没启用(诚实回答)
+#### 1.7.1 当前状态(2026-06-14,0.25.0 后)
 
 | 检查项 | 结果 |
 |---|---|
-| 依赖 `tree_sitter` | ✅ 已装(`/home/stark/.local/share/uv/tools/headroom-ai/lib/python3.13/site-packages/tree_sitter/`) |
-| 依赖 `tree_sitter_language_pack` | ✅ 已装 |
-| 启动命令含 `--code-aware` 标志 | ❌ 没传 |
-| env 含 `HEADROOM_CODE_AWARE_ENABLED=1` | ❌ 没设 |
-| proxy `/health.config.code_graph` | `false` |
+| 依赖 `tree_sitter` | ✅ 已装 |
+| 依赖 `tree_sitter_language_pack` | ✅ 已装(v1.8.1,**0.25.0 默认依赖**,无需手动 workaround) |
+| 启动命令含 `--code-aware` 标志 | ✅ 传了(`headroom-ctl` 默认 + `config.yaml`) |
+| env 含 `HEADROOM_CODE_AWARE_ENABLED=1` | ✅ 显式设了 |
+| proxy `/health.config.code_graph` | `true` |
+| `_check_tree_sitter_available()` | ✅ 返回 `True`(Python import 直接验) |
 
-**真相**:Code-Aware 是**纯本地**的 tree-sitter AST 解析,只动压缩,不影响 API 调用。**没有任何 gotoken 兼容性、性能、依赖问题**。纯粹是初次 nohup 启动时**我忘了加这个 flag**(`HEADROOM.md` §3 的"完整配置"里有,但裸 nohup 命令里没传)。
+**真相**:Code-Aware 是**纯本地**的 tree-sitter AST 解析,只动压缩,不影响 API 调用。**没有任何 gotoken 兼容性、性能、依赖问题**。**0.25.0 升级后三层开关(proxy / ContentRouter / Compressor)全开**,`/stats` 中 `compressions_by_strategy.code_aware` 应有计数,**`tokens_saved_by_strategy.code_aware` 应 > 0**(0.23.0 时期是 0,因为 Compressor 静默失败)。
 
 #### 1.7.2 官方对 Code-Aware 的描述
 
@@ -693,6 +706,7 @@ headroom learn --apply         # 满意就 apply(写 CLAUDE.md)
 | `/v1/responses` | **OpenAI** | `OPENAI_TARGET_API_URL` | Codex(OpenAI Responses API) |
 | `/v1internal:streamGenerateContent` | **Cloud Code Assist** | `CLOUDCODE_TARGET_API_URL` | Gemini CLI(走 Cloud Code 兼容层) |
 | (Gemini 直连) | **Gemini** | `GEMINI_TARGET_API_URL` | Google AI Studio / Vertex |
+| `/v1/projects/.../publishers/.../...`(新增 0.25.0 #793) | **Vertex AI** | `GOOGLE_API_KEY` + `x-headroom-project-id` / `x-headroom-location` header | Vertex AI SDK / Google AI Studio(Vertex 后端) |
 
 **当前 proxy 启动 banner 截取**(2026-06-06 18:34):
 
@@ -1522,18 +1536,23 @@ ss -tlnp | grep 8787 || echo "✓ 8787 端口空"
 
 | 项 | 值 | 来源 |
 |---|---|---|
-| Headroom 版本 | 0.23.0 | `headroom --version` |
-| 当前 proxy PID | 339355 | `pgrep -f "headroom proxy"` |
+| **Headroom 版本** | **0.25.0**(2026-06-14 升级) | `headroom --version` |
+| 当前 proxy PID | `1458870`(本次会话) | `pgrep -f "headroom proxy"` |
 | 上游 | `https://api.gotoken.top` | `ANTHROPIC_TARGET_API_URL` in env |
 | 端口 | 127.0.0.1:8787 | `ss -tlnp` |
-| Token | sk-65d7da9c... | `cat /proc/339355/environ` |
+| Token | sk-65d7da9c...(已脱敏) | `cat /proc/$PID/environ` |
 | HF 镜像 | `https://hf-mirror.com` | `HF_ENDPOINT` in env |
-| 启动时间 | 2026-06-06 ~15:55(进程已跑 ~97 min) | `/proc/339355` 启动时间 |
-| 启动方式 | 裸 nohup,**未用脚本** | `cat /proc/339355/cmdline` |
-| Memory 状态 | 启用标志未传(proxy 实际 memory=disabled) | `/health.checks.memory.enabled=false` |
+| **Kompress 模型** | `chopratejas/kompress-v2-base`(**0.25.0 默认**,从 v1 的 `kompress-base` 切换) | `kompress_compressor.py:HF_MODEL_ID` |
+| Kompress ONNX 文件 | `onnx/kompress-int8-wo.onnx`(261MB,默认)/ `kompress-fp32.onnx`(601MB,fallback)/ `kompress-int8.onnx`(v1-era) | `kompress_compressor.py:_DEFAULT_ONNX_FILENAMES` |
+| 启动时间 | 2026-06-14 ~20:14(本次 0.25.0 升级) | `/proc/$PID` 启动时间 |
+| 启动方式 | `~/bin/headroom-ctl` 脚本(已用,2026-06-06 起替代裸 nohup) | `cat /proc/$PID/cmdline` |
+| Memory 状态 | **✅ 启用**(2026-06-14 升级后) | `/health.checks.memory.enabled=true,backend=local,native_tool=false,bridge_enabled=false` |
 | Memory DB | `/data/hermes/headroom_memory.db`, 0 rows, journal=delete | sqlite3 |
-| settings.json | 未被 headroom 修改(有 init 半失败前的备份) | backup file 仍在 |
-| 推荐配置是否实施 | **否**(脚本/env/alias 全未装) | `ls` 都找不到 |
+| Memory tool 名 | `memory_20250818`(0.23.0 / 0.25.0 不变) | `memory_tool_adapter.py:NATIVE_MEMORY_TOOL_TYPE` |
+| settings.json | 未被 headroom 修改(有 init 半失败前的备份 `~/.claude/settings.json.bak.20260606_152245`) | backup file 仍在 |
+| 推荐配置是否实施 | **完整推荐配置已实施**(config.yaml + headroom-ctl 脚本 + 4 个后端槽位 + 全 features on) | `headroom-ctl status` 完整输出 |
+| 升级前备份 | `~/backup/headroom-upgrade-20260614-201030/`(12 文件,1.1MB) | `ls` |
+| 升级后回滚路径 | `uv tool uninstall headroom-ai && uv tool install ... "headroom-ai==0.23.0"` | `HEADROOM.md §11` |
 
 ---
 

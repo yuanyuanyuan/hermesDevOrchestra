@@ -10,8 +10,6 @@
 |---|---|---|
 | `hermes_docs_index.json` | **机器索引** — AI Agent 通过代码读取、关键词匹配、检索相关页面 | JSON |
 | `hermes_docs_index.md` | **人类导航** — 按分类层级组织的 Markdown 导航索引 | Markdown |
-| `hermes_docs_sitemap.txt` | **URL 清单** — 540 个文档页面纯 URL 列表 | Text |
-| `hermes_docs_crossref.md` | **交叉引用** — 技术概念 → 页面关联图 | Markdown |
 
 ---
 
@@ -120,7 +118,7 @@ for score, page in results:
 
 ## 约束与注意事项
 
-- **过期检查**：`last_indexed` 为 2026-05-09。如果距今超过 30 天，应提醒用户索引可能过期，并可用 `hermes_docs_sitemap.txt` 重新爬取验证
+- **过期检查**：`last_indexed` 为 2026-05-09。如果距今超过 30 天，应提醒用户索引可能过期
 - **语言**：中文页面（URL 含 `zh-Hans`）的原始内容实际为英文，索引中的摘要也为英文
 - **静态索引**：索引基于静态 HTML 爬取，如果页面依赖 JS 渲染动态内容，索引可能不包含
 - **代码保留**：索引保留了代码示例中的关键参数名，回答时应引用原始参数名，不简化或泛化

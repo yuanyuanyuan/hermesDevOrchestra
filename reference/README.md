@@ -1,48 +1,42 @@
 # Hermes Reference 索引
 
 > 本目录集中存放项目参考文档、指南、模板及交互式工具。
-> 更新时间：2026-05-11
+> 最后更新：2026-06-14
 
 ---
 
-## 目录结构
+## 当前内容
 
 | 文件/目录 | 类型 | 说明 |
 |-----------|------|------|
-| [`gsd-user-guide.md`](./gsd-user-guide.md) | 指南 | GSD v1.41.2 用户指南 — 快速开始、工作流、命令速查、配置参考 |
-| [`gsd_commands_reference.md`](./gsd_commands_reference.md) | 参考手册 | GSD v1.41.2 命令与代理完整参考 — Skills、Agents、命名空间路由 |
-| [`gsd-agent-handbook.md`](./gsd-agent-handbook.md) | 手册 | GSD Agent 操作手册 — AI Agent 状态检测与命令执行规范 |
-| [`gsd-agent-handbook.json`](./gsd-agent-handbook.json) | 数据 | GSD Agent 命令注册表 — 机器可解析的完整命令清单 |
-| [`gsd-mcp-integration-guide.md`](./gsd-mcp-integration-guide.md) | 指南 | GSD + MCP 跨 AI 协作集成指南 — Claude 主控 + Codex 外部调用架构 |
-| [`multi-agent-plan-review-template.md`](./multi-agent-plan-review-template.md) | 模板 | Multi-Agent Plan Review 指令模板 — 三 agent 并行审查流程 |
-| [`task_phase13_hermes_chat.md`](./task_phase13_hermes_chat.md) | 任务指令 | Hermes Dev Orchestra Phase 13 任务指令 — Evidence Audit & Discoverability |
 | [`hermes-workflow-interactive.html`](./hermes-workflow-interactive.html) | 交互页面 | Hermes 工作流交互式可视化页面 |
 | [`hermes-workflow.css`](./hermes-workflow.css) | 样式 | Hermes 工作流页面样式 |
 | [`hermes-workflow.js`](./hermes-workflow.js) | 脚本 | Hermes 工作流页面交互逻辑 |
-| [`lab-01/`](./lab-01/) | 实验目录 | Hermes 工作流交互式实验室 — HTML/CSS/JS 实验页面 |
-| [`hermes-docs-index/`](./hermes-docs-index/) | 索引目录 | Hermes 官方文档索引 — JSON/Markdown/URL 清单及交叉引用 |
+| [`hermes-docs-index/`](./hermes-docs-index/) | 索引目录 | Hermes Agent 官方文档 LLM 语义索引（540+ 页） |
+
+### `hermes-docs-index/` 详情
+
+| 文件 | 用途 | 格式 |
+|---|---|---|
+| `SKILL.md` | 索引使用规则（触发条件、AI Agent 检索流程、hot_pages） | Markdown |
+| `hermes_docs_index.json` | 机器索引 — AI Agent 通过代码读取、关键词匹配、检索相关页面 | JSON |
+| `hermes_docs_index.md` | 人类导航 — 按分类层级组织的 Markdown 导航索引 | Markdown |
+
+索引数据来源：`hermes-agent.nousresearch.com/docs`，`last_indexed`: 2026-05-09。
 
 ---
 
-## 按主题分组
+## 已归档（保留历史，不在主索引中）
 
-### GSD 框架文档
-- **入门首选**：[`gsd-user-guide.md`](./gsd-user-guide.md)
-- **命令速查**：[`gsd_commands_reference.md`](./gsd_commands_reference.md)
-- **Agent 规范**：[`gsd-agent-handbook.md`](./gsd-agent-handbook.md) + [`gsd-agent-handbook.json`](./gsd-agent-handbook.json)
-- **跨 AI 集成**：[`gsd-mcp-integration-guide.md`](./gsd-mcp-integration-guide.md)
-
-### 流程与模板
-- **多 Agent 审查**：[`multi-agent-plan-review-template.md`](./multi-agent-plan-review-template.md)
-- **任务指令示例**：[`task_phase13_hermes_chat.md`](./task_phase13_hermes_chat.md)
-
-### 可视化工具
-- **工作流交互页**：[`hermes-workflow-interactive.html`](./hermes-workflow-interactive.html)（配套 [`hermes-workflow.css`](./hermes-workflow.css) + [`hermes-workflow.js`](./hermes-workflow.js)）
-- **交互式实验室**：[`lab-01/`](./lab-01/) — 工作流实验页面（含 `hermes-workflow-lab.html`）
-
-### 外部文档索引
-- **Hermes 官方文档**：[`hermes-docs-index/`](./hermes-docs-index/) — 540+ 页文档的机器/人类索引
+- `docs/archive/reference/hermes-orchestra-poc.html` — 旧 POC HTML（2026-05-11）
+- `docs/archive/reference/multi-agent-plan-review-template.md` — 旧 Multi-Agent 审查模板
+- `docs/archive/reference/get-shit-done/` — 旧 GSD 框架文档（实验用）
+- `docs/archive/reference/lab-01/` — 旧交互式实验室页面
 
 ---
 
-*此索引随目录内容更新而维护。*
+## 维护说明
+
+- 本目录仅保留**当前活跃使用**的参考资料
+- 过期内容请归档到 `docs/archive/reference/`，而非直接删除
+- 索引更新应同步修改本 README
