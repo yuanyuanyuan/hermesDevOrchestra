@@ -1,7 +1,7 @@
 # Headroom 运维手册(本机)
 
 > 本文档聚焦**当前部署状态**和**日常操作**。配置 / 安装 / 概念见姊妹文档 [`HEADROOM.md`](./HEADROOM.md)。
-> 最后更新:2026-06-06
+> 最后更新:2026-06-14(0.23.0 → 0.25.0 升级同步)
 
 ---
 
@@ -14,8 +14,8 @@
 
 | 项 | 当前值 | 备注 |
 |---|---|---|
-| `headroom --version` | `0.23.0` | uv tool 安装 |
-| **Proxy PID** | `339355` | `pgrep -f "headroom proxy"` |
+| `headroom --version` | **`0.25.0`** | uv tool 安装 |
+| **Proxy PID** | `1458870`(本次 0.25.0 升级后) | `pgrep -f "headroom proxy"` |
 | **监听端口** | `127.0.0.1:8787` | `ss -tlnp \| grep 8787` |
 | **启动方式** | 裸 `nohup env ... &` | 没装 `~/bin/headroom-up`(见 §0.3) |
 | **Uptime** | `~119 min`(`uptime_seconds=7180`) | 随时间增长 |

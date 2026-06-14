@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .tmp/
+.claude/worktrees/
 logs/
 .logs/
 .hermes/evolution-queue/*.json
