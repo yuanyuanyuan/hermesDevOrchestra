@@ -93,3 +93,4 @@ bash scripts/tests/test-e2e-strict-six-stage-flow.sh
 - `docs/ARCHITECTURE.md`：架构说明。
 - `docs/FULL-COVERAGE-MATRIX.md`：full-target readiness 和 runtime 状态。
 - `docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md`：full-target actor authority 边界。
+- `docs/sprints/prd-compliance-audit-remediation-full/sprint-overview.md`：13-sprint PRD Compliance Audit Remediation 计划入口（Sprint 12 deliverable owner 必读）。

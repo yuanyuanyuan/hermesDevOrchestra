@@ -2,7 +2,7 @@
 
 ## Source And Scope
 
-Origin: `docs/PRD-COMPLIANCE-AUDIT-REPORT.md`, calibrated with the already executed `docs/sprints/prd-compliance-audit-remediation/` Sprint 1.
+Origin: `docs/PRD-COMPLIANCE-AUDIT-REPORT.md`, calibrated with the already executed `docs/archive/sprints/prd-compliance-audit-remediation/` Sprint 1.
 
 This plan covers remaining gaps after the first Conflict Ledger gate slice. The prior slice already added a per-run `conflict-ledger.json` and blocks worker output advancement when `resolution=open` and `severity=high`; this full plan finishes schema, closeout, state, rollback, channel, worker, evaluation, correction, heartbeat, and audit closeout work.
 

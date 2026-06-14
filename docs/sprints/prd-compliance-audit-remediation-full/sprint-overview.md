@@ -37,7 +37,7 @@ Capacity warning: sprints intentionally vary between 3, 5, and 6 SP; this is not
 
 ## Known Limitations
 
-- The prior Conflict Ledger gate slice remains in `docs/sprints/prd-compliance-audit-remediation/`; this full plan does not overwrite it.
+- The prior Conflict Ledger gate slice remains in `docs/archive/sprints/prd-compliance-audit-remediation/`; this full plan does not overwrite it.
 - DAG work is scoped to Gateway integration because low-level cycle detection already exists.
 - Rollback implementation is limited to current-run refs and must not touch unrelated branches or protected targets.
 

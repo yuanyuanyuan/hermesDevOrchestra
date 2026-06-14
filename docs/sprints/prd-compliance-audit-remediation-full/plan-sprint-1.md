@@ -10,7 +10,7 @@ Finish the remaining Conflict Ledger work not covered by the prior gate slice: s
 
 - SP: 5
 - team_topology: pair
-- Depends on: prior `docs/sprints/prd-compliance-audit-remediation/` Sprint 1
+- Depends on: prior `docs/archive/sprints/prd-compliance-audit-remediation/` Sprint 1
 - Files: `scripts/lib/orch_gateway.py`, `scripts/lib/gateway_closeout.py`, `config/schemas/orchestra.full.schema.json`, `docs/sprints/prd-compliance-audit-remediation-full/schema.md`, `scripts/tests/test-gateway-conflict-ledger-closeout.sh`
 
 Approach:
