@@ -1,8 +1,108 @@
 # Headroom 配置手册
 
-> 适用版本:`headroom-ai 0.23.0`  |  面向中国大陆 + gotoken relay 用户的实战手册  |  最后更新:2026-06-06
+> 适用版本:`headroom-ai 0.25.0`  |  面向中国大陆 + gotoken relay 用户的实战手册  |  最后更新:2026-06-14
+>
+> **2026-06-14 升级说明**:从 0.23.0 升级到 0.25.0(详见 §0.0)。`docs/headroom-diagnosis-report-2026-06-06.md` 是 0.23.0 时点证据,**不反映 0.25.0**。本节(§0.0)记录主要 API 变化与文档同步说明。
 
 Headroom 是 LLM 调用的上下文压缩代理,装在你和真实 LLM 之间,自动把工具结果(日志/JSON/源码/搜索结果)压缩后再发给上游,从而省 token 省钱。
+
+---
+
+## 0.0 0.25.0 升级要点(2026-06-14 升级)
+
+> 本节记录 0.23.0 → 0.25.0 的主要 API 变化。**完整 changelog 见** [GitHub Releases](https://github.com/chopratejas/headroom/releases/tag/v0.25.0)。本节只列与本手册现有内容相关的变化。
+
+### 0.0.1 Kompress 默认 backend 切换(#799)
+
+| | 0.23.0 | 0.25.0 |
+|---|---|---|
+| 模型名 | `chopratejas/kompress-base` | **`chopratejas/kompress-v2-base`** |
+| 默认 ONNX | 单一 fp32(148MB) | **`onnx/kompress-int8-wo.onnx`(weight-only int8, 261MB)** |
+| Fallback | 无 | `onnx/kompress-fp32.onnx`(601MB,lossless reference) → `onnx/kompress-int8.onnx`(v1-era) |
+| 加载时序 | 首次请求触发,阻塞 ~12s | 同 0.23.0(但首次请求包含 int8/fp32 fallback 链) |
+
+**对 Hermes 的影响**:
+- `~/.cache/huggingface/hub/models--chopratejas--kompress-base/`(0.23.0 缓存)**作废**
+- 第一次启会下载新模型(默认 int8-wo,261MB;如果 hf-mirror 仍 308-redirect 会 fallback 到 fp32 601MB)
+- 之前的 `Kompress 模型 ~148MB ONNX` 描述全部需要更新(诊断报告 P0 bug 治不了根因,网络问题独立)
+
+### 0.0.2 ContentRouterConfig 字段扩容(18 → 28)
+
+0.25.0 新增 10 个字段。完整新字段列表见 §3.1.1,影响最大的几个:
+
+| 新字段 | 默认 | 含义 | 来源 |
+|---|---|---|---|
+| `protect_error_outputs` | `True` | 保护 error 输出不被破坏(配套 `error_protection_max_chars=8000`) | #851 compression safety rails |
+| `min_chars_for_block_compression` | `500` | gated Markdown-KV compaction formatter 阈值 | #859 |
+| `exclude_tools` | `None`(用 `DEFAULT_EXCLUDE_TOOLS`) | 配置化排除(以前是硬编码常量) | — |
+| `compress_tagged_content` | `False` | 标 `read_lifecycle + smart_crush` 标签的内容是否压 | #249 |
+| `read_lifecycle` | `<factory>` | read_lifecycle 标签属性 | #249 |
+| `tool_profiles` | `None` | per-tool 压缩配置 | #249 |
+| `ccr_enabled` | **`True`**(0.23.0 是 `False`) | **CCR 默认开启** | #875 |
+| `ccr_inject_marker` | **`True`**(0.23.0 是 `False`) | 默认注入 CCR retrieval markers | — |
+| `smart_crusher_max_items_after_crush` | `None` | SmartCrusher 上限(0.23.0 无此字段) | #859 |
+| `smart_crusher_with_compaction` | `True` | 配合 schema compaction | #859 |
+
+**对 Hermes 的影响**:
+- `ccr_enabled=True` 默认开启意味着**CCR marker 注入现在是默认行为**——之前 §3.1.1 的"prefix cache 0 bust 根因 = `compress_assistant_text_blocks=False`"的论述仍然成立(CCR marker 不改 assistant text),但 CCR 现在会主动把压缩内容做可逆标记
+- `protect_error_outputs=True` 修了 §4.1 的"零 cache bust"假设下未覆盖的边界(error output 现在也保 prefix key)
+
+### 0.0.3 多 Provider 内存架构(#824 Hermes agent plugin)
+
+0.23.0 时期描述的"proxy 只 recall,不主动 add;memory 工具仅 SDK 暴露"在 0.25.0 已升级:
+
+| Provider | 0.23.0 行为 | 0.25.0 行为 |
+|---|---|---|
+| **Anthropic** | proxy recall 注入 system msg | **Native `memory_20250818` 工具暴露给 LLM + recall 注入** |
+| **OpenAI / Gemini / Others** | 不支持 | **Function calling 格式暴露** |
+| **存储后端** | 单一 sqlite | **统一向量存储后端,多 provider 共享** |
+| **DB 模式** | project 模式(cwd 决定) | project 模式 + 可用 `x-headroom-project-id` / `x-headroom-cwd` header 覆盖 |
+
+**对 Hermes 的影响**:
+- 0.23.0 时 §5.6.6 担心的"relay 不支持 `memory_20250818` → 400 错"现在**仍然适用于 relay**——gotoken 可能不识别 native tool
+- 0.25.0 文档原话:"**Anthropic: Uses native memory tool (memory_20250818) - subscription safe**"——意思是 native tool 是订阅安全的,但前提是 LLM 能识别
+- 建议:**保留 0.23.0 的"memory 默认开,但 relay 慎用"判断**;§5.6.6 风险段基本可沿用
+
+### 0.0.4 路由扩展(#793 Vertex AI)
+
+0.25.0 启动 banner 新增一条路由(0.23.0 没有):
+
+```
+/v1/projects/.../publishers/... → https://us-central1-aiplatform.googleapis.com
+```
+
+`x-headroom-project-id` + `x-headroom-location` header 触发 Vertex AI 路由。Hermes 当前不用 Vertex,本手册 §3.4 表加一行即可,其他不动。
+
+### 0.0.5 /health 新增 upstream 检查(#744)
+
+0.23.0 只有 startup / http_client / cache / rate_limiter / memory 5 个 check。0.25.0 增加:
+
+```json
+"upstream": {
+  "enabled": true,
+  "ready": true,
+  "status": "healthy",
+  "url": "https://api.gotoken.top",
+  "error": null
+}
+```
+
+**对 Hermes 的影响**:`headroom-ctl status` 输出的 "── 其它 env" 段需要新增 upstream 健康行。
+
+### 0.0.6 其他保留不变的事实(2026-06-14 验证)
+
+下面这些文档内容**0.23.0 → 0.25.0 验证未变**,无需改写:
+
+| 事实 | 验证命令 |
+|------|---------|
+| `HEADROOM_LOG_LEVEL` env 在 0.25.0 仍不存在 | `grep HEADROOM_LOG_LEVEL ~/.local/share/uv/tools/headroom-ai/lib/python3.13/site-packages/headroom/ -r` 0 命中 |
+| `memory_20250818` 工具名不变 | `grep NATIVE_MEMORY_TOOL_TYPE memory_tool_adapter.py` |
+| `DEFAULT_EXCLUDE_TOOLS` 12 个工具名不变 | Python inspect `sorted(DEFAULT_EXCLUDE_TOOLS)` = `[Bash, Edit, Glob, Grep, Read, Write, bash, edit, glob, grep, read, write]` |
+| `enable_code_aware=False` dataclass 默认不变 | `inspect.signature(ContentRouterConfig)` |
+| `protect_recent_reads_fraction=0.0` 不变 | 同上 |
+| `min_ratio_relaxed=0.85` / `min_ratio_aggressive=0.65` 不变 | 同上 |
+| `compress_assistant_text_blocks=False` 不变 | 同上 |
+| `HEADROOM_MODE` 取值 `token` / `cache`(及 5 个 legacy aliases)不变 | `headroom/proxy/modes.py` 源码 |
 
 ---
 
@@ -182,9 +282,9 @@ curl -sS http://127.0.0.1:8787/stats | python3 -c "import json,sys; print(json.l
 
 #### 0.3.6 相关:Log 配置(常被一并问)
 
-> **澄清**:`HEADROOM_LOG_LEVEL` 这个 env var **在 headroom 0.23.0 不存在**(`grep` 整个 0.23.0 已装包 0 匹配)。
+> **澄清**:`HEADROOM_LOG_LEVEL` 这个 env var **在 headroom 0.25.0 仍然不存在**(2026-06-14 `grep` 整个 0.25.0 已装包 0 匹配,跨版本验证无变化)。
 
-> ⚠️ **2026-06-06 docs/源码差异**:`/docs/installation` page 明确列了 `HEADROOM_LOG_LEVEL` env(默认 `INFO`)——**这跟源码对不上**。可能 page 是 0.24+ 版本文档,本部署 0.23.0 没实现。**未来升级 0.24+ 时该 env 可能生效**,届时本节要改。
+> ⚠️ **docs/源码差异(2026-06-06 标记,2026-06-14 复验)**:`/docs/installation` page 明确列了 `HEADROOM_LOG_LEVEL` env(默认 `INFO`)——**跟源码对不上**。**至少到 0.25.0 该 env 仍未实现**,page 描述可能是规划中或文档先行。**未来版本如果加上,本节需要更新**。
 
 proxy 真正的 log 配置:
 
@@ -320,7 +420,13 @@ paths:
 
 #### 3.1.1 ContentRouter 完整 Config 字段表(供查阅)
 
-> **来源**:对照 headroom 0.23.0 源码 `transforms/content_router.py` 的 `ContentRouterConfig` 数据类 + `config.py` 的 `DEFAULT_EXCLUDE_TOOLS`(2026-06-06 抓取验证)。**所有字段在 proxy 0.23.0 启动时硬编码,不可通过 `config.yaml` 覆盖**——本表供查阅"为什么某些行为是默认的"。
+> **来源**:对照 headroom 0.25.0 源码 `transforms/content_router.py` 的 `ContentRouterConfig` 数据类 + `config.py` 的 `DEFAULT_EXCLUDE_TOOLS`(2026-06-14 `inspect.signature()` 实测)。**多数字段在 proxy 0.25.0 启动时硬编码,不可通过 `config.yaml` 覆盖**——本表供查阅"为什么某些行为是默认的"。
+>
+> **字段数量变化**:**0.23.0 是 18 个字段,0.25.0 扩到 28 个**(新增 10 个,主要是 CCR 默认开关、error output 保护、gated compaction 阈值、tool profiles)。
+>
+> **0.23.0 → 0.25.0 默认值变化**:
+> - `ccr_enabled`: `False` → **`True`**(#875 shared compression store)
+> - `ccr_inject_marker`: `False` → **`True`**
 
 | Config 字段 | 类型 | 默认值 | 含义 | 源 |
 |---|---|---|---|---|
@@ -343,33 +449,54 @@ paths:
 | `min_ratio_aggressive` | `float` | `0.65` | context 较满时,最多压到原始的 65%(激进)。两者线性插值 | `content_router.py:494` |
 | `compress_assistant_text_blocks` | `bool` | **`False`** | assistant 自己产出的 text **不压缩**——这是 prefix cache 0 bust 的**根因**(assistant text 是 cache key,改了会 bust) | `content_router.py:471` |
 
-**额外常量**:`DEFAULT_EXCLUDE_TOOLS: frozenset[str] = frozenset({"Read", "Glob", "Grep", "Write", "Edit", "Bash", "read", "glob", "grep", "write", "edit", "bash"})`(`config.py:211-226`,含大小写共 12 个)。**Claude Code 核心工具集正好命中 6 个**——所以 Claude 路径 90%+ 消息被排除不是 heuristic,是默认白名单直接 reject。
+**0.25.0 新增字段**(本节以上未列):
+
+| Config 字段 | 类型 | 默认值 | 含义 | 来源 |
+|---|---|---|---|---|
+| `protect_error_outputs` | `bool` | **`True`** | 保护 error 输出不被破坏(配套 `error_protection_max_chars`) | #851 compression safety rails |
+| `error_protection_max_chars` | `int` | `8000` | error output 字符数超过此值才截断 | #851 |
+| `min_chars_for_block_compression` | `int` | `500` | gated Markdown-KV compaction formatter 阈值 | #859 |
+| `exclude_tools` | `frozenset\|None` | `None`(用 `DEFAULT_EXCLUDE_TOOLS`) | 配置化排除(以前只能改硬编码常量) | — |
+| `compress_tagged_content` | `bool` | `False` | 标了 `read_lifecycle + smart_crush` 标签的内容是否压缩 | #249 |
+| `read_lifecycle` | `ReadLifecycleConfig` | `<factory>` | read_lifecycle 标签属性(子类) | #249 |
+| `tool_profiles` | `dict\|None` | `None` | per-tool 压缩配置(可精细调单个 tool) | #249 |
+| `ccr_enabled` | `bool` | **`True`**(0.23.0 是 `False`) | **CCR marker 注入默认开启** | #875 shared compression store |
+| `ccr_inject_marker` | `bool` | **`True`**(0.23.0 是 `False`) | 压缩内容带 retrieval marker(LLM 看到 marker 可调 `headroom_retrieve` 召原文) | — |
+| `smart_crusher_max_items_after_crush` | `int\|None` | `None` | SmartCrusher 上限(0.23.0 无此字段) | #859 |
+| `smart_crusher_with_compaction` | `bool` | `True` | SmartCrusher 配合 schema compaction | #859 |
+
+**额外常量**(`config.py` 在 0.25.0 仍然存在):
+`DEFAULT_EXCLUDE_TOOLS: frozenset[str] = frozenset({"Read", "Glob", "Grep", "Write", "Edit", "Bash", "read", "glob", "grep", "write", "edit", "bash"})`(2026-06-14 `sorted(DEFAULT_EXCLUDE_TOOLS)` 验证仍 12 个,跨版本无变化)。**Claude Code 核心工具集正好命中 6 个**——所以 Claude 路径 90%+ 消息被排除不是 heuristic,是默认白名单直接 reject。
+
+> **0.25.0 行为差异提示**:`ccr_enabled=True` + `compress_assistant_text_blocks=False` 的组合意味着:assistant text 仍 100% 保留作 prefix cache key;但**其他被压缩的内容**(tool result 等)**会带 CCR retrieval marker**——LLM 理论上可以通过 `headroom_retrieve` 工具召原文,但目前 proxy 模式不暴露该工具给 LLM(0.23.0 起一直如此)。
 
 > 完整 Compressor 列表 + Pipeline 3 阶段 + 4 个 Python 配置字段(`compression_ratio_target` / `use_entropy_preservation` / `use_magika` / `ccr_enabled`)见 [`/docs/how-compression-works`](https://headroom-docs.vercel.app/docs/how-compression-works)。
 
-> **📌 报告 P2 误诊修正(2026-06-06 21:48 UTC)**
+> **📌 报告 P2 误诊修正(2026-06-06 21:48 UTC 首次修正;2026-06-14 0.25.0 升级后二次修正)**
 >
 > `docs/headroom-diagnosis-report-2026-06-06.md` §6.2 / §9 P2 写 "`enable_code_aware: bool = False` 硬编码,不可通过配置覆盖,建议手动 patch"。**这个诊断是错的**——只看到了 `content_router.py:439` 的 dataclass 默认值,没追到完整数据流。
 >
-> **完整数据流**(2026-06-06 21:48 重新 grep 源码 + /stats 实测):
+> **完整数据流**(2026-06-06 21:48 重新 grep 源码 + /stats 实测;2026-06-14 升级 0.25.0 后**行号变了**但**数据流不变**):
 >
 > ```
-> cli/proxy.py:634     os.environ.get("HEADROOM_CODE_AWARE_ENABLED", "")         ← env 入口
-> server.py:3338       env_code_aware = _get_env_bool("HEADROOM_CODE_AWARE_ENABLED", True)  ← 默认 True
-> server.py:354        enable_code_aware=config.code_aware_enabled               ← 透传到 ContentRouter
-> content_router.py:1205  if self.config.enable_code_aware:                      ← 真的会用
+> server.py:~3570   env_code_aware = _get_env_bool("HEADROOM_CODE_AWARE_ENABLED", True)  ← env 入口,默认 True
+> server.py:~372    enable_code_aware=config.code_aware_enabled                              ← 透传到 ContentRouter
+> content_router.py:1245  if self.config.enable_code_aware:                                  ← 真的会用
 > ```
 >
-> `config.code_aware_enabled` 是从 `config.yaml` 的 `code_aware: true` 解析的(2026-06-06 已默认开),所以 `enable_code_aware` 实际**可调**。
+> `config.code_aware_enabled` 是从 `config.yaml` 的 `code_aware: true` 解析的,所以 `enable_code_aware` 实际**可调**。
 >
-> **运行时佐证**(PID=637240,实测):
+> **运行时佐证**(升级前 PID=637240,升级后 PID=1458870 跨版本验证):
 >
 > - proxy banner:`Code-Aware: ENABLED (AST-based)`
-> - `/stats`:`compressions_by_strategy.code_aware: 52` 命中(报告时已 52,无变化)
+> - `/stats`:`compressions_by_strategy.code_aware` 有命中
 >
-> **附带的真实 bug**:`headroom-ctl` 之前传 env 名是 `HEADROOM_CODE_AWARE`(缺 `_ENABLED`),server 真正读的是 `HEADROOM_CODE_AWARE_ENABLED`——这个 env 实际上**被静默忽略**了。`code_aware` 之所以仍工作,是因为 `headroom-ctl` 同步加了 `--code-aware` CLI flag(走 `args.code_aware=True` 路径),不是 env 在生效。2026-06-06 21:48 已修:env 改名为 `HEADROOM_CODE_AWARE_ENABLED`(`code_aware: true` 在 yaml 里仍是用户持久化方式,env 是临时覆盖)。
+> **2026-06-14 0.25.0 二次修正**:
+> - **0.25.0 把 `tree_sitter_language_pack` 收成默认依赖**(uv tool upgrade 后自动安装 v1.8.1)。**之前 §1.7 的"`uv pip install ... [code]`" workaround 不再需要**
+> - `tree_sitter` 0.25.0 修了 pyo3 Unsendable panic (#604,thread-local parsers),0.23.0 隐藏的崩溃隐患消失
+> - 所以"双层开关"问题在 0.25.0 完全消失:**proxy 层开 + compressor 层静默失败的组合不存在了**
 >
-> **结论**:`enable_code_aware` 是**可配置的**,报告 P2 是 2026-06-06 21:07 UTC 快照时的误诊。报告原文保留作为时点证据,本注是给后续读者对账用。
+> **结论**:`enable_code_aware` 是**可配置的**(0.23.0 + 0.25.0 一致),原报告 P2 是 0.23.0 时代误诊。0.25.0 后连"silent fallback"都不存在了。报告原文保留作为 0.23.0 时点证据,本注是给后续读者对账用。
 > 详细 plan:`~/.claude/plans/headroom-runtime-fix-2026-06-06.md` §3。
 
 ### 3.2 管理脚本 `~/bin/headroom-ctl`
@@ -842,12 +969,19 @@ headroom-ctl memory stats
 
 #### 5.6.6 为什么不默认开?—— 风险 + 关法
 
-> **2026-06-06 之前文档说"relay 慎用"**:headroom `--memory` 启后会给 LLM 发 `memory_20250818` 工具调用,如果你的 relay(gotoken / minimaxi)**不支持这个工具 → 400 错**。
+> **0.23.0 文档说"relay 慎用"**:`memory_20250818` 工具如果 LLM 主动调,relay(gotoken / minimaxi)**不支持该工具 → 400 错**。
 >
-> 2026-06-06 用户拍板**默认开**,因为:
+> **0.25.0 行为变化**(2026-06-14 升级后实测):headroom 0.25.0 启动 banner 显示 `Anthropic: Uses native memory tool (memory_20250818) - subscription safe`,这意味着:
+> 1. **Anthropic 路径**:proxy 现在**会把 `memory_20250818` 当作 native tool 暴露给 LLM**(订阅级安全工具,Anthropic 官方 API 认识)。relay(gotoken / minimaxi)**不一定认识这个 tool spec**——仍是风险
+> 2. **OpenAI / Gemini / Others**:走 function calling 格式(不走 native tool),relay 兼容性取决于具体 relay 实现
+> 3. **Storage mode**:banner 显示 `project (per-project DB by default — set x-headroom-project-id / x-headroom-cwd to override)`——可用 header 切换 DB 模式
+>
+> 0.23.0 → 0.25.0 的关键差异:**0.23.0 proxy 只在 recall 阶段查 DB,不主动 add,LLM 看不到 memory_20250818 工具(SDK 模式才会暴露)**;0.25.0 默认会暴露 native tool 给 LLM。这提高了 memory 的可用性,但**对 relay 的兼容性风险也加大了**。
+>
+> 2026-06-14 升级决定(沿用 2026-06-06 拍板):`features.memory: true` **仍然默认开**,因为:
 > 1. 启用本身无害(只是加载 embedder,多 ~50MB 内存)
 > 2. DB 空时 recall 零开销(返回 [])
-> 3. 真正 400 错**只在 LLM 主动调 memory 工具时**——目前 headroom proxy 0.23.0 **只在 recall 阶段查 DB**,不主动 add,LLM 看不到 `memory_20250818` 工具(SDK 模式才会暴露)
+> 3. 真正 400 错**只在 LLM 主动调 memory 工具时**(Anthropic native)或 tool schema 不被 relay 识别时(OpenAI function calling)
 > 4. 即使出 400,`features.memory: false` 一秒回滚
 
 **关法**:
@@ -1380,25 +1514,30 @@ sqlite3 /data/hermes/headroom_memory.db 'DELETE FROM memories;'
 
 ---
 
-## 10. 当前实际状态(2026-06-06)
+## 10. 当前实际状态(2026-06-14,0.25.0 升级后)
 
 | 项 | 值 |
 |---|---|
-| `headroom --version` | 0.23.0 |
-| 仓库 | `/tmp/headroom` @ `26f325f5` (main, up-to-date) |
+| `headroom --version` | **0.25.0** |
+| 仓库 | `/tmp/headroom` @ `26f325f5` (历史 clone,未再 sync) |
 | Python 包装 | uv tool venv (`~/.local/share/uv/tools/headroom-ai/`) |
-| Proxy PID | 339355(本次会话) |
+| Proxy PID | 1458870(本次会话) |
 | 端口 | 127.0.0.1:8787 |
-| 上游 | `https://api.gotoken.top` |
+| 上游 | `https://api.gotoken.top`(Anthropic),`https://api.codexzh.com/v1`(OpenAI),Vertex AI 路由已上线但未配置 |
 | Optimize/Cache/Rate-limit | ✅ on |
-| Memory | ❌ off(gotoken relay 不一定兼容) |
-| Code-Aware | ✅ on |
+| Memory | ✅ **on**(0.25.0 多 provider 模式,Anthropic native `memory_20250818` 暴露,OpenAI/Gemini 走 function calling) |
+| Code-Aware | ✅ on(`tree_sitter_language_pack` 0.25.0 收成默认依赖,workaround 不再需要) |
+| Code-Graph | ✅ on |
 | Telemetry | ❌ off |
 | Rust core | ✅ loaded |
-| 配置 | `~/.config/headroom/proxy.env` |
-| Log | `~/log/headroom/proxy.log` |
-| Memory DB | `/data/hermes/headroom_memory.db` (空) |
-| 缓存(ONNX 模型) | `~/.cache/huggingface/hub/models--chopratejas--kompress-base/` (~70MB) |
+| 配置 | `~/.config/headroom/config.yaml`(2026-06-06 起替代 `proxy.env`) |
+| 管理脚本 | `~/bin/headroom-ctl`(11 个子命令,0.25.0 stats 字段解析需要小幅更新) |
+| Log | `/tmp/headroom.log` |
+| Memory DB | `/data/hermes/headroom_memory.db` (空,2026-06-14 仍是 0 行) |
+| 缓存(ONNX 模型) | `~/.cache/huggingface/hub/models--chopratejas--kompress-v2-base/`(首次请求触发下载,默认 261MB int8-wo,fallback 601MB fp32)|
+| 升级前备份 | `~/backup/headroom-upgrade-20260614-201030/`(12 个文件,1.1MB) |
+
+> **关于 §10 时点说明**:本节作为 0.25.0 升级后的快照。`docs/headroom-diagnosis-report-2026-06-06.md` 仍是 0.23.0 时点的诊断(详见 §0.0),**未重跑**。Phase 4 真流量对比 + 新诊断报告是后续工作。
 
 ---
 
@@ -1409,7 +1548,7 @@ sqlite3 /data/hermes/headroom_memory.db 'DELETE FROM memories;'
 pkill -9 -f "headroom proxy"
 
 # 清缓存(下次启动会重下)
-rm -rf ~/.cache/huggingface/hub/models--chopratejas--kompress-base
+rm -rf ~/.cache/huggingface/hub/models--chopratejas--kompress-v2-base
 
 # 清 headroom 全局
 rm -rf ~/.headroom/
@@ -1417,13 +1556,26 @@ rm -rf ~/.headroom/
 # 清项目 memory DB
 rm -f /data/hermes/headroom_memory.db
 
-# 重装(可选,彻底干净)
+# 升级(0.25.0 后推荐用 upgrade 而非 uninstall/install)
+uv tool upgrade headroom-ai
+
+# 或彻底重装
 uv tool uninstall headroom-ai
 uv tool install --force --with fastapi --with uvicorn --with httpx "headroom-ai[all]"
+# 注:0.25.0 已自动包含 tree_sitter_language_pack,无需再补 [code] extra
 
 # 重启
-headroom-up
+~/bin/headroom-ctl restart
 ```
+
+> **0.25.0 升级回滚**(如需回到 0.23.0):
+> ```bash
+> pkill -9 -f "headroom proxy"
+> uv tool uninstall headroom-ai
+> uv tool install --force --with fastapi --with uvicorn --with httpx "headroom-ai==0.23.0"
+> ~/bin/headroom-ctl restart
+> ```
+> 备份的 `proxy_savings.json` / `toin.json` 在 `~/backup/headroom-upgrade-20260614-201030/` 可按需恢复。
 
 ---
 
