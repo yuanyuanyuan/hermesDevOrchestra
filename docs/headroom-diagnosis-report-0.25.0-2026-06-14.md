@@ -165,7 +165,7 @@ Routing:
 |------|------|------|
 | **真流量 savings 对比** | ⏳ 待跑 | 当前 `/stats` 全 0,需跑 30 分钟 Claude/Codex 任务后对比 0.23.0 时期数据(Codex 5.9% / Claude 0.7%) |
 | **Kompress v2 实际节省率** | ⏳ 待跑 | `kompress-v2-base` int8-wo vs `kompress-base`(0.23.0 没工作)——首次请求触发下载后才能测 |
-| **headroom-ctl stats 解析修复** | ⏳ 待修 | `model_path` 字段提取失效(`(未找到)`),其他字段正常 |
+| **headroom-ctl stats 解析修复** | ✅ **已修(2026-06-14 23:13)** | `_kompress_health()` 改用 v2-base 路径 + 3 文件 fallback 链(int8-wo > fp32 > int8)。空 cache 仍报"未找到"是正常的(等首次请求触发下载)。其他 stats 字段在 0.25.0 仍兼容。`~/bin/headroom-ctl` 备份到 `~/backup/headroom-upgrade-20260614-201030/headroom-ctl.post` |
 | **HEADROOM.md docs 完整对齐** | ✅ 大部分完成 | §0.0 / §3.1.1 / §10 已更新 |
 | **HEADROOM-OPS.md docs 完整对齐** | ✅ 大部分完成 | §0.6 / §1.7 / §1.10 / §7 已更新 |
 | **2026-06-06 诊断报告归档** | ✅ 完成 | 改名 + header 标注 |
