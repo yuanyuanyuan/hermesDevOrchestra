@@ -23,14 +23,14 @@ Developers managing multiple projects face fragmented workflows when working wit
 
 ### Solution
 
-Hermes Dev Orchestra automates the Claude↔Codex collaboration pipeline and exposes newer Gateway-backed run state:
+Hermes Dev Orchestra automates the Claude↔Codex collaboration pipeline and exposes Gateway-backed run state:
 
 - **One-command setup**: `orch-init` scaffolds the project configuration, directory structure, and risk policies.
 - **Isolated tmux session pairs**: `orch-start` automatically creates paired tmux sessions (`hermes-{project}-claude` / `hermes-{project}-codex`) for each project.
 - **File-exchange task flow**: Structured files in `/tmp/hermes-orchestra/{project}/` automatically dispatch tasks, questions, decisions, and results between agents.
 - **L1–L4 risk interception**: `orch-risk-check` evaluates commands against `config/risk-policy.yaml`; L3/L4 operations block and await human approval via `orch-approve` / `orch-reject`.
 - **Built-in audit**: Every operation is written to `~/.local/share/hermes-orchestra/{project}/audit.jsonl` for full traceability.
-- **Gateway run projection**: `orch-gateway` exposes run creation, task/event projection, actor-token authority checks, and staged full-system modules.
+- **Gateway run projection**: `orch-gateway` exposes run creation, task/event projection, actor-token authority checks, and staged full-system modules. Run Projection: `X-Projection-Schema-Version: 1.0.0`; actor token 300s + 30s clock skew.
 
 Current capability layers:
 
@@ -198,3 +198,4 @@ make test-risk
 - [`docs/COVERAGE-MATRIX.md`](docs/COVERAGE-MATRIX.md) — Feature coverage matrix
 - [`docs/FULL-COVERAGE-MATRIX.md`](docs/FULL-COVERAGE-MATRIX.md) — Full-target readiness and runtime status
 - [`docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md`](docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md) — Full-target authority boundaries
+- [`docs/sprints/prd-compliance-audit-remediation-full/sprint-overview.md`](docs/sprints/prd-compliance-audit-remediation-full/sprint-overview.md) — 13-sprint PRD Compliance Audit Remediation plan entry (Sprint 12 deliverable in flight)

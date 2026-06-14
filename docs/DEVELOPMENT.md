@@ -91,8 +91,8 @@ Orchestra 的所有目录路径和运行时参数均通过环境变量控制，�
 
 | 目标 | 类别 | 说明 |
 |------|------|------|
-| `make test` | 测试 | 执行完整验证套件：smoke tests + 风险测试 + JSON 校验 + 可用时 Shell lint + upstream pin advisory |
-| `make test-unit` | 测试 | 运行所有 smoke 测试（`scripts/tests/test-*.sh`，当前 147 个） |
+| `make test` | 测试 | 执行完整验证套件：smoke tests + 风险测试 + JSON 校验 + 可用时 Shell lint + upstream pin advisory + 3 strict gates (test-schema-doc-sync / test-success-metrics-pipeline / test-e2e-strict-six-stage-flow, owner: Sprint 12 U14, consumer: Sprint 13 final audit gate) |
+| `make test-unit` | 测试 | 运行所有 smoke 测试（`scripts/tests/test-*.sh`，当前 164 个，含 Sprint 12 strict gate 增量） |
 | `make test-risk` | 测试 | 运行风险相关专项测试（决策 CLI、风险策略加载等） |
 | `make lint-json` | 检查 | 使用 `python3 -m json.tool` 校验源码 `.json` 文件格式；忽略本地 `.tmp/` 缓存 |
 | `make lint-shell` | 检查 | 如果已安装 `shellcheck`，检查 `scripts/` 下的 Shell 脚本；未安装时跳过 |
@@ -116,6 +116,26 @@ make lint-json
 # 单独校验 Shell 脚本（需已安装 shellcheck）
 make lint-shell
 ```
+
+---
+
+## 13-Sprint 修复计划中的验证门禁
+
+13-sprint PRD Compliance Audit Remediation 计划正在 active 执行中（Sprint 12 deliverable owner, Sprint 13 final audit gate consumer）。本地仓库 `main` 已同步最新状态。完整 6 个 Cross-Sprint Contract 详见 [`docs/gateway-integration-architecture.md`](gateway-integration-architecture.md) `## Cross-Sprint Contract Surfaces`。
+
+| 维度 | 状态 | 引用 |
+|---|---|---|
+| Source truth | `sprint-overview.md` Sprint Table + `schema.md` | `docs/sprints/prd-compliance-audit-remediation-full/` |
+| Cross-sprint contracts surfaced | 6（conflict_ledger / run.lifecycle_status / run.channel_decision / authority_route+override_record / mini-debate consensus_score 0.60 / Sprint 12→13 gate scripts） | `gateway-integration-architecture.md ## Cross-Sprint Contract Surfaces` |
+| Strict gate 脚本 | 3 个：`test-schema-doc-sync.sh` / `test-success-metrics-pipeline.sh` / `test-e2e-strict-six-stage-flow.sh` | `scripts/tests/` |
+| Sprint 12 deliverable owner | U14（3 SP） | `plan-sprint-12.md` |
+| Sprint 13 consumer | final audit gate | `plan-sprint-13.md` |
+
+### Known Limitations of the in-flight plan
+
+- **Conflict Ledger gate slice 归档**：前置 gate slice 已归档在 `docs/archive/sprints/prd-compliance-audit-remediation/`，本计划不覆盖。
+- **DAG scope**：DAG work 仅在 Gateway integration seam（消费 `scripts/lib/dag_validator.py` 结果作为阻断证据）。低层 cycle detection 已存在，不在范围内。
+- **Rollback scope**：rollback 实现仅限 `current-run refs[]`（per `rollback_report.affected_refs[]` in `schema.md` L42-44）。禁止触碰无关 branch 与 protected target；`protected_target_check` 为 `rollback_report` 必填字段。
 
 ---
 
@@ -192,5 +212,7 @@ git checkout -b feature/简短描述
 
 - [`README.md`](../README.md) — 项目总览与快速开始
 - [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) — 系统架构与数据流
+- [`docs/gateway-integration-architecture.md`](gateway-integration-architecture.md) — 6 个 Cross-Sprint Contract Surfaces 入口（FR-1 ~ FR-13 全集）
+- [`docs/sprints/prd-compliance-audit-remediation-full/sprint-overview.md`](sprints/prd-compliance-audit-remediation-full/sprint-overview.md) — 13-sprint PRD Compliance Audit Remediation 计划入口
 - [`docs/CONFIGURATION.md`](CONFIGURATION.md) — 环境变量与配置文件说明
 - [`specs/`](../specs/) — 命令集、任务交换协议、风险决策机制规范

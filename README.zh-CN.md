@@ -23,14 +23,14 @@
 
 ### 方案
 
-Hermes Dev Orchestra 将 Claude↔Codex 协作流水线自动化，并暴露更新的 Gateway run state：
+Hermes Dev Orchestra 将 Claude↔Codex 协作流水线自动化，并暴露 Gateway run state：
 
 - **一键设置**：`orch-init` 脚手架式地生成项目配置、目录结构和风险策略。
 - **隔离的 tmux 会话对**：`orch-start` 自动为每个项目创建成对的 tmux 会话（`hermes-{project}-claude` / `hermes-{project}-codex`）。
 - **文件交换任务流**：`/tmp/hermes-orchestra/{project}/` 下的结构化文件自动在代理之间派发任务、问题、决策和结果。
 - **L1–L4 风险拦截**：`orch-risk-check` 依据 `config/risk-policy.yaml` 评估命令；L3/L4 操作会被阻塞，等待通过 `orch-approve` / `orch-reject` 进行人工审批。
 - **内置审计**：每一次操作都写入 `~/.local/share/hermes-orchestra/{project}/audit.jsonl`，实现完整可追溯。
-- **Gateway run projection**：`orch-gateway` 暴露 run 创建、任务/事件投影、actor-token authority 检查和 staged full-system 模块。
+- **Gateway run projection**：`orch-gateway` 暴露 run 创建、任务/事件投影、actor-token authority 检查和 staged full-system 模块。Run Projection: `X-Projection-Schema-Version: 1.0.0`; actor token 300s + 30s clock skew.
 
 当前能力分层：
 
@@ -198,3 +198,4 @@ make test-risk
 - [`docs/COVERAGE-MATRIX.md`](docs/COVERAGE-MATRIX.md) — 功能覆盖矩阵
 - [`docs/FULL-COVERAGE-MATRIX.md`](docs/FULL-COVERAGE-MATRIX.md) — full-target readiness 与 runtime 状态
 - [`docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md`](docs/FULL-CAPABILITY-AUTHORITY-MATRIX.md) — full-target authority 边界
+- [`docs/sprints/prd-compliance-audit-remediation-full/sprint-overview.md`](docs/sprints/prd-compliance-audit-remediation-full/sprint-overview.md) — 13-sprint PRD Compliance Audit Remediation 计划入口（Sprint 12 deliverable 正在交付中）

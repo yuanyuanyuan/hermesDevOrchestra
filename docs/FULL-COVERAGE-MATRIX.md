@@ -88,4 +88,4 @@ Status vocabulary:
 | Success metrics pipeline | `scripts/tests/test-success-metrics-pipeline.sh` | `metrics_summary.json` with 14 `success_metrics_summary` entries |
 | Schema three-way sync | `scripts/tests/test-schema-doc-sync.sh` | `release_gate_report.schema_sync_passed` |
 | Strict six-stage staging run | `scripts/tests/test-e2e-strict-six-stage-flow.sh` | `run.json`, `tasks.json`, `events.jsonl`, `audit.jsonl`, `metrics_summary.json` |
-| Final release decision | `scripts/tests/test-mvp-acceptance.sh` | `release_gate_report.release_approved` |
+| Final release decision | `scripts/tests/test-prd-compliance-remediation-e2e.sh` (per `spec.md` FR-14 + `plan-sprint-13.md`) | `release_gate_report.release_approved` |
