@@ -292,4 +292,3 @@ ls ~/.hermes/skills/dev-orchestra/SKILL.md
 - **[`CONFIGURATION.md`](CONFIGURATION.md)** — 环境变量与配置详解
 - **[`DEVELOPMENT.md`](DEVELOPMENT.md)** — 开发贡献指南
 - **[`TESTING.md`](TESTING.md)** — 测试策略与编写规范
-- **[`../specs/`](../specs/)** — 命令集、任务交换协议、风险决策规范
