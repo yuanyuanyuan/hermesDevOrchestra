@@ -25,16 +25,17 @@ Gateway Projection and Kanban authority routes require `X-Actor-Token`. The toke
 | `timestamp` | yes | Valid for 300 seconds plus 30 seconds skew. |
 | `approval_level` | no | `L3` or `L4` for approval tokens. |
 | `protected_target_pattern` | no | Required with L4 approval when the approval applies only to specific protected targets. |
+| `approver_ref` | no | FR-11 — bound to `override_record`; required for L3/L4 override approval (Sprint 11 consumer of Contract 4). |
 
 Capability routes are loaded from `config/decisions/authority-matrix.json`; undefined capabilities fail closed with `capability_not_defined`.
 
 | Capability | Kimi | Human | Gateway | Worker / Backend | Notes |
 |---|---|---|---|---|---|
-| Create Run | request | request via local client or Kimi | validate/enforce, execute | no | Gateway creates one Active Run per project. |
+| Create Run | request | request via local client or Kimi | validate/enforce, execute | no | Gateway creates one Active Run per project. Run carries `run.channel_decision` at creation (FR-4/Contract 3). |
 | Inspect Run status | request/read | request/read | execute projection read | no | Events are projection, not authority. |
 | Subscribe to Run events | request/read | request/read | execute projection stream | no | Gaps require resync from status/tasks/artifacts. |
 | Stop Run | request | request | validate/enforce, execute Partial Closeout | graceful stop only when asked | Stop preserves lineage and unresolved decisions. |
-| Resume blocked Run | decide below human gates | approve when required | validate/enforce, execute | no | Terminal runs continue through a new run with lineage. |
+| Resume blocked Run | decide below human gates | approve when required | validate/enforce, execute | no | Terminal runs continue through a new run with lineage. Transitions guarded by `run.lifecycle_status` + transition guard (FR-2/Contract 2). 13 allowed values listed in gateway doc. |
 | Fail Run terminally | request with evidence | approve when required | validate/enforce, execute | no | Failure Boundary must be crossed. |
 | Mutate raw Kanban | no | no through product API | execute internally through workflow rules | no | Kimi sees Task Projection, not raw Kanban CRUD. |
 | Advance Kanban task | no direct mutation | no direct mutation | validate/enforce, execute | output only | Worker completion is a request to Gateway. |
@@ -45,9 +46,9 @@ Capability routes are loaded from `config/decisions/authority-matrix.json`; unde
 | Approve L3/L4 risk | no | approve | validate/enforce | no | Human Approval is mandatory. |
 | Approve destructive or publishing work | no | approve | validate/enforce | no | Includes production deploy, secrets, permissions, CI/CD, and policy changes. |
 | Approve root rule changes | no | approve | validate/enforce | output only after approval | System proposals do not self-apply. |
-| Create Structured Ticket / PRD | request/provide | request/provide | validate schema | no | Short intent is intake only; Gateway must preserve `requirement-completion-bundle.json` with six classes, provenance triads, and four-way dependency coverage before stage advance. |
+| Create Structured Ticket / PRD | request/provide | request/provide | validate schema | no | Short intent is intake only; Gateway must preserve `requirement-completion-bundle.json` with six classes, provenance triads, and four-way dependency coverage before stage advance. Intake must include 8-part `prompt_envelope` + verified facts + unverified assumptions (FR-9). |
 | Start implementation | decide below human gates | approve when required | validate/enforce, dispatch | execute scoped task | Requires approved plan and evidence gates. |
-| Dynamic Debate Assembly | request debate / review output | request/review | validate/enforce deterministic policy | debate backend output only | Selection is policy-driven, not free-form model choice. |
+| Dynamic Debate Assembly | request debate / review output | request/review | validate/enforce deterministic policy | debate backend output only | Selection is policy-driven, not free-form model choice. E-class improvement dispute: mini-debate `consensus_score >= 0.60` required (FR-13/Contract 5). |
 | Produce Debate Member Opinion | possible backend with self-review risk | no | dispatch/record | output only | Kimi-as-backend needs independent non-Kimi evidence. |
 | Advance from Debate Report | decide below human gates | approve when required | validate/enforce | no | Debate Report is input, not final authority. |
 | Select Worker Backend | request pairing | request/approve when required | validate/enforce capability negotiation | no | No silent backend substitution. |
@@ -64,8 +65,8 @@ Capability routes are loaded from `config/decisions/authority-matrix.json`; unde
 | Remote decision delivery | request decision | respond/approve | validate/enforce response before advancement | transport only | Remote channel does not mutate state. |
 | Runtime knowledge query | request/review | request/review | dispatch adapter and record artifacts | use results as context | Retrieval is not final authority. |
 | Promote runtime knowledge | audit candidate | approve if authority-impacting | record promotion evidence | output only | Candidate or expired knowledge is warning context. |
-| System Improvement Proposal | audit/accept/reject | approve protected changes | record proposal and approved changes | propose/output only | Stage 6 sweep always writes candidate proposal artifact. |
+| System Improvement Proposal | audit/accept/reject | approve protected changes | record proposal and approved changes | propose/output only | Stage 6 sweep always writes candidate proposal artifact. User correction via `override_record` (Sprint 11/Contract 4 consumer). |
 | Cross-Run Evolution Review | trigger | request/approve protected outcomes | collect and record evidence | output only | Not an automatic background process. |
 | Full contract validation | request/review | request/review | run harness or record results | no | Independent from runtime advancement path. |
 | Full contract readiness cutover | recommend/audit | approve | validate/enforce artifact-family activation | no | No one-shot MVP-to-full schema switch. |
-| Run completion | final acceptance below human gates | approve when required | execute Closeout Completion Gate | no | Requires closeout artifacts, Audit, Kanban, Gateway State, and schema-valid evidence. |
+| Run completion | final acceptance below human gates | approve when required | execute Closeout Completion Gate | no | Requires closeout artifacts, Audit, Kanban, Gateway State, and schema-valid evidence. Closeout must read full `conflict_ledger` before marking closed (FR-1/Contract 1). |
